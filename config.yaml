@@ -1,0 +1,4 @@
+replace:
+    go-module:
+        from: some.module
+        to: another.module
