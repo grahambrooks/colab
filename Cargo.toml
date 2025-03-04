@@ -1,0 +1,13 @@
+[package]
+name = "colab"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+clap = { version = "4.5.31", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9.34+deprecated"
+tree-sitter = "0.25.2"
+tree-sitter-go = "0.23.4"
+

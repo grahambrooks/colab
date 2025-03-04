@@ -36,7 +36,7 @@ fn test_go_module_dependency_update() {
     fs::write(&config_file_path, config_file_content).expect("Failed to write test config file");
 
     // Run the CLI tool
-    let output = Command::new("./target/release/cli")
+    let output = Command::new("./target/debug/colab")
         .arg("--config")
         .arg(config_file_path.to_str().unwrap())
         .arg("--path")
