@@ -3,10 +3,12 @@ mod go;
 mod integration_test;
 mod refactor;
 mod codemod;
+mod lspmod;
 
 use std::fs;
 use clap::Parser;
 use std::path::Path;
+use crate::lspmod::{GoplsManager, ImportChangeRequest};
 
 static VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -40,6 +42,9 @@ struct Args {
 }
 
 fn main() {
+
+    lsp_refactor();
+
     let args = Args::parse();
 
 
@@ -64,4 +69,17 @@ fn run(paths: Vec<String>, config_path: String) {
     for arg in paths {
         refactor::process_directory(&app_config, Path::new(arg.as_str()));
     }
+}
+
+fn lsp_refactor() {
+    let request = ImportChangeRequest {
+        file_path: "path/to/your/file.go".to_string(),
+        old_import: "old/package".to_string(),
+        new_import: "new/package".to_string(),
+    };
+
+    let mut manager = GoplsManager::new();
+    let modified_code = manager.change_import(request).await?;
+    
+    println!("Modified code: {}", modified_code);
 }
