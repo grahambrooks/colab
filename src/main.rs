@@ -2,8 +2,9 @@ mod config;
 mod go;
 mod integration_test;
 mod refactor;
-mod colab;
+mod codemod;
 
+use std::fs;
 use clap::Parser;
 use std::path::Path;
 
@@ -20,7 +21,7 @@ author = "Graham Brooks",
 version = VERSION,
 about = "AST generator based on tree-sitter",
 long_about = r#"
-CLI for refactoriing
+CLI for refactoriing based code modifications 'codemods'.
 
 "#
 )]
@@ -30,11 +31,27 @@ struct Args {
         help = "Truncate the JSON line output for each line. Useful for previewing the output when scanning a large number of files"
     )]
     config: Option<String>,
+    #[arg(
+        long,
+        help = "Script to run against the codebase"
+    )]
+    script: Option<String>,
     paths: Vec<String>,
 }
 
 fn main() {
     let args = Args::parse();
+
+
+    match args.script {
+        Some(script) => {
+            let script_content = fs::read_to_string(script).expect("Failed to read script file");
+            codemod::parse(&script_content).expect("Failed to parse script");
+        }
+        None => {
+            println!("No script defined - using configuration file");
+        }
+    }
 
     let config_path = args.config.unwrap_or("config.yaml".to_string());
 

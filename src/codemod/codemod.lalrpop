@@ -1,7 +1,7 @@
-use crate::colab::Command;
-use crate::colab::Body;
-use crate::colab::Namespace;
-use crate::colab::Action;
+use crate::codemod::Command;
+use crate::codemod::Body;
+use crate::codemod::Namespace;
+use crate::codemod::Action;
 
 grammar;
 

@@ -1,7 +1,7 @@
 use lalrpop_util::lalrpop_mod;
 use std::error::Error;
 
-lalrpop_mod!(pub refactor, "/colab/colab.rs");
+lalrpop_mod!(pub codemod, "/codemod/codemod.rs");
 
 #[derive(PartialEq, Debug)]
 pub struct Command {
@@ -27,7 +27,7 @@ pub enum Action {
 }
 
 pub fn parse(text: &str) -> Result<Command, Box<dyn Error + '_>> {
-    let result = refactor::ProgramParser::new().parse(text);
+    let result = codemod::ProgramParser::new().parse(text);
     match result {
         Ok(command) => Ok(command),
         Err(error) => Err(Box::new(error)),
@@ -37,18 +37,18 @@ pub fn parse(text: &str) -> Result<Command, Box<dyn Error + '_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::colab::Action::Replace;
+    use crate::codemod::Action::Replace;
 
     #[test]
     fn test_parse_string_literal() {
-        let result = refactor::StringLiteralParser::new()
+        let result = codemod::StringLiteralParser::new()
             .parse(r#"  "Hello, World!"  "#)
             .unwrap();
         assert_eq!(result, "Hello, World!");
     }
     #[test]
     fn test_parse_identifier() {
-        let result = refactor::IdentifierParser::new()
+        let result = codemod::IdentifierParser::new()
             .parse(r#"HelloWorld122 "#)
             .unwrap();
         assert_eq!(result, "HelloWorld122");
@@ -56,14 +56,14 @@ mod tests {
 
     #[test]
     fn test_parse_action() {
-        let result = refactor::ActionParser::new()
+        let result = codemod::ActionParser::new()
             .parse(r#"  replace "a.b.c" "#)
             .unwrap();
         assert_eq!(result, Replace("a.b.c".to_string()));
     }
     #[test]
     fn test_parse_namespace() {
-        let result = refactor::NamespaceParser::new()
+        let result = codemod::NamespaceParser::new()
             .parse(r#"  go::import "#)
             .unwrap();
         assert_eq!(
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_parse_body() {
-        let result = refactor::BodyParser::new()
+        let result = codemod::BodyParser::new()
             .parse(r#" match  go::import "a.b.c" { replace "d.e.f" } "#)
             .unwrap();
         assert_eq!(
