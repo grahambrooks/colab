@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
+[build-dependencies] # <-- We added this and everything after!
+lalrpop = "0.22.1"
+
 [dependencies]
+lalrpop-util = { version = "0.22.1", features = ["lexer", "unicode"] }
 clap = { version = "4.5.31", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.34+deprecated"

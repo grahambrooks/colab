@@ -1,0 +1,31 @@
+use crate::colab::Command;
+use crate::colab::Body;
+use crate::colab::Namespace;
+use crate::colab::Action;
+
+grammar;
+
+pub Program: Command = {
+    "refactor" <string: StringLiteral> "{" <body: Body> "}" => Command { refactor_name: string, body }
+};
+
+pub Body: Body = {
+    "match" <namespace: Namespace> <string: StringLiteral> "{" <action: Action> "}" => Body { namespace, match_string: string, action }
+};
+
+pub Namespace: Namespace = {
+    <lang: Identifier> "::" <module: Identifier> => Namespace { lang, module }
+};
+
+pub Action: Action = {
+    "replace" <string: StringLiteral> => Action::Replace(string)
+};
+
+pub Identifier: String = {
+    <s: r"[a-zA-Z_][a-zA-Z0-9_]*"> => s.to_string()
+};
+
+pub StringLiteral: String = {
+    // Match opening quote, characters inside, and closing quote
+     <s:r#""[^"]*""#> => s.trim_matches('"').to_string()
+};

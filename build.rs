@@ -1,7 +1,9 @@
-use std::process::Command;
 use std::env;
+use std::process::Command;
 
 fn main() {
+    lalrpop::process_root().unwrap();
+
     let git_sha = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .output()

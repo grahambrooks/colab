@@ -2,6 +2,7 @@ mod config;
 mod go;
 mod integration_test;
 mod refactor;
+mod colab;
 
 use clap::Parser;
 use std::path::Path;
