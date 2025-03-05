@@ -1,6 +1,7 @@
 mod config;
-mod refactor;
+mod go;
 mod integration_test;
+mod refactor;
 
 use clap::Parser;
 use std::path::Path;
@@ -36,15 +37,13 @@ fn main() {
 
     let config_path = args.config.unwrap_or("config.yaml".to_string());
 
+    run(args.paths, config_path);
+}
+
+fn run(paths: Vec<String>, config_path: String) {
     let app_config: config::Config = config::read_config(config_path).unwrap();
 
-    let go_language = tree_sitter_go::LANGUAGE.into();
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&go_language)
-        .expect("Error loading Go grammar");
-
-    for arg in args.paths {
-        refactor::process_directory(&mut parser, &app_config, Path::new(arg.as_str()));
+    for arg in paths {
+        refactor::process_directory(&app_config, Path::new(arg.as_str()));
     }
 }
