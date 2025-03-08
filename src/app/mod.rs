@@ -1,5 +1,6 @@
 use crate::{codemod, language_server, refactor};
 use clap::Parser;
+use log::{info, warn, error};
 use std::fs;
 use std::path::Path;
 
@@ -77,11 +78,11 @@ impl Cli {
                                 std::env::set_current_dir(&canonical_path)
                                     .expect("Failed to change directory");
                             } else {
-                                println!("Can't change current directory to: {}", path.display());
+                                error!("Can't change current directory to: {}", path.display());
                             }
                         }
                         Err(e) => {
-                            println!("Failed to resolve path: {} {}", path.display(), e);
+                            error!("Failed to resolve path: {} {}", path.display(), e);
                         }
                     }
                 }
@@ -92,23 +93,23 @@ impl Cli {
                             fs::read_to_string(script).expect("Failed to read script file");
                         let refactor =
                             codemod::compile(&script_content).expect("Failed to parse script");
-                        println!("Running script: {}", refactor);
+                        info!("Running script: {}", refactor);
 
                         for arg in refactor_args.paths {
                             refactor::process_directory(&refactor, Path::new(arg.as_str()));
                         }
                     }
                     None => {
-                        println!("No script defined - using configuration file");
+                        info!("No script defined - using configuration file");
                     }
                 }
             }
             Some(Commands::Server(server_args)) => {
-                println!("Starting server on port {}", server_args.port);
+                info!("Starting server on port {}", server_args.port);
                 language_server::run().await;
             }
             None => {
-                println!("No command provided. Use --help for more information.");
+                warn!("No command provided. Use --help for more information.");
             }
         }
     }
