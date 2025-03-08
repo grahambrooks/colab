@@ -1,7 +1,5 @@
 mod codemod;
-mod config;
 mod go;
-mod integration_test;
 mod refactor;
 
 use clap::Parser;
@@ -26,11 +24,6 @@ CLI for refactoriing based code modifications 'codemods'.
 "#
 )]
 struct Args {
-    #[arg(
-        long,
-        help = "Truncate the JSON line output for each line. Useful for previewing the output when scanning a large number of files"
-    )]
-    config: Option<String>,
     #[arg(long, help = "Script to run against the codebase")]
     script: Option<String>,
     #[arg(
@@ -48,32 +41,38 @@ fn main() {
     if args.path.is_some() {
         let path = args.path.unwrap();
         let path = Path::new(path.as_str());
-        if path.is_dir() {
-            std::env::set_current_dir(path).expect("Failed to change directory");
-        } else {
-            println!("Cant change current directory to: {}", path.display());
+        match fs::canonicalize(path) {
+            Ok(canonical_path) => {
+                if canonical_path.is_dir() {
+                    std::env::set_current_dir(&canonical_path).expect("Failed to change directory");
+                } else {
+                    println!("Can't change current directory to: {}", path.display());
+                }
+            }
+            Err(e) => {
+                println!("Failed to resolve path: {} {}", path.display(), e);
+            }
         }
     }
 
     match args.script {
         Some(script) => {
             let script_content = fs::read_to_string(script).expect("Failed to read script file");
-            codemod::parse(&script_content).expect("Failed to parse script");
+                        let refactor = codemod::compile(&script_content).expect("Failed to parse script");
+            println!("Running script: {}", refactor);
+            run(args.paths, refactor);
+            match refactor {
+                codemod::Config { .. } => {}
+            }
         }
         None => {
             println!("No script defined - using configuration file");
         }
     }
-
-    let config_path = args.config.unwrap_or("config.yaml".to_string());
-
-    run(args.paths, config_path);
 }
 
-fn run(paths: Vec<String>, config_path: String) {
-    let app_config: config::Config = config::read_config(config_path).unwrap();
-
+fn run(paths: Vec<String>, refactor: codemod::Config) {
     for arg in paths {
-        refactor::process_directory(&app_config, Path::new(arg.as_str()));
+        refactor::process_directory(&refactor, Path::new(arg.as_str()));
     }
 }

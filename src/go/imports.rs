@@ -1,6 +1,6 @@
-use crate::config::GoModule;
+use crate::codemod;
 
-pub(crate) fn rename(replacement: &GoModule, source_code: &String) -> String {
+pub(crate) fn rename(replacement: &codemod::GoModule, source_code: &String) -> String {
     let go_language = tree_sitter_go::LANGUAGE.into();
     let mut parser = tree_sitter::Parser::new();
     parser
@@ -18,7 +18,7 @@ pub(crate) fn rename(replacement: &GoModule, source_code: &String) -> String {
     fn visit_node(
         cursor: &mut tree_sitter::TreeCursor,
         source_code: &String,
-        replacement: &GoModule,
+        replacement: &codemod::GoModule,
         edits: &mut Vec<(usize, usize, String)>,
     ) {
         let node = cursor.node();
@@ -57,8 +57,8 @@ pub(crate) fn rename(replacement: &GoModule, source_code: &String) -> String {
 
 #[cfg(test)]
 mod test {
-    use tree_sitter::Parser;
     use super::*;
+    use tree_sitter::Parser;
 
     #[test]
     fn test_rename_import() {
@@ -85,7 +85,7 @@ mod test {
     "#;
 
         // Define the replacement
-        let replacement = GoModule {
+        let replacement = codemod::GoModule {
             from: "some.module".to_string(),
             to: "new.module".to_string(),
         };
@@ -139,7 +139,7 @@ mod test {
     "#;
 
         // Define the replacement
-        let replacement = GoModule {
+        let replacement = codemod::GoModule {
             from: "some.module".to_string(),
             to: "new.module".to_string(),
         };
@@ -148,7 +148,7 @@ mod test {
         let refactored_code = rename(&replacement, &go_code.to_string());
 
         let refactored_code = rename(
-            &GoModule {
+            &codemod::GoModule {
                 from: "another.module".to_string(),
                 to: "yet.another.module".to_string(),
             },

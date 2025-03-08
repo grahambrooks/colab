@@ -1,5 +1,9 @@
+mod config;
+
 use lalrpop_util::lalrpop_mod;
 use std::error::Error;
+pub(crate) use config::Config;
+pub(crate) use config::GoModule;
 
 lalrpop_mod!(pub codemod, "/codemod/codemod.rs");
 
@@ -24,6 +28,26 @@ pub struct Namespace {
 #[derive(PartialEq, Debug)]
 pub enum Action {
     Replace(String),
+}
+
+pub fn compile(text: &str) -> Result<Config, Box<dyn Error + '_>> {
+    match parse(text) {
+        Ok(command) => {
+            Ok(Config{
+                replace: config::Replace {
+                    go_module: config::GoModule {
+                        from: command.body.match_string.clone(),
+                        to: match command.body.action {
+                            Action::Replace(ref s) => s.clone(),
+                        },
+                    },
+                },
+            })
+        }
+        Err(error) => {
+            Err(error)
+        }
+    }
 }
 
 pub fn parse(text: &str) -> Result<Command, Box<dyn Error + '_>> {
