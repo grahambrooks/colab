@@ -16,12 +16,14 @@ author = "Graham Brooks",
 version = VERSION,
 about = "AST generator based on tree-sitter",
 long_about = r#"
-CLI for refactoriing based code modifications 'codemods'.
+Code Lab (colab) command line code refactoring or 'codemod'.
+
+Scripted refactoring at scale.
 
 "#
 )]
 struct Args {
-    #[arg(long, help = "Script to run against the codebase")]
+    #[arg(long, help = "codemod Script to run against the codebase", required = true)]
     script: Option<String>,
     #[arg(
         short = 'C',
