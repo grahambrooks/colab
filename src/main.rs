@@ -33,11 +33,27 @@ struct Args {
     config: Option<String>,
     #[arg(long, help = "Script to run against the codebase")]
     script: Option<String>,
+    #[arg(
+        short = 'C',
+        help = "Change working directoryPaths to the files or directories to process",
+        default_value = "."
+    )]
+    path: Option<String>,
     paths: Vec<String>,
 }
 
 fn main() {
     let args = Args::parse();
+
+    if args.path.is_some() {
+        let path = args.path.unwrap();
+        let path = Path::new(path.as_str());
+        if path.is_dir() {
+            std::env::set_current_dir(path).expect("Failed to change directory");
+        } else {
+            println!("Cant change current directory to: {}", path.display());
+        }
+    }
 
     match args.script {
         Some(script) => {

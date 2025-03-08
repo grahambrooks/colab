@@ -1,0 +1,5 @@
+refactor "this" {
+    match  go::import "some.module" {
+        replace "other.module"
+    }
+}
