@@ -1,4 +1,5 @@
 mod refactor;
+mod go;
 
 use lalrpop_util::lalrpop_mod;
 use std::error::Error;

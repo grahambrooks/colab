@@ -1,10 +1,10 @@
 package main
 
 import (
-    "fmt"
-    "other.module"
+	"fmt"
+	"some.module"
 )
 
 func main() {
-    fmt.Println("Hello, world!")
+	fmt.Println("Hello, world!")
 }

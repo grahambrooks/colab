@@ -1,3 +1,4 @@
+use crate::codemod::go;
 use crate::refactor::CodeTransformer;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -14,6 +15,15 @@ impl fmt::Display for Replace {
     }
 }
 
+impl CodeTransformer for Replace {
+    fn is_file_relevant(&self, path: &std::path::Path) -> bool {
+        self.go_module.is_file_relevant(path)
+    }
+    fn apply(&self, source_code: &String) -> String {
+        self.go_module.apply(source_code)
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct GoModule {
     pub(crate) from: String,
@@ -26,6 +36,15 @@ impl fmt::Display for GoModule {
     }
 }
 
+impl CodeTransformer for GoModule {
+    fn is_file_relevant(&self, path: &std::path::Path) -> bool {
+        path.extension().and_then(|s| s.to_str()) == Some("go")
+    }
+    fn apply(&self, source_code: &String) -> String {
+        go::imports::rename(self, source_code)
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Refactoring {
     pub(crate) replace: Replace,
@@ -33,17 +52,15 @@ pub struct Refactoring {
 
 impl fmt::Display for Refactoring {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Config {{ replace: {} }}", self.replace)
+        write!(f, "Refactoring {{ replace: {} }}", self.replace)
     }
 }
 
 impl CodeTransformer for Refactoring {
     fn is_file_relevant(&self, path: &std::path::Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("go")
+        self.replace.is_file_relevant(path)
     }
     fn apply(&self, source_code: &String) -> String {
-        let replacement = &self.replace.go_module;
-        let new_source_code = crate::go::imports::rename(&replacement, source_code);
-        new_source_code
+        self.replace.apply(source_code)
     }
 }

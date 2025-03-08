@@ -1,6 +1,5 @@
 mod app;
 mod codemod;
-mod go;
 mod refactor;
 mod language_server;
 
