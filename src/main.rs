@@ -2,8 +2,10 @@ mod app;
 mod codemod;
 mod go;
 mod refactor;
+mod language_server;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let app = app::Cli::new();
-    app.run();
+    app.run().await;
 }
