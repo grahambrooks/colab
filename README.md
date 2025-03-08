@@ -1,42 +1,107 @@
-# colab
-Code Lab for automated refactoring and updates
+# Colab (Code Lab)
 
-## CLI Tool for Go Module Dependency Updates
+A powerful CLI tool for automated code refactoring and updates at scale.
 
-This repository includes a CLI tool written in Rust that scans all Go code and replaces module dependency references as specified in a YAML file. The tool uses tree-sitter for language parsing.
+## Overview
 
-### Usage
+Colab (Code Lab) is a command-line tool written in Rust that enables scripted code refactoring at scale. It uses tree-sitter for precise language parsing and provides a domain-specific language for defining refactoring operations.
 
-1. Ensure you have Rust installed on your system. If not, you can install it from [rust-lang.org](https://www.rust-lang.org/).
+Currently, Colab specializes in Go module dependency updates, allowing you to replace import statements across your entire codebase with a single command.
 
-2. Clone this repository and navigate to the `cli` directory:
+## Features
+
+- **Go Import Refactoring**: Replace Go import statements across your codebase
+- **Scripted Refactoring**: Define refactoring operations using a simple domain-specific language
+- **Language Server**: Includes a language server for integration with IDEs
+- **Tree-sitter Integration**: Uses tree-sitter for accurate code parsing
+
+## Installation
+
+### Prerequisites
+
+- Rust 1.70 or later (check with `rustc --version`)
+- Cargo (comes with Rust)
+
+### Building from Source
+
+1. Clone the repository:
 
    ```sh
    git clone https://github.com/grahambrooks/colab.git
-   cd colab/cli
+   cd colab
    ```
 
-3. Build the CLI tool:
+2. Build the project:
 
    ```sh
    cargo build --release
    ```
 
-4. Create a `config.yaml` file in the `cli` directory with the following structure:
+3. The executable will be available at `target/release/colab`
 
-   ```yaml
-   replace:
-       go-module:
-           from: some.module
-           to: another.module
-   ```
+## Usage
 
-5. Run the CLI tool:
+### Refactoring Go Imports
 
-   ```sh
-   ./target/release/cli --config config.yaml --path /path/to/go/code
-   ```
+To replace Go import statements:
 
-   Replace `/path/to/go/code` with the path to the directory containing your Go code.
+```sh
+colab refactor --script path/to/script.codemod [directories or files]
+```
 
-The CLI tool will scan all Go files in the specified directory and replace module dependency references as specified in the `config.yaml` file.
+Example:
+
+```sh
+colab refactor --script examples/go/imports/simple.codemod .
+```
+
+You can also change the working directory before processing:
+
+```sh
+colab refactor -C /path/to/working/directory --script path/to/script.codemod .
+```
+
+### Starting the Language Server
+
+To start the language server:
+
+```sh
+colab server [--port PORT]
+```
+
+The default port is 8080.
+
+## Codemod Script Syntax
+
+Codemod scripts use a simple domain-specific language to define refactoring operations. Here's an example:
+
+```
+refactor "name" {
+    match go::import "old.module.path" {
+        replace "new.module.path"
+    }
+}
+```
+
+This script will replace all imports of "old.module.path" with "new.module.path" in Go files.
+
+## Examples
+
+The repository includes examples in the `examples` directory:
+
+- `examples/go/imports/main.go`: A simple Go file with imports
+- `examples/go/imports/simple.codemod`: A codemod script to replace imports
+
+To run the example:
+
+```sh
+colab refactor -C examples/go/imports --script simple.codemod .
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is open source and available under the [MIT License](LICENSE).
