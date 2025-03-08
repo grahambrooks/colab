@@ -26,11 +26,11 @@ impl fmt::Display for GoModule {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Config {
+pub struct Refactoring {
     pub(crate) replace: Replace,
 }
 
-impl fmt::Display for Config {
+impl fmt::Display for Refactoring {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Config {{ replace: {} }}", self.replace)
     }
