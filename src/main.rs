@@ -12,7 +12,13 @@ use chrono::Local;
 
 #[tokio::main]
 async fn main() {
-    // Initialize the logger with colored output
+    initialize_logging();
+
+    let app = app::Cli::new();
+    app.run().await;
+}
+
+fn initialize_logging() {
     Builder::new()
         .format(|buf, record| {
             let level_color = match record.level() {
@@ -33,7 +39,4 @@ async fn main() {
         })
         .filter(None, LevelFilter::Info) // Set default log level to Info
         .init();
-
-    let app = app::Cli::new();
-    app.run().await;
 }
