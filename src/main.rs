@@ -1,6 +1,7 @@
 mod codemod;
 mod go;
 mod refactor;
+mod app;
 
 use clap::Parser;
 use std::fs;
@@ -36,6 +37,8 @@ struct Args {
 }
 
 fn main() {
+    let app = app::Cli::new();
+    app.run();
     let args = Args::parse();
 
     if args.path.is_some() {
@@ -62,7 +65,7 @@ fn main() {
             println!("Running script: {}", refactor);
             run(args.paths, refactor);
             match refactor {
-                codemod::Config { .. } => {}
+                codemod::Refactoring { .. } => {}
             }
         }
         None => {
@@ -71,7 +74,7 @@ fn main() {
     }
 }
 
-fn run(paths: Vec<String>, refactor: codemod::Config) {
+fn run(paths: Vec<String>, refactor: codemod::Refactoring) {
     for arg in paths {
         refactor::process_directory(&refactor, Path::new(arg.as_str()));
     }

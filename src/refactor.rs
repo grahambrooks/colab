@@ -1,7 +1,7 @@
 use crate::{codemod, go};
 use std::fs;
 use std::path::Path;
-pub fn process_directory(config: &codemod::Config, path: &Path) {
+pub fn process_directory(config: &codemod::Refactoring, path: &Path) {
     if path.is_dir() {
         for entry in fs::read_dir(path).expect("Failed to read directory") {
             let entry = entry.expect("Failed to read directory entry");
@@ -15,7 +15,7 @@ pub fn process_directory(config: &codemod::Config, path: &Path) {
     }
 }
 
-fn process_file(config: &codemod::Config, path: &Path) {
+fn process_file(config: &codemod::Refactoring, path: &Path) {
     println!("Processing {}", path.display());
     let replacement = &config.replace.go_module;
     let source_code = fs::read_to_string(path).expect("Failed to read file");

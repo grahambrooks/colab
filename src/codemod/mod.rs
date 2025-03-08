@@ -1,9 +1,9 @@
-mod config;
+mod refactor;
 
 use lalrpop_util::lalrpop_mod;
 use std::error::Error;
-pub(crate) use config::Config;
-pub(crate) use config::GoModule;
+pub(crate) use refactor::Refactoring;
+pub(crate) use refactor::GoModule;
 
 lalrpop_mod!(pub codemod, "/codemod/codemod.rs");
 
@@ -30,12 +30,12 @@ pub enum Action {
     Replace(String),
 }
 
-pub fn compile(text: &str) -> Result<Config, Box<dyn Error + '_>> {
+pub fn compile(text: &str) -> Result<Refactoring, Box<dyn Error + '_>> {
     match parse(text) {
         Ok(command) => {
-            Ok(Config{
-                replace: config::Replace {
-                    go_module: config::GoModule {
+            Ok(Refactoring {
+                replace: refactor::Replace {
+                    go_module: refactor::GoModule {
                         from: command.body.match_string.clone(),
                         to: match command.body.action {
                             Action::Replace(ref s) => s.clone(),
