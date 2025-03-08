@@ -1,3 +1,4 @@
+use crate::refactor::CodeTransformer;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -33,5 +34,16 @@ pub struct Refactoring {
 impl fmt::Display for Refactoring {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Config {{ replace: {} }}", self.replace)
+    }
+}
+
+impl CodeTransformer for Refactoring {
+    fn is_file_relevant(&self, path: &std::path::Path) -> bool {
+        path.extension().and_then(|s| s.to_str()) == Some("go")
+    }
+    fn apply(&self, source_code: &String) -> String {
+        let replacement = &self.replace.go_module;
+        let new_source_code = crate::go::imports::rename(&replacement, source_code);
+        new_source_code
     }
 }

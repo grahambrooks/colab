@@ -1,7 +1,13 @@
-use crate::{codemod, go};
+use crate::{codemod};
 use log::info;
 use std::fs;
 use std::path::Path;
+
+pub trait CodeTransformer {
+    fn is_file_relevant(&self, path: &Path) -> bool;
+    fn apply(&self, source_code: &String) -> String;
+}
+
 pub fn process_directory(refactoring: &codemod::Refactoring, path: &Path) {
     if path.is_dir() {
         for entry in fs::read_dir(path).expect("Failed to read directory") {
@@ -9,7 +15,7 @@ pub fn process_directory(refactoring: &codemod::Refactoring, path: &Path) {
             let path = entry.path();
             if path.is_dir() {
                 process_directory(refactoring, &path);
-            } else if path.extension().and_then(|s| s.to_str()) == Some("go") {
+            } else if refactoring.is_file_relevant(&path) {
                 process_file(refactoring, &path);
             }
         }
@@ -18,10 +24,8 @@ pub fn process_directory(refactoring: &codemod::Refactoring, path: &Path) {
 
 fn process_file(refactoring: &codemod::Refactoring, path: &Path) {
     info!("Processing {}", path.display());
-    let replacement = &refactoring.replace.go_module;
+
     let source_code = fs::read_to_string(path).expect("Failed to read file");
-
-    let new_source_code = go::imports::rename(&replacement, &source_code);
-
+    let new_source_code = refactoring.apply(&source_code);
     fs::write(path, new_source_code).expect("Failed to write file");
 }

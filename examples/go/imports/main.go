@@ -2,7 +2,7 @@ package main
 
 import (
     "fmt"
-    "some.module"
+    "other.module"
 )
 
 func main() {
