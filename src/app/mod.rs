@@ -4,9 +4,9 @@ use std::fs;
 use std::path::Path;
 
 static VERSION: &str = concat!(
-env!("CARGO_PKG_VERSION"),
-".",
-include_str!(concat!(env!("OUT_DIR"), "/version.txt"))
+    env!("CARGO_PKG_VERSION"),
+    ".",
+    include_str!(concat!(env!("OUT_DIR"), "/version.txt"))
 );
 
 #[derive(Parser, Debug)]
@@ -23,10 +23,15 @@ Scripted refactoring at scale.
 "#
 )]
 struct Args {
-    #[arg(long, help = "codemod Script to run against the codebase", required = true)]
-    script: Option<String>,
+    #[arg(
+        long = "script",
+        help = "codemod Script to run against the codebase",
+        required = true
+    )]
+    script_path: Option<String>,
     #[arg(
         short = 'C',
+        long = "change-dir",
         help = "Change working directoryPaths to the files or directories to process",
         default_value = "."
     )]
@@ -61,7 +66,7 @@ impl Cli {
             }
         }
 
-        match args.script {
+        match args.script_path {
             Some(script) => {
                 let script_content =
                     fs::read_to_string(script).expect("Failed to read script file");
@@ -78,4 +83,3 @@ impl Cli {
         }
     }
 }
-
