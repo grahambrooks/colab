@@ -11,12 +11,16 @@ lalrpop = "0.22.1"
 lalrpop-util = { version = "0.22.1", features = ["lexer", "unicode"] }
 clap = { version = "4.5.31", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
-tree-sitter = "0.25.2"
+tree-sitter = "0.25.3"
 tree-sitter-go = "0.23.4"
-tree-sitter-gomod = "1.0.1"
 tower-lsp = "0.20.0"
 tokio = { version = "1.35.0", features = ["full"] }
 log = "0.4"
-env_logger = "0.10"
-colored = "2.0"
-chrono = "0.4"
+env_logger = "0.11.6"
+colored = "3.0.0"
+chrono = "0.4.40"
+tree-sitter-toml = "0.20.0"
+
+[workspace]
+resolver = "2" # Use the new dependency resolver to help with conflicts
+
