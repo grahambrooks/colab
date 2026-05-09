@@ -1,0 +1,396 @@
+crates/colab-dsl/src/compiler.rs
+  s_612e6a63d4febb::t_fab0aa9a940359 173-190
+  s_612e6a63d4febb::t_54d2e259a07eb5 57-62
+  s_612e6a63d4febb::t_bea0e72335e5ed 1-3,8-10,14-26,29,34-35,37-39,48,69-73,82-119,122-125,127-137,139-144,195-198,204,217,234-237,253-255
+  s_612e6a63d4febb::t_055dea9c918c5a 4-7,11-13,27-28,30-33,36,40-47,49-56,67-68,74-81,120-121,126,138,145-172,191-194,199-203,205-216,218-233,238-252
+  s_612e6a63d4febb::t_aac81ce2567d49 63-66
+tests/corpus/rust/symbol_rename/input/lib.rs
+  s_612e6a63d4febb::t_db29869e253c63 1-13
+tests/corpus/rust/delete_use/input/lib.rs
+  s_612e6a63d4febb::t_70cf4aa5cf50ab 1-5
+tests/corpus/go/call_replace/expected/main.go
+  s_612e6a63d4febb::t_568687882f07de 1-7
+crates/colab-cli/src/language_server.rs
+  s_612e6a63d4febb::t_a70100012a515b 1-76
+tests/corpus/go/delete_import/input/main.go
+  s_612e6a63d4febb::t_2ec55944458d91 1-11
+tests/corpus/rust/delete_crate/expected/Cargo.toml
+  s_612e6a63d4febb::t_7737b2dd07ed74 1-7
+tests/corpus/python/ensure_import/input/main.py
+  s_612e6a63d4febb::t_389f0d503f6ad6 1-4
+tests/corpus/python/symbol_rename/script
+  s_612e6a63d4febb::t_4ee8fb412a52ba 1-3
+crates/colab-lang-go/src/symbols.rs
+  s_612e6a63d4febb::t_1309d7013c0ff8 1-140
+crates/colab-core/src/backend.rs
+  s_612e6a63d4febb::t_eaca284f180218 1-42,52-53,71-74,84-128
+  s_612e6a63d4febb::t_19f02f912801c5 47-51
+  s_612e6a63d4febb::t_17e8073b7bd3f6 54-70,75-83
+  s_612e6a63d4febb::t_48f5020d1fc2e7 43-46
+crates/colab-cli/tests/cli.rs
+  s_612e6a63d4febb::t_aeea7f26a90e1f 1-278,280-319,386-397
+  s_612e6a63d4febb::t_f9bc6aa9ff60b9 320-385
+  s_612e6a63d4febb::t_731ce4cd83ad0e 279
+tests/corpus/java/package_rename/expected/Hello.java
+  s_612e6a63d4febb::t_b64f833f600954 1-5
+tests/corpus/go/ensure_import_missing/expected/main.go
+  s_612e6a63d4febb::t_ea37a8661a47a1 1-6
+tests/corpus/java/import_rename/input/Hello.java
+  s_612e6a63d4febb::t_9aed375c9721a1 1-11
+tests/corpus/rust/call_replace/input/lib.rs
+  s_612e6a63d4febb::t_783f56b5df8465 1-7
+tests/corpus/rust/delete_use/expected/lib.rs
+  s_612e6a63d4febb::t_929c60a853112e 1-3
+tests/corpus/rust/delete_crate/script
+  s_612e6a63d4febb::t_e2c7aceb955798 1-3
+tests/corpus/go/struct_tag_rename/script
+  s_612e6a63d4febb::t_7052d4903e319e 1-5
+tests/corpus/go/multi_rule_imports/expected/main.go
+  s_612e6a63d4febb::t_da8e96aa0188f5 1-12
+examples/packs/rust/edition-2021-to-2024.codemod
+  s_612e6a63d4febb::t_7c52c5ba0c5d55 1-17
+tests/corpus/rust/use_and_crate_rename/input/src/lib.rs
+  s_612e6a63d4febb::t_2fe3eb57dd5a8e 1-5
+crates/colab-dsl/src/codemod.lalrpop
+  s_612e6a63d4febb::t_75e6cb4160d5c2 2,19,22-23
+  s_612e6a63d4febb::t_0738e30e38a751 1,3-7,18,20-21,24-30,35-44
+  s_612e6a63d4febb::t_d67202a153f944 8-17
+  s_612e6a63d4febb::t_8a6116a77e6082 34
+  s_612e6a63d4febb::t_8ba779af01aa4f 31-33
+tests/corpus/js/specifier_rename/input/main.js
+  s_612e6a63d4febb::t_a0e2b1d938c6e8 1-5
+tests/corpus/go/ensure_import_missing/script
+  s_612e6a63d4febb::t_009f4adc703cf1 1-3
+tests/corpus/python/import_rename/script
+  s_612e6a63d4febb::t_b4224e2bd74986 1-5
+examples/rust/rename_crate/rename.codemod
+  s_612e6a63d4febb::t_f7a61b4b9a0ae5 1-8
+crates/colab-core/src/lib.rs
+  s_612e6a63d4febb::t_bcf85d07a6d2c9 14-16
+  s_612e6a63d4febb::t_b779f775ce4794 17
+  s_612e6a63d4febb::t_94368f2ce67c20 1-2,7,9,11-13,18-19
+  s_612e6a63d4febb::t_64e44a5a0e9ed2 10
+  s_612e6a63d4febb::t_e7bbd34d233d40 3-6,8
+tests/corpus/rust/ensure_use/expected/lib.rs
+  s_612e6a63d4febb::t_67937e2e58d28e 1-2
+examples/packs/java/8-to-21.codemod
+  s_612e6a63d4febb::t_99aabe13a9dedf 1-19
+crates/colab-cli/src/main.rs
+  s_612e6a63d4febb::t_98f3cf197f0fb1 3-7,10-11,27,30
+  s_612e6a63d4febb::t_ddebb1bb319df8 1-2,8-9,12-26,28-29,31-56
+crates/colab-lang-python/Cargo.toml
+  s_612e6a63d4febb::t_ff3d755ca86a25 1-13
+crates/colab-lang-rust/Cargo.toml
+  s_612e6a63d4febb::t_2863e2a71f1854 1-14
+tests/corpus/rust/use_rename/input/src/lib.rs
+  s_612e6a63d4febb::t_9f6b2258e6aa15 1-11
+Cargo.toml
+  s_612e6a63d4febb::t_99ec0e6f2d4426 26-27
+  s_612e6a63d4febb::t_b3c10db48dcfe3 8-9
+  s_612e6a63d4febb::t_3428428532aab8 25
+  s_612e6a63d4febb::t_cdf700004c6edb 7
+  s_612e6a63d4febb::t_08aac64392ec48 37
+  s_612e6a63d4febb::t_00eef8594ac1fb 10
+  s_612e6a63d4febb::t_c47dd5048e4b90 38-39
+  s_612e6a63d4febb::t_c536f8132f4576 1-6,11-14,17-19,21-24,30,41,49-50
+  s_612e6a63d4febb::t_3301b7972a388e 40,42
+  s_612e6a63d4febb::t_6fce3d02b3a760 33-34
+  s_612e6a63d4febb::t_2c4776857055bb 28
+crates/colab-lang-java/src/packages.rs
+  s_612e6a63d4febb::t_e65ceec38aa32b 1-105
+tests/corpus/python/ensure_import/script
+  s_612e6a63d4febb::t_ebe792a966c5a3 1-3
+tests/corpus/java/symbol_rename/script
+  s_612e6a63d4febb::t_a5a876a5db85e9 1-3
+crates/colab-lang-java/src/imports.rs
+  s_612e6a63d4febb::t_7f9ab3eceee7ef 22
+  s_612e6a63d4febb::t_1344aee93e99dd 1-21,23-312
+crates/colab-lang-rust/src/calls.rs
+  s_612e6a63d4febb::t_b2b5b4f97f5e3a 1-150
+crates/colab-cli/build.rs
+  s_612e6a63d4febb::t_faca32bc394888 1-19
+tests/corpus/go/delete_import/expected/main.go
+  s_612e6a63d4febb::t_c08a06e6169322 1-10
+tests/corpus/rust/use_and_crate_rename/expected/Cargo.toml
+  s_612e6a63d4febb::t_3c6208b405ca96 1-7
+tests/corpus/go/repeated_imports/script
+  s_612e6a63d4febb::t_4098357ebe7178 1-5
+tests/corpus/go/call_replace/script
+  s_612e6a63d4febb::t_f46335e4e5e859 1-5
+tests/corpus/rust/delete_use/script
+  s_612e6a63d4febb::t_d5549a56c72021 1-3
+tests/corpus/rust/crate_rename/input/Cargo.toml
+  s_612e6a63d4febb::t_0bb8f6c79d8b8c 1-11
+crates/colab-cli/Cargo.toml
+  s_612e6a63d4febb::t_74ab74c8a85aa5 19
+  s_612e6a63d4febb::t_718afc0b073551 18
+  s_612e6a63d4febb::t_c87456016dcdf8 1-17,23-29
+  s_612e6a63d4febb::t_a68e67d4605047 20-21
+  s_612e6a63d4febb::t_853aa3b94a47e5 22
+  s_612e6a63d4febb::t_e8b72d9af2efe5 30-35
+crates/colab-lang-rust/src/uses.rs
+  s_612e6a63d4febb::t_81590be905c1c7 2,8-12,80,85-110,113-115,123,125,127,130-135,150,152,156,161-162,184,254,262-266,269-277,281-283,289-291,300-301,304,310-312,316-318,324-325,328,333-335,341-343,348-350,356-357
+  s_612e6a63d4febb::t_c161414a9a951a 1,3-7,13-79,81-84,111-112,116-122,124,126,128-129,136-149,151,153-155,157-160,163-183,185-253,255-261,267-268,278-280,284-288,292-299,302-303,305-309,313-315,319-323,326-327,329-332,336-340,344-347,351-355
+tests/corpus/python/import_rename/input/main.py
+  s_612e6a63d4febb::t_0247c78bc992a5 1-9
+crates/colab-lang-rust/src/lib.rs
+  s_612e6a63d4febb::t_fa930eb798d69a 1-2,4,9,11,13-24,40-41,50,62,71-97,100-109,133-136
+  s_612e6a63d4febb::t_d8a5ad4409fdfe 113-122
+  s_612e6a63d4febb::t_7cd57aad0681db 42-49
+  s_612e6a63d4febb::t_f9b6cf7dcd6b26 123-129
+  s_612e6a63d4febb::t_cd41fe26def981 63-70
+  s_612e6a63d4febb::t_0b5282852a8a4f 3,5-8,25-39,51-61,98-99,110-112,130-132
+  s_612e6a63d4febb::t_ec7a13e06eb636 12
+  s_612e6a63d4febb::t_cc07b88da85ede 10
+tests/corpus/rust/use_and_crate_rename/script
+  s_612e6a63d4febb::t_24860d4f329012 1-8
+tests/corpus/js/symbol_rename/script
+  s_612e6a63d4febb::t_3b0d729eb29f76 1-3
+tests/corpus/js/symbol_rename/input/main.js
+  s_612e6a63d4febb::t_c25df33189219f 1-6
+tests/corpus/rust/ensure_use/input/lib.rs
+  s_612e6a63d4febb::t_639b065168ea31 1
+.github/workflows/ci.yml
+  s_612e6a63d4febb::t_e028c19d5823de 1-67
+tests/corpus/go/multi_rule_imports/script
+  s_612e6a63d4febb::t_c3a4270cefd9ab 1-8
+tests/corpus/js/specifier_rename/expected/main.js
+  s_612e6a63d4febb::t_8950f40e9d8a8c 1-5
+crates/colab-lang-go/Cargo.toml
+  s_612e6a63d4febb::t_ba3701d3048050 1-13
+tests/corpus/rust/use_and_crate_rename/input/Cargo.toml
+  s_612e6a63d4febb::t_3fa1e2c12a9a03 1-7
+crates/colab-core/src/error.rs
+  s_612e6a63d4febb::t_b6a0fede42a8f0 1-36,51-84
+  s_612e6a63d4febb::t_4bfc9f91485787 37-50
+crates/colab-lang-js/src/symbols.rs
+  s_612e6a63d4febb::t_575ffafc0b4d22 1-118
+tests/corpus/rust/crate_rename/script
+  s_612e6a63d4febb::t_7753319fd4d522 1-5
+tests/corpus/go/no_match/script
+  s_612e6a63d4febb::t_d01eb368b3a843 1-5
+examples/packs/README.md
+  s_612e6a63d4febb::t_ff8a44703172f3 1-29
+examples/rust/rename_crate/README.md
+  s_612e6a63d4febb::t_901f9a7f42632c 1-26
+tests/corpus/go/ensure_import_missing/input/main.go
+  s_612e6a63d4febb::t_d2dc73d06904f7 1-4
+crates/colab-lang-js/Cargo.toml
+  s_612e6a63d4febb::t_ada9b82c985c7c 1-13
+tests/corpus/rust/use_rename/expected/src/lib.rs
+  s_612e6a63d4febb::t_479be5937eb488 1-11
+crates/colab-lang-rust/src/deps.rs
+  s_612e6a63d4febb::t_e48f6fa8ef098e 173
+  s_612e6a63d4febb::t_53117f2c60e576 371-422
+  s_612e6a63d4febb::t_675990fcbb010d 46-67
+  s_612e6a63d4febb::t_2a05b48d422df6 118,121,124,278,285-288,295,302,313-319,321-322
+  s_612e6a63d4febb::t_21f1fa9252704d 1-4,14-18,20-45,68-71,73,78-79,81-83,111,138-139,270-277,279-284,289-294,296-301,303-308,323-358,368-370,423-433
+  s_612e6a63d4febb::t_f6bec62289c1ef 157-172,174-228
+  s_612e6a63d4febb::t_cfd896f5150bf7 5-13,19,72,74-77,80,84-110,112-117,119-120,122-123,125-137,140-156,229-269,309-312,320,359-367
+crates/colab-cli/src/cli.rs
+  s_612e6a63d4febb::t_b0440cf4807d71 1-2,7-8,10-14,17-18,21,41-50,65-77,86-103,112,131,134,142-143,150,153-158,165,173-175,190-192,198-201,204,209-212,214-215,301,304-314,368
+  s_612e6a63d4febb::t_ef9b0e64e24daa 16
+  s_612e6a63d4febb::t_df1ef15943249e 38
+  s_612e6a63d4febb::t_1bc20d485c200a 36-37
+  s_612e6a63d4febb::t_9728e86b5c47e2 35
+  s_612e6a63d4febb::t_191ffebb194c17 3-6,9,15,19-20,23-28,51-64,78-85,104-111,113-130,132-133,135-141,144-149,151-152,159-164,166-172,176-189,193-197,205-208,213,216-300,302-303,315-367
+  s_612e6a63d4febb::t_e5165d91ebde4d 202-203
+  s_612e6a63d4febb::t_e74d5f2b2174f2 22,29-34,39-40
+tests/corpus/rust/use_rename/script
+  s_612e6a63d4febb::t_9f98eedf1eb057 1-5
+tests/corpus/rust/delete_crate/input/Cargo.toml
+  s_612e6a63d4febb::t_f83a17638e2eb2 1-8
+tests/corpus/go/delete_import/script
+  s_612e6a63d4febb::t_ba51b721f5a6bb 1-3
+crates/colab-lang-go/src/calls.rs
+  s_612e6a63d4febb::t_5589140022506a 1-178
+tests/corpus/go/no_match/input/main.go
+  s_612e6a63d4febb::t_00577650b0df84 1-9
+crates/colab-lang-js/src/imports.rs
+  s_612e6a63d4febb::t_823dab7db72f05 1-17,19-269
+  s_612e6a63d4febb::t_3e9c043606fcbb 18
+crates/colab-lang-rust/src/symbols.rs
+  s_612e6a63d4febb::t_8fc390682f7943 1-131
+tests/corpus/go/symbol_rename/expected/main.go
+  s_612e6a63d4febb::t_31366c589602e1 1-18
+tests/corpus/go/single_import/expected/main.go
+  s_612e6a63d4febb::t_c2992f80488538 5
+  s_612e6a63d4febb::t_36ed90290b281b 1-4,6-11
+tests/corpus/java/import_rename/script
+  s_612e6a63d4febb::t_74da3683d530b3 1-5
+tests/corpus/js/symbol_rename/expected/main.js
+  s_612e6a63d4febb::t_16611b680cab08 1-6
+crates/colab-core/Cargo.toml
+  s_612e6a63d4febb::t_4408a124bd6533 1-11
+crates/colab-lang-java/src/lib.rs
+  s_612e6a63d4febb::t_b7357491ec3bd9 1-10,12-46,55-97,108-114
+  s_612e6a63d4febb::t_b875deaec8fd89 98-107
+  s_612e6a63d4febb::t_bda59de191d8b6 47-54
+  s_612e6a63d4febb::t_adbd140be15459 11
+examples/rust/rename_crate/Cargo.toml
+  s_612e6a63d4febb::t_9fceabcc016b03 1-8
+tests/corpus/go/symbol_rename/script
+  s_612e6a63d4febb::t_ee397bdcdaebd2 1-3
+crates/colab-lang-go/src/struct_tags.rs
+  s_612e6a63d4febb::t_c615a58c0ade60 1-205
+crates/colab-lang-java/Cargo.toml
+  s_612e6a63d4febb::t_d5c59637efbed0 1-13
+crates/colab-lang-python/src/imports.rs
+  s_612e6a63d4febb::t_b162d7a625fe77 1-433
+tests/corpus/java/package_rename/input/Hello.java
+  s_612e6a63d4febb::t_11804fb02122c2 1-5
+tests/corpus/java/symbol_rename/input/Hello.java
+  s_612e6a63d4febb::t_03a10818ea17b4 1-13
+tests/corpus/go/struct_tag_rename/expected/types.go
+  s_612e6a63d4febb::t_f7db8081214abe 1-12
+tests/corpus/java/import_rename/expected/Hello.java
+  s_612e6a63d4febb::t_5776ce0b9177a3 1-11
+tests/corpus/go/struct_tag_rename/input/types.go
+  s_612e6a63d4febb::t_457a5b709a34f9 1-12
+crates/colab-lang-java/src/symbols.rs
+  s_612e6a63d4febb::t_289721313da5d6 1-112
+tests/corpus/js/specifier_rename/script
+  s_612e6a63d4febb::t_da46bb4aaaa4e4 1-5
+crates/colab-dsl/src/ast.rs
+  s_612e6a63d4febb::t_9c9274302dd3d9 41-49
+  s_612e6a63d4febb::t_272d662a2530f5 35-40
+  s_612e6a63d4febb::t_74d5f33345f528 7,11,14-15,17
+  s_612e6a63d4febb::t_92e735cc516cd6 1-6,8-10,12-13,16,18-34,50
+crates/colab-core/src/template.rs
+  s_612e6a63d4febb::t_4e5e24dd85b666 1-112
+crates/colab-core/src/walker.rs
+  s_612e6a63d4febb::t_cf1360fd9f1a70 1,3-9,12,17-44,46,49,60-71,73,75,79-106,109-113,115,117-179,182-197
+  s_612e6a63d4febb::t_c49af7e2592b63 2,10-11,13-16,45,47-48,50-59,72,74,76-78,107-108,114,116,180-181,198
+tests/corpus/rust/crate_rename/expected/Cargo.toml
+  s_612e6a63d4febb::t_b0683d0f601930 1-11
+tests/corpus/rust/call_replace/expected/lib.rs
+  s_612e6a63d4febb::t_733a1fc7bb8b49 1-7
+crates/colab-dsl/tests/corpus.rs
+  s_612e6a63d4febb::t_f5b506078d25aa 19,21-24,29-30
+  s_612e6a63d4febb::t_fedd815f754cb0 26-27
+  s_612e6a63d4febb::t_4fb12d1fba4d82 28
+  s_612e6a63d4febb::t_320ff80bd4c817 105
+  s_612e6a63d4febb::t_a9bf917887aea9 1-18,20,31-104,106-193
+  s_612e6a63d4febb::t_3ede22652cf5fd 25
+crates/colab-lang-go/src/lib.rs
+  s_612e6a63d4febb::t_d1116782af42c1 11-13,63,67-74
+  s_612e6a63d4febb::t_a1accf02abd535 6
+  s_612e6a63d4febb::t_6d255778af5b0a 9
+  s_612e6a63d4febb::t_ff32edd51ffaa8 95-104,122-124
+  s_612e6a63d4febb::t_1b31d0e61fdc9c 19-41,43-45,62
+  s_612e6a63d4febb::t_73cc33742e1f5f 1,3-4,10,14-18,64-66,75-88,125-128
+  s_612e6a63d4febb::t_79976db245b4a6 2,5,7
+  s_612e6a63d4febb::t_b4eeb41a03365c 46-53
+  s_612e6a63d4febb::t_55b717d63c6aa2 54-61
+  s_612e6a63d4febb::t_06aa3402f37b1c 42,89-94
+  s_612e6a63d4febb::t_605798f35f938c 8
+  s_612e6a63d4febb::t_83ff8cb8509406 105-114
+  s_612e6a63d4febb::t_1bc32de1383fd3 115-121
+tests/corpus/go/multi_rule_imports/input/main.go
+  s_612e6a63d4febb::t_bc92de71e0e1fb 1-12
+examples/rust/rename_crate/src/main.rs
+  s_612e6a63d4febb::t_333803a202dc77 1-6
+tests/corpus/rust/ensure_use/script
+  s_612e6a63d4febb::t_9e2cc040dbae3e 1-3
+tests/corpus/rust/call_replace/script
+  s_612e6a63d4febb::t_8cdb26d3a6d2e4 1-5
+tests/corpus/README.md
+  s_612e6a63d4febb::t_017e3c1d24aeb6 1-18
+crates/colab-dsl/src/model.rs
+  s_612e6a63d4febb::t_3c8591444deca1 1-2,7-10,12-15,20-21,32-33,35,40-42,44,49,51,53-57,59-61,65,67-68
+  s_612e6a63d4febb::t_023dfc084646d6 3-6,11,16-19,22-31,34,36-39,43,45-48,50,52,58,62-64,66
+crates/colab-cli/src/discover.rs
+  s_612e6a63d4febb::t_caaf5422cd21af 92-93
+  s_612e6a63d4febb::t_745fcc7f730719 1-91,95-139
+  s_612e6a63d4febb::t_1dbeb5a96945ef 94
+tests/corpus/python/ensure_import/expected/main.py
+  s_612e6a63d4febb::t_498b525fa5b60b 1-3,5
+  s_612e6a63d4febb::t_c823a27df5b444 4
+tests/corpus/rust/symbol_rename/expected/lib.rs
+  s_612e6a63d4febb::t_42ffbcf1692480 1-13
+tests/corpus/java/symbol_rename/expected/Hello.java
+  s_612e6a63d4febb::t_70d056c9670855 1-13
+tests/corpus/go/no_match/expected/main.go
+  s_612e6a63d4febb::t_367aabd0e6b8c3 1-9
+tests/corpus/python/symbol_rename/expected/main.py
+  s_612e6a63d4febb::t_c41dbb21d15857 1-6
+crates/colab-dsl/Cargo.toml
+  s_612e6a63d4febb::t_32e28b286a6d2e 19
+  s_612e6a63d4febb::t_d001b05b83916e 16,22
+  s_612e6a63d4febb::t_a48dce52403fa2 1-13,23-25
+  s_612e6a63d4febb::t_291141bc5c9fbc 20-21
+  s_612e6a63d4febb::t_49fcccf53e5521 14-15,17-18
+crates/colab-lang-go/src/imports.rs
+  s_612e6a63d4febb::t_1162ddaaa653ab 1,3-5,11,13-59,84,86,88-89,93-104,106,108,110-111,118-120,122-130,134-137,139-142,144-150,152-165,167-173,175-177,179-183,185-187,189,191-193,196-199,201-208,210-215,218-237,239-246,248-250,252,255-259,264,270,273-292,294-329,333-337
+  s_612e6a63d4febb::t_ffff8b7b5d9a47 263,265-269,271-272,293,330-332
+  s_612e6a63d4febb::t_ae4208be9f28b1 7-10,12,60-82,260-262
+  s_612e6a63d4febb::t_0bb6f80590f0ec 2,6,83,85,87,90-92,105,107,109,112-117,121,131-133,138,143,151,166,174,178,184,188,190,194-195,200,209,216-217,238,247,251,253-254,338-339
+tests/corpus/python/import_rename/expected/main.py
+  s_612e6a63d4febb::t_089d9beccd4642 1-9
+tests/corpus/go/repeated_imports/input/main.go
+  s_612e6a63d4febb::t_81369e42fa108a 1-12
+crates/colab-cli/src/format.rs
+  s_612e6a63d4febb::t_86785bcc051cb0 1-174
+tests/corpus/rust/use_and_crate_rename/expected/src/lib.rs
+  s_612e6a63d4febb::t_36b5d787e8112e 1-5
+tests/corpus/python/symbol_rename/input/main.py
+  s_612e6a63d4febb::t_2ff7c6071e6ad9 1-6
+tests/corpus/go/call_replace/input/main.go
+  s_612e6a63d4febb::t_4c3c8660702f15 1-7
+tests/corpus/go/single_import/script
+  s_612e6a63d4febb::t_5a1ce7c126945b 1-5
+crates/colab-dsl/build.rs
+  s_612e6a63d4febb::t_804d2283cf2489 1-3
+tests/corpus/go/symbol_rename/input/main.go
+  s_612e6a63d4febb::t_cb9e6aed8e2494 1-18
+crates/colab-lang-python/src/lib.rs
+  s_612e6a63d4febb::t_5ce2f2b1ebeca0 78-87
+  s_612e6a63d4febb::t_8b5de06b659f9c 9
+  s_612e6a63d4febb::t_a8d86a42cc5223 18-40,42-45
+  s_612e6a63d4febb::t_42c93eaf1ba8dd 1-8,10-17,41,46-77,88-94
+tests/corpus/go/single_import/input/main.go
+  s_612e6a63d4febb::t_0a940f1b92f2ce 1-11
+crates/colab-core/src/transformer.rs
+  s_612e6a63d4febb::t_c18b2914089de3 1-23
+tests/corpus/go/repeated_imports/expected/main.go
+  s_612e6a63d4febb::t_f47d4e5f7c0306 1-12
+tests/corpus/rust/symbol_rename/script
+  s_612e6a63d4febb::t_2ac8e95bcb47de 1-3
+tests/corpus/java/package_rename/script
+  s_612e6a63d4febb::t_6a49f98cbc0d7f 1-5
+crates/colab-lang-js/src/lib.rs
+  s_612e6a63d4febb::t_852e815a6883af 12
+  s_612e6a63d4febb::t_d95bbf046c0855 21-39,41-44
+  s_612e6a63d4febb::t_2e21698e2e1cad 1-11,13-20,40,45-73,84-90
+  s_612e6a63d4febb::t_0ba0c2cae490a0 74-83
+crates/colab-lang-python/src/symbols.rs
+  s_612e6a63d4febb::t_469d15a9fdeb90 1-108
+crates/colab-dsl/src/lib.rs
+  s_612e6a63d4febb::t_1807aab3fc6f5b 3-7,14,16
+  s_612e6a63d4febb::t_43608514b519dc 1-2,8-13,15,17-18
+CLAUDE.md
+  s_612e6a63d4febb::t_a855517d77dc25 51
+  s_612e6a63d4febb::t_8877d7b4da0873 72
+  s_612e6a63d4febb::t_f3efd2b3a94f02 16-23,27-38
+  s_612e6a63d4febb::t_fe0cc9320931ca 46-47,50
+  s_612e6a63d4febb::t_f46cd0ba2f2bf6 8-15,24,40-45,52-53
+  s_612e6a63d4febb::t_4646a486602ab0 48-49
+  s_612e6a63d4febb::t_4e91427c41b9cf 73
+  s_612e6a63d4febb::t_493256b3a2777a 60-63,69-71,74-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "4d6ac659ff951f9654fe3630e5c4e8768c510ff1",
+  "prompts": {},
+  "sessions": {
+    "s_612e6a63d4febb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "977f5a17-33ca-40a4-82f9-8bac3a1b07ef",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
