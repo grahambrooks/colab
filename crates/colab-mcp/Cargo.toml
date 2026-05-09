@@ -1,0 +1,23 @@
+[package]
+name = "colab-mcp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Model Context Protocol server for colab. Wraps preview / apply / schema / lint_script as MCP tools so an agent in Claude Code (or any MCP-aware host) can call them directly."
+
+[dependencies]
+colab-core = { workspace = true }
+colab-dsl = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+similar = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+# Tests exercise compile() and the walker end-to-end; they need real
+# backends. Production code in this crate must NOT depend on any
+# colab-lang-* crate.
+colab-lang-go = { workspace = true }
+colab-lang-rust = { workspace = true }

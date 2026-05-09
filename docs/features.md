@@ -244,8 +244,8 @@ rewriting; type-aware operations are out of scope.
 ## What `colab` does *not* do
 
 These are deliberate non-goals. They live in
-`DEVELOPMENT_PLAN.md` under "Non-goals" and conflict with colab's
-syntactic-rewriter premise.
+[`development-plan.md`](development-plan.md) under "Non-goals" and
+conflict with colab's syntactic-rewriter premise.
 
 - **Whole-program semantic analysis.** No type inference, no
   cross-file binding resolution. If your refactor needs to "rename
@@ -269,7 +269,7 @@ syntactic-rewriter premise.
 
 - [`docs/dsl.md`](./dsl.md) — language reference, action semantics, examples.
 - [`docs/cli.md`](./cli.md) — flags, exit codes, format selection.
-- [`ARCHITECTURE.md`](../ARCHITECTURE.md) — workspace layout and how
+- [`architecture.md`](architecture.md) — workspace layout and how
   to add a new backend or action.
-- [`DEVELOPMENT_PLAN.md`](../DEVELOPMENT_PLAN.md) — roadmap and
+- [`development-plan.md`](development-plan.md) — roadmap and
   non-goals.

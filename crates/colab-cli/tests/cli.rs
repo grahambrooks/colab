@@ -391,6 +391,96 @@ fn ensure_action_is_idempotent_through_cli() {
 }
 
 #[test]
+fn mcp_server_responds_to_tools_list() {
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    let mut child = colab()
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn colab mcp");
+
+    let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
+    let header = format!("Content-Length: {}\r\n\r\n", body.len());
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin.write_all(header.as_bytes()).unwrap();
+        stdin.write_all(body).unwrap();
+        stdin.flush().unwrap();
+    }
+    // Closing stdin signals EOF, which makes the server exit after
+    // handling the queued request.
+    drop(child.stdin.take());
+
+    // Wait for the child to exit (with a generous timeout).
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+
+    // Parse the framed response.
+    let mut content_length: Option<usize> = None;
+    loop {
+        let mut line = String::new();
+        let n = reader.read_line(&mut line).unwrap();
+        assert!(n > 0, "EOF before headers");
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some(value) = trimmed.strip_prefix("Content-Length:") {
+            content_length = value.trim().parse().ok();
+        }
+    }
+    let len = content_length.expect("Content-Length header");
+    let mut buf = vec![0u8; len];
+    reader.read_exact(&mut buf).unwrap();
+    let _ = child.wait_timeout_or_kill(Duration::from_secs(5));
+
+    let response: Value = serde_json::from_slice(&buf).unwrap();
+    assert_eq!(response["id"], 1);
+    let names: Vec<&str> = response["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"colab.schema"));
+    assert!(names.contains(&"colab.lint_script"));
+    assert!(names.contains(&"colab.preview"));
+    assert!(names.contains(&"colab.apply"));
+}
+
+/// Tiny helper: wait for child with a timeout (kills on expiry).
+trait WaitTimeoutExt {
+    fn wait_timeout_or_kill(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> std::io::Result<()>;
+}
+
+impl WaitTimeoutExt for std::process::Child {
+    fn wait_timeout_or_kill(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> std::io::Result<()> {
+        let start = std::time::Instant::now();
+        loop {
+            match self.try_wait()? {
+                Some(_) => return Ok(()),
+                None if start.elapsed() >= timeout => {
+                    let _ = self.kill();
+                    return Ok(());
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(50)),
+            }
+        }
+    }
+}
+
+#[test]
 fn missing_script_exits_4() {
     let output = colab()
         .args([

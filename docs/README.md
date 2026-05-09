@@ -8,8 +8,8 @@ high-level overview, start at the project [`README.md`](../README.md).
 | [`dsl.md`](dsl.md)                                  | The codemod script language. Grammar, actions (`replace`/`delete`/`ensure`/`replace_call`), template placeholders, idempotency rules, worked examples. |
 | [`features.md`](features.md)                        | What every backend can do. Capability matrix, per-namespace caveats, file-extension routing, explicit non-goals. |
 | [`cli.md`](cli.md)                                  | Subcommands, flags, exit codes, `--format` shapes, `--stdin` pipeline, environment variables. |
-| [`architecture.md`](../ARCHITECTURE.md) | Workspace layout, runtime data flow, extension steps for new backends and actions. |
-| [`development-plan.md`](../DEVELOPMENT_PLAN.md)     | Roadmap and milestones. Captures non-goals and risks. |
+| [`architecture.md`](architecture.md)                | Workspace layout, runtime data flow, extension steps for new backends and actions. |
+| [`development-plan.md`](development-plan.md)        | Roadmap and milestones. Captures non-goals and risks. |
 
 The same capability data is also available at runtime:
 

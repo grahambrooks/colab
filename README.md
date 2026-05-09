@@ -45,6 +45,8 @@ At runtime, ask the binary directly:
 colab schema           # full JSON capability schema
 colab list-languages   # backends registered in this build
 colab list-rules go    # modules and actions for one backend
+colab server           # LSP: diagnostics + completion for .codemod files
+colab mcp              # MCP server: preview / apply / schema / lint_script tools
 ```
 
 ## Quick start
@@ -116,7 +118,7 @@ script text  →  parse (LALRPOP)            →  raw AST
 The same `Operation` trait is implemented by every backend; the CLI
 walks the filesystem, the visitor decides whether to write. Adding
 a new language means a new `colab-lang-*` crate and one line in the
-binary's default registry. See [`ARCHITECTURE.md`](ARCHITECTURE.md)
+binary's default registry. See [`docs/architecture.md`](docs/architecture.md)
 for the workspace layout and an extension walk-through.
 
 ## Documentation
@@ -126,10 +128,10 @@ for the workspace layout and an extension walk-through.
   with caveats.
 - [`docs/cli.md`](docs/cli.md) — flags, formats, exit codes,
   pipelines.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — workspace layout and how to
-  extend.
-- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — roadmap and
-  non-goals.
+- [`docs/architecture.md`](docs/architecture.md) — workspace layout
+  and how to extend.
+- [`docs/development-plan.md`](docs/development-plan.md) — roadmap
+  and non-goals.
 
 ## Development
 
@@ -152,7 +154,8 @@ crates/
   colab-lang-js/      # JS/TS backend
   colab-lang-python/  # Python backend
   colab-lang-rust/    # Rust backend
-  colab-cli/          # The `colab` binary; LSP stub
+  colab-mcp/          # MCP server (preview / apply / schema / lint_script)
+  colab-cli/          # The `colab` binary; LSP server; `colab mcp` launcher
 ```
 
 Test corpus: `tests/corpus/<lang>/<case>/{script,input/,expected/}`.

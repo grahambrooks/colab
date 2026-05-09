@@ -8,6 +8,7 @@ members = [
     "crates/colab-lang-js",
     "crates/colab-lang-python",
     "crates/colab-lang-rust",
+    "crates/colab-mcp",
     "crates/colab-cli",
 ]
 
@@ -26,6 +27,7 @@ colab-lang-java = { path = "crates/colab-lang-java" }
 colab-lang-js = { path = "crates/colab-lang-js" }
 colab-lang-python = { path = "crates/colab-lang-python" }
 colab-lang-rust = { path = "crates/colab-lang-rust" }
+colab-mcp = { path = "crates/colab-mcp" }
 
 # Third-party deps shared across crates. Crates pick what they need.
 clap = { version = "4.5.31", features = ["derive"] }

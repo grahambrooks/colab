@@ -270,4 +270,4 @@ The DSL is intentionally small. Capabilities being considered:
 - An `include "other.codemod"` directive so library packs compose.
 - A scope-aware `<lang>::symbol` mode that respects shadowing.
 
-Track these in `DEVELOPMENT_PLAN.md` and the project issue tracker.
+Track these in [`development-plan.md`](development-plan.md) and the project issue tracker.

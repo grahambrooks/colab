@@ -131,9 +131,16 @@ Output:
 
 ### `colab server`
 
-Start the LSP stub on stdio. Today only logs lifecycle events; the
-plan is to grow it into `.codemod` script diagnostics + namespace
-completion (see `DEVELOPMENT_PLAN.md` M6).
+Start the colab Language Server on stdio. Active features:
+
+- **Diagnostics for `.codemod` files.** Every open / change runs
+  `colab_dsl::compile` against the binary's default backend
+  registry; parse errors and unsupported-namespace errors surface as
+  LSP diagnostics with the matching exit code (2 / 3) embedded in
+  the diagnostic `code` field.
+- **Completion** for namespaces, modules, and actions. Sourced from
+  the same registry as `colab list-rules`, so anything new the
+  binary advertises is offered immediately.
 
 ```sh
 colab server
@@ -141,6 +148,29 @@ colab server
 
 `--port <N>` is reserved for a future TCP transport; currently
 informational.
+
+### `colab mcp`
+
+Start the Model Context Protocol server on stdio. Wraps the same
+operations as the CLI as four MCP tools so an agent in Claude Code
+(or any MCP-aware host) can call them directly:
+
+| Tool | Inputs | Output |
+| ---- | ------ | ------ |
+| `colab.schema` | — | Full JSON capability schema (matches `colab schema`). |
+| `colab.lint_script` | `script` | `{ok: true, name, rule_count}` or `{ok: false, error, exit_code}`. |
+| `colab.preview` | `script`, `paths[]` | Per-file `{path, changed, bytes_before, bytes_after, diff?}`. Disk untouched. |
+| `colab.apply` | `script`, `paths[]` | Same shape as preview, but writes changes back. |
+
+Wire format: JSON-RPC 2.0 over stdio with LSP-style
+`Content-Length` framing. Methods supported: `initialize`,
+`initialized` (notification), `tools/list`, `tools/call`. Exiting
+the client (closing stdin or sending an `exit` notification) shuts
+the server down cleanly.
+
+```sh
+colab mcp
+```
 
 ## Exit codes
 

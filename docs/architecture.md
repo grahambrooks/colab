@@ -25,8 +25,15 @@ crates/
   colab-lang-js/      # JS/TS backend (tree-sitter-javascript).
   colab-lang-python/  # Python backend (tree-sitter-python).
   colab-lang-rust/    # Rust backend (tree-sitter-rust + toml_edit).
+  colab-mcp/          # Model Context Protocol server (preview /
+                      # apply / schema / lint_script as MCP tools).
+                      # JSON-RPC 2.0 over stdio with Content-Length
+                      # framing. Depends only on colab-core +
+                      # colab-dsl; like colab-dsl, must not pull in
+                      # any colab-lang-* crate at runtime.
   colab-cli/          # `colab` binary; assembles the default
-                      # BackendRegistry, owns the LSP stub.
+                      # BackendRegistry, owns the LSP server,
+                      # launches the MCP server via `colab mcp`.
 tests/corpus/         # Per-language end-to-end fixtures.
 examples/             # Runnable scripts and migration packs.
 docs/                 # User-facing reference.

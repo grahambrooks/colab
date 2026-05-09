@@ -20,6 +20,7 @@ colab-lang-java = { workspace = true }
 colab-lang-js = { workspace = true }
 colab-lang-python = { workspace = true }
 colab-lang-rust = { workspace = true }
+colab-mcp = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }

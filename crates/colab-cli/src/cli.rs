@@ -52,8 +52,10 @@ It reads a small DSL describing one or more refactoring rules, parses
 target source files with tree-sitter, and rewrites them. Use `colab
 refactor` to run a script, `colab schema` / `colab list-languages` /
 `colab list-rules <lang>` for capability discovery, `colab explain
---script foo.codemod` to inspect a parsed script as JSON, or `colab
-server` to start the LSP stub.
+--script foo.codemod` to inspect a parsed script as JSON, `colab
+server` for the LSP, or `colab mcp` for the Model Context Protocol
+server (so MCP-aware hosts can call preview / apply / schema /
+lint_script as tools).
 
 Exit codes:
    0   Success (no changes needed, or --write succeeded).
@@ -75,6 +77,8 @@ enum Commands {
     Refactor(RefactorArgs),
     /// Start the colab language server over stdio.
     Server(ServerArgs),
+    /// Start the colab MCP server (Model Context Protocol) over stdio.
+    Mcp,
     /// Print the JSON capability schema for every registered backend.
     Schema,
     /// Parse a script and print its IR as JSON without running it.
@@ -155,7 +159,15 @@ pub async fn run() -> Result<i32> {
         Some(Commands::Refactor(refactor_args)) => run_refactor(refactor_args),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);
-            language_server::run().await;
+            language_server::run(default_backends()).await;
+            Ok(0)
+        }
+        Some(Commands::Mcp) => {
+            info!("Starting MCP server on stdio");
+            colab_mcp::run(default_backends()).map_err(|e| Error::Io {
+                path: None,
+                source: e,
+            })?;
             Ok(0)
         }
         Some(Commands::Schema) => print_json(&discover::schema(&default_backends())),

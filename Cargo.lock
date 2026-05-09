@@ -264,6 +264,7 @@ dependencies = [
  "colab-lang-js",
  "colab-lang-python",
  "colab-lang-rust",
+ "colab-mcp",
  "colored",
  "env_logger",
  "log",
@@ -339,6 +340,20 @@ dependencies = [
  "toml_edit",
  "tree-sitter",
  "tree-sitter-rust",
+]
+
+[[package]]
+name = "colab-mcp"
+version = "0.1.0"
+dependencies = [
+ "colab-core",
+ "colab-dsl",
+ "colab-lang-go",
+ "colab-lang-rust",
+ "log",
+ "serde",
+ "serde_json",
+ "similar",
 ]
 
 [[package]]
