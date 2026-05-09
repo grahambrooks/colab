@@ -1,0 +1,154 @@
+crates/colab-lang-js/src/lib.rs
+  s_612e6a63d4febb::t_9930a14534dd33 14-15
+  s_612e6a63d4febb::t_49bc280f0ba14b 19-39
+crates/colab-dsl/src/ast.rs
+  s_612e6a63d4febb::t_719641c9bfe607 7-11,15-22
+crates/colab-cli/Cargo.toml
+  s_612e6a63d4febb::t_7c2303a471db63 37-41
+tests/corpus/go/include_directive/script
+  s_612e6a63d4febb::t_572b0c0be9c687 1-7
+crates/colab-cli/benches/walker.rs
+  s_612e6a63d4febb::t_7805cbe39a70d9 1-67,73-109
+  s_612e6a63d4febb::t_0e97b13117a2f7 68-72
+crates/colab-lang-java/src/packages.rs
+  s_612e6a63d4febb::t_4b092618a1e31f 34
+Cargo.toml
+  s_612e6a63d4febb::t_d3679e5cf789cb 37-38
+  s_612e6a63d4febb::t_da546c58b1b6c6 39-40
+crates/colab-lang-python/src/symbols.rs
+  s_612e6a63d4febb::t_9843a2d995c224 11
+  s_612e6a63d4febb::t_6c7d7d8134e8c1 36
+crates/colab-lang-rust/src/calls.rs
+  s_612e6a63d4febb::t_f1bad95df1a9de 14
+  s_612e6a63d4febb::t_c4c660812df5fb 43
+crates/colab-core/src/walker.rs
+  s_612e6a63d4febb::t_8496441e224aa9 82-83,95-99,109
+  s_612e6a63d4febb::t_715342ee379eb1 127-138,146,169,171-181,192,211,220-221,223,229-231,233-234,236,239,246-252,258-265
+  s_612e6a63d4febb::t_249f16677ec31c 35,46-56
+  s_612e6a63d4febb::t_854f53db0d70a9 118
+  s_612e6a63d4febb::t_ae87ea8d0dffcc 19-26,36,41-45,57
+  s_612e6a63d4febb::t_a1bf24c8f587d9 226-228,232,240-245
+  s_612e6a63d4febb::t_736fd729897e59 504-544
+  s_612e6a63d4febb::t_f3ec2561ff9119 3-7,9-18,31-34,37,72-73,79-81,84-94,100-108,110-113,115,121-126,139-144,149-161,165-167,182-191,193-210,212-219,266-299,305,308-310,320-321,325-326,375,377,381,389-398,400,406,428-503,545-554
+  s_612e6a63d4febb::t_8aac23b9465ce2 168,170
+  s_612e6a63d4febb::t_36cd321a4f9002 322
+crates/colab-lang-js/src/symbols.rs
+  s_612e6a63d4febb::t_705860deaff305 46
+  s_612e6a63d4febb::t_548396b5f68db3 13
+crates/colab-dsl/src/codemod.lalrpop
+  s_612e6a63d4febb::t_ab3ca4f9396784 2,20-25
+crates/colab-lang-rust/src/symbols.rs
+  s_612e6a63d4febb::t_442eb436dd2082 16
+  s_612e6a63d4febb::t_b1b9b81024db8d 48
+crates/colab-cli/src/cli.rs
+  s_612e6a63d4febb::t_75172af1724e6c 229-231
+  s_612e6a63d4febb::t_a96d25fcc5d6bd 175-180
+  s_612e6a63d4febb::t_87647b5cdc06d4 349-353,355-374,376-384
+  s_612e6a63d4febb::t_91c1aef1d5c7a1 315-326
+  s_612e6a63d4febb::t_d2c008ab631e50 375
+  s_612e6a63d4febb::t_5b00f7b448cac7 335
+  s_612e6a63d4febb::t_6e3adf8d26399d 15
+  s_612e6a63d4febb::t_4af5c1d31ae54f 252-314
+  s_612e6a63d4febb::t_9628c6d44c7da9 90-104
+  s_612e6a63d4febb::t_dffab7b9efc932 150-174
+crates/colab-dsl/src/lib.rs
+  s_612e6a63d4febb::t_8fe46782fdb446 13
+crates/colab-cli/src/discover.rs
+  s_612e6a63d4febb::t_37c020c16fab6b 85-86,88-106,109
+tests/corpus/go/include_directive/expected/main.go
+  s_612e6a63d4febb::t_e9018be5b368e9 1-11
+docs/dsl.md
+  s_612e6a63d4febb::t_653c5f27cf2487 112-135
+crates/colab-core/src/lib.rs
+  s_612e6a63d4febb::t_ebfc7e951788fa 20
+crates/colab-lang-go/src/imports.rs
+  s_612e6a63d4febb::t_2c17e8baf83ace 11
+  s_612e6a63d4febb::t_77f13813cb177e 80,140,198
+docs/development-plan.md
+  s_612e6a63d4febb::t_db3263a26a3a1c 25-88
+  s_612e6a63d4febb::t_3b370fea91ac39 296-446
+  s_612e6a63d4febb::t_205b96896db11e 553,555-579
+  s_612e6a63d4febb::t_c124d8509406bb 643-648
+  s_612e6a63d4febb::t_73f5509ac8a342 451,456,461,466,468,470-472,474,477,479-492,494-497,508,552,554,580-617
+  s_612e6a63d4febb::t_c8ceb9aef3e52e 9-10,18-21
+  s_612e6a63d4febb::t_bf6e538a74bafd 525-551
+  s_612e6a63d4febb::t_ce68ffbc3e954b 498-507
+  s_612e6a63d4febb::t_2a6fc78f1996f9 509-524
+crates/colab-lang-go/src/lib.rs
+  s_612e6a63d4febb::t_71ac3a0419703d 11-12,16-35
+crates/colab-lang-python/src/imports.rs
+  s_612e6a63d4febb::t_a3697ba2cd45ac 15
+  s_612e6a63d4febb::t_68e07057ab7a10 135,184,238
+crates/colab-core/Cargo.toml
+  s_612e6a63d4febb::t_7b679da2c764e4 12-13
+  s_612e6a63d4febb::t_aeaed22445ce28 14-15
+crates/colab-lang-rust/src/lib.rs
+  s_612e6a63d4febb::t_c41de7764386ef 15-16,20-38
+crates/colab-lang-go/src/struct_tags.rs
+  s_612e6a63d4febb::t_abba5b67b20481 55
+  s_612e6a63d4febb::t_a629a36d553de2 17
+crates/colab-lang-java/src/lib.rs
+  s_612e6a63d4febb::t_ff6fe7367088d7 13-14,18-36
+crates/colab-dsl/src/compiler.rs
+  s_612e6a63d4febb::t_08cc30d8af4945 3-6,10-13,16,33-36,38-54,56-67,76-123,155-165,241-244,264-280,298,305,368-438
+crates/colab-cli/src/packs.rs
+  s_612e6a63d4febb::t_41195731507ef0 1-130
+crates/colab-lang-rust/src/uses.rs
+  s_612e6a63d4febb::t_ef97a6e5b513c5 103,158,217
+  s_612e6a63d4febb::t_2b0cd87b625619 13
+crates/colab-dsl/tests/corpus.rs
+  s_612e6a63d4febb::t_d0aeafda4edb84 111-112
+  s_612e6a63d4febb::t_41863db0733c2e 20
+docs/cli.md
+  s_612e6a63d4febb::t_392daa3ca73ac2 41
+  s_612e6a63d4febb::t_c87d13eaf1cfd2 36-40,42
+  s_612e6a63d4febb::t_897dac8f4d65d2 121-157
+  s_612e6a63d4febb::t_cf605dde5c8a16 22
+  s_612e6a63d4febb::t_bba3ce9d9f360e 258-268
+  s_612e6a63d4febb::t_53825633ce93e1 172-175,180-182
+  s_612e6a63d4febb::t_da9291f45ae8b3 19-21
+crates/colab-lang-java/src/symbols.rs
+  s_612e6a63d4febb::t_17ecf80d92ba49 38
+  s_612e6a63d4febb::t_e165937ccefe0c 11
+tests/corpus/go/include_directive/shared.codemod
+  s_612e6a63d4febb::t_e5f5c7b801100d 1-7
+tests/corpus/go/include_directive/input/main.go
+  s_612e6a63d4febb::t_435d3bfbe3e3b2 1-12
+crates/colab-lang-java/src/imports.rs
+  s_612e6a63d4febb::t_4b092618a1e31f 93,141,194
+  s_612e6a63d4febb::t_1a02e03874814c 12
+crates/colab-lang-python/src/lib.rs
+  s_612e6a63d4febb::t_d7fff2c1e62334 11-12,16-34
+crates/colab-cli/src/main.rs
+  s_612e6a63d4febb::t_7ba2dba2a53919 13
+crates/colab-cli/tests/cli.rs
+  s_612e6a63d4febb::t_9b53a79f65c942 485-604
+  s_612e6a63d4febb::t_8c4ac30f2b2ad0 667-701
+  s_612e6a63d4febb::t_7449bb3f6a1f71 299-302
+  s_612e6a63d4febb::t_7c3cd512245f84 605-666
+crates/colab-lang-go/src/calls.rs
+  s_612e6a63d4febb::t_4549ab7849cdcb 24
+  s_612e6a63d4febb::t_6df915f03317ed 53
+crates/colab-lang-go/src/symbols.rs
+  s_612e6a63d4febb::t_37488de1070d9d 45
+  s_612e6a63d4febb::t_aeb4961307a2ce 18
+crates/colab-lang-js/src/imports.rs
+  s_612e6a63d4febb::t_c203c8cb816e49 124,168
+  s_612e6a63d4febb::t_57f1979094aeb7 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "51504ae407f3bd43ecf899ec1ec02c76667dfafa",
+  "prompts": {},
+  "sessions": {
+    "s_612e6a63d4febb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "977f5a17-33ca-40a4-82f9-8bac3a1b07ef",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
