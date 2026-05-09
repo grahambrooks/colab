@@ -12,12 +12,14 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use log::info;
 
+use std::time::Instant;
+
 use colab_core::walker::{self, FileChange, WalkOptions};
 use colab_core::{BackendRegistry, CodeTransformer, Error, Result};
 use colab_dsl as codemod;
 
 use crate::discover;
-use crate::format::{self, ExecMode, Format};
+use crate::format::{self, ExecMode, Format, RunSummary};
 use crate::language_server;
 
 static VERSION: &str = concat!(
@@ -188,6 +190,12 @@ struct RefactorArgs {
     /// "colab: <rule>"`. Requires a git repo. Implies `--write`.
     #[arg(long = "commit-per-rule", conflicts_with_all = ["dry_run", "check"])]
     commit_per_rule: bool,
+
+    /// Suppress per-file events; emit only the final aggregate
+    /// summary. Useful on millions-of-files runs where the
+    /// per-file trace is the bottleneck.
+    #[arg(long = "summary-only")]
+    summary_only: bool,
 
     /// Files or directories to process. Defaults to the (possibly
     /// changed) working directory if none are supplied. Ignored with
@@ -398,27 +406,31 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
         stdout_is_tty,
     );
     let mut reporter = format::make_reporter(args.format, exec_mode);
+    let started = Instant::now();
+    let mut summary = RunSummary::default();
+    let summary_only = args.summary_only;
 
-    let mut would_change = 0u32;
     let mut visit = |change: FileChange| -> Result<()> {
-        if change.changed() {
-            would_change += 1;
-            if matches!(exec_mode, ExecMode::Write) {
-                fs::write(&change.path, &change.after)
-                    .map_err(|e| Error::io_at(&change.path, e))?;
-            }
+        summary.record(&change);
+        if change.changed() && matches!(exec_mode, ExecMode::Write) {
+            fs::write(&change.path, &change.after)
+                .map_err(|e| Error::io_at(&change.path, e))?;
         }
-        reporter
-            .report(&change)
-            .map_err(|e| Error::io_at(&change.path, e))?;
+        if !summary_only {
+            reporter
+                .report(&change)
+                .map_err(|e| Error::io_at(&change.path, e))?;
+        }
         Ok(())
     };
 
     run_transformer(&refactoring, &args, &targets, &mut visit)?;
+    summary.elapsed = started.elapsed();
+    reporter.report_summary(&summary).map_err(io_to_error)?;
     reporter.finish().map_err(io_to_error)?;
 
     Ok(
-        if matches!(exec_mode, ExecMode::Check) && would_change > 0 {
+        if matches!(exec_mode, ExecMode::Check) && summary.files_changed > 0 {
             10
         } else {
             0
@@ -439,6 +451,9 @@ fn run_refactor_per_rule(
     targets: &[PathBuf],
 ) -> Result<i32> {
     let mut reporter = format::make_reporter(args.format, ExecMode::Write);
+    let started = Instant::now();
+    let mut summary = RunSummary::default();
+    let summary_only = args.summary_only;
 
     for (idx, rule) in refactoring.rules.iter().enumerate() {
         let single = codemod::SingleRule::new(rule.as_ref());
@@ -458,6 +473,7 @@ fn run_refactor_per_rule(
         let mut backups: std::collections::HashMap<PathBuf, String> =
             std::collections::HashMap::new();
         let mut visit = |change: FileChange| -> Result<()> {
+            summary.record(&change);
             if change.changed() {
                 backups
                     .entry(change.path.clone())
@@ -465,9 +481,11 @@ fn run_refactor_per_rule(
                 fs::write(&change.path, &change.after)
                     .map_err(|e| Error::io_at(&change.path, e))?;
             }
-            reporter
-                .report(&change)
-                .map_err(|e| Error::io_at(&change.path, e))?;
+            if !summary_only {
+                reporter
+                    .report(&change)
+                    .map_err(|e| Error::io_at(&change.path, e))?;
+            }
             Ok(())
         };
 
@@ -494,6 +512,8 @@ fn run_refactor_per_rule(
         }
     }
 
+    summary.elapsed = started.elapsed();
+    reporter.report_summary(&summary).map_err(io_to_error)?;
     reporter.finish().map_err(io_to_error)?;
     Ok(0)
 }

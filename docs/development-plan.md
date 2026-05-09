@@ -597,10 +597,28 @@ two-week increments.
   list with stash/reset semantics; backup format / location for
   manual revert). Tracked separately.
 
-### M13 — Streaming progress + run summaries (Goal 5.4)
-- LSP `WorkDoneProgress` notifications during preview/apply.
-- MCP `notifications/progress` for the same.
-- ndjson run-summary event; `--summary-only` mode.
+### ✅ M13 — Run summary + `--summary-only` (Goal 5.4, partial)
+- `Reporter` trait gains `report_summary(&RunSummary)`. Both the
+  human and json/ndjson reporters override it; the diff reporter
+  intentionally does not (its output stays `patch`-consumable).
+- Per-file json events now carry a `"type": "file"` discriminant;
+  the new summary event is `"type": "summary"` with
+  `files_seen / files_changed / bytes_before / bytes_after /
+  elapsed_ms`. Existing consumers that filter on `.path` keep
+  working; new consumers can switch on `.type`.
+- `--summary-only` flag suppresses per-file events for both the
+  full-tree path and the per-rule (`--verify` /
+  `--commit-per-rule`) path. Useful on huge runs where the
+  per-file trace is itself the bottleneck.
+- 1 new CLI integration test (`summary_only_suppresses_per_file_events`)
+  + the existing JSON test extended to assert the new event
+  shape.
+- **Deferred to M13.5:** MCP `notifications/progress` and LSP
+  `WorkDoneProgress` for `colab.preview` / `colab.apply`. Both
+  need request-context-aware streaming (the JSON-RPC dispatcher
+  currently returns a single `Option<Value>` per request — no
+  way to emit interim notifications). A non-trivial refactor of
+  `colab-mcp::handle` and the LSP `Backend`.
 
 ### M14 — Repo-level config + `colab fix` (Goal 5.5)
 - `colab.toml` schema (roots / excludes / packs / verify / jobs).

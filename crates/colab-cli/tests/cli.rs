@@ -174,16 +174,62 @@ fn format_json_emits_one_object_per_file_and_does_not_write() {
     assert_eq!(fs::read_to_string(&target).unwrap(), GO_INPUT);
 
     let stdout = String::from_utf8(output.stdout).unwrap();
-    let value: Value = serde_json::from_str(stdout.trim()).expect("valid JSON line");
-    assert_eq!(value["changed"], true);
+    let lines: Vec<&str> = stdout.lines().collect();
+    // Now: one file event + one summary event.
+    assert_eq!(lines.len(), 2, "got: {stdout}");
+
+    let file_event: Value = serde_json::from_str(lines[0]).expect("valid file JSON");
+    assert_eq!(file_event["type"], "file");
+    assert_eq!(file_event["changed"], true);
     assert_eq!(
-        value["bytes_before"].as_u64().unwrap(),
+        file_event["bytes_before"].as_u64().unwrap(),
         GO_INPUT.len() as u64
     );
     assert_eq!(
-        value["bytes_after"].as_u64().unwrap(),
+        file_event["bytes_after"].as_u64().unwrap(),
         GO_EXPECTED.len() as u64
     );
+
+    let summary: Value = serde_json::from_str(lines[1]).expect("valid summary JSON");
+    assert_eq!(summary["type"], "summary");
+    assert_eq!(summary["files_seen"], 1);
+    assert_eq!(summary["files_changed"], 1);
+    assert!(summary["elapsed_ms"].is_u64());
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn summary_only_suppresses_per_file_events() {
+    let root = workspace_temp("summary-only");
+    let script = root.join("rename.codemod");
+    let a = root.join("a.go");
+    let b = root.join("b.go");
+    write(&script, SCRIPT);
+    write(&a, GO_INPUT);
+    write(&b, GO_INPUT);
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--format",
+            "json",
+            "--summary-only",
+            root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 1, "expected only summary, got: {stdout}");
+    let summary: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(summary["type"], "summary");
+    assert_eq!(summary["files_seen"], 2);
+    assert_eq!(summary["files_changed"], 2);
 
     fs::remove_dir_all(&root).ok();
 }

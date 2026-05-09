@@ -21,6 +21,7 @@ colab refactor --script <path> [--write|--dry-run|--check]
                                 [--changed-since <ref> | --staged]
                                 [--jobs <N>]
                                 [--verify <CMD>] [--commit-per-rule]
+                                [--summary-only]
                                 [paths...]
 ```
 
@@ -42,6 +43,7 @@ colab refactor --script <path> [--write|--dry-run|--check]
 | `--jobs <N>` | `num_cpus` | Worker thread count for parallel file processing. Falls back to the `COLAB_JOBS` env var when unset. Set to `1` for sequential. |
 | `--verify <CMD>` | — | Run `<CMD>` (a shell command) after each rule's edits. Non-zero exit reverts that rule's changes and aborts the run with exit 1. Implies `--write`. |
 | `--commit-per-rule` | — | After each successful rule, `git add -u && git commit -m "colab: <rule>"`. Requires a git repo. Implies `--write`. |
+| `--summary-only` | — | Suppress per-file events (json/diff/human); emit only the final aggregate summary. Pairs well with `--format json` for headless runs. |
 | `paths...` | `.` | Files or directories to walk recursively. Multiple roots are walked in order. |
 
 **Default execution mode** is resolved from `--format` and TTY state:
@@ -62,10 +64,13 @@ default. They are mutually exclusive (clap rejects combinations).
   `2026-05-09 12:34:56 [INFO] Wrote /path/to/file.go`. No stdout
   output during a refactor; the file system is the side-effect.
 - **`json` / `ndjson`** — one object per processed file, newline
-  separated. Stable schema:
+  separated, followed by a final summary event. Stable schema:
   ```json
-  {"path": "main.go", "changed": true, "bytes_before": 42, "bytes_after": 48}
+  {"type": "file", "path": "main.go", "changed": true, "bytes_before": 42, "bytes_after": 48}
+  {"type": "summary", "files_seen": 1, "files_changed": 1, "bytes_before": 42, "bytes_after": 48, "elapsed_ms": 12}
   ```
+  Combine with `--summary-only` to skip the per-file events and
+  emit just the summary.
 - **`diff`** — unified diff per changed file:
   ```diff
   --- a/main.go
