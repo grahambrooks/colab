@@ -10,7 +10,7 @@ pub mod ast;
 pub mod compiler;
 pub mod model;
 
-pub use compiler::{compile, parse};
+pub use compiler::{compile, compile_at_path, parse};
 pub use model::Refactoring;
 
 // Re-export so consumers can use the trait without depending on

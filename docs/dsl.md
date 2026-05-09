@@ -109,6 +109,30 @@ match go::call "logger.Info" { replace_call "logger.WithContext(ctx).Info($args)
 > verify with `--format diff` first. The corpus harness will refuse a
 > case whose second pass is not a no-op.
 
+## `include` directive
+
+A script can pull in match clauses from another `.codemod` file by
+listing `include "<path>"` inside its `refactor` block. The path
+is resolved relative to the *including* script's directory (or as
+an absolute path). The included file's outer `refactor "..."`
+wrapper is dropped during expansion — only its match clauses are
+spliced into the parent in source order, intermixed with sibling
+matches.
+
+```
+// project/scripts/main.codemod
+refactor "company-migration" {
+    include "shared/javax-to-jakarta.codemod"
+    match go::import "internal.old" { replace "internal.new" }
+}
+```
+
+Cycle detection is path-canonical: a → b → a yields a clear
+`circular include` error. Includes only resolve when the
+compilation entry point has a known base path (the CLI's
+`compile_at_path`); compiling a bare string raises a clear error
+when an `include` directive is encountered.
+
 ## Multi-rule scripts
 
 A `refactor` block may contain any number of `match` blocks. Rules

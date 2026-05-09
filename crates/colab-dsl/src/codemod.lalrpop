@@ -1,4 +1,5 @@
 use crate::ast::Command;
+use crate::ast::Item;
 use crate::ast::Match;
 use crate::ast::Namespace;
 use crate::ast::Action;
@@ -16,7 +17,12 @@ match {
 }
 
 pub Program: Command = {
-    "refactor" <name: StringLiteral> "{" <matches: Match*> "}" => Command { refactor_name: name, matches }
+    "refactor" <name: StringLiteral> "{" <items: Item*> "}" => Command { refactor_name: name, items }
+};
+
+pub Item: Item = {
+    <m: Match> => Item::Match(m),
+    "include" <s: StringLiteral> => Item::Include(s),
 };
 
 pub Match: Match = {

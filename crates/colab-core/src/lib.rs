@@ -17,3 +17,4 @@ pub use backend::{
 pub use error::{Error, Result};
 pub use template::render_call_template;
 pub use transformer::CodeTransformer;
+pub use walker::{FileChange, WalkOptions};

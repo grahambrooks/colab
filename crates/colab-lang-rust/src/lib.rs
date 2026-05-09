@@ -12,9 +12,30 @@ pub mod deps;
 pub mod symbols;
 pub mod uses;
 
+use std::cell::RefCell;
+
 use colab_core::{
     ActionCapability, Capability, Error, LanguageBackend, Operation, Result, RuleSpec,
 };
+use tree_sitter::{Parser, Tree};
+
+thread_local! {
+    /// Per-thread tree-sitter Rust parser. Reused across files so
+    /// `Parser::new() + set_language()` only happens once per
+    /// rayon worker.
+    static PARSER: RefCell<Parser> = RefCell::new({
+        let mut p = Parser::new();
+        p.set_language(&tree_sitter_rust::LANGUAGE.into())
+            .expect("failed to load tree-sitter Rust grammar");
+        p
+    });
+}
+
+/// Parse `source` into a Rust syntax tree using the thread-local
+/// parser. Returns `None` if tree-sitter cannot parse.
+pub(crate) fn parse(source: &str) -> Option<Tree> {
+    PARSER.with_borrow_mut(|p| p.parse(source, None))
+}
 
 /// Plug-in entry point for the `rust` namespace.
 pub struct RustBackend;

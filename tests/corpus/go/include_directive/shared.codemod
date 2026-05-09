@@ -1,0 +1,7 @@
+// Shared library — included by sibling scripts. The outer
+// `refactor "..."` name is dropped during expansion; only the
+// match clauses are spliced in.
+refactor "shared-rules" {
+    match go::import "shared.module" { replace "renamed.shared" }
+    match go::import "deprecated.module" { delete }
+}

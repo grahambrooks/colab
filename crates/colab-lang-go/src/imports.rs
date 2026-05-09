@@ -8,15 +8,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Parser, Tree, TreeCursor};
-
-fn parse_go(source: &str) -> Option<Tree> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_go::LANGUAGE.into())
-        .expect("failed to load tree-sitter Go grammar");
-    parser.parse(source, None)
-}
+use tree_sitter::{Node, Tree, TreeCursor};
 
 /// Iterate every `import_spec` node whose `path` field equals
 /// `target` exactly, calling `visit` with the spec node.
@@ -85,7 +77,7 @@ impl Operation for ImportRename {
 ///
 /// Returns `source_code` unchanged if no imports match.
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = parse_go(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -145,7 +137,7 @@ impl Operation for ImportDelete {
 /// the `import_spec` lives on so a single import inside an
 /// `import (…)` block disappears cleanly.
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_go(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -203,7 +195,7 @@ impl Operation for ImportEnsure {
 /// `import "<target>"` line just after the `package` clause; users
 /// who prefer block-form can run `gofmt` afterwards.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_go(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
 

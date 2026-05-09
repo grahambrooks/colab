@@ -16,6 +16,10 @@ colab refactor --script <path> [--write|--dry-run|--check]
                                 [--format human|json|ndjson|diff]
                                 [--stdin --path <hint>]
                                 [-C|--change-dir <dir>]
+                                [--include <glob>]... [--exclude <glob>]...
+                                [--no-ignore]
+                                [--changed-since <ref> | --staged]
+                                [--jobs <N>]
                                 [paths...]
 ```
 
@@ -29,7 +33,13 @@ colab refactor --script <path> [--write|--dry-run|--check]
 | `--check` | — | Like `--dry-run`, but exit code 10 if any file would change. CI-friendly. |
 | `--stdin` | — | Read source from stdin instead of walking filesystem paths. Requires `--path`. |
 | `--path <hint>` | — | Filename hint for `--stdin`; drives "is this file relevant?" routing. |
-| `paths...` | `.` | Files or directories to walk recursively. |
+| `--include <glob>` | — | Whitelist files via gitignore-syntax glob. Repeatable. If any include is set, only matches are processed. |
+| `--exclude <glob>` | — | Blacklist files via gitignore-syntax glob. Repeatable. Applied after `--include`. |
+| `--no-ignore` | — | Don't honour `.gitignore`, `.git/info/exclude`, or hidden-file rules. By default the walker behaves like `git ls-files`. |
+| `--changed-since <ref>` | — | Only files changed since the given git ref (`git diff --name-only --diff-filter=ACMRT <ref>`). Skips tree walking entirely. CI-friendly. |
+| `--staged` | — | Only files in the git index (`git diff --name-only --cached`). Mutually exclusive with `--changed-since`. |
+| `--jobs <N>` | `num_cpus` | Worker thread count for parallel file processing. Falls back to the `COLAB_JOBS` env var when unset. Set to `1` for sequential. |
+| `paths...` | `.` | Files or directories to walk recursively. Multiple roots are walked in order. |
 
 **Default execution mode** is resolved from `--format` and TTY state:
 
@@ -108,6 +118,43 @@ colab list-rules go
 colab list-rules rust
 ```
 
+### `colab pack list`
+
+List discoverable `.codemod` packs. Lookup paths, in order:
+
+1. `<repo>/.colab/packs/` — the project-local pack directory,
+   discovered by walking up from the current directory looking for
+   a `.git` marker.
+2. `~/.colab/packs/` — the user-global pack directory.
+
+```sh
+colab pack list
+```
+
+Output (sorted by path):
+
+```json
+{
+  "packs": [
+    {
+      "name": "javax-to-jakarta",
+      "path": "/path/to/repo/.colab/packs/javax-to-jakarta.codemod",
+      "source": "repo"
+    }
+  ]
+}
+```
+
+Combine with `colab refactor --script` to run a pack:
+
+```sh
+PACK=$(colab pack list | jq -r '.packs[] | select(.name == "javax-to-jakarta") | .path')
+colab refactor --script "$PACK" --check .
+```
+
+A pack is just a `.codemod` file. Use `include "<path>"` from a
+top-level project script to compose multiple packs.
+
 ### `colab explain --script <path>`
 
 Parse the script and emit its IR as JSON without running anything.
@@ -122,12 +169,17 @@ Output:
 ```json
 {
   "name": "two-renames",
-  "rules": [
-    {"namespace": "go::import", "match": "old.module", "action": {"replace": "new.module"}},
-    {"namespace": "go::import", "match": "another", "action": "delete"}
+  "items": [
+    {"kind": "match", "namespace": "go::import", "match": "old.module", "action": {"replace": "new.module"}},
+    {"kind": "match", "namespace": "go::import", "match": "another", "action": "delete"},
+    {"kind": "include", "path": "shared/javax-to-jakarta.codemod"}
   ]
 }
 ```
+
+`items` preserves source order — match clauses and `include`
+directives are intermixed exactly as they appeared in the script.
+The runtime IR sees the post-expansion flat list.
 
 ### `colab server`
 
@@ -203,6 +255,17 @@ colab refactor --script s.codemod --format json . | tee changes.ndjson
 
 # stdin rewriter for an editor pre-save hook.
 cat current-buffer.go | colab refactor --script s.codemod --stdin --path current-buffer.go > rewritten.go
+
+# Restrict a sweeping refactor to one subtree, skipping vendored code.
+colab refactor --script s.codemod \
+    --include 'cmd/**/*.go' --exclude '**/vendor/**' \
+    --write .
+
+# CI gate: only verify files changed on this branch.
+colab refactor --script s.codemod --check --changed-since origin/main || exit $?
+
+# Pre-commit hook: only the staged files.
+colab refactor --script s.codemod --check --staged || exit $?
 ```
 
 ## Environment

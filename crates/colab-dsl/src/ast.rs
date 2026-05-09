@@ -4,11 +4,22 @@
 //! behaviour. They are lowered into the executable
 //! [`crate::Refactoring`] IR by [`crate::compiler`].
 
-/// A complete codemod script: `refactor "<name>" { <match>* }`.
+/// A complete codemod script: `refactor "<name>" { <item>* }`.
+///
+/// Items are either match blocks or `include` directives, intermixed
+/// in source order. The compiler expands includes recursively so the
+/// runtime IR sees a flat list of match clauses.
 #[derive(PartialEq, Debug)]
 pub struct Command {
     pub refactor_name: String,
-    pub matches: Vec<Match>,
+    pub items: Vec<Item>,
+}
+
+/// One element inside a `refactor "..." { … }` block.
+#[derive(PartialEq, Debug)]
+pub enum Item {
+    Match(Match),
+    Include(String),
 }
 
 /// One `match <namespace> "<target>" { <action> }` block. A script

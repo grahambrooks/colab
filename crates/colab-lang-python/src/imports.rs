@@ -12,15 +12,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Parser, Tree, TreeCursor};
-
-fn parse_python(source: &str) -> Option<Tree> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_python::LANGUAGE.into())
-        .expect("failed to load tree-sitter Python grammar");
-    parser.parse(source, None)
-}
+use tree_sitter::{Node, Tree, TreeCursor};
 
 /// If `text` segment-prefix matches `from`, return the matched length.
 fn match_path_prefix(text: &str, from: &str) -> Option<usize> {
@@ -140,7 +132,7 @@ impl Operation for ImportRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = parse_python(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -189,7 +181,7 @@ impl Operation for ImportDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_python(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -243,7 +235,7 @@ impl Operation for ImportEnsure {
 }
 
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_python(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let mut already_present = false;

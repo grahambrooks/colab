@@ -7,15 +7,6 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Parser, Tree};
-
-fn parse_java(source: &str) -> Option<Tree> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_java::LANGUAGE.into())
-        .expect("failed to load tree-sitter Java grammar");
-    parser.parse(source, None)
-}
 
 #[derive(Debug)]
 pub struct PackageRename {
@@ -40,7 +31,7 @@ impl Operation for PackageRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = parse_java(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let root = tree.root_node();

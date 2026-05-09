@@ -10,6 +10,7 @@ mod cli;
 mod discover;
 mod format;
 mod language_server;
+mod packs;
 
 use std::io::Write;
 use std::process::ExitCode;

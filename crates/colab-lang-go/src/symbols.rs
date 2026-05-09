@@ -15,7 +15,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Parser, TreeCursor};
+use tree_sitter::TreeCursor;
 
 const RENAME_KINDS: &[&str] = &["identifier", "type_identifier", "field_identifier"];
 
@@ -42,11 +42,7 @@ impl Operation for SymbolRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_go::LANGUAGE.into())
-        .expect("failed to load tree-sitter Go grammar");
-    let Some(tree) = parser.parse(source_code, None) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
 

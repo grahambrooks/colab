@@ -11,9 +11,32 @@
 pub mod imports;
 pub mod symbols;
 
+use std::cell::RefCell;
+
 use colab_core::{
     ActionCapability, Capability, Error, LanguageBackend, Operation, Result, RuleSpec,
 };
+use tree_sitter::{Parser, Tree};
+
+thread_local! {
+    /// Per-thread tree-sitter JavaScript parser. Reused across
+    /// files so `Parser::new() + set_language()` only happens once
+    /// per rayon worker. The JavaScript grammar parses TypeScript
+    /// module syntax well enough for our specifier and identifier
+    /// rewrites; type-aware ops are out of scope.
+    static PARSER: RefCell<Parser> = RefCell::new({
+        let mut p = Parser::new();
+        p.set_language(&tree_sitter_javascript::LANGUAGE.into())
+            .expect("failed to load tree-sitter JavaScript grammar");
+        p
+    });
+}
+
+/// Parse `source` into a JS/TS syntax tree using the
+/// thread-local parser. Returns `None` if tree-sitter cannot parse.
+pub(crate) fn parse(source: &str) -> Option<Tree> {
+    PARSER.with_borrow_mut(|p| p.parse(source, None))
+}
 
 /// Plug-in entry point for the `js` namespace.
 pub struct JsBackend;

@@ -82,24 +82,31 @@ pub fn explain(script_path: &Path) -> Result<Value> {
 }
 
 fn explain_command(cmd: &ast::Command) -> Value {
-    let rules: Vec<Value> = cmd
-        .matches
+    let items: Vec<Value> = cmd
+        .items
         .iter()
-        .map(|m| {
-            let action = match &m.action {
-                ast::Action::Replace(s) => json!({ "replace": s }),
-                ast::Action::Delete => json!("delete"),
-                ast::Action::Ensure => json!("ensure"),
-                ast::Action::ReplaceCall(t) => json!({ "replace_call": t }),
-            };
-            json!({
-                "namespace": format!("{}::{}", m.namespace.lang, m.namespace.module),
-                "match": m.match_string,
-                "action": action,
-            })
+        .map(|item| match item {
+            ast::Item::Match(m) => {
+                let action = match &m.action {
+                    ast::Action::Replace(s) => json!({ "replace": s }),
+                    ast::Action::Delete => json!("delete"),
+                    ast::Action::Ensure => json!("ensure"),
+                    ast::Action::ReplaceCall(t) => json!({ "replace_call": t }),
+                };
+                json!({
+                    "kind": "match",
+                    "namespace": format!("{}::{}", m.namespace.lang, m.namespace.module),
+                    "match": m.match_string,
+                    "action": action,
+                })
+            }
+            ast::Item::Include(path) => json!({
+                "kind": "include",
+                "path": path,
+            }),
         })
         .collect();
-    json!({ "name": cmd.refactor_name, "rules": rules })
+    json!({ "name": cmd.refactor_name, "items": items })
 }
 
 #[cfg(test)]

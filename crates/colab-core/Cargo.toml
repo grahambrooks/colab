@@ -9,3 +9,7 @@ description = "Core types for colab: errors, the CodeTransformer contract, and t
 
 [dependencies]
 log = { workspace = true }
+ignore = { workspace = true }
+globset = { workspace = true }
+rayon = { workspace = true }
+num_cpus = { workspace = true }

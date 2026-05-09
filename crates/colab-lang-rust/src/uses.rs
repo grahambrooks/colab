@@ -10,15 +10,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Parser, Tree, TreeCursor};
-
-fn parse_rust(source: &str) -> Option<Tree> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_rust::LANGUAGE.into())
-        .expect("failed to load tree-sitter Rust grammar");
-    parser.parse(source, None)
-}
+use tree_sitter::{Node, Tree, TreeCursor};
 
 /// Visit every `use_declaration` whose argument's leading path
 /// segment-matches `target`. The visitor receives the use_declaration
@@ -108,7 +100,7 @@ impl Operation for UseRename {
 /// Rewrite the source: replace any `use` whose path starts with
 /// segments equal to `from` so the prefix becomes `to`.
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = parse_rust(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -163,7 +155,7 @@ impl Operation for UseDelete {
 /// Remove every `use` declaration whose leading path equals `target`.
 /// Erases the whole `use ...;` line including its trailing newline.
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_rust(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -222,7 +214,7 @@ impl Operation for UseEnsure {
 /// after any leading inner attributes (`#![...]`) so module-level
 /// pragmas stay first.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_rust(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
 

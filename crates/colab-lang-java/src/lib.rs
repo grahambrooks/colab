@@ -10,9 +10,30 @@ pub mod imports;
 pub mod packages;
 pub mod symbols;
 
+use std::cell::RefCell;
+
 use colab_core::{
     ActionCapability, Capability, Error, LanguageBackend, Operation, Result, RuleSpec,
 };
+use tree_sitter::{Parser, Tree};
+
+thread_local! {
+    /// Per-thread tree-sitter Java parser. Reused across files so
+    /// `Parser::new() + set_language()` only happens once per
+    /// rayon worker.
+    static PARSER: RefCell<Parser> = RefCell::new({
+        let mut p = Parser::new();
+        p.set_language(&tree_sitter_java::LANGUAGE.into())
+            .expect("failed to load tree-sitter Java grammar");
+        p
+    });
+}
+
+/// Parse `source` into a Java syntax tree using the thread-local
+/// parser. Returns `None` if tree-sitter cannot parse.
+pub(crate) fn parse(source: &str) -> Option<Tree> {
+    PARSER.with_borrow_mut(|p| p.parse(source, None))
+}
 
 /// Plug-in entry point for the `java` namespace.
 pub struct JavaBackend;

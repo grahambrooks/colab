@@ -11,7 +11,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Parser, Tree, TreeCursor};
+use tree_sitter::{Node, Tree, TreeCursor};
 
 const RELEVANT_EXTENSIONS: &[&str] = &["js", "mjs", "cjs", "jsx", "ts", "tsx"];
 
@@ -22,13 +22,6 @@ pub(crate) fn is_relevant(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn parse_js(source: &str) -> Option<Tree> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_javascript::LANGUAGE.into())
-        .expect("failed to load tree-sitter JavaScript grammar");
-    parser.parse(source, None)
-}
 
 /// For each `import_statement` / `export_statement` whose `source`
 /// field is a string literal equal to `target`, invoke the visitor
@@ -128,7 +121,7 @@ impl Operation for SpecifierRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = parse_js(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -172,7 +165,7 @@ impl Operation for SpecifierDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_js(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();

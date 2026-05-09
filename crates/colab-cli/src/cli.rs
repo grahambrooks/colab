@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use log::info;
 
-use colab_core::walker::{self, FileChange};
+use colab_core::walker::{self, FileChange, WalkOptions};
 use colab_core::{BackendRegistry, CodeTransformer, Error, Result};
 use colab_dsl as codemod;
 
@@ -87,6 +87,21 @@ enum Commands {
     ListLanguages,
     /// List the modules and actions a backend supports.
     ListRules(ListRulesArgs),
+    /// Manage discoverable codemod packs.
+    Pack(PackArgs),
+}
+
+#[derive(Parser, Debug)]
+struct PackArgs {
+    #[command(subcommand)]
+    cmd: PackCommand,
+}
+
+#[derive(Parser, Debug)]
+enum PackCommand {
+    /// List discoverable packs in `<repo>/.colab/packs/` and
+    /// `~/.colab/packs/`.
+    List,
 }
 
 #[derive(Parser, Debug)]
@@ -131,6 +146,37 @@ struct RefactorArgs {
     /// Path hint for `--stdin`. Drives is-this-relevant routing.
     #[arg(long = "path", value_name = "PATH", id = "stdin_path")]
     stdin_path: Option<PathBuf>,
+
+    /// Glob pattern to include. Repeatable. If any include is set,
+    /// only matching files are processed. Uses gitignore syntax.
+    #[arg(long = "include", value_name = "GLOB")]
+    include: Vec<String>,
+
+    /// Glob pattern to exclude. Repeatable. Applied after `--include`.
+    #[arg(long = "exclude", value_name = "GLOB")]
+    exclude: Vec<String>,
+
+    /// Don't honour `.gitignore` / hidden-file rules. By default
+    /// the walker behaves like `git ls-files`.
+    #[arg(long = "no-ignore")]
+    no_ignore: bool,
+
+    /// Restrict the run to files changed since the given git ref
+    /// (e.g. `main`). Bypasses tree walking; iterates the git
+    /// diff directly.
+    #[arg(long = "changed-since", value_name = "REF")]
+    changed_since: Option<String>,
+
+    /// Restrict the run to files in the git index (i.e. `git add`-ed).
+    /// Mutually exclusive with `--changed-since`.
+    #[arg(long, conflicts_with = "changed_since")]
+    staged: bool,
+
+    /// Worker thread count. Defaults to `num_cpus`. Falls back to
+    /// the `COLAB_JOBS` env var when unset. Set to 1 to force
+    /// sequential processing.
+    #[arg(long, value_name = "N")]
+    jobs: Option<usize>,
 
     /// Files or directories to process. Defaults to the (possibly
     /// changed) working directory if none are supplied. Ignored with
@@ -180,6 +226,9 @@ pub async fn run() -> Result<i32> {
             let value = discover::list_rules(&default_backends(), &args.lang)?;
             print_json(&value)
         }
+        Some(Commands::Pack(pack_args)) => match pack_args.cmd {
+            PackCommand::List => print_json(&crate::packs::list()),
+        },
         None => Err(Error::Config(
             "no command provided; run with --help for usage".to_string(),
         )),
@@ -200,6 +249,81 @@ fn io_to_error(err: io::Error) -> Error {
     }
 }
 
+/// Iterate `paths` directly (used by `--changed-since` and
+/// `--staged`), invoking the visitor for files the refactoring
+/// considers relevant. Skips paths that no longer exist on disk
+/// — `git diff` may report files that have been deleted.
+fn run_against_paths<F>(
+    refactoring: &codemod::Refactoring,
+    paths: &[PathBuf],
+    visit: &mut F,
+) -> Result<()>
+where
+    F: FnMut(FileChange) -> Result<()>,
+{
+    for path in paths {
+        if !path.is_file() {
+            continue;
+        }
+        if !refactoring.is_file_relevant(path) {
+            continue;
+        }
+        let before = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
+        let after = refactoring.apply(&before);
+        visit(FileChange {
+            path: path.clone(),
+            before,
+            after,
+        })?;
+    }
+    Ok(())
+}
+
+fn git_changed_since(reference: &str) -> Result<Vec<PathBuf>> {
+    git_paths(&["diff", "--name-only", "--diff-filter=ACMRT", reference])
+}
+
+fn git_staged() -> Result<Vec<PathBuf>> {
+    git_paths(&["diff", "--name-only", "--cached", "--diff-filter=ACMRT"])
+}
+
+fn git_paths(args: &[&str]) -> Result<Vec<PathBuf>> {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|e| {
+            Error::Config(format!(
+                "could not invoke git ({}): {}",
+                args.join(" "),
+                e
+            ))
+        })?;
+    if !output.status.success() {
+        return Err(Error::Config(format!(
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .collect())
+}
+
+/// Pick the worker-thread count from `--jobs`, falling back to
+/// `COLAB_JOBS` if the flag wasn't set. `None` lets the walker
+/// default to `num_cpus`.
+fn resolve_jobs(flag: Option<usize>) -> Option<usize> {
+    if let Some(n) = flag {
+        return Some(n);
+    }
+    std::env::var("COLAB_JOBS")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+}
+
 fn run_refactor(args: RefactorArgs) -> Result<i32> {
     if args.stdin {
         return run_stdin(args);
@@ -207,10 +331,8 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     change_working_dir(&args.change_dir)?;
 
-    let script =
-        fs::read_to_string(&args.script_path).map_err(|e| Error::io_at(&args.script_path, e))?;
     let backends = default_backends();
-    let refactoring = codemod::compile(&script, &backends)?;
+    let refactoring = codemod::compile_at_path(&args.script_path, &backends)?;
     info!("Running script: {}", refactoring);
 
     let stdout_is_tty = io::stdout().is_terminal();
@@ -223,31 +345,43 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     );
     let mut reporter = format::make_reporter(args.format, exec_mode);
 
-    let targets = if args.paths.is_empty() {
-        vec![PathBuf::from(".")]
-    } else {
-        args.paths.clone()
+    let mut would_change = 0u32;
+    let mut visit = |change: FileChange| -> Result<()> {
+        if change.changed() {
+            would_change += 1;
+            if matches!(exec_mode, ExecMode::Write) {
+                fs::write(&change.path, &change.after)
+                    .map_err(|e| Error::io_at(&change.path, e))?;
+            }
+        }
+        reporter
+            .report(&change)
+            .map_err(|e| Error::io_at(&change.path, e))?;
+        Ok(())
     };
 
-    let mut would_change = 0u32;
-    for target in &targets {
-        walker::walk(
-            &refactoring,
-            target,
-            &mut |change: FileChange| -> Result<()> {
-                if change.changed() {
-                    would_change += 1;
-                    if matches!(exec_mode, ExecMode::Write) {
-                        fs::write(&change.path, &change.after)
-                            .map_err(|e| Error::io_at(&change.path, e))?;
-                    }
-                }
-                reporter
-                    .report(&change)
-                    .map_err(|e| Error::io_at(&change.path, e))?;
-                Ok(())
-            },
-        )?;
+    if let Some(ref_) = args.changed_since.as_deref() {
+        let files = git_changed_since(ref_)?;
+        run_against_paths(&refactoring, &files, &mut visit)?;
+    } else if args.staged {
+        let files = git_staged()?;
+        run_against_paths(&refactoring, &files, &mut visit)?;
+    } else {
+        let opts = WalkOptions {
+            include: args.include.clone(),
+            exclude: args.exclude.clone(),
+            respect_gitignore: !args.no_ignore,
+            follow_symlinks: false,
+            jobs: resolve_jobs(args.jobs),
+        };
+        let targets = if args.paths.is_empty() {
+            vec![PathBuf::from(".")]
+        } else {
+            args.paths.clone()
+        };
+        for target in &targets {
+            walker::walk_with(&refactoring, target, &opts, &mut visit)?;
+        }
     }
     reporter.finish().map_err(io_to_error)?;
 

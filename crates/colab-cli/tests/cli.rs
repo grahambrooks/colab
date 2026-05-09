@@ -296,9 +296,10 @@ fn explain_returns_parsed_ir() {
 
     let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
     assert_eq!(value["name"], "rename");
-    assert_eq!(value["rules"][0]["namespace"], "go::import");
-    assert_eq!(value["rules"][0]["match"], "some.module");
-    assert_eq!(value["rules"][0]["action"]["replace"], "new.module");
+    assert_eq!(value["items"][0]["kind"], "match");
+    assert_eq!(value["items"][0]["namespace"], "go::import");
+    assert_eq!(value["items"][0]["match"], "some.module");
+    assert_eq!(value["items"][0]["action"]["replace"], "new.module");
 
     fs::remove_dir_all(&root).ok();
 }
@@ -478,6 +479,224 @@ impl WaitTimeoutExt for std::process::Child {
             }
         }
     }
+}
+
+#[test]
+fn include_glob_restricts_processed_files() {
+    let root = workspace_temp("include-glob");
+    let script = root.join("rename.codemod");
+    write(&script, SCRIPT);
+    let want = root.join("src/main.go");
+    let nope = root.join("vendor/main.go");
+    write(&want, GO_INPUT);
+    write(&nope, GO_INPUT);
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--include",
+            "src/**",
+            root.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+
+    // src/main.go was rewritten; vendor/main.go was not.
+    assert_eq!(fs::read_to_string(&want).unwrap(), GO_EXPECTED);
+    assert_eq!(fs::read_to_string(&nope).unwrap(), GO_INPUT);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn exclude_glob_skips_matching_files() {
+    let root = workspace_temp("exclude-glob");
+    let script = root.join("rename.codemod");
+    write(&script, SCRIPT);
+    let kept = root.join("main.go");
+    let skipped = root.join("vendor/main.go");
+    write(&kept, GO_INPUT);
+    write(&skipped, GO_INPUT);
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--exclude",
+            "vendor/**",
+            root.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+
+    assert_eq!(fs::read_to_string(&kept).unwrap(), GO_EXPECTED);
+    assert_eq!(fs::read_to_string(&skipped).unwrap(), GO_INPUT);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn gitignore_default_skips_ignored_files() {
+    let root = workspace_temp("gitignore-default");
+    fs::create_dir_all(root.join(".git")).unwrap();
+    write(&root.join(".gitignore"), "vendor/\n");
+    let script = root.join("rename.codemod");
+    write(&script, SCRIPT);
+    let kept = root.join("main.go");
+    let ignored = root.join("vendor/main.go");
+    write(&kept, GO_INPUT);
+    write(&ignored, GO_INPUT);
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            root.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+
+    assert_eq!(fs::read_to_string(&kept).unwrap(), GO_EXPECTED);
+    // vendor/main.go is gitignored; should be untouched.
+    assert_eq!(fs::read_to_string(&ignored).unwrap(), GO_INPUT);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn no_ignore_visits_gitignored_files() {
+    let root = workspace_temp("no-ignore");
+    fs::create_dir_all(root.join(".git")).unwrap();
+    write(&root.join(".gitignore"), "vendor/\n");
+    let script = root.join("rename.codemod");
+    write(&script, SCRIPT);
+    let in_vendor = root.join("vendor/main.go");
+    write(&in_vendor, GO_INPUT);
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--no-ignore",
+            root.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+
+    assert_eq!(fs::read_to_string(&in_vendor).unwrap(), GO_EXPECTED);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn parallel_walk_produces_identical_results_across_jobs_settings() {
+    // Build a wider tree, run with --jobs 1 and --jobs 8, compare
+    // the resulting files. Both must converge on the same output.
+    let make_tree = |label: &str| {
+        let root = workspace_temp(label);
+        let script = root.join("rename.codemod");
+        write(&script, SCRIPT);
+        for dir in 0..4 {
+            for file in 0..6 {
+                let path = root.join(format!("dir{}/{:02}.go", dir, file));
+                write(&path, GO_INPUT);
+            }
+        }
+        (root, script)
+    };
+
+    let (root1, script1) = make_tree("parallel-j1");
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script1.to_str().unwrap(),
+            "--write",
+            "--jobs",
+            "1",
+            root1.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+
+    let (root8, script8) = make_tree("parallel-j8");
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script8.to_str().unwrap(),
+            "--write",
+            "--jobs",
+            "8",
+            root8.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+
+    // Compare every file in both trees — they must match.
+    for dir in 0..4 {
+        for file in 0..6 {
+            let rel = format!("dir{}/{:02}.go", dir, file);
+            let a = fs::read_to_string(root1.join(&rel)).unwrap();
+            let b = fs::read_to_string(root8.join(&rel)).unwrap();
+            assert_eq!(a, b, "mismatch at {}", rel);
+            assert_eq!(a, GO_EXPECTED, "wrong content at {}", rel);
+        }
+    }
+
+    fs::remove_dir_all(&root1).ok();
+    fs::remove_dir_all(&root8).ok();
+}
+
+#[test]
+fn pack_list_finds_repo_packs() {
+    // Build a fake "repo" with a .git marker and a populated
+    // .colab/packs directory, then cd into it so the discovery
+    // walk finds the pack.
+    let root = workspace_temp("pack-list");
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::create_dir_all(root.join(".colab/packs")).unwrap();
+    write(
+        &root.join(".colab/packs/example.codemod"),
+        "refactor \"x\" {}\n",
+    );
+
+    let output = colab()
+        .arg("pack")
+        .arg("list")
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let v: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let packs = v["packs"].as_array().unwrap();
+    let names: Vec<&str> = packs
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"example"), "got: {names:?}");
+    let sources: Vec<&str> = packs
+        .iter()
+        .map(|p| p["source"].as_str().unwrap())
+        .collect();
+    assert!(sources.contains(&"repo"));
+
+    fs::remove_dir_all(&root).ok();
 }
 
 #[test]

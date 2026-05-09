@@ -9,15 +9,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Parser, Tree, TreeCursor};
-
-fn parse_java(source: &str) -> Option<Tree> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_java::LANGUAGE.into())
-        .expect("failed to load tree-sitter Java grammar");
-    parser.parse(source, None)
-}
+use tree_sitter::{Node, Tree, TreeCursor};
 
 fn import_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, String)> {
     if !node.is_named() || node.kind() != "import_declaration" {
@@ -98,7 +90,7 @@ impl Operation for ImportRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = parse_java(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -146,7 +138,7 @@ impl Operation for ImportDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_java(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -199,7 +191,7 @@ impl Operation for ImportEnsure {
 /// Insert `import <target>;` after the package declaration if no
 /// existing import already names `<target>`.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = parse_java(source_code) else {
+    let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
     let mut already_present = false;

@@ -8,9 +8,31 @@ pub mod imports;
 pub mod struct_tags;
 pub mod symbols;
 
+use std::cell::RefCell;
+
 use colab_core::{
     ActionCapability, Capability, Error, LanguageBackend, Operation, Result, RuleSpec,
 };
+use tree_sitter::{Parser, Tree};
+
+thread_local! {
+    /// Per-thread tree-sitter Go parser. Rayon workers reuse the
+    /// same parser across many files; one-shot callers (the
+    /// single-file fast path, tests) get the same speedup as a
+    /// happy side-effect.
+    static PARSER: RefCell<Parser> = RefCell::new({
+        let mut p = Parser::new();
+        p.set_language(&tree_sitter_go::LANGUAGE.into())
+            .expect("failed to load tree-sitter Go grammar");
+        p
+    });
+}
+
+/// Parse `source` into a Go syntax tree using the thread-local
+/// parser. Returns `None` if tree-sitter cannot parse.
+pub(crate) fn parse(source: &str) -> Option<Tree> {
+    PARSER.with_borrow_mut(|p| p.parse(source, None))
+}
 
 /// Plug-in entry point for the `go` namespace. Knows how to lower
 /// `go::<module>` matches into concrete [`Operation`]s.

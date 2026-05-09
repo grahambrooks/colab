@@ -1,0 +1,7 @@
+// Top-level script. Composes a shared rule library + one local rule.
+refactor "module-rename" {
+    include "shared.codemod"
+    match go::import "local.module" {
+        replace "renamed.local"
+    }
+}
