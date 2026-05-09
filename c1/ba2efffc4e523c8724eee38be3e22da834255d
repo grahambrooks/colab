@@ -1,0 +1,29 @@
+ARCHITECTURE.md
+  s_612e6a63d4febb::t_6479dee1955729 3-7,9-13,16-32,35-79,92-94,96-100,102,104-110,112-124,126,128-235,239-267
+docs/dsl.md
+  s_612e6a63d4febb::t_953405b511820d 1-273
+docs/cli.md
+  s_612e6a63d4febb::t_60278ea3646f25 1-187
+docs/README.md
+  s_612e6a63d4febb::t_2d10a1fa22301e 1-24
+docs/features.md
+  s_612e6a63d4febb::t_d3f71b7186fa06 1-275
+README.md
+  s_612e6a63d4febb::t_8fc1ce3485801b 3-7,9-11,13,15,17-21,23-26,28,30-36,38-39,41-42,44-48,50,53-56,59,62-65,68-80,83,86-90,92,95-99,102-105,107,110-113,116-120,122,124-132,134,136-142,144,146-156,158-162,164-171,175-181,185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "c1ba2efffc4e523c8724eee38be3e22da834255d",
+  "prompts": {},
+  "sessions": {
+    "s_612e6a63d4febb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "977f5a17-33ca-40a4-82f9-8bac3a1b07ef",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
