@@ -578,11 +578,24 @@ two-week increments.
   alongside matches in source order. Documented in `docs/cli.md`.
 - **Defer:** remote registry / publishing.
 
-### M12 — Verify-and-revert pipeline (Goal 5.3)
-- `--verify <command>` per-rule check + auto-revert.
-- `--commit-per-rule` git history per applied rule.
-- `--bisect <command>` to isolate a breaking rule.
-- `colab undo` over per-file backups when no verify command is set.
+### ✅ M12 — Verify-and-revert pipeline (Goal 5.3, partial)
+- `--verify <CMD>`: each rule is applied in isolation (via a new
+  `SingleRule<'a>` wrapper that impls `CodeTransformer` over one
+  `&dyn Operation`), the supplied shell command runs after the
+  rule's writes, and a non-zero exit triggers an in-memory backup
+  restore of every file the rule touched. The CLI bails with the
+  Config exit code (1) so CI sees the failure. Reverted file
+  count is reported.
+- `--commit-per-rule`: after each successful rule (and verify if
+  set), `git add -u && git commit -m "colab: <rule>"`. The
+  "nothing to commit" case is treated as success so a no-op rule
+  doesn't poison the run. Requires a git repo.
+- 3 new CLI integration tests cover both the verify-success and
+  verify-fail paths plus a real-git two-rule commit-per-rule run.
+- **Deferred to M12.5:** `--bisect <command>` and `colab undo`.
+  Both have their own design weight (binary search over rule
+  list with stash/reset semantics; backup format / location for
+  manual revert). Tracked separately.
 
 ### M13 — Streaming progress + run summaries (Goal 5.4)
 - LSP `WorkDoneProgress` notifications during preview/apply.

@@ -66,3 +66,29 @@ impl CodeTransformer for Refactoring {
         current
     }
 }
+
+/// A single-rule view over one [`Operation`], implementing
+/// [`CodeTransformer`] so the walker can apply it in isolation.
+///
+/// Used by `colab refactor --verify` and `--commit-per-rule` to
+/// run rules one at a time so failures can be attributed to (and
+/// reverted at) the rule level.
+pub struct SingleRule<'a> {
+    pub op: &'a dyn Operation,
+}
+
+impl<'a> SingleRule<'a> {
+    pub fn new(op: &'a dyn Operation) -> Self {
+        Self { op }
+    }
+}
+
+impl CodeTransformer for SingleRule<'_> {
+    fn is_file_relevant(&self, path: &Path) -> bool {
+        self.op.is_file_relevant(path)
+    }
+
+    fn apply(&self, source_code: &str) -> String {
+        self.op.apply(source_code)
+    }
+}

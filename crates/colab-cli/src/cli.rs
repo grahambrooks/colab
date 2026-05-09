@@ -178,6 +178,17 @@ struct RefactorArgs {
     #[arg(long, value_name = "N")]
     jobs: Option<usize>,
 
+    /// Run this shell command after each rule's edits. A non-zero
+    /// exit reverts that rule's changes and aborts the run.
+    /// Implies `--write`.
+    #[arg(long, value_name = "CMD", conflicts_with_all = ["dry_run", "check"])]
+    verify: Option<String>,
+
+    /// After each successful rule, `git add -u && git commit -m
+    /// "colab: <rule>"`. Requires a git repo. Implies `--write`.
+    #[arg(long = "commit-per-rule", conflicts_with_all = ["dry_run", "check"])]
+    commit_per_rule: bool,
+
     /// Files or directories to process. Defaults to the (possibly
     /// changed) working directory if none are supplied. Ignored with
     /// `--stdin`.
@@ -250,26 +261,23 @@ fn io_to_error(err: io::Error) -> Error {
 }
 
 /// Iterate `paths` directly (used by `--changed-since` and
-/// `--staged`), invoking the visitor for files the refactoring
+/// `--staged`), invoking the visitor for files the transformer
 /// considers relevant. Skips paths that no longer exist on disk
 /// — `git diff` may report files that have been deleted.
-fn run_against_paths<F>(
-    refactoring: &codemod::Refactoring,
-    paths: &[PathBuf],
-    visit: &mut F,
-) -> Result<()>
+fn run_against_paths<T, F>(transformer: &T, paths: &[PathBuf], visit: &mut F) -> Result<()>
 where
+    T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
 {
     for path in paths {
         if !path.is_file() {
             continue;
         }
-        if !refactoring.is_file_relevant(path) {
+        if !transformer.is_file_relevant(path) {
             continue;
         }
         let before = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
-        let after = refactoring.apply(&before);
+        let after = transformer.apply(&before);
         visit(FileChange {
             path: path.clone(),
             before,
@@ -277,6 +285,40 @@ where
         })?;
     }
     Ok(())
+}
+
+/// Drive a single transformer through the chosen file source
+/// (`--changed-since` / `--staged` / tree walk). Pulled out so
+/// the per-rule loop can reuse the same source-selection logic.
+fn run_transformer<T, F>(
+    transformer: &T,
+    args: &RefactorArgs,
+    targets: &[PathBuf],
+    visit: &mut F,
+) -> Result<()>
+where
+    T: CodeTransformer + Sync,
+    F: FnMut(FileChange) -> Result<()>,
+{
+    if let Some(ref_) = args.changed_since.as_deref() {
+        let files = git_changed_since(ref_)?;
+        run_against_paths(transformer, &files, visit)
+    } else if args.staged {
+        let files = git_staged()?;
+        run_against_paths(transformer, &files, visit)
+    } else {
+        let opts = WalkOptions {
+            include: args.include.clone(),
+            exclude: args.exclude.clone(),
+            respect_gitignore: !args.no_ignore,
+            follow_symlinks: false,
+            jobs: resolve_jobs(args.jobs),
+        };
+        for target in targets {
+            walker::walk_with(transformer, target, &opts, visit)?;
+        }
+        Ok(())
+    }
 }
 
 fn git_changed_since(reference: &str) -> Result<Vec<PathBuf>> {
@@ -335,6 +377,18 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     let refactoring = codemod::compile_at_path(&args.script_path, &backends)?;
     info!("Running script: {}", refactoring);
 
+    let targets = if args.paths.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        args.paths.clone()
+    };
+
+    // `--verify` and `--commit-per-rule` need per-rule visibility
+    // so failures can be attributed to (and reverted at) one rule.
+    if args.verify.is_some() || args.commit_per_rule {
+        return run_refactor_per_rule(&refactoring, &args, &targets);
+    }
+
     let stdout_is_tty = io::stdout().is_terminal();
     let exec_mode = resolve_exec_mode(
         args.write,
@@ -360,29 +414,7 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
         Ok(())
     };
 
-    if let Some(ref_) = args.changed_since.as_deref() {
-        let files = git_changed_since(ref_)?;
-        run_against_paths(&refactoring, &files, &mut visit)?;
-    } else if args.staged {
-        let files = git_staged()?;
-        run_against_paths(&refactoring, &files, &mut visit)?;
-    } else {
-        let opts = WalkOptions {
-            include: args.include.clone(),
-            exclude: args.exclude.clone(),
-            respect_gitignore: !args.no_ignore,
-            follow_symlinks: false,
-            jobs: resolve_jobs(args.jobs),
-        };
-        let targets = if args.paths.is_empty() {
-            vec![PathBuf::from(".")]
-        } else {
-            args.paths.clone()
-        };
-        for target in &targets {
-            walker::walk_with(&refactoring, target, &opts, &mut visit)?;
-        }
-    }
+    run_transformer(&refactoring, &args, &targets, &mut visit)?;
     reporter.finish().map_err(io_to_error)?;
 
     Ok(
@@ -392,6 +424,125 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
             0
         },
     )
+}
+
+/// Apply each rule individually, with optional `--verify`
+/// auto-revert and `--commit-per-rule` git history.
+///
+/// Always writes (the verify / commit semantics require it). On
+/// verify failure, restores the failed rule's per-file backups
+/// and bubbles up an error so the CLI exit code reflects the
+/// failure.
+fn run_refactor_per_rule(
+    refactoring: &codemod::Refactoring,
+    args: &RefactorArgs,
+    targets: &[PathBuf],
+) -> Result<i32> {
+    let mut reporter = format::make_reporter(args.format, ExecMode::Write);
+
+    for (idx, rule) in refactoring.rules.iter().enumerate() {
+        let single = codemod::SingleRule::new(rule.as_ref());
+        let rule_label = rule.to_string();
+        info!(
+            "[{}/{}] Applying rule: {}",
+            idx + 1,
+            refactoring.rules.len(),
+            rule_label
+        );
+
+        // Per-rule backup: only the first time we touch a file's
+        // pre-rule contents go in. If the same file is re-edited
+        // by a later rule, *that* rule's backup captures the
+        // post-this-rule state, which is what we want for an
+        // independent revert.
+        let mut backups: std::collections::HashMap<PathBuf, String> =
+            std::collections::HashMap::new();
+        let mut visit = |change: FileChange| -> Result<()> {
+            if change.changed() {
+                backups
+                    .entry(change.path.clone())
+                    .or_insert_with(|| change.before.clone());
+                fs::write(&change.path, &change.after)
+                    .map_err(|e| Error::io_at(&change.path, e))?;
+            }
+            reporter
+                .report(&change)
+                .map_err(|e| Error::io_at(&change.path, e))?;
+            Ok(())
+        };
+
+        run_transformer(&single, args, targets, &mut visit)?;
+
+        if let Some(cmd) = &args.verify {
+            info!("Verifying rule {} with `{}`", idx + 1, cmd);
+            if !run_verify(cmd)? {
+                // Restore this rule's backups and bail.
+                for (path, before) in &backups {
+                    fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
+                }
+                return Err(Error::Config(format!(
+                    "rule `{}` failed `--verify` (`{}`); reverted {} file(s)",
+                    rule_label,
+                    cmd,
+                    backups.len()
+                )));
+            }
+        }
+
+        if args.commit_per_rule && !backups.is_empty() {
+            commit_per_rule(&rule_label)?;
+        }
+    }
+
+    reporter.finish().map_err(io_to_error)?;
+    Ok(0)
+}
+
+/// Run a `--verify` shell command. Returns `true` on success.
+fn run_verify(cmd: &str) -> Result<bool> {
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .status()
+        .map_err(|e| Error::Config(format!("could not spawn `{}`: {}", cmd, e)))?;
+    Ok(status.success())
+}
+
+/// `git add -u && git commit -m "colab: <rule>"`. Bails if either
+/// step fails. The "nothing to commit" case is treated as success
+/// (a rule may have applied but produced no on-disk diff after
+/// idempotent re-runs).
+fn commit_per_rule(rule_label: &str) -> Result<()> {
+    let add = std::process::Command::new("git")
+        .args(["add", "-u"])
+        .status()
+        .map_err(|e| Error::Config(format!("git add failed to spawn: {}", e)))?;
+    if !add.success() {
+        return Err(Error::Config(format!(
+            "git add -u failed (exit {}) for rule `{}`",
+            add.code().unwrap_or(-1),
+            rule_label
+        )));
+    }
+    let message = format!("colab: {}", rule_label);
+    let commit = std::process::Command::new("git")
+        .args(["commit", "-m", &message])
+        .output()
+        .map_err(|e| Error::Config(format!("git commit failed to spawn: {}", e)))?;
+    if !commit.status.success() {
+        let stderr = String::from_utf8_lossy(&commit.stderr);
+        // "nothing to commit" is treated as success — a rule may
+        // have been a no-op even though the walker visited files.
+        if stderr.contains("nothing to commit") {
+            return Ok(());
+        }
+        return Err(Error::Config(format!(
+            "git commit failed for rule `{}`: {}",
+            rule_label,
+            stderr.trim()
+        )));
+    }
+    Ok(())
 }
 
 /// Resolve the effective exec mode given explicit flags and the

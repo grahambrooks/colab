@@ -664,6 +664,128 @@ fn parallel_walk_produces_identical_results_across_jobs_settings() {
 }
 
 #[test]
+fn verify_passes_through_when_command_succeeds() {
+    let root = workspace_temp("verify-ok");
+    let script = root.join("rename.codemod");
+    let target = root.join("main.go");
+    write(&script, SCRIPT);
+    write(&target, GO_INPUT);
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--verify",
+            "true",
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    // Rule applied because verify succeeded.
+    assert_eq!(fs::read_to_string(&target).unwrap(), GO_EXPECTED);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn verify_reverts_and_errors_when_command_fails() {
+    let root = workspace_temp("verify-fail");
+    let script = root.join("rename.codemod");
+    let target = root.join("main.go");
+    write(&script, SCRIPT);
+    write(&target, GO_INPUT);
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--verify",
+            "false",
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    // Error → exit code 1 (Config) per the documented mapping.
+    assert_eq!(status.code(), Some(1));
+    // File reverted to its original contents.
+    assert_eq!(fs::read_to_string(&target).unwrap(), GO_INPUT);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn commit_per_rule_produces_one_commit_per_rule() {
+    let root = workspace_temp("commit-per-rule");
+
+    // Initialise a git repo with a baseline commit so `git
+    // commit` succeeds.
+    let git = |args: &[&str]| -> std::process::ExitStatus {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(&root)
+            .env("GIT_AUTHOR_NAME", "test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .status()
+            .unwrap()
+    };
+    assert!(git(&["init", "-q", "-b", "main"]).success());
+    let script = root.join("rules.codemod");
+    let target = root.join("main.go");
+    // Two rules; both will fire on the same file.
+    write(
+        &script,
+        r#"refactor "two-rules" {
+            match go::import "some.module" { replace "mid.module" }
+            match go::import "mid.module" { replace "new.module" }
+        }
+        "#,
+    );
+    write(&target, GO_INPUT);
+    assert!(git(&["add", "main.go"]).success());
+    assert!(git(&["commit", "-q", "-m", "baseline"]).success());
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--commit-per-rule",
+            target.to_str().unwrap(),
+        ])
+        .current_dir(&root)
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+
+    let log = std::process::Command::new("git")
+        .args(["log", "--pretty=%s"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    let messages = String::from_utf8_lossy(&log.stdout);
+    let lines: Vec<&str> = messages.lines().collect();
+    // Two colab commits + the baseline = 3 entries.
+    assert_eq!(lines.len(), 3, "git log:\n{messages}");
+    assert!(lines[0].starts_with("colab: "), "got: {}", lines[0]);
+    assert!(lines[1].starts_with("colab: "), "got: {}", lines[1]);
+    assert_eq!(lines[2], "baseline");
+
+    // File reflects both rules applied in order.
+    let final_text = fs::read_to_string(&target).unwrap();
+    assert!(final_text.contains("\"new.module\""), "got: {final_text}");
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn pack_list_finds_repo_packs() {
     // Build a fake "repo" with a .git marker and a populated
     // .colab/packs directory, then cd into it so the discovery

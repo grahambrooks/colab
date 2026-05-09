@@ -20,6 +20,7 @@ colab refactor --script <path> [--write|--dry-run|--check]
                                 [--no-ignore]
                                 [--changed-since <ref> | --staged]
                                 [--jobs <N>]
+                                [--verify <CMD>] [--commit-per-rule]
                                 [paths...]
 ```
 
@@ -39,6 +40,8 @@ colab refactor --script <path> [--write|--dry-run|--check]
 | `--changed-since <ref>` | — | Only files changed since the given git ref (`git diff --name-only --diff-filter=ACMRT <ref>`). Skips tree walking entirely. CI-friendly. |
 | `--staged` | — | Only files in the git index (`git diff --name-only --cached`). Mutually exclusive with `--changed-since`. |
 | `--jobs <N>` | `num_cpus` | Worker thread count for parallel file processing. Falls back to the `COLAB_JOBS` env var when unset. Set to `1` for sequential. |
+| `--verify <CMD>` | — | Run `<CMD>` (a shell command) after each rule's edits. Non-zero exit reverts that rule's changes and aborts the run with exit 1. Implies `--write`. |
+| `--commit-per-rule` | — | After each successful rule, `git add -u && git commit -m "colab: <rule>"`. Requires a git repo. Implies `--write`. |
 | `paths...` | `.` | Files or directories to walk recursively. Multiple roots are walked in order. |
 
 **Default execution mode** is resolved from `--format` and TTY state:
@@ -266,6 +269,12 @@ colab refactor --script s.codemod --check --changed-since origin/main || exit $?
 
 # Pre-commit hook: only the staged files.
 colab refactor --script s.codemod --check --staged || exit $?
+
+# Apply rules one-by-one with build-check after each; auto-revert on failure.
+colab refactor --script s.codemod --write --verify "cargo check --quiet" .
+
+# Same, plus a git commit per rule for clean review history.
+colab refactor --script s.codemod --write --verify "cargo check --quiet" --commit-per-rule .
 ```
 
 ## Environment
