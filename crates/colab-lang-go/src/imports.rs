@@ -305,10 +305,7 @@ mod tests {
     fn ensure_adds_missing_import_after_package_clause() {
         let go_code = "package main\n\nfunc main() {}\n";
         let out = ensure("fmt", go_code);
-        assert!(
-            out.contains("import \"fmt\""),
-            "got: {out}"
-        );
+        assert!(out.contains("import \"fmt\""), "got: {out}");
         // Inserted between package and func main.
         let pkg_pos = out.find("package main").unwrap();
         let import_pos = out.find("import \"fmt\"").unwrap();
@@ -324,8 +321,7 @@ mod tests {
 
     #[test]
     fn ensure_is_noop_when_already_in_block_form() {
-        let go_code =
-            "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n";
+        let go_code = "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n";
         assert_eq!(ensure("fmt", go_code), go_code);
     }
 

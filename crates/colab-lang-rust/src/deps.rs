@@ -332,7 +332,8 @@ mod tests {
 
     #[test]
     fn does_not_touch_other_tables() {
-        let src = "[package]\nname = \"foo\"\nversion = \"0.1.0\"\n\n[dependencies]\nbaz = \"1.0\"\n";
+        let src =
+            "[package]\nname = \"foo\"\nversion = \"0.1.0\"\n\n[dependencies]\nbaz = \"1.0\"\n";
         let out = rename("foo", "bar", src);
         // `name = "foo"` in [package] must stay.
         assert!(out.contains("name = \"foo\""), "got: {out}");
@@ -392,8 +393,7 @@ mod tests {
 
     #[test]
     fn delete_in_dev_dependencies_only() {
-        let src =
-            "[dependencies]\nfoo = \"1.0\"\n\n[dev-dependencies]\nfoo = \"1.0\"\n";
+        let src = "[dependencies]\nfoo = \"1.0\"\n\n[dev-dependencies]\nfoo = \"1.0\"\n";
         let out = delete("foo", src);
         // Both occurrences (in dependencies AND dev-dependencies) are removed.
         assert!(!out.contains("foo = \"1.0\""));

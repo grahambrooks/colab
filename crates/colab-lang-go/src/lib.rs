@@ -112,13 +112,12 @@ impl LanguageBackend for GoBackend {
                 from: target,
                 to: replacement,
             })),
-            (
-                "call",
-                RuleSpec::ReplaceCall { target, template },
-            ) => Ok(Box::new(calls::CallReplace {
-                function: target,
-                template,
-            })),
+            ("call", RuleSpec::ReplaceCall { target, template }) => {
+                Ok(Box::new(calls::CallReplace {
+                    function: target,
+                    template,
+                }))
+            }
             (other, spec) => Err(Error::UnsupportedOperation(format!(
                 "go::{} does not support {:?}",
                 other, spec

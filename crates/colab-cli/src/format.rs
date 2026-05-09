@@ -166,9 +166,5 @@ pub fn write_unified_diff<W: Write>(
     let header_a = format!("a/{}", display);
     let header_b = format!("b/{}", display);
     let diff = similar::TextDiff::from_lines(before, after);
-    write!(
-        out,
-        "{}",
-        diff.unified_diff().header(&header_a, &header_b)
-    )
+    write!(out, "{}", diff.unified_diff().header(&header_a, &header_b))
 }

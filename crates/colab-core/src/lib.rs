@@ -14,6 +14,6 @@ pub mod walker;
 pub use backend::{
     ActionCapability, BackendRegistry, Capability, LanguageBackend, Operation, RuleSpec,
 };
-pub use template::render_call_template;
 pub use error::{Error, Result};
+pub use template::render_call_template;
 pub use transformer::CodeTransformer;

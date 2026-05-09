@@ -173,7 +173,11 @@ mod tests {
 
         assert_eq!(
             seen,
-            vec!["a.txt".to_string(), "b.txt".to_string(), "nested/c.txt".to_string()]
+            vec![
+                "a.txt".to_string(),
+                "b.txt".to_string(),
+                "nested/c.txt".to_string()
+            ]
         );
 
         fs::remove_dir_all(&root).ok();

@@ -136,7 +136,8 @@ mod tests {
 
     #[test]
     fn leaves_other_pairs_in_same_tag_alone() {
-        let src = "package demo\n\ntype User struct {\n\tName string `json:\"old\" yaml:\"keep\"`\n}\n";
+        let src =
+            "package demo\n\ntype User struct {\n\tName string `json:\"old\" yaml:\"keep\"`\n}\n";
         let out = rename("json:old", "json:new", src);
         assert!(out.contains("`json:\"new\" yaml:\"keep\"`"), "got: {out}");
     }

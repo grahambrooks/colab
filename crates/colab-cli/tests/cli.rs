@@ -21,8 +21,7 @@ const SCRIPT: &str = r#"refactor "rename" {
 "#;
 
 const GO_INPUT: &str = "package main\n\nimport (\n\t\"fmt\"\n\t\"some.module\"\n)\n";
-const GO_EXPECTED: &str =
-    "package main\n\nimport (\n\t\"fmt\"\n\t\"new.module\"\n)\n";
+const GO_EXPECTED: &str = "package main\n\nimport (\n\t\"fmt\"\n\t\"new.module\"\n)\n";
 
 fn workspace_temp(label: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -177,7 +176,10 @@ fn format_json_emits_one_object_per_file_and_does_not_write() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     let value: Value = serde_json::from_str(stdout.trim()).expect("valid JSON line");
     assert_eq!(value["changed"], true);
-    assert_eq!(value["bytes_before"].as_u64().unwrap(), GO_INPUT.len() as u64);
+    assert_eq!(
+        value["bytes_before"].as_u64().unwrap(),
+        GO_INPUT.len() as u64
+    );
     assert_eq!(
         value["bytes_after"].as_u64().unwrap(),
         GO_EXPECTED.len() as u64
@@ -321,7 +323,10 @@ fn delete_action_round_trips_through_cli() {
     let root = workspace_temp("delete-action");
     let script = root.join("drop.codemod");
     let target = root.join("main.go");
-    write(&script, "refactor \"drop\" { match go::import \"some.module\" { delete } }\n");
+    write(
+        &script,
+        "refactor \"drop\" { match go::import \"some.module\" { delete } }\n",
+    );
     write(&target, GO_INPUT);
 
     let status = colab()
@@ -348,7 +353,10 @@ fn ensure_action_is_idempotent_through_cli() {
     let root = workspace_temp("ensure-action");
     let script = root.join("ensure.codemod");
     let target = root.join("main.go");
-    write(&script, "refactor \"e\" { match go::import \"fmt\" { ensure } }\n");
+    write(
+        &script,
+        "refactor \"e\" { match go::import \"fmt\" { ensure } }\n",
+    );
     write(&target, "package main\n\nfunc main() {}\n");
 
     // First pass: should change.

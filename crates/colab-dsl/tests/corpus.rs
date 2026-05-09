@@ -44,14 +44,14 @@ fn corpus_root() -> PathBuf {
 #[test]
 fn corpus_cases_pass() {
     let root = corpus_root();
-    assert!(
-        root.is_dir(),
-        "corpus root missing: {}",
-        root.display()
-    );
+    assert!(root.is_dir(), "corpus root missing: {}", root.display());
 
     let cases = collect_cases(&root);
-    assert!(!cases.is_empty(), "no corpus cases found under {}", root.display());
+    assert!(
+        !cases.is_empty(),
+        "no corpus cases found under {}",
+        root.display()
+    );
 
     let mut failures: Vec<String> = Vec::new();
     for case in &cases {
@@ -80,14 +80,22 @@ fn collect_cases(root: &Path) -> Vec<Case> {
         if !lang_path.is_dir() {
             continue;
         }
-        let lang = lang_path.file_name().unwrap().to_string_lossy().into_owned();
+        let lang = lang_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         let cases = fs::read_dir(&lang_path).expect("read lang dir");
         for case_entry in cases.flatten() {
             let case_path = case_entry.path();
             if !case_path.is_dir() {
                 continue;
             }
-            let case_name = case_path.file_name().unwrap().to_string_lossy().into_owned();
+            let case_name = case_path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
             out.push(Case {
                 name: format!("{}/{}", lang, case_name),
                 dir: case_path,
@@ -107,10 +115,8 @@ fn run_case(case: &Case) -> Result<(), String> {
     let input_dir = case.dir.join("input");
     let expected_dir = case.dir.join("expected");
 
-    let inputs = collect_files(&input_dir)
-        .map_err(|e| format!("walk input/: {}", e))?;
-    let expected = collect_files(&expected_dir)
-        .map_err(|e| format!("walk expected/: {}", e))?;
+    let inputs = collect_files(&input_dir).map_err(|e| format!("walk input/: {}", e))?;
+    let expected = collect_files(&expected_dir).map_err(|e| format!("walk expected/: {}", e))?;
 
     if inputs.keys().collect::<Vec<_>>() != expected.keys().collect::<Vec<_>>() {
         return Err(format!(
@@ -167,13 +173,8 @@ fn collect_files(root: &Path) -> Result<BTreeMap<PathBuf, String>, String> {
     Ok(out)
 }
 
-fn walk(
-    root: &Path,
-    dir: &Path,
-    out: &mut BTreeMap<PathBuf, String>,
-) -> Result<(), String> {
-    let entries = fs::read_dir(dir)
-        .map_err(|e| format!("read_dir {}: {}", dir.display(), e))?;
+fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<PathBuf, String>) -> Result<(), String> {
+    let entries = fs::read_dir(dir).map_err(|e| format!("read_dir {}: {}", dir.display(), e))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("entry: {}", e))?;
         let path = entry.path();
@@ -184,8 +185,8 @@ fn walk(
                 .strip_prefix(root)
                 .map_err(|e| format!("strip_prefix: {}", e))?
                 .to_path_buf();
-            let source = fs::read_to_string(&path)
-                .map_err(|e| format!("read {}: {}", path.display(), e))?;
+            let source =
+                fs::read_to_string(&path).map_err(|e| format!("read {}: {}", path.display(), e))?;
             out.insert(rel, source);
         }
     }

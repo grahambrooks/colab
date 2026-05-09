@@ -36,10 +36,7 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
 pub enum RuleSpec {
     /// `replace` action: rewrite `target` with `replacement` in the
     /// scope of the namespace's module.
-    Replace {
-        target: String,
-        replacement: String,
-    },
+    Replace { target: String, replacement: String },
     /// `delete` action: remove the matched element entirely.
     Delete { target: String },
     /// `ensure` action: idempotently add `target` if it is missing.

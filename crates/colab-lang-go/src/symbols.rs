@@ -93,7 +93,10 @@ mod tests {
     fn renames_function_declaration_and_calls() {
         let src = "package main\n\nfunc Foo() {}\n\nfunc main() { Foo() }\n";
         let out = rename("Foo", "Bar", src);
-        assert_eq!(out, "package main\n\nfunc Bar() {}\n\nfunc main() { Bar() }\n");
+        assert_eq!(
+            out,
+            "package main\n\nfunc Bar() {}\n\nfunc main() { Bar() }\n"
+        );
     }
 
     #[test]
@@ -108,8 +111,7 @@ mod tests {
     fn does_not_rename_package_identifier_or_string_literal() {
         // `Foo` appears inside a string and as an import path — must
         // not be renamed.
-        let src =
-            "package main\n\nimport \"Foo\"\n\nvar s = \"Foo\"\nfunc main() { _ = s }\n";
+        let src = "package main\n\nimport \"Foo\"\n\nvar s = \"Foo\"\nfunc main() { _ = s }\n";
         let out = rename("Foo", "Bar", src);
         assert_eq!(out, src);
     }

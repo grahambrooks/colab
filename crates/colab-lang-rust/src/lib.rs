@@ -107,9 +107,7 @@ impl LanguageBackend for RustBackend {
                 from: target,
                 to: replacement,
             })),
-            ("crate", RuleSpec::Delete { target }) => {
-                Ok(Box::new(deps::CrateDelete { target }))
-            }
+            ("crate", RuleSpec::Delete { target }) => Ok(Box::new(deps::CrateDelete { target })),
             (
                 "symbol",
                 RuleSpec::Replace {
@@ -120,13 +118,12 @@ impl LanguageBackend for RustBackend {
                 from: target,
                 to: replacement,
             })),
-            (
-                "call",
-                RuleSpec::ReplaceCall { target, template },
-            ) => Ok(Box::new(calls::CallReplace {
-                function: target,
-                template,
-            })),
+            ("call", RuleSpec::ReplaceCall { target, template }) => {
+                Ok(Box::new(calls::CallReplace {
+                    function: target,
+                    template,
+                }))
+            }
             (other, spec) => Err(Error::UnsupportedOperation(format!(
                 "rust::{} does not support {:?}",
                 other, spec

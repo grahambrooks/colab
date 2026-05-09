@@ -76,8 +76,7 @@ pub fn list_rules(backends: &BackendRegistry, lang: &str) -> Result<Value> {
 
 /// JSON IR for a parsed script (`colab explain`).
 pub fn explain(script_path: &Path) -> Result<Value> {
-    let script =
-        fs::read_to_string(script_path).map_err(|e| Error::io_at(script_path, e))?;
+    let script = fs::read_to_string(script_path).map_err(|e| Error::io_at(script_path, e))?;
     let command = colab_dsl::parse(&script)?;
     Ok(explain_command(&command))
 }

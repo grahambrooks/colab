@@ -163,9 +163,7 @@ pub async fn run() -> Result<i32> {
             let value = discover::explain(&args.script_path)?;
             print_json(&value)
         }
-        Some(Commands::ListLanguages) => {
-            print_json(&discover::list_languages(&default_backends()))
-        }
+        Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
         Some(Commands::ListRules(args)) => {
             let value = discover::list_rules(&default_backends(), &args.lang)?;
             print_json(&value)
@@ -197,14 +195,20 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     change_working_dir(&args.change_dir)?;
 
-    let script = fs::read_to_string(&args.script_path)
-        .map_err(|e| Error::io_at(&args.script_path, e))?;
+    let script =
+        fs::read_to_string(&args.script_path).map_err(|e| Error::io_at(&args.script_path, e))?;
     let backends = default_backends();
     let refactoring = codemod::compile(&script, &backends)?;
     info!("Running script: {}", refactoring);
 
     let stdout_is_tty = io::stdout().is_terminal();
-    let exec_mode = resolve_exec_mode(args.write, args.dry_run, args.check, args.format, stdout_is_tty);
+    let exec_mode = resolve_exec_mode(
+        args.write,
+        args.dry_run,
+        args.check,
+        args.format,
+        stdout_is_tty,
+    );
     let mut reporter = format::make_reporter(args.format, exec_mode);
 
     let targets = if args.paths.is_empty() {
@@ -215,27 +219,33 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     let mut would_change = 0u32;
     for target in &targets {
-        walker::walk(&refactoring, target, &mut |change: FileChange| -> Result<()> {
-            if change.changed() {
-                would_change += 1;
-                if matches!(exec_mode, ExecMode::Write) {
-                    fs::write(&change.path, &change.after)
-                        .map_err(|e| Error::io_at(&change.path, e))?;
+        walker::walk(
+            &refactoring,
+            target,
+            &mut |change: FileChange| -> Result<()> {
+                if change.changed() {
+                    would_change += 1;
+                    if matches!(exec_mode, ExecMode::Write) {
+                        fs::write(&change.path, &change.after)
+                            .map_err(|e| Error::io_at(&change.path, e))?;
+                    }
                 }
-            }
-            reporter
-                .report(&change)
-                .map_err(|e| Error::io_at(&change.path, e))?;
-            Ok(())
-        })?;
+                reporter
+                    .report(&change)
+                    .map_err(|e| Error::io_at(&change.path, e))?;
+                Ok(())
+            },
+        )?;
     }
     reporter.finish().map_err(io_to_error)?;
 
-    Ok(if matches!(exec_mode, ExecMode::Check) && would_change > 0 {
-        10
-    } else {
-        0
-    })
+    Ok(
+        if matches!(exec_mode, ExecMode::Check) && would_change > 0 {
+            10
+        } else {
+            0
+        },
+    )
 }
 
 /// Resolve the effective exec mode given explicit flags and the
@@ -265,14 +275,16 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
         .expect("clap requires --path with --stdin")
         .clone();
 
-    let script = fs::read_to_string(&args.script_path)
-        .map_err(|e| Error::io_at(&args.script_path, e))?;
+    let script =
+        fs::read_to_string(&args.script_path).map_err(|e| Error::io_at(&args.script_path, e))?;
     let backends = default_backends();
     let refactoring = codemod::compile(&script, &backends)?;
     info!("Running script: {}", refactoring);
 
     let mut source = String::new();
-    io::stdin().read_to_string(&mut source).map_err(io_to_error)?;
+    io::stdin()
+        .read_to_string(&mut source)
+        .map_err(io_to_error)?;
 
     let after = if refactoring.is_file_relevant(&path) {
         refactoring.apply(&source)
@@ -289,7 +301,8 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
     match args.format {
         Format::Human => {
             let mut out = io::stdout().lock();
-            out.write_all(change.after.as_bytes()).map_err(io_to_error)?;
+            out.write_all(change.after.as_bytes())
+                .map_err(io_to_error)?;
         }
         Format::Json | Format::Ndjson | Format::Diff => {
             let mut reporter = format::make_reporter(args.format, ExecMode::DryRun);
@@ -300,7 +313,11 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
         }
     }
 
-    Ok(if args.check && change.changed() { 10 } else { 0 })
+    Ok(if args.check && change.changed() {
+        10
+    } else {
+        0
+    })
 }
 
 fn change_working_dir(path: &Path) -> Result<()> {

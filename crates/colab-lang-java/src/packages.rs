@@ -56,10 +56,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
             let Some(name_node) = child.named_child(j) else {
                 break;
             };
-            if !matches!(
-                name_node.kind(),
-                "scoped_identifier" | "identifier"
-            ) {
+            if !matches!(name_node.kind(), "scoped_identifier" | "identifier") {
                 continue;
             }
             let Ok(name) = name_node.utf8_text(source_code.as_bytes()) else {
@@ -67,10 +64,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
             };
             if name == from {
                 let mut out = source_code.to_string();
-                out.replace_range(
-                    name_node.start_byte()..name_node.end_byte(),
-                    to,
-                );
+                out.replace_range(name_node.start_byte()..name_node.end_byte(), to);
                 return out;
             }
         }

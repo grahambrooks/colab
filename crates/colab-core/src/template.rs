@@ -43,9 +43,7 @@ pub fn render_call_template(template: &str, function_name: &str, args: &[&str]) 
             if digit_end > 0 {
                 let idx_str = &rest[..digit_end];
                 let idx: usize = idx_str.parse().unwrap_or(0);
-                if idx >= 1
-                    && idx <= args.len()
-                {
+                if idx >= 1 && idx <= args.len() {
                     out.push_str(args[idx - 1]);
                 }
                 rest = &rest[digit_end..];

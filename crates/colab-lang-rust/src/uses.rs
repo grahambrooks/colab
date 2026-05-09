@@ -344,7 +344,10 @@ mod tests {
     fn ensure_inserts_after_inner_attributes() {
         let src = "#![allow(dead_code)]\nfn main() {}\n";
         let out = ensure("std::fmt", src);
-        assert!(out.starts_with("#![allow(dead_code)]\nuse std::fmt;\n"), "got: {out}");
+        assert!(
+            out.starts_with("#![allow(dead_code)]\nuse std::fmt;\n"),
+            "got: {out}"
+        );
     }
 
     #[test]

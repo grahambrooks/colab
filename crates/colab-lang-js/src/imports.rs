@@ -69,7 +69,10 @@ where
 
 /// Given a `string` node (with surrounding quotes), return the byte
 /// range of its inner content and the string value.
-fn string_inner_bytes<'a>(string_node: Node<'a>, source: &'a str) -> Option<(usize, usize, &'a str)> {
+fn string_inner_bytes<'a>(
+    string_node: Node<'a>,
+    source: &'a str,
+) -> Option<(usize, usize, &'a str)> {
     // tree-sitter-javascript wraps the inner text in either
     // `string_fragment` children or matches the literal directly. The
     // safest approach: look for a `string_fragment` named child.

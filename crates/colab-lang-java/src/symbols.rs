@@ -93,7 +93,10 @@ mod tests {
     fn renames_method_and_calls() {
         let src = "class A { void oldM() {} void caller() { oldM(); } }\n";
         let out = rename("oldM", "newM", src);
-        assert_eq!(out, "class A { void newM() {} void caller() { newM(); } }\n");
+        assert_eq!(
+            out,
+            "class A { void newM() {} void caller() { newM(); } }\n"
+        );
     }
 
     #[test]

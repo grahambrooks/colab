@@ -106,7 +106,9 @@ mod tests {
 
     #[test]
     fn parses_namespace() {
-        let result = grammar::NamespaceParser::new().parse("  go::import ").unwrap();
+        let result = grammar::NamespaceParser::new()
+            .parse("  go::import ")
+            .unwrap();
         assert_eq!(
             result,
             Namespace {
@@ -136,10 +138,9 @@ mod tests {
 
     #[test]
     fn parses_full_program_with_single_match() {
-        let command = parse(
-            r#" refactor "this" { match  go::import "a.b.c" { replace "d.e.f" } } "#,
-        )
-        .unwrap();
+        let command =
+            parse(r#" refactor "this" { match  go::import "a.b.c" { replace "d.e.f" } } "#)
+                .unwrap();
 
         assert_eq!(command.refactor_name, "this");
         assert_eq!(command.matches.len(), 1);
@@ -204,7 +205,10 @@ mod tests {
         assert_eq!(refactoring.name, "rename");
         assert_eq!(refactoring.len(), 1);
         let display = refactoring.to_string();
-        assert!(display.contains("go::import \"old\" -> \"new\""), "got: {display}");
+        assert!(
+            display.contains("go::import \"old\" -> \"new\""),
+            "got: {display}"
+        );
     }
 
     #[test]

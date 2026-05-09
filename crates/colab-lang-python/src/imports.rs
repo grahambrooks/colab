@@ -69,12 +69,8 @@ where
     }
 }
 
-fn visit_import_statement<'a, F>(
-    node: Node<'a>,
-    source: &'a str,
-    target: &str,
-    visit: &mut F,
-) where
+fn visit_import_statement<'a, F>(node: Node<'a>, source: &'a str, target: &str, visit: &mut F)
+where
     F: FnMut(Node<'a>, Node<'a>, usize),
 {
     // `import_statement` has multiple `name` children.
@@ -297,10 +293,7 @@ fn leading_header_end(tree: &Tree, source: &str) -> usize {
         };
         if is_header {
             let end = child.end_byte();
-            last_end = source[end..]
-                .find('\n')
-                .map(|p| end + p + 1)
-                .unwrap_or(end);
+            last_end = source[end..].find('\n').map(|p| end + p + 1).unwrap_or(end);
         } else {
             break;
         }
@@ -410,7 +403,10 @@ mod tests {
     fn ensure_inserts_after_module_docstring() {
         let src = "\"\"\"Module doc.\"\"\"\nx = 1\n";
         let out = ensure("os", src);
-        assert!(out.starts_with("\"\"\"Module doc.\"\"\"\nimport os\n"), "got: {out}");
+        assert!(
+            out.starts_with("\"\"\"Module doc.\"\"\"\nimport os\n"),
+            "got: {out}"
+        );
     }
 
     #[test]

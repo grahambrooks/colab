@@ -242,7 +242,8 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 mod tests {
     use super::*;
 
-    const HELLO: &str = "package demo;\n\nimport java.util.List;\nimport java.util.Map;\n\npublic class Hello {}\n";
+    const HELLO: &str =
+        "package demo;\n\nimport java.util.List;\nimport java.util.Map;\n\npublic class Hello {}\n";
 
     #[test]
     fn renames_a_named_import() {
