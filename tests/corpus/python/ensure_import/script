@@ -1,0 +1,3 @@
+refactor "ensure-os" {
+    match python::import "os" { ensure }
+}

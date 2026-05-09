@@ -1,0 +1,8 @@
+refactor "rename-old-tokio-to-tokio" {
+    match rust::crate "old_tokio" {
+        replace "tokio"
+    }
+    match rust::use "old_tokio" {
+        replace "tokio"
+    }
+}

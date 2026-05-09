@@ -1,0 +1,5 @@
+refactor "rename-some-module" {
+    match go::import "some.module" {
+        replace "new.module"
+    }
+}

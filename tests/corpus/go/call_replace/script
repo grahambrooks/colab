@@ -1,0 +1,5 @@
+refactor "swap-args" {
+    match go::call "pkg.Old" {
+        replace_call "pkg.New($2, $1, nil)"
+    }
+}

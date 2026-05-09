@@ -1,0 +1,3 @@
+refactor "drop-some-module" {
+    match go::import "some.module" { delete }
+}

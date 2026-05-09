@@ -1,0 +1,5 @@
+refactor "rename-old-pkg" {
+    match python::import "old_pkg" {
+        replace "new_pkg"
+    }
+}

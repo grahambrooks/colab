@@ -1,0 +1,5 @@
+refactor "rename-json-field" {
+    match go::struct_tag "json:old_name" {
+        replace "json:new_name"
+    }
+}

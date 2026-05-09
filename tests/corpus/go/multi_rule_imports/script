@@ -1,0 +1,8 @@
+refactor "two-renames" {
+    match go::import "some.module" {
+        replace "new.module"
+    }
+    match go::import "another.module" {
+        replace "yet.another.module"
+    }
+}

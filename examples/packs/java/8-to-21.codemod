@@ -1,0 +1,19 @@
+// Java 8 → 21 mechanical helpers.
+//
+// Most language differences (records, switch expressions, sealed
+// classes, pattern matching) are not amenable to syntactic rewriting
+// because they require type info. This pack is intentionally a
+// skeleton: extend it with project-specific renames the upgrade
+// forces — for example, when a vendor moves a class between packages
+// and you want every `import` flipped consistently.
+refactor "java-8-to-21" {
+    // Examples of the kind of rules a real pack carries:
+    //
+    //   match java::import "javax.annotation.Nonnull" {
+    //       replace "jakarta.annotation.Nonnull"
+    //   }
+    //
+    //   match java::import "javax.persistence.Entity" {
+    //       replace "jakarta.persistence.Entity"
+    //   }
+}

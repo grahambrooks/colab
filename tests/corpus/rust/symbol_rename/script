@@ -1,0 +1,3 @@
+refactor "rename-old-thing" {
+    match rust::symbol "OldThing" { replace "NewThing" }
+}

@@ -1,0 +1,5 @@
+refactor "rename-old-fn" {
+    match rust::call "old_fn" {
+        replace_call "new_fn($args)"
+    }
+}

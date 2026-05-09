@@ -1,26 +1,50 @@
-[package]
-name = "colab"
+[workspace]
+resolver = "2"
+members = [
+    "crates/colab-core",
+    "crates/colab-dsl",
+    "crates/colab-lang-go",
+    "crates/colab-lang-java",
+    "crates/colab-lang-js",
+    "crates/colab-lang-python",
+    "crates/colab-lang-rust",
+    "crates/colab-cli",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-build = "build.rs"
+authors = ["Graham Brooks"]
+license = "MIT"
+repository = "https://github.com/grahambrooks/colab"
 
-[build-dependencies] # <-- We added this and everything after!
-lalrpop = "0.22.1"
+[workspace.dependencies]
+colab-core = { path = "crates/colab-core" }
+colab-dsl = { path = "crates/colab-dsl" }
+colab-lang-go = { path = "crates/colab-lang-go" }
+colab-lang-java = { path = "crates/colab-lang-java" }
+colab-lang-js = { path = "crates/colab-lang-js" }
+colab-lang-python = { path = "crates/colab-lang-python" }
+colab-lang-rust = { path = "crates/colab-lang-rust" }
 
-[dependencies]
-lalrpop-util = { version = "0.22.1", features = ["lexer", "unicode"] }
+# Third-party deps shared across crates. Crates pick what they need.
 clap = { version = "4.5.31", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+similar = "2.6"
 tree-sitter = "0.25.3"
 tree-sitter-go = "0.23.4"
+tree-sitter-java = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-python = "0.25"
+tree-sitter-rust = "0.24"
+tree-sitter-toml = "0.20.0"
+toml_edit = "0.22"
 tower-lsp = "0.20.0"
 tokio = { version = "1.35.0", features = ["full"] }
 log = "0.4"
 env_logger = "0.11.6"
 colored = "3.0.0"
 chrono = "0.4.40"
-tree-sitter-toml = "0.20.0"
-
-[workspace]
-resolver = "2" # Use the new dependency resolver to help with conflicts
-
+lalrpop = "0.22.1"
+lalrpop-util = { version = "0.22.1", features = ["lexer", "unicode"] }

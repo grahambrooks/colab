@@ -1,0 +1,3 @@
+refactor "drop-old-crate" {
+    match rust::crate "old_crate" { delete }
+}

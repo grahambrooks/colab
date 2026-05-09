@@ -1,0 +1,3 @@
+refactor "rename-helper" {
+    match js::symbol "oldHelper" { replace "newHelper" }
+}

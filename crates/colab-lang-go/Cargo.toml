@@ -1,0 +1,13 @@
+[package]
+name = "colab-lang-go"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Go language backend for colab: tree-sitter-driven Go source rewrites."
+
+[dependencies]
+colab-core = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-go = { workspace = true }

@@ -1,0 +1,3 @@
+refactor "ensure-fmt-use" {
+    match rust::use "std::fmt::Display" { ensure }
+}

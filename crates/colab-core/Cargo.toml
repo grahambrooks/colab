@@ -1,0 +1,11 @@
+[package]
+name = "colab-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core types for colab: errors, the CodeTransformer contract, and the filesystem walker."
+
+[dependencies]
+log = { workspace = true }

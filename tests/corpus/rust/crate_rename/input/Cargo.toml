@@ -1,0 +1,11 @@
+[package]
+name = "demo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+old_crate = "1.0"
+unrelated = "2.0"
+
+[dev-dependencies]
+old_crate = { version = "1.0", features = ["x"] }

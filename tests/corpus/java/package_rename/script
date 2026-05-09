@@ -1,0 +1,5 @@
+refactor "rename-package" {
+    match java::package "com.old" {
+        replace "com.new"
+    }
+}

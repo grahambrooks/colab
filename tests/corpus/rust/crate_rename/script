@@ -1,0 +1,5 @@
+refactor "rename-old-crate" {
+    match rust::crate "old_crate" {
+        replace "new_crate"
+    }
+}

@@ -1,0 +1,17 @@
+// Edition 2021 → 2024 mechanical helpers.
+//
+// This pack is intentionally small. Most edition differences are
+// semantic (lint defaults, capture rules, hygiene changes) and cannot
+// be applied syntactically. Run this pack first, then bump the
+// `edition = "2024"` line in your Cargo.toml manually and let
+// `cargo fix --edition` finish the job.
+//
+// Currently this pack only ships the namespace-aware renames that
+// commonly trip up edition migrations — replace it with project-
+// specific rules (e.g. crate renames forced by upstream renames) as
+// needed.
+refactor "rust-edition-2021-to-2024" {
+    // Placeholder: extend with crate / use renames as required by the
+    // surrounding ecosystem (e.g. tokio major-version bumps that
+    // shipped alongside an edition migration).
+}

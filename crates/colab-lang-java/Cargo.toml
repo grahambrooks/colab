@@ -1,0 +1,13 @@
+[package]
+name = "colab-lang-java"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Java language backend for colab: import and package rewrites via tree-sitter-java."
+
+[dependencies]
+colab-core = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-java = { workspace = true }

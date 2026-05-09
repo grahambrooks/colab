@@ -1,0 +1,35 @@
+[package]
+name = "colab-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface and LSP stub for the colab codemod tool."
+build = "build.rs"
+
+[[bin]]
+name = "colab"
+path = "src/main.rs"
+
+[dependencies]
+colab-core = { workspace = true }
+colab-dsl = { workspace = true }
+colab-lang-go = { workspace = true }
+colab-lang-java = { workspace = true }
+colab-lang-js = { workspace = true }
+colab-lang-python = { workspace = true }
+colab-lang-rust = { workspace = true }
+clap = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+colored = { workspace = true }
+chrono = { workspace = true }
+tower-lsp = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+similar = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2.0"

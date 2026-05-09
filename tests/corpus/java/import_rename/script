@@ -1,0 +1,5 @@
+refactor "rename-list" {
+    match java::import "java.util.List" {
+        replace "java.util.ArrayList"
+    }
+}

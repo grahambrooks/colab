@@ -1,0 +1,13 @@
+[package]
+name = "colab-lang-python"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Python language backend for colab: import rewrites via tree-sitter-python."
+
+[dependencies]
+colab-core = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-python = { workspace = true }

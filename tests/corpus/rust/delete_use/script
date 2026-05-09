@@ -1,0 +1,3 @@
+refactor "drop-tokio" {
+    match rust::use "tokio" { delete }
+}

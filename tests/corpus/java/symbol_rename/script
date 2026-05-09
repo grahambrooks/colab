@@ -1,0 +1,3 @@
+refactor "rename-greeter" {
+    match java::symbol "OldGreeter" { replace "NewGreeter" }
+}

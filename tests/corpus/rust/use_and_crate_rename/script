@@ -1,0 +1,8 @@
+refactor "swap-tokio" {
+    match rust::use "old_tokio" {
+        replace "tokio"
+    }
+    match rust::crate "old_tokio" {
+        replace "tokio"
+    }
+}

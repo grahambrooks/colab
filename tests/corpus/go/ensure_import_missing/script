@@ -1,0 +1,3 @@
+refactor "ensure-fmt" {
+    match go::import "fmt" { ensure }
+}

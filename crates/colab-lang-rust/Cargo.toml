@@ -1,0 +1,14 @@
+[package]
+name = "colab-lang-rust"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rust language backend for colab: use-path renames and Cargo.toml dependency renames."
+
+[dependencies]
+colab-core = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-rust = { workspace = true }
+toml_edit = { workspace = true }

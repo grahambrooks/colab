@@ -1,0 +1,5 @@
+refactor "rename-missing" {
+    match go::import "this.does.not.exist" {
+        replace "irrelevant"
+    }
+}

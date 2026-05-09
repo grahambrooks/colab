@@ -1,0 +1,5 @@
+refactor "rename-tokio" {
+    match rust::use "tokio" {
+        replace "async_tokio"
+    }
+}

@@ -1,0 +1,3 @@
+refactor "rename-old-name" {
+    match go::symbol "OldName" { replace "NewName" }
+}

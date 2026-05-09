@@ -1,0 +1,5 @@
+refactor "rename-lodash" {
+    match js::import "lodash" {
+        replace "lodash-es"
+    }
+}
