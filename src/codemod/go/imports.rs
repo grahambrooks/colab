@@ -1,75 +1,74 @@
-use crate::codemod;
+//! Rename Go `import` paths using a tree-sitter parse.
+//!
+//! The traversal walks every `import_spec` node and rewrites the bytes in
+//! place when the path matches. Edits are applied in reverse byte order so
+//! earlier offsets remain valid as later ones are replaced.
 
-pub(crate) fn rename(replacement: &codemod::GoModule, source_code: &String) -> String {
-    let go_language = tree_sitter_go::LANGUAGE.into();
-    let mut parser = tree_sitter::Parser::new();
+use tree_sitter::{Parser, TreeCursor};
+
+/// Replace every Go import whose path contains `from` with the same string
+/// substituted for `to`, returning the rewritten source.
+///
+/// `source_code` is left untouched if no imports match.
+pub(crate) fn rename(from: &str, to: &str, source_code: &str) -> String {
+    let mut parser = Parser::new();
     parser
-        .set_language(&go_language)
-        .expect("Error loading Go grammar");
+        .set_language(&tree_sitter_go::LANGUAGE.into())
+        .expect("failed to load tree-sitter Go grammar");
 
-    let tree = parser
-        .parse(&source_code, None)
-        .expect("Failed to parse file");
+    let tree = match parser.parse(source_code, None) {
+        Some(tree) => tree,
+        None => return source_code.to_string(),
+    };
 
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut cursor = tree.walk();
-    let mut edits = Vec::new();
+    collect_import_edits(&mut cursor, source_code, from, to, &mut edits);
 
-    // Recursive depth-first traversal
-    fn visit_node(
-        cursor: &mut tree_sitter::TreeCursor,
-        source_code: &String,
-        replacement: &codemod::GoModule,
-        edits: &mut Vec<(usize, usize, String)>,
-    ) {
-        let node = cursor.node();
-        if node.is_named() && node.kind() == "import_spec" {
-            let module_name = node
-                .utf8_text(source_code.as_bytes())
-                .expect("Failed to get text");
-            if module_name.contains(&replacement.from) {
-                let new_module_name = module_name.replace(&replacement.from, &replacement.to);
-                edits.push((node.start_byte(), node.end_byte(), new_module_name));
-            }
-        }
-
-        // Traverse child nodes using depth-first traversal
-        if cursor.goto_first_child() {
-            loop {
-                visit_node(cursor, source_code, replacement, edits);
-                if !cursor.goto_next_sibling() {
-                    break;
-                }
-            }
-            cursor.goto_parent(); // Return to the parent node
-        }
+    if edits.is_empty() {
+        return source_code.to_string();
     }
 
-    // Start recursion from the root
-    visit_node(&mut cursor, &source_code, replacement, &mut edits);
-
-    // Apply the edits in reverse order to avoid invalidating ranges
-    let mut new_source_code = source_code.clone();
+    let mut rewritten = source_code.to_string();
     for (start, end, replacement) in edits.iter().rev() {
-        new_source_code.replace_range(*start..*end, replacement);
+        rewritten.replace_range(*start..*end, replacement);
     }
-    new_source_code
+    rewritten
+}
+
+fn collect_import_edits(
+    cursor: &mut TreeCursor,
+    source: &str,
+    from: &str,
+    to: &str,
+    edits: &mut Vec<(usize, usize, String)>,
+) {
+    let node = cursor.node();
+    if node.is_named()
+        && node.kind() == "import_spec"
+        && let Ok(text) = node.utf8_text(source.as_bytes())
+        && text.contains(from)
+    {
+        edits.push((node.start_byte(), node.end_byte(), text.replace(from, to)));
+    }
+
+    if cursor.goto_first_child() {
+        loop {
+            collect_import_edits(cursor, source, from, to, edits);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+        cursor.goto_parent();
+    }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
-    use tree_sitter::Parser;
 
     #[test]
-    fn test_rename_import() {
-        // Load the tree-sitter Go language
-        let mut parser = Parser::new();
-        let go_language = tree_sitter_go::LANGUAGE.into();
-        parser
-            .set_language(&go_language)
-            .expect("Error loading Go language");
-
-        // Go source code input
+    fn renames_a_single_import() {
         let go_code = r#"
     package main
 
@@ -84,17 +83,9 @@ mod test {
     }
     "#;
 
-        // Define the replacement
-        let replacement = codemod::GoModule {
-            from: "some.module".to_string(),
-            to: "new.module".to_string(),
-        };
+        let refactored = rename("some.module", "new.module", go_code);
 
-        // Call the function to refactor the Go import
-        let refactored_code = rename(&replacement, &go_code.to_string());
-
-        // Expected output
-        let expected_code = r#"
+        let expected = r#"
     package main
 
     import (
@@ -108,21 +99,11 @@ mod test {
     }
     "#;
 
-        // Verify that the refactored code matches the expected output
-        assert_eq!(refactored_code, expected_code);
+        assert_eq!(refactored, expected);
     }
 
-    // Test to replace mumltiple imports
     #[test]
-    fn test_rename_multiple_imports() {
-        // Load the tree-sitter Go language
-        let mut parser = Parser::new();
-        let go_language = tree_sitter_go::LANGUAGE.into();
-        parser
-            .set_language(&go_language)
-            .expect("Error loading Go language");
-
-        // Go source code input
+    fn renames_repeated_and_distinct_imports() {
         let go_code = r#"
     package main
 
@@ -138,25 +119,10 @@ mod test {
     }
     "#;
 
-        // Define the replacement
-        let replacement = codemod::GoModule {
-            from: "some.module".to_string(),
-            to: "new.module".to_string(),
-        };
+        let after_first = rename("some.module", "new.module", go_code);
+        let after_second = rename("another.module", "yet.another.module", &after_first);
 
-        // Call the function to refactor the Go import
-        let refactored_code = rename(&replacement, &go_code.to_string());
-
-        let refactored_code = rename(
-            &codemod::GoModule {
-                from: "another.module".to_string(),
-                to: "yet.another.module".to_string(),
-            },
-            &refactored_code.to_string(),
-        );
-
-        // Expected output
-        let expected_code = r#"
+        let expected = r#"
     package main
 
     import (
@@ -171,7 +137,12 @@ mod test {
     }
     "#;
 
-        // Verify that the refactored code matches the expected output
-        assert_eq!(refactored_code, expected_code);
+        assert_eq!(after_second, expected);
+    }
+
+    #[test]
+    fn returns_input_unchanged_when_no_match() {
+        let go_code = "package main\n";
+        assert_eq!(rename("missing", "replacement", go_code), go_code);
     }
 }

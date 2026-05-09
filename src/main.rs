@@ -1,20 +1,34 @@
-mod app;
-mod codemod;
-mod refactor;
-mod language_server;
+//! Entry point for the `colab` binary.
+//!
+//! `main` initialises logging and dispatches to [`cli::run`]. All errors
+//! from subcommands surface here as a non-zero exit code with a single
+//! human-readable log line.
 
-use env_logger::Builder;
-use log::LevelFilter;
+mod cli;
+mod codemod;
+mod error;
+mod language_server;
+mod walker;
+
 use std::io::Write;
-use colored::*;
+use std::process::ExitCode;
+
 use chrono::Local;
+use colored::*;
+use env_logger::Builder;
+use log::{LevelFilter, error};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     initialize_logging();
 
-    let app = app::Cli::new();
-    app.run().await;
+    match cli::run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            error!("{}", err);
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn initialize_logging() {
@@ -36,6 +50,6 @@ fn initialize_logging() {
                 record.args()
             )
         })
-        .filter(None, LevelFilter::Info) // Set default log level to Info
+        .filter(None, LevelFilter::Info)
         .init();
 }

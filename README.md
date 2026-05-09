@@ -85,6 +85,12 @@ refactor "name" {
 
 This script will replace all imports of "old.module.path" with "new.module.path" in Go files.
 
+Targeting a namespace that colab doesn't implement (e.g. `rust::module`) produces a clear `unsupported operation` error instead of silently doing nothing.
+
+## Project Layout
+
+A high-level walk through the source tree, the runtime data flow, and how to add a new transformation lives in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Examples
 
 The repository includes examples in the `examples` directory:
