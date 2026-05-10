@@ -782,6 +782,8 @@ fn commit_per_rule_produces_one_commit_per_rule() {
             .unwrap()
     };
     assert!(git(&["init", "-q", "-b", "main"]).success());
+    assert!(git(&["config", "user.name", "test"]).success());
+    assert!(git(&["config", "user.email", "test@example.com"]).success());
     let script = root.join("rules.codemod");
     let target = root.join("main.go");
     // Two rules; both will fire on the same file.
