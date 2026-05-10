@@ -593,9 +593,6 @@ two-week increments.
 - 3 new CLI integration tests cover both the verify-success and
   verify-fail paths plus a real-git two-rule commit-per-rule run.
 - **Deferred to M12.5:** `--bisect <command>` and `colab undo`.
-  Both have their own design weight (binary search over rule
-  list with stash/reset semantics; backup format / location for
-  manual revert). Tracked separately.
 
 ### ✅ M13 — Run summary + `--summary-only` (Goal 5.4, partial)
 - `Reporter` trait gains `report_summary(&RunSummary)`. Both the
@@ -614,11 +611,47 @@ two-week increments.
   + the existing JSON test extended to assert the new event
   shape.
 - **Deferred to M13.5:** MCP `notifications/progress` and LSP
-  `WorkDoneProgress` for `colab.preview` / `colab.apply`. Both
-  need request-context-aware streaming (the JSON-RPC dispatcher
-  currently returns a single `Option<Value>` per request — no
-  way to emit interim notifications). A non-trivial refactor of
-  `colab-mcp::handle` and the LSP `Backend`.
+  `WorkDoneProgress`.
+
+### ✅ M12.5 — Bisect, --backup, colab undo (closes M12)
+- `--bisect <CMD>`: full apply, then verify, and on failure
+  binary-search the rule list (`rules[..mid]` invariant) until
+  the single breaking rule is identified. The pre-run state is
+  snapshotted in memory at full-apply time; each bisect iteration
+  restores from that snapshot before applying the candidate
+  prefix and re-running verify. The working tree is restored to
+  the pre-run state on exit so the user can inspect the failure
+  cleanly. Conflicts with `--verify` (bisect *is* verify+search).
+- `--backup <DIR>`: opt-in pre-modification snapshots written to
+  `<DIR>/<rel-path>` (mirrors absolute-path layout). First snapshot
+  per file wins so multi-rule runs preserve the truly pre-run
+  state.
+- `colab undo --from <DIR>`: walks the backup directory and writes
+  each backup back over its original location.
+- 3 new CLI integration tests: bisect-success path, bisect
+  finds-the-breaker (with full revert verified), --backup +
+  `colab undo` round-trip.
+
+### ✅ M13.5 — MCP notifications/progress (closes M13)
+- New `handle_streaming<W: Write>` dispatcher in `colab-mcp` runs
+  alongside the synchronous `handle`. When a `tools/call` for
+  `colab.preview` / `colab.apply` carries `params._meta.progressToken`,
+  the server emits `notifications/progress` JSON-RPC messages every
+  64 files plus a final `progress == total` tick before writing the
+  response.
+- Notifications are best-effort: write failures during a tick are
+  swallowed (the client may have closed early); the response write
+  surfaces real errors.
+- Calls without a progress token, calls to non-streaming tools
+  (`colab.schema` / `colab.lint_script`), and every other JSON-RPC
+  method fall through to the existing synchronous path.
+- 2 new colab-mcp unit tests: progress fires when token present,
+  no progress when absent. The test parses `Content-Length`-framed
+  output buffers and asserts both the notification stream and the
+  final response.
+- **Deferred:** LSP `WorkDoneProgress`. The LSP currently exposes
+  only diagnostics + completion (both fast). Once it gains
+  preview/apply requests, the same shape applies.
 
 ### M14 — Repo-level config + `colab fix` (Goal 5.5)
 - `colab.toml` schema (roots / excludes / packs / verify / jobs).

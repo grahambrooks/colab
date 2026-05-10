@@ -74,6 +74,7 @@ struct Args {
 }
 
 #[derive(Parser, Debug)]
+#[allow(clippy::large_enum_variant)] // clap derive shape; not on a hot path
 enum Commands {
     /// Run a codemod script against one or more paths.
     Refactor(RefactorArgs),
@@ -91,6 +92,16 @@ enum Commands {
     ListRules(ListRulesArgs),
     /// Manage discoverable codemod packs.
     Pack(PackArgs),
+    /// Restore files from a `--backup <dir>` produced by a prior
+    /// `colab refactor` run.
+    Undo(UndoArgs),
+}
+
+#[derive(Parser, Debug)]
+struct UndoArgs {
+    /// Backup directory to restore from.
+    #[arg(long = "from", value_name = "DIR", required = true)]
+    from: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -191,6 +202,20 @@ struct RefactorArgs {
     #[arg(long = "commit-per-rule", conflicts_with_all = ["dry_run", "check"])]
     commit_per_rule: bool,
 
+    /// After applying every rule, run this shell command. On
+    /// failure, binary-search the rule list to identify the single
+    /// breaking rule, then revert the working tree to its pre-run
+    /// state and exit non-zero. Conflicts with `--verify`.
+    #[arg(long, value_name = "CMD",
+          conflicts_with_all = ["verify", "commit_per_rule", "dry_run", "check"])]
+    bisect: Option<String>,
+
+    /// Before any rule writes a file, save the pre-modification
+    /// contents to `<dir>/<rel-path>`. Pair with `colab undo
+    /// --from <dir>` to roll back the run.
+    #[arg(long, value_name = "DIR", conflicts_with_all = ["dry_run", "check"])]
+    backup: Option<PathBuf>,
+
     /// Suppress per-file events; emit only the final aggregate
     /// summary. Useful on millions-of-files runs where the
     /// per-file trace is the bottleneck.
@@ -248,6 +273,7 @@ pub async fn run() -> Result<i32> {
         Some(Commands::Pack(pack_args)) => match pack_args.cmd {
             PackCommand::List => print_json(&crate::packs::list()),
         },
+        Some(Commands::Undo(args)) => run_undo(&args.from),
         None => Err(Error::Config(
             "no command provided; run with --help for usage".to_string(),
         )),
@@ -397,6 +423,12 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
         return run_refactor_per_rule(&refactoring, &args, &targets);
     }
 
+    // `--bisect` applies the full set, runs verify, and on failure
+    // binary-searches the rule list to locate the breaking rule.
+    if let Some(cmd) = args.bisect.clone() {
+        return run_refactor_bisect(&refactoring, &args, &targets, &cmd);
+    }
+
     let stdout_is_tty = io::stdout().is_terminal();
     let exec_mode = resolve_exec_mode(
         args.write,
@@ -410,9 +442,13 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     let mut summary = RunSummary::default();
     let summary_only = args.summary_only;
 
+    let backup_dir = args.backup.clone();
     let mut visit = |change: FileChange| -> Result<()> {
         summary.record(&change);
         if change.changed() && matches!(exec_mode, ExecMode::Write) {
+            if let Some(dir) = &backup_dir {
+                write_backup_snapshot(dir, &change.path, &change.before)?;
+            }
             fs::write(&change.path, &change.after)
                 .map_err(|e| Error::io_at(&change.path, e))?;
         }
@@ -472,12 +508,16 @@ fn run_refactor_per_rule(
         // independent revert.
         let mut backups: std::collections::HashMap<PathBuf, String> =
             std::collections::HashMap::new();
+        let backup_dir = args.backup.clone();
         let mut visit = |change: FileChange| -> Result<()> {
             summary.record(&change);
             if change.changed() {
                 backups
                     .entry(change.path.clone())
                     .or_insert_with(|| change.before.clone());
+                if let Some(dir) = &backup_dir {
+                    write_backup_snapshot(dir, &change.path, &change.before)?;
+                }
                 fs::write(&change.path, &change.after)
                     .map_err(|e| Error::io_at(&change.path, e))?;
             }
@@ -561,6 +601,195 @@ fn commit_per_rule(rule_label: &str) -> Result<()> {
             rule_label,
             stderr.trim()
         )));
+    }
+    Ok(())
+}
+
+/// Apply the full refactoring, run `verify_cmd`, and on failure
+/// binary-search the rule list to identify the single breaking
+/// rule. Always restores the working tree to its pre-run state so
+/// the user can inspect the failure cleanly.
+fn run_refactor_bisect(
+    refactoring: &codemod::Refactoring,
+    args: &RefactorArgs,
+    targets: &[PathBuf],
+    verify_cmd: &str,
+) -> Result<i32> {
+    if refactoring.rules.is_empty() {
+        info!("No rules to bisect");
+        return Ok(0);
+    }
+
+    let mut reporter = format::make_reporter(args.format, ExecMode::Write);
+    let started = Instant::now();
+    let mut summary = RunSummary::default();
+    let summary_only = args.summary_only;
+
+    // Phase 1: full apply, recording snapshots along the way.
+    let mut snapshots: std::collections::HashMap<PathBuf, String> =
+        std::collections::HashMap::new();
+    let backup_dir = args.backup.clone();
+    {
+        let mut visit = |change: FileChange| -> Result<()> {
+            summary.record(&change);
+            if change.changed() {
+                snapshots
+                    .entry(change.path.clone())
+                    .or_insert_with(|| change.before.clone());
+                if let Some(dir) = &backup_dir {
+                    write_backup_snapshot(dir, &change.path, &change.before)?;
+                }
+                fs::write(&change.path, &change.after)
+                    .map_err(|e| Error::io_at(&change.path, e))?;
+            }
+            if !summary_only {
+                reporter
+                    .report(&change)
+                    .map_err(|e| Error::io_at(&change.path, e))?;
+            }
+            Ok(())
+        };
+        run_transformer(refactoring, args, targets, &mut visit)?;
+    }
+
+    // Phase 2: full-set verify.
+    info!("Verifying with `{}`", verify_cmd);
+    if run_verify(verify_cmd)? {
+        summary.elapsed = started.elapsed();
+        reporter.report_summary(&summary).map_err(io_to_error)?;
+        reporter.finish().map_err(io_to_error)?;
+        return Ok(0);
+    }
+
+    // Phase 3: bisect.
+    info!(
+        "Verify failed; bisecting on {} rule(s)…",
+        refactoring.rules.len()
+    );
+    let culprit_idx = bisect_rules(&refactoring.rules, &snapshots, args, targets, verify_cmd)?;
+    let culprit_label = refactoring.rules[culprit_idx].to_string();
+
+    // Phase 4: revert.
+    for (path, before) in &snapshots {
+        fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
+    }
+
+    summary.elapsed = started.elapsed();
+    reporter.report_summary(&summary).map_err(io_to_error)?;
+    reporter.finish().map_err(io_to_error)?;
+
+    Err(Error::Config(format!(
+        "rule {}/{} `{}` breaks `{}`; reverted {} file(s)",
+        culprit_idx + 1,
+        refactoring.rules.len(),
+        culprit_label,
+        verify_cmd,
+        snapshots.len()
+    )))
+}
+
+/// Binary search over `rules`. Invariant: `rules[..lo]` passes
+/// verify, `rules[..hi]` fails. The single breaking rule is
+/// `rules[lo]` once `hi - lo == 1`.
+fn bisect_rules(
+    rules: &[Box<dyn colab_core::Operation>],
+    snapshots: &std::collections::HashMap<PathBuf, String>,
+    args: &RefactorArgs,
+    targets: &[PathBuf],
+    verify_cmd: &str,
+) -> Result<usize> {
+    let mut lo = 0usize;
+    let mut hi = rules.len();
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        // Restore the pre-run state for every snapshotted file.
+        for (path, before) in snapshots {
+            fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
+        }
+        // Apply rules[..mid] sequentially.
+        for rule in rules.iter().take(mid) {
+            let single = codemod::SingleRule::new(rule.as_ref());
+            run_transformer(&single, args, targets, &mut |change: FileChange| -> Result<()> {
+                if change.changed() {
+                    fs::write(&change.path, &change.after)
+                        .map_err(|e| Error::io_at(&change.path, e))?;
+                }
+                Ok(())
+            })?;
+        }
+        if run_verify(verify_cmd)? {
+            info!("[bisect] rules[..{}] OK", mid);
+            lo = mid;
+        } else {
+            info!("[bisect] rules[..{}] FAIL", mid);
+            hi = mid;
+        }
+    }
+    Ok(lo)
+}
+
+/// Save a single pre-modification snapshot to `<backup_dir>` with
+/// path mirroring. Subsequent calls for the same file are no-ops
+/// so the first (truly pre-rule) state is preserved across multi-
+/// rule runs.
+fn write_backup_snapshot(backup_dir: &Path, file: &Path, content: &str) -> Result<()> {
+    let target = backup_target(backup_dir, file)?;
+    if target.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|e| Error::io_at(parent, e))?;
+    }
+    fs::write(&target, content).map_err(|e| Error::io_at(&target, e))?;
+    Ok(())
+}
+
+/// Given a backup root and an original (possibly relative) path,
+/// return the path inside the backup directory. Strips the leading
+/// `/` on Unix so the structure mirrors the absolute filesystem
+/// layout under the backup root.
+fn backup_target(backup_dir: &Path, file: &Path) -> Result<PathBuf> {
+    let canonical = file.canonicalize().unwrap_or_else(|_| file.to_path_buf());
+    let rel = canonical
+        .strip_prefix(std::path::MAIN_SEPARATOR.to_string())
+        .unwrap_or(&canonical);
+    Ok(backup_dir.join(rel))
+}
+
+/// Restore every file under `from` to the corresponding location
+/// in the filesystem (mirroring the backup-target layout).
+fn run_undo(from: &Path) -> Result<i32> {
+    if !from.is_dir() {
+        return Err(Error::Config(format!(
+            "backup directory does not exist or is not a directory: {}",
+            from.display()
+        )));
+    }
+    let mut count = 0u64;
+    walk_undo(from, from, &mut count)?;
+    info!("Restored {} file(s) from {}", count, from.display());
+    Ok(0)
+}
+
+fn walk_undo(root: &Path, current: &Path, count: &mut u64) -> Result<()> {
+    let entries = fs::read_dir(current).map_err(|e| Error::io_at(current, e))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| Error::io_at(current, e))?;
+        let path = entry.path();
+        if path.is_dir() {
+            walk_undo(root, &path, count)?;
+        } else if path.is_file() {
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|_| Error::Config(format!("path {} not under {}", path.display(), root.display())))?;
+            let target = Path::new(&std::path::MAIN_SEPARATOR.to_string()).join(rel);
+            let content = fs::read_to_string(&path).map_err(|e| Error::io_at(&path, e))?;
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(|e| Error::io_at(parent, e))?;
+            }
+            fs::write(&target, content).map_err(|e| Error::io_at(&target, e))?;
+            *count += 1;
+        }
     }
     Ok(())
 }

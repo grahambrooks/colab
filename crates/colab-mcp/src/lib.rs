@@ -66,9 +66,7 @@ where
         {
             return Ok(());
         }
-        if let Some(response) = handle(&message, &backends) {
-            write_message(&mut writer, &response)?;
-        }
+        handle_streaming(&message, &backends, &mut writer)?;
     }
 }
 
@@ -171,6 +169,158 @@ fn handle_call(id: Option<Value>, params: Option<&Value>, backends: &BackendRegi
         ),
         Err(err) => make_error(id, INTERNAL_ERROR, &err),
     }
+}
+
+/// Streaming dispatcher used by [`serve`]. Inspects `tools/call`
+/// requests for an `_meta.progressToken` and, when present, runs
+/// `colab.preview` / `colab.apply` with `notifications/progress`
+/// emission interleaved with the final response. All other paths
+/// (no token, non-streaming tools, other JSON-RPC methods) fall
+/// through to the existing synchronous [`handle`].
+pub fn handle_streaming<W: Write>(
+    message: &Value,
+    backends: &BackendRegistry,
+    writer: &mut W,
+) -> io::Result<()> {
+    let is_tools_call = message
+        .get("method")
+        .and_then(|m| m.as_str())
+        .map(|m| m == "tools/call")
+        .unwrap_or(false);
+
+    if is_tools_call
+        && let Some(params) = message.get("params")
+        && let Some(token) = params
+            .get("_meta")
+            .and_then(|m| m.get("progressToken"))
+            .cloned()
+    {
+        let id = message.get("id").cloned();
+        let response = handle_call_with_progress(id, params, backends, writer, &token)?;
+        write_message(writer, &response)?;
+        return Ok(());
+    }
+
+    if let Some(response) = handle(message, backends) {
+        write_message(writer, &response)?;
+    }
+    Ok(())
+}
+
+fn handle_call_with_progress<W: Write>(
+    id: Option<Value>,
+    params: &Value,
+    backends: &BackendRegistry,
+    writer: &mut W,
+    token: &Value,
+) -> io::Result<Value> {
+    let Some(name) = params.get("name").and_then(|n| n.as_str()) else {
+        return Ok(make_error(id, INVALID_PARAMS, "missing tool name"));
+    };
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
+    // Only preview/apply emit progress; the others are fast and
+    // fall through to the synchronous path.
+    let mode = match name {
+        "colab.preview" => RunMode::Preview,
+        "colab.apply" => RunMode::Apply,
+        _ => return Ok(handle_call(id, Some(params), backends)),
+    };
+
+    match run_script_with_progress(&arguments, backends, mode, writer, token) {
+        Ok(value) => Ok(make_response(
+            id,
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": serde_json::to_string_pretty(&value).unwrap(),
+                }],
+                "isError": false,
+            }),
+        )),
+        Err(err) => Ok(make_error(id, INTERNAL_ERROR, &err)),
+    }
+}
+
+/// Like [`run_script`], but emits a `notifications/progress`
+/// message every [`PROGRESS_BATCH`] files plus a final 100%
+/// notification before the response is written.
+fn run_script_with_progress<W: Write>(
+    args: &Value,
+    backends: &BackendRegistry,
+    mode: RunMode,
+    writer: &mut W,
+    token: &Value,
+) -> Result<Value, String> {
+    let script = arg_str(args, "script")?;
+    let paths = arg_paths(args, "paths")?;
+
+    let refactoring = compile(&script, backends).map_err(|e| e.to_string())?;
+
+    let mut results: Vec<Value> = Vec::new();
+    let mut files_processed: u64 = 0;
+    let mut last_emitted: u64 = 0;
+
+    for target in &paths {
+        walker::walk(&refactoring, target, &mut |change| {
+            let mut entry = Map::new();
+            entry.insert("path".into(), json!(change.path.to_string_lossy()));
+            entry.insert("changed".into(), json!(change.changed()));
+            entry.insert("bytes_before".into(), json!(change.before.len()));
+            entry.insert("bytes_after".into(), json!(change.after.len()));
+            if change.changed() {
+                if matches!(mode, RunMode::Apply) {
+                    std::fs::write(&change.path, &change.after)
+                        .map_err(|e| colab_core::Error::io_at(&change.path, e))?;
+                }
+                let diff = unified_diff(&change.path, &change.before, &change.after);
+                entry.insert("diff".into(), json!(diff));
+            }
+            results.push(Value::Object(entry));
+            files_processed += 1;
+            if files_processed - last_emitted >= PROGRESS_BATCH {
+                last_emitted = files_processed;
+                // Errors writing a notification are non-fatal —
+                // the client may have closed early; the response
+                // attempt below will surface a real failure.
+                let _ = emit_progress(writer, token, files_processed, None);
+            }
+            Ok(())
+        })
+        .map_err(|e| e.to_string())?;
+    }
+
+    // Final 100% notification.
+    let _ = emit_progress(writer, token, files_processed, Some(files_processed));
+    Ok(json!({ "results": results }))
+}
+
+/// One progress notification per N files. Hand-tuned to be small
+/// enough that 1k-file runs emit ≥10 ticks but not so frequent
+/// that the wire becomes the bottleneck.
+const PROGRESS_BATCH: u64 = 64;
+
+fn emit_progress<W: Write>(
+    writer: &mut W,
+    token: &Value,
+    progress: u64,
+    total: Option<u64>,
+) -> io::Result<()> {
+    let mut params = Map::new();
+    params.insert("progressToken".into(), token.clone());
+    params.insert("progress".into(), json!(progress));
+    if let Some(total) = total {
+        params.insert("total".into(), json!(total));
+    }
+    let notification = json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/progress",
+        "params": Value::Object(params),
+    });
+    write_message(writer, &notification)
 }
 
 fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<String, String> {
@@ -502,6 +652,108 @@ mod tests {
         assert!(on_disk.contains("new.module"));
         assert!(!on_disk.contains("old.module"));
         fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Parse a buffer of `Content-Length`-framed JSON-RPC messages
+    /// into a `Vec<Value>` for assertions.
+    fn parse_messages(buf: &[u8]) -> Vec<Value> {
+        let text = std::str::from_utf8(buf).unwrap();
+        let mut out = Vec::new();
+        let mut rest = text;
+        while let Some(header_end) = rest.find("\r\n\r\n") {
+            let header = &rest[..header_end];
+            let length: usize = header
+                .lines()
+                .find_map(|l| l.strip_prefix("Content-Length:"))
+                .and_then(|v| v.trim().parse().ok())
+                .expect("Content-Length");
+            let body_start = header_end + 4;
+            let body = &rest[body_start..body_start + length];
+            out.push(serde_json::from_str(body).unwrap());
+            rest = &rest[body_start + length..];
+        }
+        out
+    }
+
+    #[test]
+    fn handle_streaming_emits_progress_notifications_when_token_present() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!(
+            "colab-mcp-progress-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        // Create > PROGRESS_BATCH (64) Go files so we get at least
+        // one mid-walk progress notification.
+        for i in 0..80 {
+            let p = dir.join(format!("dir{}/{:03}.go", i % 4, i));
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, "package demo\nimport \"old.module\"\n").unwrap();
+        }
+
+        let req = json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "tools/call",
+            "params": {
+                "name": "colab.preview",
+                "arguments": {
+                    "script": "refactor \"r\" { match go::import \"old.module\" { replace \"new.module\" } }",
+                    "paths": [dir.to_string_lossy()],
+                },
+                "_meta": {
+                    "progressToken": "tok-1"
+                }
+            }
+        });
+
+        let mut buf: Vec<u8> = Vec::new();
+        handle_streaming(&req, &registry(), &mut buf).unwrap();
+
+        let messages = parse_messages(&buf);
+        // At least: ≥1 mid-walk progress + 1 final progress + 1 response.
+        let progress: Vec<&Value> = messages
+            .iter()
+            .filter(|m| {
+                m.get("method")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s == "notifications/progress")
+                    .unwrap_or(false)
+            })
+            .collect();
+        let responses: Vec<&Value> = messages.iter().filter(|m| m.get("id").is_some()).collect();
+
+        assert!(progress.len() >= 2, "got {} progress messages", progress.len());
+        assert_eq!(responses.len(), 1, "got {:?}", responses);
+        assert_eq!(responses[0]["id"], 42);
+        // Each progress carries the original token.
+        for p in &progress {
+            assert_eq!(p["params"]["progressToken"], json!("tok-1"));
+        }
+        // The final progress carries `total == progress`.
+        let last = progress.last().unwrap();
+        assert_eq!(last["params"]["progress"], last["params"]["total"]);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn handle_streaming_skips_progress_when_no_token() {
+        let req = json!({
+            "jsonrpc":"2.0","id":7,"method":"tools/call",
+            "params":{"name":"colab.schema","arguments":{}}
+        });
+        let mut buf: Vec<u8> = Vec::new();
+        handle_streaming(&req, &registry(), &mut buf).unwrap();
+        let messages = parse_messages(&buf);
+        // Exactly one response, no progress notifications.
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], 7);
+        assert!(messages[0].get("method").is_none());
     }
 
     #[test]

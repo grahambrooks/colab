@@ -21,6 +21,8 @@ colab refactor --script <path> [--write|--dry-run|--check]
                                 [--changed-since <ref> | --staged]
                                 [--jobs <N>]
                                 [--verify <CMD>] [--commit-per-rule]
+                                [--bisect <CMD>]
+                                [--backup <DIR>]
                                 [--summary-only]
                                 [paths...]
 ```
@@ -43,6 +45,8 @@ colab refactor --script <path> [--write|--dry-run|--check]
 | `--jobs <N>` | `num_cpus` | Worker thread count for parallel file processing. Falls back to the `COLAB_JOBS` env var when unset. Set to `1` for sequential. |
 | `--verify <CMD>` | — | Run `<CMD>` (a shell command) after each rule's edits. Non-zero exit reverts that rule's changes and aborts the run with exit 1. Implies `--write`. |
 | `--commit-per-rule` | — | After each successful rule, `git add -u && git commit -m "colab: <rule>"`. Requires a git repo. Implies `--write`. |
+| `--bisect <CMD>` | — | After applying every rule, run `<CMD>`. On failure, binary-search the rule list to identify the single breaking rule, then revert the working tree to its pre-run state. Conflicts with `--verify`. |
+| `--backup <DIR>` | — | Before any rule writes a file, save the pre-modification contents to `<DIR>/<rel-path>`. Pair with `colab undo --from <DIR>` to roll back. |
 | `--summary-only` | — | Suppress per-file events (json/diff/human); emit only the final aggregate summary. Pairs well with `--format json` for headless runs. |
 | `paths...` | `.` | Files or directories to walk recursively. Multiple roots are walked in order. |
 
@@ -124,6 +128,19 @@ language is not registered.
 ```sh
 colab list-rules go
 colab list-rules rust
+```
+
+### `colab undo --from <DIR>`
+
+Restore files from a backup directory produced by `colab refactor
+--backup <DIR>`. The backup directory mirrors the absolute paths
+of every file the run touched; `colab undo` walks it and writes
+each backup over its original location.
+
+```sh
+colab refactor --script s.codemod --write --backup .colab-backup .
+# … review / decide to roll back …
+colab undo --from .colab-backup
 ```
 
 ### `colab pack list`
@@ -227,6 +244,14 @@ Wire format: JSON-RPC 2.0 over stdio with LSP-style
 `initialized` (notification), `tools/list`, `tools/call`. Exiting
 the client (closing stdin or sending an `exit` notification) shuts
 the server down cleanly.
+
+**Progress.** `tools/call` for `colab.preview` / `colab.apply`
+honours `params._meta.progressToken`. When present, the server
+emits `notifications/progress` messages every 64 files (and once
+more at 100% on completion) before writing the final response,
+each carrying the original `progressToken`, the running
+`progress` count, and `total` on the final tick. Hosts that
+don't supply a token get the synchronous behaviour as before.
 
 ```sh
 colab mcp

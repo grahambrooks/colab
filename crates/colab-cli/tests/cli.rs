@@ -834,6 +834,122 @@ fn commit_per_rule_produces_one_commit_per_rule() {
 }
 
 #[test]
+fn bisect_passes_when_full_apply_verifies() {
+    let root = workspace_temp("bisect-pass");
+    let script = root.join("rename.codemod");
+    let target = root.join("main.go");
+    write(&script, SCRIPT);
+    write(&target, GO_INPUT);
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--bisect",
+            "true",
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    // Full apply succeeded; final state has the rename applied.
+    assert_eq!(fs::read_to_string(&target).unwrap(), GO_EXPECTED);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn bisect_isolates_breaking_rule_and_reverts() {
+    // Three rules. Rule 2 introduces the substring "BAD" (which
+    // rule 3 doesn't fully clean up — the substring survives into
+    // "another.BAD.module"), so the full-apply state matches the
+    // verify pattern and triggers bisection. Bisect should
+    // identify rule 2 as the culprit.
+    let root = workspace_temp("bisect-find");
+    let script = root.join("rules.codemod");
+    let target = root.join("main.go");
+    write(
+        &script,
+        r#"refactor "chain" {
+            match go::import "some.module" { replace "step1.module" }
+            match go::import "step1.module" { replace "BAD.module" }
+            match go::import "BAD.module" { replace "another.BAD.module" }
+        }
+        "#,
+    );
+    write(&target, GO_INPUT);
+
+    // Verify fails (exit non-zero) when "BAD" is found in the file.
+    let target_str = target.to_str().unwrap().to_string();
+    let verify_cmd = format!("! grep -q 'BAD' {}", target_str);
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--bisect",
+            verify_cmd.as_str(),
+            target.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // The error message names rule 2 (the one that first introduces
+    // "BAD"). Its Display form contains the from→to mapping.
+    assert!(
+        stderr.contains("step1.module") && stderr.contains("BAD.module"),
+        "stderr: {stderr}"
+    );
+    // Working tree was reverted to original.
+    assert_eq!(fs::read_to_string(&target).unwrap(), GO_INPUT);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn backup_and_undo_roundtrip() {
+    let root = workspace_temp("backup-undo");
+    let backup = workspace_temp("backup-store");
+    let script = root.join("rename.codemod");
+    let target = root.join("main.go");
+    write(&script, SCRIPT);
+    write(&target, GO_INPUT);
+
+    // Apply with --backup; file should change, backup should hold
+    // the pre-state.
+    let status = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--write",
+            "--backup",
+            backup.to_str().unwrap(),
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&target).unwrap(), GO_EXPECTED);
+
+    // Now undo — file should go back to its original state.
+    let status = colab()
+        .args(["undo", "--from", backup.to_str().unwrap()])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&target).unwrap(), GO_INPUT);
+
+    fs::remove_dir_all(&root).ok();
+    fs::remove_dir_all(&backup).ok();
+}
+
+#[test]
 fn pack_list_finds_repo_packs() {
     // Build a fake "repo" with a .git marker and a populated
     // .colab/packs directory, then cd into it so the discovery
