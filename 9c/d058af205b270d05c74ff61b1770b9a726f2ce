@@ -1,0 +1,40 @@
+crates/colab-cli/tests/cli.rs
+  s_612e6a63d4febb::t_81719e6931f702 837-864,870-877,879-883,885,887-901,908-951
+  s_612e6a63d4febb::t_6d5bebcd5db1d1 865-869,878,884,886,902-907
+crates/colab-mcp/src/lib.rs
+  s_612e6a63d4febb::t_81dcdf9834e41c 174-325
+  s_612e6a63d4febb::t_c7e0b9a59689d9 657-758
+  s_612e6a63d4febb::t_cdd88d17d320e2 69
+crates/colab-cli/src/cli.rs
+  s_612e6a63d4febb::t_097827835d5092 77
+  s_612e6a63d4febb::t_90743e35541c3a 608-796
+  s_612e6a63d4febb::t_44cbfb70c14b46 95-104
+  s_612e6a63d4febb::t_ce7ca0c9c07321 276
+  s_612e6a63d4febb::t_52a0e8f338f739 511,518-520
+  s_612e6a63d4febb::t_115f78faee45a8 445,449-451
+  s_612e6a63d4febb::t_e8ff624e108049 426-431
+  s_612e6a63d4febb::t_2df25ddc6c191a 205-218
+docs/cli.md
+  s_612e6a63d4febb::t_d5fd01dc53c7be 48-49
+  s_612e6a63d4febb::t_0ff1642eff2b05 133-145
+  s_612e6a63d4febb::t_5e4b745057f117 24-25
+  s_612e6a63d4febb::t_6a55a299ae5d61 248-255
+docs/development-plan.md
+  s_612e6a63d4febb::t_a5a8a1aa88ba29 614-654
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "9cd058af205b270d05c74ff61b1770b9a726f2ce",
+  "prompts": {},
+  "sessions": {
+    "s_612e6a63d4febb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "977f5a17-33ca-40a4-82f9-8bac3a1b07ef",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
