@@ -291,7 +291,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "colab-cli"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -317,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "colab-core"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "globset",
  "ignore",
@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "colab-dsl"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "colab-lang-go",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-go"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "tree-sitter",
@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-java"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "tree-sitter",
@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-js"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "tree-sitter",
@@ -369,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-python"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "tree-sitter",
@@ -378,7 +378,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-rust"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "toml_edit",
@@ -388,7 +388,7 @@ dependencies = [
 
 [[package]]
 name = "colab-mcp"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "colab-dsl",
@@ -562,9 +562,9 @@ dependencies = [
 
 [[package]]
 name = "env_filter"
-version = "1.0.1"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32e90c2accc4b07a8456ea0debdc2e7587bdd890680d71173a15d4ae604f6eef"
+checksum = "900d271a03799a1ee8d1ca9b19893b48ca674a9284fefcfb85f05e74ed314217"
 dependencies = [
  "log",
  "regex",
@@ -572,9 +572,9 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.11.10"
+version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0621c04f2196ac3f488dd583365b9c09be011a4ab8b9f37248ffcc8f6198b56a"
+checksum = "de671bd27a75a797dc9ae289ba1e77276e75e2026408aab65185384e2d5cd3f6"
 dependencies = [
  "anstream",
  "anstyle",
