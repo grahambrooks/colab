@@ -87,9 +87,9 @@ dependencies = [
 
 [[package]]
 name = "assert_cmd"
-version = "2.2.1"
+version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39bae1d3fa576f7c6519514180a72559268dd7d1fe104070956cb687bc6673bd"
+checksum = "2aa3a22042e45de04255c7bf3626e239f450200fd0493c1e382263544b20aea6"
 dependencies = [
  "anstyle",
  "bstr",
@@ -291,7 +291,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "colab-cli"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -317,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "colab-core"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "globset",
  "ignore",
@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "colab-dsl"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "colab-lang-go",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-go"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "tree-sitter",
@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-java"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "tree-sitter",
@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-js"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "tree-sitter",
@@ -369,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-python"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "tree-sitter",
@@ -378,7 +378,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-rust"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "toml_edit",
@@ -388,7 +388,7 @@ dependencies = [
 
 [[package]]
 name = "colab-mcp"
-version = "0.1.0"
+version = "2026.7.0"
 dependencies = [
  "colab-core",
  "colab-dsl",
