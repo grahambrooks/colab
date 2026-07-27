@@ -346,7 +346,7 @@ dependencies = [
  "colab-lang-python",
  "colab-lang-rust",
  "lalrpop",
- "lalrpop-util",
+ "lalrpop-util 0.23.1",
 ]
 
 [[package]]
@@ -1006,7 +1006,7 @@ dependencies = [
  "bit-set",
  "ena",
  "itertools 0.14.0",
- "lalrpop-util",
+ "lalrpop-util 0.22.2",
  "petgraph",
  "pico-args",
  "regex",
@@ -1026,6 +1026,15 @@ checksum = "b5baa5e9ff84f1aefd264e6869907646538a52147a755d494517a8007fb48733"
 dependencies = [
  "regex-automata",
  "rustversion",
+]
+
+[[package]]
+name = "lalrpop-util"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "884f3e747ed2dcee867cda1b0c31a048f9e20de2d916a248949319921a2e666e"
+dependencies = [
+ "regex-automata",
 ]
 
 [[package]]
