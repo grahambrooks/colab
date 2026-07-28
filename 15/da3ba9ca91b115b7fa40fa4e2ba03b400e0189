@@ -1,0 +1,34 @@
+crates/colab-lang-java/src/imports.rs
+  s_a051e60cb1a5d5::t_2b881adc431dd1 23,209
+crates/colab-lang-python/src/imports.rs
+  s_a051e60cb1a5d5::t_91f8d58cf12dad 70,266
+crates/colab-lang-go/src/calls.rs
+  s_a051e60cb1a5d5::t_e44ea590119da2 106
+crates/colab-lang-go/src/imports.rs
+  s_a051e60cb1a5d5::t_e34afcfa9385c1 216
+crates/colab-lang-rust/src/calls.rs
+  s_a051e60cb1a5d5::t_7d3da4003a5712 96
+crates/colab-lang-rust/src/uses.rs
+  s_a051e60cb1a5d5::t_5f73370a30283e 235
+crates/colab-lang-js/src/imports.rs
+  s_a051e60cb1a5d5::t_7316498c41f3db 73
+crates/colab-lang-java/src/packages.rs
+  s_a051e60cb1a5d5::t_335d5972b91496 47
+  s_a051e60cb1a5d5::t_4f9197723bb60a 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "15da3ba9ca91b115b7fa40fa4e2ba03b400e0189",
+  "prompts": {},
+  "sessions": {
+    "s_a051e60cb1a5d5": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "790d3bbf-3b45-4ab9-a51d-0b60fb57101d",
+        "model": "auto"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
