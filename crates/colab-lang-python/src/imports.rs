@@ -67,7 +67,7 @@ where
 {
     // `import_statement` has multiple `name` children.
     for i in 0..node.named_child_count() {
-        let Some(child) = node.named_child(i) else {
+        let Some(child) = node.named_child(i as u32) else {
             break;
         };
         let dotted = match child.kind() {
@@ -263,7 +263,7 @@ fn leading_header_end(tree: &Tree, source: &str) -> usize {
     let root = tree.root_node();
     let mut last_end = 0usize;
     for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i) else {
+        let Some(child) = root.named_child(i as u32) else {
             break;
         };
         let is_header = match child.kind() {

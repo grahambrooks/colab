@@ -70,7 +70,7 @@ fn string_inner_bytes<'a>(
     // `string_fragment` children or matches the literal directly. The
     // safest approach: look for a `string_fragment` named child.
     for i in 0..string_node.named_child_count() {
-        let Some(child) = string_node.named_child(i) else {
+        let Some(child) = string_node.named_child(i as u32) else {
             break;
         };
         if child.kind() == "string_fragment"

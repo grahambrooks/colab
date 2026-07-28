@@ -36,7 +36,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
     };
     let root = tree.root_node();
     for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i) else {
+        let Some(child) = root.named_child(i as u32) else {
             break;
         };
         if child.kind() != "package_declaration" {
@@ -44,7 +44,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         }
         // Find the dotted name child.
         for j in 0..child.named_child_count() {
-            let Some(name_node) = child.named_child(j) else {
+            let Some(name_node) = child.named_child(j as u32) else {
                 break;
             };
             if !matches!(name_node.kind(), "scoped_identifier" | "identifier") {
