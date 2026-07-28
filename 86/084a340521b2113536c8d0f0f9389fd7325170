@@ -1,0 +1,21 @@
+Cargo.toml
+  s_a051e60cb1a5d5::t_ab9f6006005a39 42
+Cargo.lock
+  s_a051e60cb1a5d5::t_388dbb3760a6f1 1788,1790
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "86084a340521b2113536c8d0f0f9389fd7325170",
+  "prompts": {},
+  "sessions": {
+    "s_a051e60cb1a5d5": {
+      "agent_id": {
+        "tool": "github-copilot-cli",
+        "id": "790d3bbf-3b45-4ab9-a51d-0b60fb57101d",
+        "model": "auto"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
