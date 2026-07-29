@@ -16,7 +16,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::{Operation, render_call_template};
-use tree_sitter::{Node, TreeCursor};
+use tree_sitter::Node;
 
 #[derive(Debug)]
 pub struct CallReplace {
@@ -54,28 +54,24 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     };
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    let mut cursor = tree.walk();
-    collect(&mut cursor, source_code, function, template, &mut edits);
+    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, function, template, &mut edits));
 
-    if edits.is_empty() {
-        return source_code.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source_code.to_string();
-    for (start, end, replacement) in edits.iter().rev() {
-        out.replace_range(*start..*end, replacement);
-    }
-    out
+    colab_rewrite::apply_edits(
+        source_code,
+        edits
+            .into_iter()
+            .map(|(start, end, text)| colab_rewrite::Edit::new(start, end, text))
+            .collect(),
+    )
 }
 
 fn collect(
-    cursor: &mut TreeCursor,
+    node: Node<'_>,
     source: &str,
     function: &str,
     template: &str,
     edits: &mut Vec<(usize, usize, String)>,
 ) {
-    let node = cursor.node();
     if node.kind() == "call_expression"
         && let Some(func_node) = node.child_by_field_name("function")
         && let Ok(func_text) = func_node.utf8_text(source.as_bytes())
@@ -86,16 +82,6 @@ fn collect(
         let arg_refs: Vec<&str> = arg_strs.iter().map(|s| s.as_str()).collect();
         let rendered = render_call_template(template, function, &arg_refs);
         edits.push((node.start_byte(), node.end_byte(), rendered));
-    }
-
-    if cursor.goto_first_child() {
-        loop {
-            collect(cursor, source, function, template, edits);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
     }
 }
 

@@ -5,20 +5,20 @@
 //! target. Syntactic, not semantic — JSX attribute names that share
 //! a function name will also be touched. Verify with
 //! `--format diff`.
+//!
+//! The rewrite itself lives in [`colab_rewrite::rename_nodes_by_text`] —
+//! all twelve backends share one implementation and differ only in which
+//! node kinds count as an identifier.
 
 use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::TreeCursor;
 
-use crate::imports::is_relevant;
-
-const RENAME_KINDS: &[&str] = &[
-    "identifier",
+/// Node kinds this backend treats as renameable identifiers.
+const RENAME_KINDS: &[&str] = &["identifier",
     "property_identifier",
-    "shorthand_property_identifier",
-];
+    "shorthand_property_identifier",];
 
 #[derive(Debug)]
 pub struct SymbolRename {
@@ -34,7 +34,7 @@ impl fmt::Display for SymbolRename {
 
 impl Operation for SymbolRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        is_relevant(path)
+        crate::imports::is_relevant(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -50,38 +50,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
     let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
-    let mut edits: Vec<(usize, usize)> = Vec::new();
-    let mut cursor = tree.walk();
-    collect(&mut cursor, source_code, from, &mut edits);
-    if edits.is_empty() {
-        return source_code.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source_code.to_string();
-    for (start, end) in edits.iter().rev() {
-        out.replace_range(*start..*end, to);
-    }
-    out
-}
-
-fn collect(cursor: &mut TreeCursor, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
-    let node = cursor.node();
-    if RENAME_KINDS.contains(&node.kind())
-        && let Ok(text) = node.utf8_text(source.as_bytes())
-        && text == from
-    {
-        out.push((node.start_byte(), node.end_byte()));
-    }
-
-    if cursor.goto_first_child() {
-        loop {
-            collect(cursor, source, from, out);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
-    }
+    colab_rewrite::rename_nodes_by_text(&tree, source_code, RENAME_KINDS, from, to)
 }
 
 #[cfg(test)]

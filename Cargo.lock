@@ -370,6 +370,7 @@ name = "colab-lang-c"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-c",
 ]
@@ -379,6 +380,7 @@ name = "colab-lang-cpp"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-cpp",
 ]
@@ -388,6 +390,7 @@ name = "colab-lang-csharp"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-c-sharp",
 ]
@@ -397,6 +400,7 @@ name = "colab-lang-go"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-go",
 ]
@@ -406,6 +410,7 @@ name = "colab-lang-java"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-java",
 ]
@@ -415,6 +420,7 @@ name = "colab-lang-js"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-javascript",
 ]
@@ -424,6 +430,7 @@ name = "colab-lang-kotlin"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-kotlin-ng",
 ]
@@ -433,6 +440,7 @@ name = "colab-lang-php"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-php",
 ]
@@ -442,6 +450,7 @@ name = "colab-lang-python"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-python",
 ]
@@ -451,6 +460,7 @@ name = "colab-lang-ruby"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-ruby",
 ]
@@ -460,6 +470,7 @@ name = "colab-lang-rust"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "toml_edit",
  "tree-sitter",
  "tree-sitter-rust",
@@ -470,6 +481,7 @@ name = "colab-lang-swift"
 version = "2026.7.0"
 dependencies = [
  "colab-core",
+ "colab-rewrite",
  "tree-sitter",
  "tree-sitter-swift",
 ]
@@ -486,6 +498,13 @@ dependencies = [
  "serde",
  "serde_json",
  "similar",
+]
+
+[[package]]
+name = "colab-rewrite"
+version = "2026.7.0"
+dependencies = [
+ "tree-sitter",
 ]
 
 [[package]]

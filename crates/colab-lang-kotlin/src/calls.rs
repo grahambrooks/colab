@@ -17,7 +17,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::{Operation, render_call_template};
-use tree_sitter::{Node, TreeCursor};
+use tree_sitter::Node;
 
 #[derive(Debug)]
 pub struct CallReplace {
@@ -55,18 +55,15 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     };
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    let mut cursor = tree.walk();
-    collect(&mut cursor, source_code, function, template, &mut edits);
+    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, function, template, &mut edits));
 
-    if edits.is_empty() {
-        return source_code.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source_code.to_string();
-    for (start, end, replacement) in edits.iter().rev() {
-        out.replace_range(*start..*end, replacement);
-    }
-    out
+    colab_rewrite::apply_edits(
+        source_code,
+        edits
+            .into_iter()
+            .map(|(start, end, text)| colab_rewrite::Edit::new(start, end, text))
+            .collect(),
+    )
 }
 
 /// The `value_arguments` child of a call, if it has one.
@@ -77,13 +74,12 @@ fn value_arguments<'a>(node: Node<'a>) -> Option<Node<'a>> {
 }
 
 fn collect(
-    cursor: &mut TreeCursor,
+    node: Node<'_>,
     source: &str,
     function: &str,
     template: &str,
     edits: &mut Vec<(usize, usize, String)>,
 ) {
-    let node = cursor.node();
     if node.kind() == "call_expression"
         && let Some(args) = value_arguments(node)
         // The callee is everything before the argument list.
@@ -96,16 +92,6 @@ fn collect(
         // Replace only up to the end of the argument list so a trailing
         // lambda after the parens survives untouched.
         edits.push((node.start_byte(), args.end_byte(), rendered));
-    }
-
-    if cursor.goto_first_child() {
-        loop {
-            collect(cursor, source, function, template, edits);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
     }
 }
 

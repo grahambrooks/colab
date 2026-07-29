@@ -9,7 +9,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::TreeCursor;
+use tree_sitter::Node;
 
 #[derive(Debug)]
 pub struct PackageRename {
@@ -42,21 +42,17 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize)> = Vec::new();
-    let mut cursor = tree.walk();
-    collect(&mut cursor, source_code, from, &mut edits);
-    if edits.is_empty() {
-        return source_code.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source_code.to_string();
-    for (start, end) in edits.iter().rev() {
-        out.replace_range(*start..*end, to);
-    }
-    out
+    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, from, &mut edits));
+    colab_rewrite::apply_edits(
+        source_code,
+        edits
+            .into_iter()
+            .map(|(start, end)| colab_rewrite::Edit::new(start, end, to))
+            .collect(),
+    )
 }
 
-fn collect(cursor: &mut TreeCursor, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
-    let node = cursor.node();
+fn collect(node: Node<'_>, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
     if node.kind() == "package_clause" {
         for i in 0..node.named_child_count() {
             let Some(child) = node.named_child(i as u32) else {
@@ -69,16 +65,6 @@ fn collect(cursor: &mut TreeCursor, source: &str, from: &str, out: &mut Vec<(usi
                 out.push((child.start_byte(), child.end_byte()));
             }
         }
-    }
-
-    if cursor.goto_first_child() {
-        loop {
-            collect(cursor, source, from, out);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
     }
 }
 

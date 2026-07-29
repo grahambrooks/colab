@@ -9,5 +9,6 @@ description = "JavaScript/TypeScript language backend for colab: ES module speci
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-javascript = { workspace = true }

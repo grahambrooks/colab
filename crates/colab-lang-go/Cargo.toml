@@ -9,5 +9,6 @@ description = "Go language backend for colab: tree-sitter-driven Go source rewri
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-go = { workspace = true }

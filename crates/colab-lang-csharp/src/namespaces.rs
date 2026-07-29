@@ -15,7 +15,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::TreeCursor;
+use tree_sitter::Node;
 
 const NAMESPACE_KINDS: &[&str] = &["namespace_declaration", "file_scoped_namespace_declaration"];
 
@@ -50,37 +50,23 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize)> = Vec::new();
-    let mut cursor = tree.walk();
-    collect(&mut cursor, source_code, from, &mut edits);
-    if edits.is_empty() {
-        return source_code.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source_code.to_string();
-    for (start, end) in edits.iter().rev() {
-        out.replace_range(*start..*end, to);
-    }
-    out
+    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, from, &mut edits));
+    colab_rewrite::apply_edits(
+        source_code,
+        edits
+            .into_iter()
+            .map(|(start, end)| colab_rewrite::Edit::new(start, end, to))
+            .collect(),
+    )
 }
 
-fn collect(cursor: &mut TreeCursor, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
-    let node = cursor.node();
+fn collect(node: Node<'_>, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
     if NAMESPACE_KINDS.contains(&node.kind())
         && let Some(name) = node.child_by_field_name("name")
         && let Ok(text) = name.utf8_text(source.as_bytes())
         && text == from
     {
         out.push((name.start_byte(), name.end_byte()));
-    }
-
-    if cursor.goto_first_child() {
-        loop {
-            collect(cursor, source, from, out);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
     }
 }
 

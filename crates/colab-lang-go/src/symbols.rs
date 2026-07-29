@@ -10,13 +10,17 @@
 //! analysed. If a local variable in some function happens to share a
 //! name with a top-level type, both are renamed. Verify with
 //! `--format diff` before applying.
+//!
+//! The rewrite itself lives in [`colab_rewrite::rename_nodes_by_text`] —
+//! all twelve backends share one implementation and differ only in which
+//! node kinds count as an identifier.
 
 use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::TreeCursor;
 
+/// Node kinds this backend treats as renameable identifiers.
 const RENAME_KINDS: &[&str] = &["identifier", "type_identifier", "field_identifier"];
 
 #[derive(Debug)]
@@ -49,40 +53,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
     let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
     };
-
-    let mut edits: Vec<(usize, usize)> = Vec::new();
-    let mut cursor = tree.walk();
-    collect(&mut cursor, source_code, from, &mut edits);
-
-    if edits.is_empty() {
-        return source_code.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source_code.to_string();
-    for (start, end) in edits.iter().rev() {
-        out.replace_range(*start..*end, to);
-    }
-    out
-}
-
-fn collect(cursor: &mut TreeCursor, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
-    let node = cursor.node();
-    if RENAME_KINDS.contains(&node.kind())
-        && let Ok(text) = node.utf8_text(source.as_bytes())
-        && text == from
-    {
-        out.push((node.start_byte(), node.end_byte()));
-    }
-
-    if cursor.goto_first_child() {
-        loop {
-            collect(cursor, source, from, out);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
-    }
+    colab_rewrite::rename_nodes_by_text(&tree, source_code, RENAME_KINDS, from, to)
 }
 
 #[cfg(test)]

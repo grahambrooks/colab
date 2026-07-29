@@ -20,7 +20,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Tree, TreeCursor};
+use tree_sitter::{Node, Tree};
 
 /// Strip `<...>` or `"..."` from a path node's text.
 fn unquote(text: &str) -> &str {
@@ -57,45 +57,15 @@ where
     F: FnMut(Node<'_>, Node<'_>),
 {
     let wanted = unquote(target);
-    let mut cursor = tree.walk();
-    walk(&mut cursor, source, wanted, &mut visit);
-}
-
-fn walk<F>(cursor: &mut TreeCursor, source: &str, wanted: &str, visit: &mut F)
-where
-    F: FnMut(Node<'_>, Node<'_>),
-{
-    let node = cursor.node();
+    colab_rewrite::visit_all(tree, |node| {
     if let Some((path_node, text)) = include_path(node, source)
         && text == wanted
     {
         visit(node, path_node);
     }
-
-    if cursor.goto_first_child() {
-        loop {
-            walk(cursor, source, wanted, visit);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
-    }
+    });
 }
 
-/// Apply `(start, end, replacement)` edits in reverse byte order so
-/// earlier offsets stay valid.
-fn apply_edits(source: &str, mut edits: Vec<(usize, usize, String)>) -> String {
-    if edits.is_empty() {
-        return source.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source.to_string();
-    for (start, end, replacement) in edits.iter().rev() {
-        out.replace_range(*start..*end, replacement);
-    }
-    out
-}
 
 // ---------------------------------------------------------------------------
 // Rename
@@ -147,7 +117,13 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         };
         edits.push((path_node.start_byte(), path_node.end_byte(), rewritten));
     });
-    apply_edits(source_code, edits)
+    colab_rewrite::apply_edits(
+        source_code,
+        edits
+            .into_iter()
+            .map(|(start, end, text)| colab_rewrite::Edit::new(start, end, text))
+            .collect(),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -185,24 +161,10 @@ pub fn delete(target: &str, source_code: &str) -> String {
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for_each_matching_include(&tree, source_code, target, |directive, _path| {
-        let start = directive.start_byte();
-        let end = directive.end_byte();
-        let line_start = source_code[..start].rfind('\n').map(|p| p + 1).unwrap_or(0);
-        let line_end = source_code[end..]
-            .find('\n')
-            .map(|p| end + p + 1)
-            .unwrap_or(source_code.len());
-        spans.push((line_start, line_end));
+        // `delete_lines` widens each range to whole lines.
+        spans.push((directive.start_byte(), directive.end_byte()));
     });
-    if spans.is_empty() {
-        return source_code.to_string();
-    }
-    spans.sort_by_key(|s| s.0);
-    let mut out = source_code.to_string();
-    for (start, end) in spans.iter().rev() {
-        out.replace_range(*start..*end, "");
-    }
-    out
+    colab_rewrite::delete_lines(source_code, spans)
 }
 
 // ---------------------------------------------------------------------------

@@ -9,5 +9,6 @@ description = "C++ source rewrites via tree-sitter-cpp."
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-cpp = { workspace = true }

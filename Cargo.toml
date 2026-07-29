@@ -15,6 +15,7 @@ members = [
     "crates/colab-lang-ruby",
     "crates/colab-lang-rust",
     "crates/colab-lang-swift",
+    "crates/colab-rewrite",
     "crates/colab-mcp",
     "crates/colab-cli",
 ]
@@ -42,6 +43,7 @@ colab-lang-ruby = { path = "crates/colab-lang-ruby" }
 colab-lang-rust = { path = "crates/colab-lang-rust" }
 colab-lang-swift = { path = "crates/colab-lang-swift" }
 colab-mcp = { path = "crates/colab-mcp" }
+colab-rewrite = { path = "crates/colab-rewrite" }
 
 # Third-party deps shared across crates. Crates pick what they need.
 clap = { version = "4.5.31", features = ["derive"] }

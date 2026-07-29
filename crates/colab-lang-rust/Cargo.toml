@@ -9,6 +9,7 @@ description = "Rust language backend for colab: use-path renames and Cargo.toml 
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-rust = { workspace = true }
 toml_edit = { workspace = true }

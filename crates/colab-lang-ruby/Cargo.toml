@@ -9,5 +9,6 @@ description = "Ruby source rewrites via tree-sitter-ruby."
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-ruby = { workspace = true }

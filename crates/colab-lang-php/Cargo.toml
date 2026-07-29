@@ -9,5 +9,6 @@ description = "PHP source rewrites via tree-sitter-php."
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-php = { workspace = true }

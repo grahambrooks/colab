@@ -1,0 +1,11 @@
+[package]
+name = "colab-rewrite"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tree-sitter rewriting primitives shared by every colab language backend: byte-range edits applied safely, whole-line deletion, tree traversal, and identifier rename."
+
+[dependencies]
+tree-sitter = { workspace = true }

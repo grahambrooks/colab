@@ -14,7 +14,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::TreeCursor;
+use tree_sitter::Node;
 
 #[derive(Debug)]
 pub struct TagReplace {
@@ -68,28 +68,24 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
     let replacement = format!("{}:\"{}\"", to_key, to_value);
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    let mut cursor = tree.walk();
-    collect(&mut cursor, source_code, &needle, &replacement, &mut edits);
+    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, &needle, &replacement, &mut edits));
 
-    if edits.is_empty() {
-        return source_code.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source_code.to_string();
-    for (start, end, replacement) in edits.iter().rev() {
-        out.replace_range(*start..*end, replacement);
-    }
-    out
+    colab_rewrite::apply_edits(
+        source_code,
+        edits
+            .into_iter()
+            .map(|(start, end, text)| colab_rewrite::Edit::new(start, end, text))
+            .collect(),
+    )
 }
 
 fn collect(
-    cursor: &mut TreeCursor,
+    node: Node<'_>,
     source: &str,
     needle: &str,
     replacement: &str,
     edits: &mut Vec<(usize, usize, String)>,
 ) {
-    let node = cursor.node();
     if node.is_named()
         && node.kind() == "field_declaration"
         && let Some(tag) = node.child_by_field_name("tag")
@@ -113,16 +109,6 @@ fn collect(
             }
         }
         let _ = tag_text;
-    }
-
-    if cursor.goto_first_child() {
-        loop {
-            collect(cursor, source, needle, replacement, edits);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
     }
 }
 

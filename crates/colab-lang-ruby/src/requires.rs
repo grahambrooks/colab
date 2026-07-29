@@ -20,7 +20,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Tree, TreeCursor};
+use tree_sitter::{Node, Tree};
 
 const REQUIRE_METHODS: &[&str] = &["require", "require_relative"];
 
@@ -57,30 +57,13 @@ fn for_each_matching_require<F>(tree: &Tree, source: &str, target: &str, mut vis
 where
     F: FnMut(Node<'_>, Node<'_>),
 {
-    let mut cursor = tree.walk();
-    walk(&mut cursor, source, target, &mut visit);
-}
-
-fn walk<F>(cursor: &mut TreeCursor, source: &str, target: &str, visit: &mut F)
-where
-    F: FnMut(Node<'_>, Node<'_>),
-{
-    let node = cursor.node();
+    colab_rewrite::visit_all(tree, |node| {
     if let Some((content_node, text)) = require_path(node, source)
         && text == target
     {
         visit(node, content_node);
     }
-
-    if cursor.goto_first_child() {
-        loop {
-            walk(cursor, source, target, visit);
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-        cursor.goto_parent();
-    }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -123,15 +106,13 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         // quote style is preserved.
         edits.push((content.start_byte(), content.end_byte()));
     });
-    if edits.is_empty() {
-        return source_code.to_string();
-    }
-    edits.sort_by_key(|e| e.0);
-    let mut out = source_code.to_string();
-    for (start, end) in edits.iter().rev() {
-        out.replace_range(*start..*end, to);
-    }
-    out
+    colab_rewrite::apply_edits(
+        source_code,
+        edits
+            .into_iter()
+            .map(|(start, end)| colab_rewrite::Edit::new(start, end, to))
+            .collect(),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -169,24 +150,10 @@ pub fn delete(target: &str, source_code: &str) -> String {
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for_each_matching_require(&tree, source_code, target, |call, _content| {
-        let start = call.start_byte();
-        let end = call.end_byte();
-        let line_start = source_code[..start].rfind('\n').map(|p| p + 1).unwrap_or(0);
-        let line_end = source_code[end..]
-            .find('\n')
-            .map(|p| end + p + 1)
-            .unwrap_or(source_code.len());
-        spans.push((line_start, line_end));
+        // `delete_lines` widens each range to whole lines.
+        spans.push((call.start_byte(), call.end_byte()));
     });
-    if spans.is_empty() {
-        return source_code.to_string();
-    }
-    spans.sort_by_key(|s| s.0);
-    let mut out = source_code.to_string();
-    for (start, end) in spans.iter().rev() {
-        out.replace_range(*start..*end, "");
-    }
-    out
+    colab_rewrite::delete_lines(source_code, spans)
 }
 
 // ---------------------------------------------------------------------------

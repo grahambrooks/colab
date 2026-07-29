@@ -9,5 +9,6 @@ description = "Java language backend for colab: import and package rewrites via 
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-java = { workspace = true }

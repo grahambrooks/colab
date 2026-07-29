@@ -9,5 +9,6 @@ description = "C# source rewrites via tree-sitter-c-sharp."
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-c-sharp = { workspace = true }
