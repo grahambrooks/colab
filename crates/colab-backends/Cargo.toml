@@ -21,8 +21,3 @@ colab-lang-python = { workspace = true }
 colab-lang-ruby = { workspace = true }
 colab-lang-rust = { workspace = true }
 colab-lang-swift = { workspace = true }
-
-[dev-dependencies]
-# Tests assert every registered module name is spellable in the DSL, so
-# they need the grammar. Production code here must not depend on the DSL.
-colab-dsl = { workspace = true }
