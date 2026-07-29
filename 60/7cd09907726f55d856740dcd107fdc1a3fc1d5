@@ -1,0 +1,255 @@
+crates/colab-core/src/suggest.rs
+  s_687c1e451e405d::t_5dddd3349ded32 1-133
+crates/colab-core/src/walker.rs
+  s_687c1e451e405d::t_27fa8a4f9aca0c 39
+  s_687c1e451e405d::t_c7590429b0c713 70-73,84-94
+  s_687c1e451e405d::t_833ad0795fce07 134
+  s_687c1e451e405d::t_5bc1bd412a8c2d 157-162,168,184,190-192,196-201,206,211
+  s_687c1e451e405d::t_634f748777d49b 189
+  s_687c1e451e405d::t_985545152646d8 243,250,256
+  s_687c1e451e405d::t_1455650b325f6d 382
+  s_687c1e451e405d::t_2223e3614eaa43 267,272,274,281-288,296,299-310,314-315
+  s_687c1e451e405d::t_c68d4b5bf281d8 358-359,365-366
+  s_687c1e451e405d::t_bcb1c10f45ce42 95-96
+crates/colab-core/src/error.rs
+  s_687c1e451e405d::t_d7187794482084 150-208
+  s_687c1e451e405d::t_6e731d990dc5ed 12-76,86
+  s_687c1e451e405d::t_b47c88658ab6c3 126
+crates/colab-lang-java/src/symbols.rs
+  s_687c1e451e405d::t_c1cbff13323701 35-38
+tests/corpus/go/mixed_language_gating/expected/main.rs
+  s_687c1e451e405d::t_df7e9f6182d293 1-5
+crates/colab-lang-go/src/calls.rs
+  s_687c1e451e405d::t_7ca4e76beacfad 50-53
+examples/rust/scoped_rename/core/src/lib.rs
+  s_687c1e451e405d::t_cfd8b45f011202 1-10
+crates/colab-core/src/backend.rs
+  s_687c1e451e405d::t_2d44a9a21c408f 67-90
+  s_687c1e451e405d::t_a0090f0e23fa37 30-45
+  s_687c1e451e405d::t_3220106ed55900 126-128,130-159
+crates/colab-lang-rust/src/lib.rs
+  s_687c1e451e405d::t_ee4f9147edf339 18
+  s_687c1e451e405d::t_df5a9821b96fcc 148
+docs/dsl.md
+  s_687c1e451e405d::t_064f59abd80f38 195-227
+  s_687c1e451e405d::t_a4b4953a107deb 316,330-331
+  s_687c1e451e405d::t_9dae51f1bd7907 12,28-29
+crates/colab-cli/tests/cli.rs
+  s_687c1e451e405d::t_d771cc13a976bb 265
+  s_687c1e451e405d::t_6772e16e86b2d7 153,178,180-182,184,188,191,193-199,205-264,266-281,304-337,340-347,349-351
+  s_687c1e451e405d::t_dfa171ba637210 467-581
+crates/colab-cli/benches/walker.rs
+  s_687c1e451e405d::t_0cc1a19cc1f43e 117
+  s_687c1e451e405d::t_f3aca5f4524d76 128,130,139-157
+  s_687c1e451e405d::t_63da36f478233a 135,196-212,217-219
+  s_687c1e451e405d::t_818ffbdd9f72b7 13-22,37-47,60-77,98-116,118-127
+  s_687c1e451e405d::t_6661b45e563d0f 213-216
+  s_687c1e451e405d::t_b06466ed420dd0 129
+  s_687c1e451e405d::t_60433af3edba1f 131
+docs/architecture.md
+  s_687c1e451e405d::t_2752693acde3fc 17-22,30-32
+  s_687c1e451e405d::t_e1214b52cb3ecb 80-92,96-99,285-298
+  s_687c1e451e405d::t_5e11203e246ed6 120-128,143-145,190-196,204-233
+  s_687c1e451e405d::t_313b712d486503 234
+crates/colab-dsl/src/ast.rs
+  s_687c1e451e405d::t_3e8efb973855c5 25-27,32-35
+crates/colab-lang-go/src/imports.rs
+  s_687c1e451e405d::t_f3207ce937dc88 199-200
+  s_687c1e451e405d::t_d730e8f2576f49 138-141
+  s_687c1e451e405d::t_3df6419ef933fc 74-77
+crates/colab-lang-python/src/lib.rs
+  s_687c1e451e405d::t_ee4f9147edf339 14
+  s_687c1e451e405d::t_df5a9821b96fcc 109
+examples/rust/scoped_rename/cli/src/main.rs
+  s_687c1e451e405d::t_cfd8b45f011202 1-9
+crates/colab-lang-rust/src/symbols.rs
+  s_687c1e451e405d::t_64ec444695f84d 45-48
+crates/colab-cli/src/cli.rs
+  s_687c1e451e405d::t_bed344fed3950f 579-583,594-596,600-604
+  s_687c1e451e405d::t_1234231b4e5180 221-237,239-240
+  s_687c1e451e405d::t_89de6d4aedbd5c 367,386,388-390,392
+  s_687c1e451e405d::t_040e160d45f7c0 627-629
+  s_687c1e451e405d::t_2927bb1dab6963 747-748
+  s_687c1e451e405d::t_fc3b833896b9f2 554,556-559
+  s_687c1e451e405d::t_dbe360d13dee47 429-457
+  s_687c1e451e405d::t_100d02f4dfda08 695,697,705,716-718,721-723,729-730
+  s_687c1e451e405d::t_a03461abc85b96 507,509,513,521-523,527-531,534
+  s_687c1e451e405d::t_4c26f09a46838a 904,909-910,913-916,919-920,926-927,931
+  s_687c1e451e405d::t_2b166b5fb27b1a 319-323,328,333,337-348,352-353,356
+  s_687c1e451e405d::t_d89eb7ac7ee073 17-19,24
+crates/colab-lang-js/src/imports.rs
+  s_687c1e451e405d::t_9df567bb6f265d 121-124
+  s_687c1e451e405d::t_d442e03c2b6cb8 169-172
+crates/colab-dsl/src/model.rs
+  s_687c1e451e405d::t_fd37f50bf5d7b7 185-186
+  s_687c1e451e405d::t_f4e83560b761eb 113,163-166,168-169,176-180,182-184,187-189,193-195,199-203,210-221,224-238,243-244,247-252,257-260,265-266,268-271,273-279,281,283-285,287-290,293,295-301,303-304,306,308-310,312-316,321,323-326,329-332,334-337,339
+  s_687c1e451e405d::t_7d8ab4f260835a 140-144,149-161
+  s_687c1e451e405d::t_515c8381e5e4cd 145-148
+  s_687c1e451e405d::t_af59765951a2f1 167,170-175,181,190-192,196-198,204-209,222-223,239-242,253-256,262-264,267,272,282,286,294,307,311,319-320,322,328,333,338
+  s_687c1e451e405d::t_b7b63bef6a23ef 97-100
+  s_687c1e451e405d::t_2ef002088343ed 245-246,261,280,291-292,302,305,317-318,327
+  s_687c1e451e405d::t_ead8c9007b780b 11
+  s_687c1e451e405d::t_b0348d8c65583f 61-65,73-96,101-112
+  s_687c1e451e405d::t_4aa106a2b718cf 162
+tests/corpus/rust/scoped_symbol/script
+  s_687c1e451e405d::t_e1ac680461d791 5
+  s_687c1e451e405d::t_e9259dd9f2cdb8 1-4,6
+tests/corpus/go/mixed_language_gating/script
+  s_687c1e451e405d::t_df7e9f6182d293 1-7
+crates/colab-core/src/lib.rs
+  s_687c1e451e405d::t_376f5ef1f1ee41 11,23,26-27
+  s_687c1e451e405d::t_82a3f4ee7b6c7c 21
+  s_687c1e451e405d::t_3f38e26fa73059 13
+  s_687c1e451e405d::t_a14e9c98863354 10,22
+  s_687c1e451e405d::t_e4e6c26e9761c0 12,24
+crates/colab-lang-go/src/symbols.rs
+  s_687c1e451e405d::t_1eb287dec52bd7 42-45
+crates/colab-lang-js/src/symbols.rs
+  s_687c1e451e405d::t_8fdc6afc69342b 43-46
+crates/colab-dsl/src/compiler.rs
+  s_687c1e451e405d::t_477add85fccb80 29-72
+  s_687c1e451e405d::t_202e25b1c14d19 217-223
+  s_687c1e451e405d::t_5936ead76fa179 11,15,20
+  s_687c1e451e405d::t_702645ca1f2fc2 189
+  s_687c1e451e405d::t_cfa1ad767bde9a 194-198
+  s_687c1e451e405d::t_d96412ebcb5e12 362
+  s_687c1e451e405d::t_be974c01e08c5a 96-110
+  s_687c1e451e405d::t_e4e6c26e9761c0 21
+  s_687c1e451e405d::t_70fe8accdfd4d5 287-348
+crates/colab-dsl/src/lib.rs
+  s_687c1e451e405d::t_dd2864efb3ee6e 13
+crates/colab-cli/src/language_server.rs
+  s_687c1e451e405d::t_2db80a3186dd2c 75-76,81
+  s_687c1e451e405d::t_acbce4fc5aab97 8-11
+  s_687c1e451e405d::t_a990bc8e658a96 28,31-49
+  s_687c1e451e405d::t_37d981103743f3 50
+tests/corpus/rust/scoped_symbol/expected/cli/src/main.rs
+  s_687c1e451e405d::t_e9259dd9f2cdb8 1-7
+tests/corpus/rust/scoped_symbol/input/cli/src/main.rs
+  s_687c1e451e405d::t_e9259dd9f2cdb8 1-7
+crates/colab-lang-go/src/lib.rs
+  s_687c1e451e405d::t_df5a9821b96fcc 143
+  s_687c1e451e405d::t_ee4f9147edf339 14
+tests/corpus/rust/scoped_symbol/input/core/src/lib.rs
+  s_687c1e451e405d::t_e9259dd9f2cdb8 1-9
+tests/corpus/go/mixed_language_gating/expected/notes.txt
+  s_687c1e451e405d::t_df7e9f6182d293 1
+examples/rust/scoped_rename/scoped.codemod
+  s_687c1e451e405d::t_cfd8b45f011202 1-10
+tests/corpus/go/mixed_language_gating/input/main.go
+  s_687c1e451e405d::t_df7e9f6182d293 1-7
+crates/colab-mcp/src/tools.rs
+  s_687c1e451e405d::t_ab30bd9423e359 1,3-6,8,12-54,59-61,70-72,76,78,83-85,89,91,96-98,103,105-126,133-171
+CLAUDE.md
+  s_687c1e451e405d::t_61297314432fad 70,73-74
+  s_687c1e451e405d::t_d07d9194fb79a3 17-18,45,75
+  s_687c1e451e405d::t_483f26ca879939 76
+  s_687c1e451e405d::t_abfd051e7ad0d3 78-80
+docs/cli.md
+  s_687c1e451e405d::t_11c9c5ca9a01f4 26-27,35,51-54,71-80,82-94,96-97
+  s_687c1e451e405d::t_505b586def331d 111-143
+  s_687c1e451e405d::t_05e82ee81fcbb3 81
+  s_687c1e451e405d::t_4f704dafb225f3 252-254,264-268,292-293,297-318
+crates/colab-dsl/src/codemod.lalrpop
+  s_687c1e451e405d::t_d62e2cc8df2b08 28-30,32-36
+tests/corpus/go/mixed_language_gating/expected/main.go
+  s_687c1e451e405d::t_df7e9f6182d293 1-7
+crates/colab-lang-rust/src/calls.rs
+  s_687c1e451e405d::t_e39c7394b38d45 40-43
+tests/corpus/go/mixed_language_gating/input/notes.txt
+  s_687c1e451e405d::t_df7e9f6182d293 1
+crates/colab-lang-rust/src/uses.rs
+  s_687c1e451e405d::t_65d1275e7ca6c7 157-160
+  s_687c1e451e405d::t_bc500eeae48ee1 218-219
+  s_687c1e451e405d::t_60e427c93806df 98-101
+README.md
+  s_687c1e451e405d::t_0ad5aaffcc62b1 49,171-172
+  s_687c1e451e405d::t_2f0e96dfe4ac23 92-99,107,113-119
+crates/colab-core/src/report.rs
+  s_687c1e451e405d::t_9feb9d08c61460 1-161
+crates/colab-core/src/render.rs
+  s_687c1e451e405d::t_7712d75fc384aa 7,204
+  s_687c1e451e405d::t_e56a7e5eb66dff 228-246
+  s_687c1e451e405d::t_abed660ee25744 1-6,8-203,205-227,247-445
+crates/colab-core/src/scoped.rs
+  s_687c1e451e405d::t_53b933e1f56bea 1-160
+crates/colab-lang-java/src/imports.rs
+  s_687c1e451e405d::t_42a81c06dde3e6 90-93
+  s_687c1e451e405d::t_f10ce112635925 142-145
+  s_687c1e451e405d::t_d7c04ccdc91c66 197-198
+docs/features.md
+  s_687c1e451e405d::t_2f0e96dfe4ac23 33-39
+crates/colab-cli/src/discover.rs
+  s_687c1e451e405d::t_292f8e6716f25b 71-77
+  s_687c1e451e405d::t_7ae87800068442 94-102,108,110
+examples/rust/scoped_rename/README.md
+  s_687c1e451e405d::t_acf1d9a490dbac 19-21,24-28,30-36
+  s_687c1e451e405d::t_8908dfb98ba415 1-18,22-23,29,37-65
+crates/colab-core/Cargo.toml
+  s_687c1e451e405d::t_c33f819c366812 16-17
+crates/colab-core/src/transformer.rs
+  s_687c1e451e405d::t_86ad052bf96cb6 8-30,46-56
+crates/colab-cli/src/format.rs
+  s_687c1e451e405d::t_cf98839d662525 4-6,8-14,19-20,27,29-30,32-33,60-68,73,76-78,81,83-85,90-93,96-107,116-118,121-123,128-137,139-158,160-162,168,170,175-179,183-190,192-198,202-218,220-223,228,230-241,245-246,248-249,252-258,262-263,285,288-289,294-308,310,312-318,320-335
+  s_687c1e451e405d::t_927def7faa769b 159,191,251,309,319
+  s_687c1e451e405d::t_d771cc13a976bb 311
+  s_687c1e451e405d::t_7712d75fc384aa 166-167
+crates/colab-lang-python/src/imports.rs
+  s_687c1e451e405d::t_70322d4d682bee 243-244
+  s_687c1e451e405d::t_66d0c0bb941c0e 132-135
+  s_687c1e451e405d::t_ad25c1a628a21f 185-188
+tests/corpus/rust/scoped_symbol/expected/core/src/lib.rs
+  s_687c1e451e405d::t_e9259dd9f2cdb8 1-9
+crates/colab-lang-rust/src/deps.rs
+  s_687c1e451e405d::t_b8cecbe3cb20d4 70-73
+  s_687c1e451e405d::t_f2d3536a4358cf 44-47
+crates/colab-lang-python/src/symbols.rs
+  s_687c1e451e405d::t_1d277883d98478 33-36
+crates/colab-dsl/tests/corpus.rs
+  s_687c1e451e405d::t_a06ab5a6708206 148-151
+  s_687c1e451e405d::t_918e8526b58d76 133-136
+crates/colab-lang-java/src/packages.rs
+  s_687c1e451e405d::t_a8a25a163f6079 31-34
+tests/corpus/go/mixed_language_gating/input/main.rs
+  s_687c1e451e405d::t_df7e9f6182d293 1-5
+crates/colab-lang-go/src/struct_tags.rs
+  s_687c1e451e405d::t_5271e3537b6e4e 39-46
+crates/colab-lang-js/src/lib.rs
+  s_687c1e451e405d::t_df5a9821b96fcc 107
+  s_687c1e451e405d::t_ee4f9147edf339 17
+crates/colab-lang-java/src/lib.rs
+  s_687c1e451e405d::t_df5a9821b96fcc 129
+  s_687c1e451e405d::t_ee4f9147edf339 16
+crates/colab-mcp/src/lib.rs
+  s_687c1e451e405d::t_71cf05f4eacd8b 3-4,6-9,11-12,15-16,19-41
+  s_687c1e451e405d::t_7712d75fc384aa 17-18
+  s_687c1e451e405d::t_eb683ff91b2df4 425,427-437,439-451,454-463,465-471,475-483,490-508,513,515-520,522-524,527-531,533,536-538,540-542,545-555,557-560,563,567-578,581-611,614-617,620-627,630-633
+  s_687c1e451e405d::t_927def7faa769b 556
+  s_687c1e451e405d::t_395c4132b5c843 355,357-359,361-362,364-366,371-375,377-378,389-391,393,397
+  s_687c1e451e405d::t_e252286b249772 57-58,60-62
+  s_687c1e451e405d::t_49018b4f3d7218 776-778,781-859
+  s_687c1e451e405d::t_d227264c4efbf1 889-892,896,901,904-934,939-963,965-1022
+  s_687c1e451e405d::t_536bb96cce4ec3 342-343
+  s_687c1e451e405d::t_d771cc13a976bb 964
+  s_687c1e451e405d::t_1dcb86cc598b9c 198-210,213,217-279
+  s_687c1e451e405d::t_caf8c328c70625 72-76
+  s_687c1e451e405d::t_6b4922b2f24a89 1023
+Cargo.lock
+  s_687c1e451e405d::t_543390017dd3b5 336-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "607cd09907726f55d856740dcd107fdc1a3fc1d5",
+  "prompts": {},
+  "sessions": {
+    "s_687c1e451e405d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d11b34-3229-4e42-b045-a76c4b9d5c32",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
