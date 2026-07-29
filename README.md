@@ -3,8 +3,8 @@
 A scripted, AST-aware code refactoring (codemod) tool. Point it at a
 repo, hand it a small `.codemod` script, and it will rewrite source
 files deterministically — using tree-sitter for the matching, not
-regex — across five languages: **Go, Rust, Java, Python, and
-JavaScript/TypeScript**.
+regex — across twelve languages: **C, C++, C#, Go, Java,
+JavaScript/TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**.
 
 ```sh
 colab refactor --script rename-tokio.codemod --check .
@@ -27,16 +27,33 @@ agent.
 
 ## Capabilities
 
-| Language | Namespaces |
-| -------- | ---------- |
-| Go     | `import`, `symbol`, `struct_tag`, `call` |
-| Rust   | `use`, `symbol`, `crate` (Cargo.toml), `call` |
-| Java   | `import`, `package`, `symbol` |
-| Python | `import`, `symbol` |
-| JS/TS  | `import` (module specifiers), `symbol` |
+Twelve languages, each with the same capability floor — an
+import-equivalent, a symbol rename, and call rewriting:
+
+| Language | Namespace | Modules |
+| -------- | --------- | ------- |
+| C          | `c`      | `include`, `symbol`, `call` |
+| C++        | `cpp`    | `include`, `namespace`, `symbol`, `call` |
+| C#         | `csharp` | `using`, `namespace`, `symbol`, `call` |
+| Go         | `go`     | `import`, `package`, `symbol`, `struct_tag`, `call` |
+| Java       | `java`   | `import`, `package`, `symbol`, `call` |
+| JavaScript / TypeScript | `js` | `import`, `symbol`, `call` |
+| Kotlin     | `kotlin` | `import`, `package`, `symbol`, `call` |
+| PHP        | `php`    | `use`, `namespace`, `symbol`, `call` |
+| Python     | `python` | `import`, `symbol`, `call` |
+| Ruby       | `ruby`   | `require`, `symbol`, `call` |
+| Rust       | `rust`   | `use`, `symbol`, `crate` (Cargo.toml), `call` |
+| Swift      | `swift`  | `import`, `symbol`, `call` |
 
 Actions: `replace`, `delete`, `ensure`, `replace_call` (with
-`$1`/`$args`/`$func` template placeholders).
+`$1`/`$args`/`$func` template placeholders). The import-equivalent module
+takes all three of `replace`/`delete`/`ensure`; `symbol` and the
+namespace/package modules take `replace`; `call` takes `replace_call`.
+
+Each backend's module is named for the language's own construct, so a
+polyglot script reads naturally — see
+[`examples/polyglot`](examples/polyglot/) for one script covering six
+languages at once.
 
 The full capability matrix lives in [`docs/features.md`](docs/features.md).
 At runtime, ask the binary directly:
@@ -182,11 +199,18 @@ The repo is a Cargo workspace under `crates/`:
 crates/
   colab-core/         # Error, walker, CodeTransformer, LanguageBackend, registry
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR
+  colab-lang-c/       # C backend
+  colab-lang-cpp/     # C++ backend
+  colab-lang-csharp/  # C# backend
   colab-lang-go/      # Go backend
   colab-lang-java/    # Java backend
   colab-lang-js/      # JS/TS backend
+  colab-lang-kotlin/  # Kotlin backend
+  colab-lang-php/     # PHP backend
   colab-lang-python/  # Python backend
+  colab-lang-ruby/    # Ruby backend
   colab-lang-rust/    # Rust backend
+  colab-lang-swift/   # Swift backend
   colab-mcp/          # MCP server (preview / apply / schema / list_rules /
                       # list_languages / lint_script)
   colab-cli/          # The `colab` binary; LSP server; `colab mcp` launcher
@@ -204,6 +228,8 @@ add a corpus case.
 | ------- | ------------ |
 | [`examples/go/imports/`](examples/go/imports/) | Single-rule Go import rename. |
 | [`examples/rust/rename_crate/`](examples/rust/rename_crate/) | End-to-end crate rename across `Cargo.toml` and `*.rs`. |
+| [`examples/rust/scoped_rename/`](examples/rust/scoped_rename/) | Scoping a symbol rename with `in "<glob>"` so a shared name is only renamed where it should be. |
+| [`examples/polyglot/`](examples/polyglot/) | One script rewriting an import and a call site across C, C#, PHP, Ruby, Kotlin, and Swift. |
 | [`examples/packs/rust/edition-2021-to-2024.codemod`](examples/packs/rust/edition-2021-to-2024.codemod) | Skeleton for an edition-migration pack. |
 | [`examples/packs/java/8-to-21.codemod`](examples/packs/java/8-to-21.codemod) | Skeleton for a Java 8→21 pack. |
 

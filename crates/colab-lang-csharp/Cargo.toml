@@ -1,0 +1,13 @@
+[package]
+name = "colab-lang-csharp"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C# source rewrites via tree-sitter-c-sharp."
+
+[dependencies]
+colab-core = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-c-sharp = { workspace = true }

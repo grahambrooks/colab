@@ -9,23 +9,71 @@ just the readable form.
 
 ## At a glance
 
-| Namespace | `replace` | `delete` | `ensure` | `replace_call` | File extensions |
-| --------- | :-------: | :------: | :------: | :------------: | --------------- |
-| `go::import`        | ✅ | ✅ | ✅ |   | `.go` |
-| `go::symbol`        | ✅ |   |   |   | `.go` |
-| `go::struct_tag`    | ✅ |   |   |   | `.go` |
-| `go::call`          |   |   |   | ✅ | `.go` |
-| `rust::use`         | ✅ | ✅ | ✅ |   | `.rs` |
-| `rust::symbol`      | ✅ |   |   |   | `.rs` |
-| `rust::crate`       | ✅ | ✅ |   |   | `Cargo.toml` |
-| `rust::call`        |   |   |   | ✅ | `.rs` |
-| `java::import`      | ✅ | ✅ | ✅ |   | `.java` |
-| `java::package`     | ✅ |   |   |   | `.java` |
-| `java::symbol`      | ✅ |   |   |   | `.java` |
-| `python::import`    | ✅ | ✅ | ✅ |   | `.py` |
-| `python::symbol`    | ✅ |   |   |   | `.py` |
-| `js::import`        | ✅ | ✅ |   |   | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` |
-| `js::symbol`        | ✅ |   |   |   | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` |
+| Namespace | `replace` | `delete` | `ensure` | `replace_call` | Applies to |
+| --------- | :-------: | :------: | :------: | :------------: | ---------- |
+| `c::include`        | ✅ | ✅ | ✅ |    | `.c`, `.h` |
+| `c::symbol`         | ✅ |    |    |    | `.c`, `.h` |
+| `c::call`           |    |    |    | ✅ | `.c`, `.h` |
+| `cpp::include`      | ✅ | ✅ | ✅ |    | `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.h` |
+| `cpp::namespace`    | ✅ |    |    |    | as `cpp::include` |
+| `cpp::symbol`       | ✅ |    |    |    | as `cpp::include` |
+| `cpp::call`         |    |    |    | ✅ | as `cpp::include` |
+| `csharp::using`     | ✅ | ✅ | ✅ |    | `.cs`, `.csx` |
+| `csharp::namespace` | ✅ |    |    |    | `.cs`, `.csx` |
+| `csharp::symbol`    | ✅ |    |    |    | `.cs`, `.csx` |
+| `csharp::call`      |    |    |    | ✅ | `.cs`, `.csx` |
+| `go::import`        | ✅ | ✅ | ✅ |    | `.go` |
+| `go::package`       | ✅ |    |    |    | `.go` |
+| `go::symbol`        | ✅ |    |    |    | `.go` |
+| `go::struct_tag`    | ✅ |    |    |    | `.go` |
+| `go::call`          |    |    |    | ✅ | `.go` |
+| `java::import`      | ✅ | ✅ | ✅ |    | `.java` |
+| `java::package`     | ✅ |    |    |    | `.java` |
+| `java::symbol`      | ✅ |    |    |    | `.java` |
+| `java::call`        |    |    |    | ✅ | `.java` |
+| `js::import`        | ✅ | ✅ | ✅ |    | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` |
+| `js::symbol`        | ✅ |    |    |    | as `js::import` |
+| `js::call`          |    |    |    | ✅ | as `js::import` |
+| `kotlin::import`    | ✅ | ✅ | ✅ |    | `.kt`, `.kts` |
+| `kotlin::package`   | ✅ |    |    |    | `.kt`, `.kts` |
+| `kotlin::symbol`    | ✅ |    |    |    | `.kt`, `.kts` |
+| `kotlin::call`      |    |    |    | ✅ | `.kt`, `.kts` |
+| `php::use`          | ✅ | ✅ | ✅ |    | `.php`, `.phtml` |
+| `php::namespace`    | ✅ |    |    |    | `.php`, `.phtml` |
+| `php::symbol`       | ✅ |    |    |    | `.php`, `.phtml` |
+| `php::call`         |    |    |    | ✅ | `.php`, `.phtml` |
+| `python::import`    | ✅ | ✅ | ✅ |    | `.py` |
+| `python::symbol`    | ✅ |    |    |    | `.py` |
+| `python::call`      |    |    |    | ✅ | `.py` |
+| `ruby::require`     | ✅ | ✅ | ✅ |    | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile`, `Guardfile`, `Capfile` |
+| `ruby::symbol`      | ✅ |    |    |    | as `ruby::require` |
+| `ruby::call`        |    |    |    | ✅ | as `ruby::require` |
+| `rust::use`         | ✅ | ✅ | ✅ |    | `.rs` |
+| `rust::symbol`      | ✅ |    |    |    | `.rs` |
+| `rust::crate`       | ✅ | ✅ |    |    | `Cargo.toml` |
+| `rust::call`        |    |    |    | ✅ | `.rs` |
+| `swift::import`     | ✅ | ✅ | ✅ |    | `.swift` |
+| `swift::symbol`     | ✅ |    |    |    | `.swift` |
+| `swift::call`       |    |    |    | ✅ | `.swift` |
+
+**The capability floor.** Every backend provides an import-equivalent
+(`replace`/`delete`/`ensure`), a `symbol` rename, and a `call` rewrite.
+On top of that, languages with a namespace or package declaration expose
+one, and Go additionally has `struct_tag` and Rust `crate`.
+
+Two deliberate gaps:
+
+- **`rust::crate` has no `ensure`.** Adding a dependency requires a
+  version, and the DSL has no way to express one. Edit `Cargo.toml` or
+  run `cargo add` instead.
+- **Swift has no `package` module.** Swift source has no package or
+  namespace declaration — module membership comes from the build system.
+
+**`.h` is claimed by both `c` and `cpp`,** since the extension alone
+cannot distinguish a C header from a C++ one. A script mixing `c::` and
+`cpp::` rules runs both over `.h` files; every operation is idempotent,
+so the result is the same either way, at the cost of one extra parse per
+header. Narrow with `in "<glob>"` or `--include` if that matters.
 
 The DSL is the same across backends; the table above just records
 which `(module, action)` pairs are wired up. Asking for an
@@ -279,3 +327,114 @@ conflict with colab's syntactic-rewriter premise.
   to add a new backend or action.
 - [`development-plan.md`](development-plan.md) — roadmap and
   non-goals.
+
+---
+
+## C (`colab-lang-c`) and C++ (`colab-lang-cpp`)
+
+Powered by `tree-sitter-c` and `tree-sitter-cpp`.
+
+**Include paths are matched bare.** The delimiters are part of the
+source, not the target: `"old/lib.h"` matches both `#include "old/lib.h"`
+and `#include <old/lib.h>`. A rename preserves whichever style the file
+already used, so a codemod never silently converts a local include into a
+system one.
+
+For `ensure` there is no existing directive to copy the style from, so
+wrap the target in angle brackets to ask for the system form:
+
+```
+match c::include "<stdlib.h>" { ensure }   // #include <stdlib.h>
+match c::include "local.h"    { ensure }   // #include "local.h"
+```
+
+`cpp::namespace` matches the declared name exactly, including the nested
+form — `"a::b"` matches `namespace a::b {` while `"a"` does not.
+Anonymous namespaces never match. It rewrites the *declaration* only;
+qualified uses elsewhere are `cpp::symbol` work, so a full namespace
+rename is usually two rules.
+
+C has no namespace module. Neither backend does macro expansion — colab
+sees the source as written.
+
+## C# (`colab-lang-csharp`)
+
+Powered by `tree-sitter-c-sharp`.
+
+`csharp::using` covers all three forms. For the alias form the target is
+the **right-hand side**, since that is the thing being imported:
+
+```
+using System.Text;         // target "System.Text"
+using static Foo.Bar;      // target "Foo.Bar"
+using Alias = Foo.Bar;     // target "Foo.Bar", not "Alias"
+```
+
+`csharp::namespace` handles both block-scoped and file-scoped (C# 10+)
+declarations identically.
+
+## PHP (`colab-lang-php`)
+
+Powered by `tree-sitter-php`.
+
+**Backslashes are literal.** DSL string literals have no escape
+sequences, so a PHP namespace separator is written as a single
+backslash: `match php::use "App\Old\Thing"`.
+
+`php::use` covers the `use function` and `use const` forms. **Grouped
+imports are deliberately not matched** — `use App\Sub\{A, B};` has no
+single node for `App\Sub\A`, and rewriting half a group would corrupt
+it. Expand the group first.
+
+`php::call` targets include the call syntax: `"helper"`, `"Old::run"`,
+and `"$obj->run"` are three distinct targets.
+
+## Ruby (`colab-lang-ruby`)
+
+Powered by `tree-sitter-ruby`.
+
+Ruby has no import statement — `require 'foo'` is an ordinary method
+call — so `ruby::require` matches a call to `require`/`require_relative`
+whose argument is a **string literal**. A computed require
+(`require File.join(dir, 'x')`) never matches, because colab cannot know
+what it resolves to. Rename preserves the quote style and the
+require/require_relative form already in the file.
+
+There is no separate namespace module: Ruby `module` and `class` names
+are constants, which `ruby::symbol` already covers.
+
+`ruby::call` rewrites **parenthesised calls only**. A paren-less call
+(`puts x`) parses as a call too, but rewriting it with a template that
+adds parentheses could change how the surrounding expression parses, so
+those are skipped.
+
+## Kotlin (`colab-lang-kotlin`)
+
+Powered by `tree-sitter-kotlin-ng`.
+
+For an aliased import (`import a.b.C as D`) the target is the qualified
+name `a.b.C`, not the alias.
+
+**Star imports are matched by their package prefix.** The `*` is
+punctuation and not part of the name node, so `import a.b.*` is matched
+by `"a.b"` — which correspondingly does *not* match `import a.b.C`.
+
+`kotlin::call` skips trailing-lambda calls (`list.map { it }`): a
+template cannot express a closure body, so rewriting one would lose code.
+When a call has both parenthesised arguments and a trailing lambda, only
+the parenthesised part is rewritten.
+
+## Swift (`colab-lang-swift`)
+
+Powered by `tree-sitter-swift`.
+
+`swift::import` covers plain, submodule (`UIKit.UIView`), and
+kind-qualified (`import class Old.Thing`) forms; a rename keeps the kind
+keyword.
+
+**Argument labels travel with their values.** `f(name: x)` exposes
+`name: x` as one argument, so reordering with `$1`/`$2` keeps each label
+attached to its value.
+
+Like Kotlin, trailing-closure calls are skipped. There is no
+`swift::package` — Swift source has no package declaration.

@@ -1,0 +1,6 @@
+// C: swap a header and rewrite the call it provided.
+refactor "c-migrate" {
+    match c::include "old/log.h" { replace "new/log.h" }
+    match c::include "<stdlib.h>" { ensure }
+    match c::call "log_old" { replace_call "log_new($args)" }
+}

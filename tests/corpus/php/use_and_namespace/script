@@ -1,0 +1,8 @@
+// PHP: move a namespace, swap a use, rewrite a static call.
+// Note: DSL string literals have no escape sequences, so a PHP
+// namespace separator is written as a single backslash.
+refactor "php-move" {
+    match php::namespace "App\Old" { replace "App\New" }
+    match php::use "App\Old\Thing" { replace "App\New\Thing" }
+    match php::call "Thing::oldRun" { replace_call "Thing::newRun($args)" }
+}

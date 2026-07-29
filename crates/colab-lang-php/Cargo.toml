@@ -1,0 +1,13 @@
+[package]
+name = "colab-lang-php"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PHP source rewrites via tree-sitter-php."
+
+[dependencies]
+colab-core = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-php = { workspace = true }

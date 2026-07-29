@@ -1,0 +1,6 @@
+// Kotlin: move a package and swap the import that named it.
+refactor "kotlin-move" {
+    match kotlin::package "com.old.app" { replace "com.new.app" }
+    match kotlin::import "com.old.lib.Client" { replace "com.new.lib.Client" }
+    match kotlin::call "Client.oldRun" { replace_call "Client.run($args)" }
+}

@@ -5,6 +5,7 @@
 
 pub mod calls;
 pub mod imports;
+pub mod packages;
 pub mod struct_tags;
 pub mod symbols;
 
@@ -81,6 +82,14 @@ const CAPABILITIES: &[Capability] = &[
             description: "Replace the entire call with the rendered template. Idempotency requires the template to rename the function.",
         }],
     },
+    Capability {
+        module: "package",
+        description: "Rewrite the file's `package` clause. The import path is separate — pair with `go::import` for a package move.",
+        actions: &[ActionCapability {
+            name: "replace",
+            description: "Replace the matched package name with another.",
+        }],
+    },
 ];
 
 impl LanguageBackend for GoBackend {
@@ -140,6 +149,16 @@ impl LanguageBackend for GoBackend {
                     template,
                 }))
             }
+            (
+                "package",
+                RuleSpec::Replace {
+                    target,
+                    replacement,
+                },
+            ) => Ok(Box::new(packages::PackageRename {
+                from: target,
+                to: replacement,
+            })),
             (other, spec) => Err(self.unsupported(other, &spec)),
         }
     }

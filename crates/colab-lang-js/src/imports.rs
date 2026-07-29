@@ -271,3 +271,113 @@ mod tests {
         assert!(!op.is_file_relevant(Path::new("foo.py")));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Ensure
+// ---------------------------------------------------------------------------
+
+/// `Operation` that idempotently adds a side-effect import.
+///
+/// JS has no single canonical "import this module" form — a named import
+/// needs to know *what* to bind — so `ensure` inserts the side-effect
+/// form, `import '<target>';`. That is the shape used for polyfills,
+/// stylesheets, and registration modules, which is where `ensure` is
+/// actually useful. A module already imported in any form (named,
+/// default, namespace, or side-effect) counts as present.
+#[derive(Debug)]
+pub struct SpecifierEnsure {
+    pub target: String,
+}
+
+impl fmt::Display for SpecifierEnsure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "js::import \"{}\" -> ensure", self.target)
+    }
+}
+
+impl Operation for SpecifierEnsure {
+    fn is_file_relevant(&self, path: &Path) -> bool {
+        is_relevant(path)
+    }
+
+    fn apply(&self, source_code: &str) -> String {
+        ensure(&self.target, source_code)
+    }
+
+    // No prefilter: `ensure` acts precisely when the target is absent.
+}
+
+/// Insert `import '<target>';` after the last existing import, or at the
+/// top of the file when there is none.
+pub fn ensure(target: &str, source_code: &str) -> String {
+    let Some(tree) = crate::parse(source_code) else {
+        return source_code.to_string();
+    };
+
+    let mut already_present = false;
+    for_each_matching_specifier(&tree, source_code, target, |_, _, _| {
+        already_present = true;
+    });
+    if already_present {
+        return source_code.to_string();
+    }
+
+    let root = tree.root_node();
+    let mut insert_at = 0usize;
+    for i in 0..root.named_child_count() {
+        let Some(child) = root.named_child(i as u32) else {
+            break;
+        };
+        if child.kind() == "import_statement" {
+            let end = child.end_byte();
+            insert_at = source_code[end..]
+                .find('\n')
+                .map(|p| end + p + 1)
+                .unwrap_or(source_code.len());
+        }
+    }
+
+    let insertion = format!("import '{}';\n", target);
+    let mut out = String::with_capacity(source_code.len() + insertion.len());
+    out.push_str(&source_code[..insert_at]);
+    out.push_str(&insertion);
+    out.push_str(&source_code[insert_at..]);
+    out
+}
+
+#[cfg(test)]
+mod ensure_tests {
+    use super::*;
+
+    const SRC: &str = "import a from 'alpha';\nimport 'beta';\n\nconsole.log(a);\n";
+
+    #[test]
+    fn adds_a_side_effect_import_after_the_existing_ones() {
+        let out = ensure("polyfill", SRC);
+        assert!(out.contains("import 'polyfill';"), "got: {out}");
+        let last_existing = out.find("import 'beta';").unwrap();
+        let added = out.find("import 'polyfill';").unwrap();
+        let body = out.find("console.log").unwrap();
+        assert!(last_existing < added && added < body, "got: {out}");
+    }
+
+    #[test]
+    fn is_a_noop_when_already_imported_in_any_form() {
+        // Named/default import counts as present, not just side-effect.
+        assert_eq!(ensure("alpha", SRC), SRC);
+        assert_eq!(ensure("beta", SRC), SRC);
+    }
+
+    #[test]
+    fn prepends_when_there_are_no_imports() {
+        let src = "console.log(1);\n";
+        let out = ensure("polyfill", src);
+        assert!(out.starts_with("import 'polyfill';\n"), "got: {out}");
+    }
+
+    #[test]
+    fn is_idempotent() {
+        let once = ensure("polyfill", SRC);
+        assert_eq!(ensure("polyfill", &once), once);
+    }
+}

@@ -15,11 +15,18 @@ lalrpop-util = { workspace = true }
 [dev-dependencies]
 # Tests need real backends to exercise compile() end-to-end. Production
 # code in this crate must NOT depend on any colab-lang-* crate.
+colab-lang-c = { workspace = true }
+colab-lang-cpp = { workspace = true }
+colab-lang-csharp = { workspace = true }
 colab-lang-go = { workspace = true }
 colab-lang-java = { workspace = true }
 colab-lang-js = { workspace = true }
+colab-lang-kotlin = { workspace = true }
+colab-lang-php = { workspace = true }
 colab-lang-python = { workspace = true }
+colab-lang-ruby = { workspace = true }
 colab-lang-rust = { workspace = true }
+colab-lang-swift = { workspace = true }
 
 [build-dependencies]
 lalrpop = { workspace = true }

@@ -44,13 +44,31 @@ The repo is a Cargo workspace under `crates/`:
 | ---------------- | ---- |
 | `colab-core`     | `Error`/`Result` (+ `ParseDetail`), `CodeTransformer`, walker, `LanguageBackend` + `Operation` + `BackendRegistry`, `RunReport` (per-rule attribution), `render` (the shared JSON serializer), `ScopedOperation`, `suggest`. No internal deps. |
 | `colab-dsl`      | LALRPOP grammar, AST, compiler, `Refactoring` IR. Depends only on `colab-core`; no compile-time knowledge of any backend. |
-| `colab-lang-go`     | Go backend: `go::import` (rename / delete / ensure), `go::symbol` (rename), `go::struct_tag` (rename `<key>:"<value>"` pairs in field tags), `go::call` (`replace_call` template). |
-| `colab-lang-java`   | Java backend: `java::import` (rename / delete / ensure), `java::package` (rename), `java::symbol` (rename) via tree-sitter-java. |
-| `colab-lang-js`     | JS/TS backend: `js::import` (rename / delete) for ES module specifiers and `js::symbol` (rename) via tree-sitter-javascript. Handles `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx`. |
-| `colab-lang-python` | Python backend: `python::import` (rename / delete / ensure) and `python::symbol` (rename) via tree-sitter-python. Import matching is segment-prefix like `rust::use`. |
-| `colab-lang-rust`   | Rust backend: `rust::use` (rename / delete / ensure), `rust::symbol` (rename), `rust::crate` (rename / delete via toml_edit-validated line scan), `rust::call` (`replace_call` template). |
+| `colab-lang-*`      | One crate per language, 12 in total. Every backend provides an import-equivalent (`replace`/`delete`/`ensure`), `symbol` (rename), and `call` (`replace_call`); see the table below and [`docs/features.md`](docs/features.md) for the per-backend extras and caveats. |
 | `colab-mcp`         | MCP server. Wraps `preview`/`apply`/`schema`/`lint_script` as MCP tools over JSON-RPC 2.0 with Content-Length framing on stdio. Depends only on `colab-core` + `colab-dsl`; never pulls in a `colab-lang-*` crate. |
-| `colab-cli`         | The `colab` binary. Builds the default `BackendRegistry` (`go`, `java`, `js`, `python`, `rust`), serves the LSP (`colab server`) with diagnostics + completion for `.codemod` files, and launches the MCP server (`colab mcp`). |
+| `colab-cli`         | The `colab` binary. Builds the default `BackendRegistry` (all 12 backends), serves the LSP (`colab server`) with diagnostics + completion for `.codemod` files, and launches the MCP server (`colab mcp`). |
+
+Language backends and the modules each adds beyond the common floor
+(`<import-equivalent>` / `symbol` / `call`):
+
+| Crate | Namespace | Import module | Extra modules | Files |
+| ----- | --------- | ------------- | ------------- | ----- |
+| `colab-lang-c`      | `c`      | `include` | — | `.c`, `.h` |
+| `colab-lang-cpp`    | `cpp`    | `include` | `namespace` | `.cpp`/`.cc`/`.cxx`/`.hpp`/`.hh`/`.h` … |
+| `colab-lang-csharp` | `csharp` | `using`   | `namespace` | `.cs`, `.csx` |
+| `colab-lang-go`     | `go`     | `import`  | `package`, `struct_tag` | `.go` |
+| `colab-lang-java`   | `java`   | `import`  | `package` | `.java` |
+| `colab-lang-js`     | `js`     | `import`  | — | `.js`/`.mjs`/`.cjs`/`.jsx`/`.ts`/`.tsx` |
+| `colab-lang-kotlin` | `kotlin` | `import`  | `package` | `.kt`, `.kts` |
+| `colab-lang-php`    | `php`    | `use`     | `namespace` | `.php`, `.phtml` |
+| `colab-lang-python` | `python` | `import`  | — | `.py` |
+| `colab-lang-ruby`   | `ruby`   | `require` | — | `.rb`, `Rakefile`, … |
+| `colab-lang-rust`   | `rust`   | `use`     | `crate` (no `ensure`) | `.rs`, `Cargo.toml` |
+| `colab-lang-swift`  | `swift`  | `import`  | — | `.swift` |
+
+`.h` is claimed by both `c` and `cpp` — the extension cannot distinguish
+them. Both run over `.h` files in a mixed script; every op is idempotent
+so the result is the same, at the cost of one extra parse.
 
 `crates/colab-dsl/build.rs` runs `lalrpop::process_root()` (editing `src/codemod.lalrpop` requires a rebuild — generated `codemod.rs` lives in `OUT_DIR`). `crates/colab-cli/build.rs` shells out to `git rev-parse --short HEAD` to embed a version suffix, so builds must happen inside a git checkout.
 

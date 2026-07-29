@@ -1,0 +1,7 @@
+// Swift: swap a module import and rewrite its call sites.
+refactor "swift-migrate" {
+    match swift::import "OldNetworking" { replace "NewNetworking" }
+    match swift::import "Foundation" { ensure }
+    match swift::symbol "OldClient" { replace "NewClient" }
+    match swift::call "NewClient.fetchOld" { replace_call "NewClient.fetch($args)" }
+}

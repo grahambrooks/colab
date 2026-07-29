@@ -35,11 +35,18 @@ static VERSION: &str = concat!(
 /// New `colab-lang-*` crates plug in here.
 fn default_backends() -> BackendRegistry {
     let mut registry = BackendRegistry::new();
+    registry.register(Box::new(colab_lang_c::CBackend));
+    registry.register(Box::new(colab_lang_cpp::CppBackend));
+    registry.register(Box::new(colab_lang_csharp::CSharpBackend));
     registry.register(Box::new(colab_lang_go::GoBackend));
     registry.register(Box::new(colab_lang_java::JavaBackend));
     registry.register(Box::new(colab_lang_js::JsBackend));
+    registry.register(Box::new(colab_lang_kotlin::KotlinBackend));
+    registry.register(Box::new(colab_lang_php::PhpBackend));
     registry.register(Box::new(colab_lang_python::PythonBackend));
+    registry.register(Box::new(colab_lang_ruby::RubyBackend));
     registry.register(Box::new(colab_lang_rust::RustBackend));
+    registry.register(Box::new(colab_lang_swift::SwiftBackend));
     registry
 }
 

@@ -1,0 +1,6 @@
+// C++: rename a namespace declaration and a class.
+refactor "cpp-rename" {
+    match cpp::include "old/widget.hpp" { replace "new/widget.hpp" }
+    match cpp::namespace "old_ui" { replace "new_ui" }
+    match cpp::symbol "OldWidget" { replace "NewWidget" }
+}

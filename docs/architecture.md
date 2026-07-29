@@ -22,11 +22,18 @@ crates/
                       # suggest ("did you mean"). No internal deps.
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR.
                       # Depends only on colab-core; never on a backend.
+  colab-lang-c/       # C backend (tree-sitter-c).
+  colab-lang-cpp/     # C++ backend (tree-sitter-cpp).
+  colab-lang-csharp/  # C# backend (tree-sitter-c-sharp).
   colab-lang-go/      # Go backend (tree-sitter-go).
   colab-lang-java/    # Java backend (tree-sitter-java).
   colab-lang-js/      # JS/TS backend (tree-sitter-javascript).
+  colab-lang-kotlin/  # Kotlin backend (tree-sitter-kotlin-ng).
+  colab-lang-php/     # PHP backend (tree-sitter-php).
   colab-lang-python/  # Python backend (tree-sitter-python).
+  colab-lang-ruby/    # Ruby backend (tree-sitter-ruby).
   colab-lang-rust/    # Rust backend (tree-sitter-rust + toml_edit).
+  colab-lang-swift/   # Swift backend (tree-sitter-swift).
   colab-mcp/          # Model Context Protocol server (preview / apply
                       # / schema / list_rules / list_languages /
                       # lint_script as MCP tools).

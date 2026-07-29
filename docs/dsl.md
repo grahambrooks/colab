@@ -28,7 +28,7 @@ program     = "refactor" string "{" match* "}"
 match       = "match" namespace string [ scope ] "{" action "}"
 scope       = "in" string
 namespace   = identifier "::" identifier
-identifier  = [a-zA-Z_][a-zA-Z0-9_]*
+identifier  = [a-zA-Z_][a-zA-Z0-9_]* | keyword   -- see "Reserved tokens"
 string      = '"' (any-char-except-double-quote)* '"'
 action      = "replace" string
             | "delete"
@@ -78,10 +78,14 @@ each rule is a no-op on its own output.
 
 ### `replace_call "<template>"`
 
-Rewrite a call expression whose function text equals the match string.
-Available only on `<lang>::call` namespaces (currently `go::call` and
-`rust::call`). The template is a string with substitution
-placeholders:
+Rewrite a call expression whose callee text equals the match string.
+Available on the `<lang>::call` module, which every backend provides.
+The template is a string with substitution placeholders:
+
+The target is the callee **exactly as the call reads in the source**, so
+`Log.write` and a bare `write` are distinct targets in every backend.
+PHP includes the `::`/`->`; Java and C# include the receiver. See the
+[match-string conventions](#match-string-conventions) table.
 
 | Placeholder | Expands to |
 | ----------- | ---------- |
@@ -155,8 +159,11 @@ refactor "stub" { }
 
 ## Namespaces
 
-Each backend owns a namespace (`go`, `rust`, `java`, `python`, `js`)
-and exposes one or more *modules* within it. The full list is
+Each backend owns a namespace — `c`, `cpp`, `csharp`, `go`, `java`, `js`,
+`kotlin`, `php`, `python`, `ruby`, `rust`, `swift` — and exposes one or
+more *modules* within it. Every backend provides an import-equivalent
+(named for the language's own construct), a `symbol` rename, and a `call`
+rewrite; those with a namespace or package declaration expose one too. The full list is
 machine-discoverable via `colab schema` and `colab list-rules <lang>`,
 and is documented in [features.md](./features.md).
 
@@ -172,7 +179,13 @@ table below summarises:
 
 | Module | Match string is | Examples |
 | ------ | --------------- | -------- |
+| `c::include` / `cpp::include` | Bare path, no delimiters. Matches both `<angle>` and `"quoted"` forms. | `"stdio.h"`, `"old/lib.h"` |
+| `cpp::namespace` | Declared name, exact — including the nested form. | `"old_ns"`, `"a::b"` |
+| `csharp::using` | Dotted name. For an alias, the right-hand side. | `"System.Text"` |
+| `csharp::namespace` | Exact dotted namespace, block or file-scoped. | `"Old.App"` |
+| `csharp::call` | Verbatim callee text. | `"Foo.Old"`, `"Old"` |
 | `go::import` | Exact import path. | `"fmt"`, `"github.com/x/y"` |
+| `go::package` | Package clause identifier. | `"oldpkg"` |
 | `go::symbol` | Identifier text (rewrites every matching `identifier` / `type_identifier` / `field_identifier` in the file). | `"OldType"` |
 | `go::struct_tag` | `<key>:<value>` pair (no quotes around value). | `"json:old_name"` |
 | `go::call` | Verbatim source text of the function being called. | `"pkg.Old"`, `"Old"` |
@@ -183,6 +196,20 @@ table below summarises:
 | `java::import` | Exact dotted import name. | `"java.util.List"` |
 | `java::package` | Exact dotted package. | `"com.old"` |
 | `java::symbol` | Identifier text. | `"OldGreeter"` |
+| `java::call` | Verbatim callee text, receiver included. | `"Old.run"`, `"this.foo"` |
+| `js::call` | Verbatim callee text. | `"mod.old"`, `"oldFn"` |
+| `kotlin::import` | Qualified name. For an alias, the qualified name; for `a.b.*`, write `"a.b"`. | `"com.old.Client"` |
+| `kotlin::package` | Exact dotted package. | `"com.old.app"` |
+| `kotlin::call` | Verbatim callee text. | `"Client.run"` |
+| `php::use` | Backslash-separated name. **No escapes** — one backslash. | `"App\Old\Thing"` |
+| `php::namespace` | Exact backslash-separated namespace. | `"App\Old"` |
+| `php::call` | Verbatim callee, including `::` or `->`. | `"Old::run"`, `"$obj->run"` |
+| `python::call` | Verbatim callee text. | `"mod.old"`, `"old_fn"` |
+| `ruby::require` | Quoted path from `require`/`require_relative`. | `"old/client"` |
+| `ruby::symbol` | Identifier or constant text. Covers `module`/`class` names. | `"OldClient"` |
+| `ruby::call` | Verbatim callee, receiver included. Parenthesised calls only. | `"Log.write"` |
+| `swift::import` | Module path. | `"OldLog"`, `"UIKit.UIView"` |
+| `swift::call` | Verbatim callee text. | `"Log.write"` |
 | `python::import` | Leading dotted prefix, segment-wise (covers `import` and `from … import`). | `"old_pkg"`, `"old_pkg.sub"` |
 | `python::symbol` | Identifier text. | `"old_helper"` |
 | `js::import` | Exact ES module specifier (the string after `from`). | `"lodash"` |
@@ -310,12 +337,24 @@ refactor "javax-to-jakarta" {
 
 ## Reserved tokens
 
-The following identifiers are grammar keywords and cannot appear as
-namespace, module, or action names:
+The grammar keywords are:
 
-`refactor`, `match`, `in`, `replace`, `delete`, `ensure`, `replace_call`.
+`refactor`, `match`, `in`, `include`, `replace`, `delete`, `ensure`,
+`replace_call`.
 
 `::` is the namespace separator. `//` starts a line comment.
+
+**Keywords are still usable as namespace segments.** A backend's module
+is named after the language's own construct, and C's is `#include` — so
+`match c::include "stdio.h" { ... }` parses fine even though `include` is
+also the pack directive. The two positions are never ambiguous, because a
+namespace only ever follows `match`. The same holds for `delete`,
+`ensure`, `replace`, and `in` should a backend ever want them as module
+names.
+
+**String literals have no escape sequences.** A backslash is a literal
+backslash, which is what makes PHP namespaces (`"App\Old\Thing"`) work
+naturally. It also means a target cannot contain a double quote.
 
 ## Future directions
 

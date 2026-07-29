@@ -9,6 +9,7 @@
 //! out of scope.
 
 pub mod imports;
+pub mod calls;
 pub mod symbols;
 
 use std::cell::RefCell;
@@ -54,6 +55,10 @@ const CAPABILITIES: &[Capability] = &[
                 name: "delete",
                 description: "Remove `import`/`export-from` statements with a matching specifier.",
             },
+            ActionCapability {
+                name: "ensure",
+                description: "Idempotently add a side-effect import (`import '<target>';`) if the module is not imported in any form.",
+            },
         ],
     },
     Capability {
@@ -62,6 +67,14 @@ const CAPABILITIES: &[Capability] = &[
         actions: &[ActionCapability {
             name: "replace",
             description: "Rewrite every `identifier`/`property_identifier`/`shorthand_property_identifier` whose text equals the target.",
+        }],
+    },
+    Capability {
+        module: "call",
+        description: "Rewrite a call using a template with $1/$2/$args/$func placeholders. Targets include the receiver, e.g. `mod.old`.",
+        actions: &[ActionCapability {
+            name: "replace_call",
+            description: "Replace matched calls with the rendered template. Rename the function to stay idempotent.",
         }],
     },
 ];
@@ -104,6 +117,15 @@ impl LanguageBackend for JsBackend {
                 from: target,
                 to: replacement,
             })),
+            ("call", RuleSpec::ReplaceCall { target, template }) => {
+                Ok(Box::new(calls::CallReplace {
+                    function: target,
+                    template,
+                }))
+            }
+            ("import", RuleSpec::Ensure { target }) => {
+                Ok(Box::new(imports::SpecifierEnsure { target }))
+            }
             (other, spec) => Err(self.unsupported(other, &spec)),
         }
     }

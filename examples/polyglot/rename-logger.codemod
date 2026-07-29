@@ -1,0 +1,32 @@
+// One script, six languages.
+//
+// A logging library moved and renamed its entry point. Each backend
+// names its own import construct — `#include`, `using`, `use`,
+// `require`, `import` — but the DSL surface is identical, and rules for
+// a language colab is not looking at are skipped rather than run and
+// discarded.
+refactor "logger-v2" {
+    // C: the bare path matches both <angle> and "quoted" forms.
+    match c::include "oldlog/log.h" { replace "newlog/log.h" }
+    match c::call "log_write" { replace_call "newlog_write($args)" }
+
+    // C#: `using`, plus a namespace-qualified call.
+    match csharp::using "OldLog.Client" { replace "NewLog.Client" }
+    match csharp::call "Log.Write" { replace_call "Log.Emit($args)" }
+
+    // PHP: backslash separators are literal — the DSL has no escapes.
+    match php::use "OldLog\Client" { replace "NewLog\Client" }
+    match php::call "Log::write" { replace_call "Log::emit($args)" }
+
+    // Ruby: `require` is a method call, matched on its string argument.
+    match ruby::require "oldlog/client" { replace "newlog/client" }
+    match ruby::call "Log.write" { replace_call "Log.emit($args)" }
+
+    // Kotlin: aliased imports target the qualified name, not the alias.
+    match kotlin::import "com.oldlog.Client" { replace "com.newlog.Client" }
+    match kotlin::call "Log.write" { replace_call "Log.emit($args)" }
+
+    // Swift: module imports, and labels travel with their arguments.
+    match swift::import "OldLog" { replace "NewLog" }
+    match swift::call "Log.write" { replace_call "Log.emit($args)" }
+}

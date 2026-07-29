@@ -1,0 +1,13 @@
+[package]
+name = "colab-lang-kotlin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Kotlin source rewrites via tree-sitter-kotlin-ng."
+
+[dependencies]
+colab-core = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-kotlin-ng = { workspace = true }

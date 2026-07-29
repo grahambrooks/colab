@@ -3,11 +3,18 @@ resolver = "2"
 members = [
     "crates/colab-core",
     "crates/colab-dsl",
+    "crates/colab-lang-c",
+    "crates/colab-lang-cpp",
+    "crates/colab-lang-csharp",
     "crates/colab-lang-go",
     "crates/colab-lang-java",
     "crates/colab-lang-js",
+    "crates/colab-lang-kotlin",
+    "crates/colab-lang-php",
     "crates/colab-lang-python",
+    "crates/colab-lang-ruby",
     "crates/colab-lang-rust",
+    "crates/colab-lang-swift",
     "crates/colab-mcp",
     "crates/colab-cli",
 ]
@@ -22,11 +29,18 @@ repository = "https://github.com/grahambrooks/colab"
 [workspace.dependencies]
 colab-core = { path = "crates/colab-core" }
 colab-dsl = { path = "crates/colab-dsl" }
+colab-lang-c = { path = "crates/colab-lang-c" }
+colab-lang-cpp = { path = "crates/colab-lang-cpp" }
+colab-lang-csharp = { path = "crates/colab-lang-csharp" }
 colab-lang-go = { path = "crates/colab-lang-go" }
 colab-lang-java = { path = "crates/colab-lang-java" }
 colab-lang-js = { path = "crates/colab-lang-js" }
+colab-lang-kotlin = { path = "crates/colab-lang-kotlin" }
+colab-lang-php = { path = "crates/colab-lang-php" }
 colab-lang-python = { path = "crates/colab-lang-python" }
+colab-lang-ruby = { path = "crates/colab-lang-ruby" }
 colab-lang-rust = { path = "crates/colab-lang-rust" }
+colab-lang-swift = { path = "crates/colab-lang-swift" }
 colab-mcp = { path = "crates/colab-mcp" }
 
 # Third-party deps shared across crates. Crates pick what they need.
@@ -39,11 +53,19 @@ globset = "0.4"
 rayon = "1.10"
 num_cpus = "1.16"
 tree-sitter = "0.27.0"
+tree-sitter = "0.26.0"
+tree-sitter-c = "0.24.2"
+tree-sitter-c-sharp = "0.23.5"
+tree-sitter-cpp = "0.23.4"
 tree-sitter-go = "0.25.0"
 tree-sitter-java = "0.23"
 tree-sitter-javascript = "0.25"
+tree-sitter-kotlin-ng = "1.1.0"
+tree-sitter-php = "0.24.2"
 tree-sitter-python = "0.25"
+tree-sitter-ruby = "0.23.1"
 tree-sitter-rust = "0.24"
+tree-sitter-swift = "0.7.3"
 tree-sitter-toml = "0.20.0"
 toml_edit = "0.25"
 tower-lsp = "0.20.0"

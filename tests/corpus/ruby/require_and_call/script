@@ -1,0 +1,7 @@
+// Ruby: swap a require and rename the constant it provided.
+refactor "ruby-migrate" {
+    match ruby::require "old/client" { replace "new/client" }
+    match ruby::require "json" { ensure }
+    match ruby::symbol "OldClient" { replace "NewClient" }
+    match ruby::call "NewClient.fetch_old" { replace_call "NewClient.fetch($args)" }
+}

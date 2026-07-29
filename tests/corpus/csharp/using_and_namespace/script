@@ -1,0 +1,7 @@
+// C#: move a namespace and swap a using, including the static form.
+refactor "csharp-move" {
+    match csharp::using "Old.Lib.Helpers" { replace "New.Lib.Helpers" }
+    match csharp::using "System.Linq" { ensure }
+    match csharp::namespace "Old.App" { replace "New.App" }
+    match csharp::call "Helpers.Old" { replace_call "Helpers.New($args)" }
+}

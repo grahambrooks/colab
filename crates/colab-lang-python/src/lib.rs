@@ -6,6 +6,7 @@
 //! `from x.y import z` but never `xy` (substring) or `mod.x` (mid-path).
 
 pub mod imports;
+pub mod calls;
 pub mod symbols;
 
 use std::cell::RefCell;
@@ -63,6 +64,14 @@ const CAPABILITIES: &[Capability] = &[
             description: "Rewrite every `identifier` whose text equals the target.",
         }],
     },
+    Capability {
+        module: "call",
+        description: "Rewrite a call using a template with $1/$2/$args/$func placeholders. Keyword arguments travel with their names.",
+        actions: &[ActionCapability {
+            name: "replace_call",
+            description: "Replace matched calls with the rendered template. Rename the function to stay idempotent.",
+        }],
+    },
 ];
 
 impl LanguageBackend for PythonBackend {
@@ -106,6 +115,12 @@ impl LanguageBackend for PythonBackend {
                 from: target,
                 to: replacement,
             })),
+            ("call", RuleSpec::ReplaceCall { target, template }) => {
+                Ok(Box::new(calls::CallReplace {
+                    function: target,
+                    template,
+                }))
+            }
             (other, spec) => Err(self.unsupported(other, &spec)),
         }
     }

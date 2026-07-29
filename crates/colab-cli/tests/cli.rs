@@ -421,10 +421,56 @@ fn schema_lists_go_import_replace() {
     let output = colab().arg("schema").output().unwrap();
     assert_eq!(output.status.code(), Some(0));
     let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
-    let go = &value["languages"][0];
-    assert_eq!(go["name"], "go");
-    assert_eq!(go["modules"][0]["name"], "import");
-    assert_eq!(go["modules"][0]["actions"][0]["name"], "replace");
+    // Look the language up by name rather than by position — registration
+    // order changes whenever a backend is added.
+    let go = value["languages"]
+        .as_array()
+        .expect("languages array")
+        .iter()
+        .find(|l| l["name"] == "go")
+        .expect("go backend registered");
+    let import = go["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["name"] == "import")
+        .expect("go::import module");
+    let actions: Vec<&str> = import["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["name"].as_str().unwrap())
+        .collect();
+    assert!(actions.contains(&"replace"), "got: {actions:?}");
+}
+
+#[test]
+fn every_backend_advertises_import_symbol_and_call() {
+    // The capability floor: whatever the language, an agent can rely on
+    // an import-equivalent, a symbol rename, and call rewriting existing.
+    let output = colab().arg("schema").output().unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+
+    // The import-equivalent module is named for the language's own
+    // construct, so accept any of these.
+    const IMPORT_MODULES: &[&str] = &["import", "include", "use", "using", "require"];
+
+    for lang in value["languages"].as_array().expect("languages") {
+        let name = lang["name"].as_str().unwrap();
+        let modules: Vec<&str> = lang["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["name"].as_str().unwrap())
+            .collect();
+
+        assert!(
+            modules.iter().any(|m| IMPORT_MODULES.contains(m)),
+            "{name} has no import-equivalent module: {modules:?}"
+        );
+        assert!(modules.contains(&"symbol"), "{name} lacks symbol: {modules:?}");
+        assert!(modules.contains(&"call"), "{name} lacks call: {modules:?}");
+    }
 }
 
 #[test]
@@ -555,10 +601,11 @@ fn an_unknown_module_names_the_closest_real_one() {
 fn an_unsupported_action_names_the_action_and_the_valid_ones() {
     let root = workspace_temp("bad-action");
     let script = root.join("bad.codemod");
-    // `js::import` supports rename and delete, but not ensure.
+    // `rust::crate` supports replace and delete but not ensure: adding a
+    // dependency needs a version, which the DSL has no way to express.
     write(
         &script,
-        "refactor \"x\" {\n  match js::import \"lodash\" { ensure }\n}\n",
+        "refactor \"x\" {\n  match rust::crate \"serde\" { ensure }\n}\n",
     );
 
     let output = colab()

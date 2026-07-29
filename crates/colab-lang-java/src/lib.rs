@@ -7,6 +7,7 @@
 //! - `java::package` — rename the file's `package` declaration.
 
 pub mod imports;
+pub mod calls;
 pub mod packages;
 pub mod symbols;
 
@@ -73,6 +74,14 @@ const CAPABILITIES: &[Capability] = &[
             description: "Rewrite every `identifier`/`type_identifier` whose text equals the target.",
         }],
     },
+    Capability {
+        module: "call",
+        description: "Rewrite a method invocation using a template with $1/$2/$args/$func placeholders. Targets include the receiver, e.g. `Old.run`.",
+        actions: &[ActionCapability {
+            name: "replace_call",
+            description: "Replace matched calls with the rendered template. Rename the function to stay idempotent.",
+        }],
+    },
 ];
 
 impl LanguageBackend for JavaBackend {
@@ -126,6 +135,12 @@ impl LanguageBackend for JavaBackend {
                 from: target,
                 to: replacement,
             })),
+            ("call", RuleSpec::ReplaceCall { target, template }) => {
+                Ok(Box::new(calls::CallReplace {
+                    function: target,
+                    template,
+                }))
+            }
             (other, spec) => Err(self.unsupported(other, &spec)),
         }
     }
