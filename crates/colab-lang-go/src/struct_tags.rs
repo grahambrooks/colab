@@ -36,6 +36,14 @@ impl Operation for TagReplace {
     fn apply(&self, source_code: &str) -> String {
         rename(&self.from, &self.to, source_code)
     }
+
+    /// The tag *value*, not the whole `<key>:<value>` match string: the
+    /// source holds `key:"value"` with quotes the match string omits, so
+    /// only the value survives as a contiguous literal. A malformed pair
+    /// yields `None`, matching `rename`'s own bail-out.
+    fn prefilter(&self) -> Option<&str> {
+        self.from.split_once(':').map(|(_, value)| value)
+    }
 }
 
 /// Parse a `<key>:<value>` literal into its parts. Returns `None` if

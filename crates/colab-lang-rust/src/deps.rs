@@ -41,6 +41,10 @@ impl Operation for CrateRename {
     fn apply(&self, source_code: &str) -> String {
         rename(&self.from, &self.to, source_code)
     }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.from)
+    }
 }
 
 /// `Operation` that removes a Cargo.toml dependency entry.
@@ -62,6 +66,10 @@ impl Operation for CrateDelete {
 
     fn apply(&self, source_code: &str) -> String {
         delete(&self.target, source_code)
+    }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.target)
     }
 }
 

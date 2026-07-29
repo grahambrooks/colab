@@ -25,8 +25,15 @@ pub Item: Item = {
     "include" <s: StringLiteral> => Item::Include(s),
 };
 
+// The optional `in "<glob>"` clause restricts the rule to matching
+// paths. It is enforced through the operation's relevance check, so a
+// scoped rule is skipped wholesale for files outside the glob.
 pub Match: Match = {
-    "match" <namespace: Namespace> <string: StringLiteral> "{" <action: Action> "}" => Match { namespace, match_string: string, action }
+    "match" <namespace: Namespace> <string: StringLiteral> <scope: Scope?> "{" <action: Action> "}" => Match { namespace, match_string: string, scope, action }
+};
+
+pub Scope: String = {
+    "in" <glob: StringLiteral> => glob
 };
 
 pub Namespace: Namespace = {

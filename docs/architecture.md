@@ -14,10 +14,12 @@ capability matrix see [`docs/features.md`](docs/features.md).
 
 ```
 crates/
-  colab-core/         # Error/Result, CodeTransformer, walker,
-                      # LanguageBackend trait + Operation +
-                      # BackendRegistry, RuleSpec, template engine.
-                      # No internal deps.
+  colab-core/         # Error/Result (+ ParseDetail), CodeTransformer,
+                      # walker, LanguageBackend trait + Operation +
+                      # BackendRegistry, RuleSpec, template engine,
+                      # RunReport (per-rule attribution), render (the
+                      # shared JSON serializer), ScopedOperation,
+                      # suggest ("did you mean"). No internal deps.
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR.
                       # Depends only on colab-core; never on a backend.
   colab-lang-go/      # Go backend (tree-sitter-go).
@@ -25,8 +27,9 @@ crates/
   colab-lang-js/      # JS/TS backend (tree-sitter-javascript).
   colab-lang-python/  # Python backend (tree-sitter-python).
   colab-lang-rust/    # Rust backend (tree-sitter-rust + toml_edit).
-  colab-mcp/          # Model Context Protocol server (preview /
-                      # apply / schema / lint_script as MCP tools).
+  colab-mcp/          # Model Context Protocol server (preview / apply
+                      # / schema / list_rules / list_languages /
+                      # lint_script as MCP tools).
                       # JSON-RPC 2.0 over stdio with Content-Length
                       # framing. Depends only on colab-core +
                       # colab-dsl; like colab-dsl, must not pull in
@@ -74,14 +77,26 @@ text ─▶ │  parse args  →  read script  →  drive run      │
         │              colab_core::walker                │
         │  walk(transformer, root, &mut visitor)         │
         │  – sorted directory traversal                  │
-        │  – yields FileChange { path, before, after }   │
+        │  – calls apply_at(path, src) per file:         │
+        │      gate on is_file_relevant, then prefilter, │
+        │      then parse — per rule                     │
+        │  – yields FileChange { path, before, after,    │
+        │                        rules_fired }           │
+        │  – returns WalkOutcome { files_visited,        │
+        │                          skipped }             │
+        └───────────────┬────────────────────────────────┘
+                        │  folded into colab_core::RunReport
+        ┌───────────────▼────────────────────────────────┐
+        │             colab_core::render                 │
+        │  RunReport + changed files → JSON, at a        │
+        │  Detail level, with diffs capped               │
         └───────────────┬────────────────────────────────┘
                         │
         ┌───────────────▼────────────────────────────────┐
-        │               colab_cli::format                │
-        │  reporter chosen by --format:                  │
-        │    HumanReporter / JsonReporter / DiffReporter │
-        │  visitor decides --write / --dry-run / --check │
+        │      colab_cli::format  |  colab_mcp           │
+        │  reporter chosen by --format, or the MCP       │
+        │  tools/call response — both render the same    │
+        │  RunReport so the two surfaces cannot drift    │
         └────────────────────────────────────────────────┘
 ```
 
@@ -102,9 +117,15 @@ left-to-right.
 
 **Invariant:** `apply` returns its input unchanged when there is
 nothing to rewrite. The walker uses string equality with the input
-to skip writes; rule composition relies on irrelevant rules being
-identity (a Go rule sees Rust source via the multi-rule walker and
-must not modify it).
+to skip writes.
+
+The walker actually calls `apply_at(path, source)`, which returns an
+`ApplyOutcome { output, rules_fired }`. Knowing the path lets
+`Refactoring` skip rules that cannot apply to this file rather than
+parsing to find out, and `rules_fired` is what makes per-rule match
+counts possible. The default `apply_at` delegates to `apply` and
+reports no attribution, so a single-rule implementor need not override
+it.
 
 ### `LanguageBackend` and `Operation`
 
@@ -119,6 +140,9 @@ pub trait LanguageBackend: Send + Sync {
 pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     fn is_file_relevant(&self, path: &Path) -> bool;
     fn apply(&self, source_code: &str) -> String;
+    /// A literal that must be present for this op to change anything.
+    /// `None` disables the fast path — required for `ensure`.
+    fn prefilter(&self) -> Option<&str> { None }
 }
 ```
 
@@ -163,14 +187,50 @@ backend is registered. New `colab-lang-*` crates plug in here.
 ### `FileChange` (walker visitor)
 
 ```rust
-pub struct FileChange { pub path: PathBuf, pub before: String, pub after: String }
-walker::walk(transformer, path, &mut |change| { … });
+pub struct FileChange {
+    pub path: PathBuf,
+    pub before: String,
+    pub after: String,
+    pub rules_fired: Vec<usize>,
+}
+let outcome: WalkOutcome = walker::walk(transformer, path, &mut |change| { … })?;
 ```
 
 The visitor closure decides whether to write back, format a diff,
 emit JSON, or just count for `--check`. Directory entries are
 sorted before iteration so output ordering is deterministic across
 filesystems.
+
+`walk` returns a `WalkOutcome` carrying what the per-file events cannot:
+`files_visited` (entries yielded *before* the relevance check) and
+`skipped` (files that could not be read or decoded — recorded rather
+than fatal, so one binary blob cannot sink a whole-repo run).
+
+### `RunReport` and `render`
+
+`colab_core::report::RunReport` is the aggregate both output surfaces
+serialize — three distinct file counters plus one `RuleStat` per rule:
+
+```rust
+pub struct RunReport {
+    pub files_visited: u64,   // walker yielded
+    pub files_scanned: u64,   // relevant, and read
+    pub files_changed: u64,   // actually rewritten
+    pub rules: Vec<RuleStat>, // { index, rule, files_matched }
+    pub skipped: Vec<SkippedFile>,
+    /* bytes, elapsed */
+}
+```
+
+Keeping the counters distinct is what makes an empty result
+self-explaining: `visited == 0` is a path/glob problem, `scanned == 0`
+is a language problem, `changed == 0` with zeroed `RuleStat`s is a
+script problem. `RuleStat::files_matched == 0` marks a dead rule.
+
+`colab_core::render` turns that into JSON at one of three `Detail`
+levels (`summary` / `counts` / `diff`), bounded by `max_files` and
+`max_diff_bytes`. `colab-cli/src/format.rs` and `colab-mcp` both render
+through it, so the CLI and the MCP server cannot drift.
 
 ## Adding a new backend
 
@@ -222,8 +282,20 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
 ## Invariants (and why)
 
 - **`CodeTransformer::apply` returns input unchanged when nothing
-  matches.** The walker uses equality to skip writes; multi-rule
-  composition treats irrelevant rules as identity.
+  matches.** The walker uses equality to skip writes; the path-blind
+  `apply` composes rules unconditionally and so treats irrelevant
+  rules as identity.
+- **Rules are gated per file before they are parsed.**
+  `Refactoring::apply_at` skips any rule whose `is_file_relevant`
+  rejects the path, then any rule whose `prefilter` literal is absent
+  from the source. Cross-language safety is enforced, not assumed.
+- **`Operation::prefilter` is a necessary condition or `None`.**
+  Its absence must imply a no-op; an over-broad literal costs speed,
+  never correctness. `ensure` operations must return `None` — they act
+  precisely when their target is missing.
+- **A rule that matched nothing is reported, not silently tolerated.**
+  `RuleStat::files_matched == 0` is surfaced as a warning by every
+  output format.
 - **`colab-dsl` never depends on a backend at runtime.** Keeps the
   CI matrix per-backend isolated.
 - **Tree-sitter edits are applied in reverse byte order.** Earlier

@@ -36,6 +36,7 @@ use rayon::ThreadPool;
 use rayon::prelude::*;
 
 use crate::error::{Error, Result};
+use crate::report::SkippedFile;
 use crate::transformer::CodeTransformer;
 
 /// Files-per-batch when processing in parallel. Caps memory at
@@ -66,6 +67,10 @@ pub struct FileChange {
     pub path: PathBuf,
     pub before: String,
     pub after: String,
+    /// Indices of the rules that changed this file, as reported by
+    /// [`CodeTransformer::apply_at`]. Empty when the transformer does not
+    /// track individual rules.
+    pub rules_fired: Vec<usize>,
 }
 
 impl FileChange {
@@ -74,6 +79,19 @@ impl FileChange {
     pub fn changed(&self) -> bool {
         self.before != self.after
     }
+}
+
+/// What the walk saw beyond the per-file events already handed to the
+/// visitor: how many files were considered, and which ones could not be
+/// processed.
+///
+/// `files_visited` counts regular files the walker yielded *before* the
+/// relevance check, so a caller can distinguish "the path matched nothing"
+/// from "nothing there is written in a language this script targets".
+#[derive(Debug, Default, Clone)]
+pub struct WalkOutcome {
+    pub files_visited: u64,
+    pub skipped: Vec<SkippedFile>,
 }
 
 /// Filtering options applied when walking a directory tree.
@@ -113,7 +131,7 @@ impl Default for WalkOptions {
 
 /// Walk `path` (file or directory) applying `transformer` to every
 /// relevant file. Equivalent to [`walk_with`] with default options.
-pub fn walk<T, F>(transformer: &T, path: &Path, visit: &mut F) -> Result<()>
+pub fn walk<T, F>(transformer: &T, path: &Path, visit: &mut F) -> Result<WalkOutcome>
 where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
@@ -136,12 +154,18 @@ where
 /// 3. **Deliver.** Each chunk is delivered to the visitor in path
 ///    order — `par_iter().collect()` preserves the input order so
 ///    determinism is free.
+///
+/// Files that cannot be read or decoded during the tree walk are
+/// recorded in the returned [`WalkOutcome`] rather than aborting the
+/// run — one stray binary blob should not sink a whole-repo codemod.
+/// A directly-supplied file is still a hard error, since the caller
+/// named it explicitly.
 pub fn walk_with<T, F>(
     transformer: &T,
     path: &Path,
     opts: &WalkOptions,
     visit: &mut F,
-) -> Result<()>
+) -> Result<WalkOutcome>
 where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
@@ -157,27 +181,34 @@ where
         // Directly-supplied files bypass `.gitignore` (the user
         // explicitly chose them). Glob filters still apply.
         if !file_matches_filters(path, opts)? {
-            return Ok(());
+            return Ok(WalkOutcome::default());
         }
         if transformer.is_file_relevant(path) {
             visit_file(transformer, path, visit)?;
         }
-        return Ok(());
+        return Ok(WalkOutcome {
+            files_visited: 1,
+            skipped: Vec::new(),
+        });
     }
 
     let pool = build_pool(opts.jobs)?;
-    let paths = collect_paths(transformer, path, opts)?;
-    process_paths_parallel(transformer, &paths, &pool, visit)
+    let (paths, files_visited) = collect_paths(transformer, path, opts)?;
+    let skipped = process_paths_parallel(transformer, &paths, &pool, visit)?;
+    Ok(WalkOutcome {
+        files_visited,
+        skipped,
+    })
 }
 
 /// Discovery phase: walk the tree synchronously, applying ignore
 /// rules and globs, returning the relevant file paths in sorted
-/// order.
+/// order plus the total number of regular files considered.
 fn collect_paths<T: CodeTransformer>(
     transformer: &T,
     root: &Path,
     opts: &WalkOptions,
-) -> Result<Vec<PathBuf>> {
+) -> Result<(Vec<PathBuf>, u64)> {
     let mut builder = WalkBuilder::new(root);
     builder
         .git_ignore(opts.respect_gitignore)
@@ -209,18 +240,20 @@ fn collect_paths<T: CodeTransformer>(
     }
 
     let mut paths = Vec::new();
+    let mut visited = 0u64;
     for result in builder.build() {
         let entry = result.map_err(|e| Error::Config(format!("walk error: {}", e)))?;
         let entry_path = entry.path();
         if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
             continue;
         }
+        visited += 1;
         if !transformer.is_file_relevant(entry_path) {
             continue;
         }
         paths.push(entry_path.to_path_buf());
     }
-    Ok(paths)
+    Ok((paths, visited))
 }
 
 /// Process / deliver phase: chunked parallel read + apply (on the
@@ -231,20 +264,28 @@ fn process_paths_parallel<T, F>(
     paths: &[PathBuf],
     pool: &ThreadPool,
     visit: &mut F,
-) -> Result<()>
+) -> Result<Vec<SkippedFile>>
 where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
 {
+    let mut skipped = Vec::new();
     for chunk in paths.chunks(CHUNK_SIZE) {
-        let changes: Vec<Result<FileChange>> = pool.install(|| {
+        let changes: Vec<std::result::Result<FileChange, SkippedFile>> = pool.install(|| {
             chunk
                 .par_iter()
                 .map(|p| compute_change(transformer, p))
                 .collect()
         });
         for change in changes {
-            let change = change?;
+            let change = match change {
+                Ok(change) => change,
+                Err(skip) => {
+                    debug!("Skipping {}: {}", skip.path.display(), skip.reason);
+                    skipped.push(skip);
+                    continue;
+                }
+            };
             if change.before == change.after {
                 debug!("No changes for {}", change.path.display());
             }
@@ -252,16 +293,26 @@ where
             visit(change)?;
         }
     }
-    Ok(())
+    Ok(skipped)
 }
 
-fn compute_change<T: CodeTransformer>(transformer: &T, path: &Path) -> Result<FileChange> {
-    let before = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
-    let after = transformer.apply(&before);
+/// Read and transform one file. A read/decode failure yields a
+/// [`SkippedFile`] instead of an error so the walk can continue; the
+/// caller surfaces the skip list in its report.
+fn compute_change<T: CodeTransformer>(
+    transformer: &T,
+    path: &Path,
+) -> std::result::Result<FileChange, SkippedFile> {
+    let before = fs::read_to_string(path).map_err(|e| SkippedFile {
+        path: path.to_path_buf(),
+        reason: e.to_string(),
+    })?;
+    let outcome = transformer.apply_at(path, &before);
     Ok(FileChange {
         path: path.to_path_buf(),
         before,
-        after,
+        after: outcome.output,
+        rules_fired: outcome.rules_fired,
     })
 }
 
@@ -304,14 +355,15 @@ where
 {
     info!("Processing {}", path.display());
     let before = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
-    let after = transformer.apply(&before);
-    if before == after {
+    let outcome = transformer.apply_at(path, &before);
+    if before == outcome.output {
         debug!("No changes for {}", path.display());
     }
     visit(FileChange {
         path: path.to_path_buf(),
         before,
-        after,
+        after: outcome.output,
+        rules_fired: outcome.rules_fired,
     })
 }
 
@@ -327,6 +379,7 @@ pub fn process_path<T: CodeTransformer + Sync>(transformer: &T, path: &Path) -> 
         }
         Ok(())
     })
+    .map(|_| ())
 }
 
 #[cfg(test)]

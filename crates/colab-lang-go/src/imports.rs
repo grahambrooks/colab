@@ -71,6 +71,10 @@ impl Operation for ImportRename {
     fn apply(&self, source_code: &str) -> String {
         rename(&self.from, &self.to, source_code)
     }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.from)
+    }
 }
 
 /// Replace every Go import whose path equals `from` with `to`.
@@ -131,6 +135,10 @@ impl Operation for ImportDelete {
     fn apply(&self, source_code: &str) -> String {
         delete(&self.target, source_code)
     }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.target)
+    }
 }
 
 /// Remove every Go import whose path equals `target`. Erases the line
@@ -188,6 +196,8 @@ impl Operation for ImportEnsure {
     fn apply(&self, source_code: &str) -> String {
         ensure(&self.target, source_code)
     }
+
+    // No prefilter: `ensure` acts precisely when the target is absent.
 }
 
 /// Idempotently add `target` as a Go import if no `import_spec`

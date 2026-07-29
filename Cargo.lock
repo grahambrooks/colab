@@ -333,6 +333,8 @@ dependencies = [
  "log",
  "num_cpus",
  "rayon",
+ "serde_json",
+ "similar",
 ]
 
 [[package]]

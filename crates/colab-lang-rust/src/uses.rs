@@ -95,6 +95,10 @@ impl Operation for UseRename {
     fn apply(&self, source_code: &str) -> String {
         rename(&self.from, &self.to, source_code)
     }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.from)
+    }
 }
 
 /// Rewrite the source: replace any `use` whose path starts with
@@ -149,6 +153,10 @@ impl Operation for UseDelete {
 
     fn apply(&self, source_code: &str) -> String {
         delete(&self.target, source_code)
+    }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.target)
     }
 }
 
@@ -207,6 +215,8 @@ impl Operation for UseEnsure {
     fn apply(&self, source_code: &str) -> String {
         ensure(&self.target, source_code)
     }
+
+    // No prefilter: `ensure` acts precisely when the target is absent.
 }
 
 /// Insert `use <target>;` at the top of `source_code` if no existing

@@ -47,6 +47,10 @@ impl Operation for CallReplace {
     fn apply(&self, source_code: &str) -> String {
         rewrite(&self.function, &self.template, source_code)
     }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.function)
+    }
 }
 
 pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {

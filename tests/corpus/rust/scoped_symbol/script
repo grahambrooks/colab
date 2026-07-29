@@ -1,0 +1,6 @@
+// `rust::symbol` is a whole-file text rename with no scope analysis, so
+// an unqualified rule would also rewrite the identically-named type in
+// cli/. The `in "<glob>"` clause restricts it to the crate that owns it.
+refactor "scoped-config-rename" {
+    match rust::symbol "Config" in "core/**" { replace "CoreConfig" }
+}

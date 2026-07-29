@@ -8,14 +8,17 @@
 //! [`Refactoring`].
 
 use std::collections::HashSet;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use lalrpop_util::ParseError;
 use lalrpop_util::lalrpop_mod;
 
 use crate::ast::{Action, Command, Item, Match};
 use crate::model::Refactoring;
-use colab_core::{BackendRegistry, Error, Operation, Result, RuleSpec};
+use colab_core::suggest;
+use colab_core::{BackendRegistry, Error, Operation, ParseDetail, Result, RuleSpec, ScopedOperation};
 
 lalrpop_mod!(grammar, "/codemod.rs");
 
@@ -23,7 +26,50 @@ lalrpop_mod!(grammar, "/codemod.rs");
 pub fn parse(text: &str) -> Result<Command> {
     grammar::ProgramParser::new()
         .parse(text)
-        .map_err(|e| Error::Parse(e.to_string()))
+        .map_err(|e| Error::Parse(parse_detail(text, e)))
+}
+
+/// Convert a LALRPOP error into a [`ParseDetail`].
+///
+/// LALRPOP reports byte offsets and a token list; both are useful, but
+/// only after the offset is resolved against the source. Doing that here
+/// is what lets the LSP place a diagnostic on the right line and lets an
+/// agent fix a script without a second round trip.
+fn parse_detail<T: fmt::Display, E: fmt::Display>(
+    source: &str,
+    error: ParseError<usize, T, E>,
+) -> ParseDetail {
+    match error {
+        ParseError::InvalidToken { location } => {
+            ParseDetail::at_offset(source, location, "invalid token", Vec::new())
+        }
+        ParseError::UnrecognizedEof { location, expected } => ParseDetail::at_offset(
+            source,
+            location,
+            "unexpected end of script",
+            expected,
+        ),
+        ParseError::UnrecognizedToken {
+            token: (start, token, _),
+            expected,
+        } => ParseDetail::at_offset(
+            source,
+            start,
+            format!("unexpected token `{}`", token),
+            expected,
+        ),
+        ParseError::ExtraToken {
+            token: (start, token, _),
+        } => ParseDetail::at_offset(
+            source,
+            start,
+            format!("unexpected trailing token `{}`", token),
+            Vec::new(),
+        ),
+        ParseError::User { error } => {
+            ParseDetail::at_offset(source, 0, error.to_string(), Vec::new())
+        }
+    }
 }
 
 /// Parse and validate `text`, returning an executable [`Refactoring`].
@@ -45,6 +91,21 @@ pub fn compile(text: &str, backends: &BackendRegistry) -> Result<Refactoring> {
 pub fn compile_at_path(path: &Path, backends: &BackendRegistry) -> Result<Refactoring> {
     let text = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
     compile_inner(&text, backends, Some(path))
+}
+
+/// Compile script `text` that did not come from a file, resolving
+/// `include "..."` relative to `base_path`'s parent.
+///
+/// This is what lets a caller that receives a script over the wire (the
+/// MCP server) support `include` at all: [`compile`] has no base path and
+/// must reject includes, and [`compile_at_path`] insists on reading the
+/// script from disk.
+pub fn compile_at_source(
+    text: &str,
+    base_path: &Path,
+    backends: &BackendRegistry,
+) -> Result<Refactoring> {
+    compile_inner(text, backends, Some(base_path))
 }
 
 fn compile_inner(
@@ -125,12 +186,16 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Box<dyn Operation
     let Match {
         namespace,
         match_string,
+        scope,
         action,
     } = m;
     let backend = backends.get(namespace.lang.as_str()).ok_or_else(|| {
         Error::UnsupportedOperation(format!(
-            "{}::{} is not a supported namespace",
-            namespace.lang, namespace.module
+            "`{}::{}` is not a supported namespace: no backend for language `{}`; {}",
+            namespace.lang,
+            namespace.module,
+            namespace.lang,
+            suggest::candidates_note(&namespace.lang, "languages", &backends.languages())
         ))
     })?;
     let spec = match action {
@@ -149,7 +214,13 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Box<dyn Operation
             template,
         },
     };
-    backend.build_rule(namespace.module.as_str(), spec)
+    let operation = backend.build_rule(namespace.module.as_str(), spec)?;
+    match scope {
+        // The glob is validated here, at compile time, so a typo fails
+        // the script rather than silently matching nothing at runtime.
+        Some(pattern) => Ok(Box::new(ScopedOperation::new(operation, &pattern)?)),
+        None => Ok(operation),
+    }
 }
 
 /// Convenience: count the number of match clauses in `command`,
@@ -214,6 +285,68 @@ mod tests {
     }
 
     #[test]
+    fn parses_an_in_scope_clause() {
+        let result = grammar::MatchParser::new()
+            .parse(r#"match go::symbol "A" in "internal/**" { replace "B" }"#)
+            .unwrap();
+        assert_eq!(result.scope.as_deref(), Some("internal/**"));
+    }
+
+    #[test]
+    fn a_scoped_rule_only_applies_inside_the_glob() {
+        let refactoring = compile(
+            r#"refactor "s" { match go::symbol "Old" in "internal/**" { replace "New" } }"#,
+            &registry(),
+        )
+        .unwrap();
+
+        let source = "package demo\n\nfunc Old() {}\n";
+        assert!(refactoring.is_file_relevant(Path::new("internal/a.go")));
+        assert!(!refactoring.is_file_relevant(Path::new("cmd/a.go")));
+
+        let inside = refactoring.apply_at(Path::new("internal/a.go"), source);
+        assert!(inside.output.contains("func New()"), "got: {}", inside.output);
+        assert_eq!(inside.rules_fired, vec![0]);
+
+        let outside = refactoring.apply_at(Path::new("cmd/a.go"), source);
+        assert_eq!(outside.output, source);
+        assert!(outside.rules_fired.is_empty());
+    }
+
+    #[test]
+    fn an_unscoped_rule_is_unaffected() {
+        let refactoring = compile(
+            r#"refactor "s" { match go::symbol "Old" { replace "New" } }"#,
+            &registry(),
+        )
+        .unwrap();
+        assert!(refactoring.is_file_relevant(Path::new("cmd/a.go")));
+    }
+
+    #[test]
+    fn the_scope_appears_in_the_rule_display() {
+        let refactoring = compile(
+            r#"refactor "s" { match go::symbol "Old" in "internal/**" { replace "New" } }"#,
+            &registry(),
+        )
+        .unwrap();
+        assert_eq!(
+            refactoring.rules[0].to_string(),
+            "go::symbol \"Old\" -> \"New\" in \"internal/**\""
+        );
+    }
+
+    #[test]
+    fn an_invalid_scope_glob_fails_at_compile_time() {
+        let err = compile(
+            r#"refactor "s" { match go::symbol "Old" in "internal/[" { replace "New" } }"#,
+            &registry(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("invalid scope glob"), "{err}");
+    }
+
+    #[test]
     fn parses_match_block() {
         let result = grammar::MatchParser::new()
             .parse(r#" match  go::import "a.b.c" { replace "d.e.f" } "#)
@@ -226,6 +359,7 @@ mod tests {
                     module: "import".to_string(),
                 },
                 match_string: "a.b.c".to_string(),
+                scope: None,
                 action: Action::Replace("d.e.f".to_string()),
             }
         );

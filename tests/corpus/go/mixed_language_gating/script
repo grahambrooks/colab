@@ -1,0 +1,7 @@
+// A script mixing two languages. Each rule must be a no-op for the other
+// language's files: the walker gates rules on `is_file_relevant`, so the
+// Go rule never parses main.rs and vice versa.
+refactor "mixed-language" {
+    match go::import "old/pkg" { replace "new/pkg" }
+    match rust::use "old_crate" { replace "new_crate" }
+}

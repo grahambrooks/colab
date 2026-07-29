@@ -118,6 +118,10 @@ impl Operation for SpecifierRename {
     fn apply(&self, source_code: &str) -> String {
         rename(&self.from, &self.to, source_code)
     }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.from)
+    }
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
@@ -161,6 +165,10 @@ impl Operation for SpecifierDelete {
 
     fn apply(&self, source_code: &str) -> String {
         delete(&self.target, source_code)
+    }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.target)
     }
 }
 

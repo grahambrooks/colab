@@ -27,6 +27,22 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     /// Apply the transformation to `source_code`, returning the new
     /// contents.
     fn apply(&self, source_code: &str) -> String;
+
+    /// A literal that MUST appear in the source for this operation to
+    /// change anything — a cheap necessary condition checked with
+    /// `str::contains` before the expensive tree-sitter parse.
+    ///
+    /// This is a filter, not a matcher: returning a literal only promises
+    /// that its *absence* implies a no-op. The parse still does the real
+    /// matching, so an over-broad literal costs performance, never
+    /// correctness.
+    ///
+    /// Return `None` to disable the fast path. `ensure`-style operations
+    /// MUST return `None`, since they act precisely when the target is
+    /// absent.
+    fn prefilter(&self) -> Option<&str> {
+        None
+    }
 }
 
 /// The lowered form of a single `match` block: action plus arguments,
@@ -46,6 +62,30 @@ pub enum RuleSpec {
     /// `colab_dsl::ast::Action::ReplaceCall` for the template
     /// placeholder list.
     ReplaceCall { target: String, template: String },
+}
+
+impl RuleSpec {
+    /// The DSL keyword this spec came from. Error messages name the
+    /// action rather than printing the `Debug` form of the whole spec,
+    /// which leaks Rust internals and buries the useful part.
+    pub fn action_name(&self) -> &'static str {
+        match self {
+            RuleSpec::Replace { .. } => "replace",
+            RuleSpec::Delete { .. } => "delete",
+            RuleSpec::Ensure { .. } => "ensure",
+            RuleSpec::ReplaceCall { .. } => "replace_call",
+        }
+    }
+
+    /// The match string this spec targets.
+    pub fn target(&self) -> &str {
+        match self {
+            RuleSpec::Replace { target, .. }
+            | RuleSpec::Delete { target }
+            | RuleSpec::Ensure { target }
+            | RuleSpec::ReplaceCall { target, .. } => target,
+        }
+    }
 }
 
 /// One module-level capability advertised by a [`LanguageBackend`].
@@ -83,8 +123,40 @@ pub trait LanguageBackend: Send + Sync {
     ///
     /// Returns [`crate::Error::UnsupportedOperation`] for unknown
     /// modules or action/module combinations the backend does not
-    /// implement.
+    /// implement. Build that error with
+    /// [`unsupported`](LanguageBackend::unsupported) so every backend
+    /// rejects names the same way.
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>>;
+
+    /// The standard rejection for a `build_rule` catch-all arm.
+    ///
+    /// Distinguishes the two failures a single catch-all otherwise
+    /// conflates — a misspelled *module*, and a valid module asked for an
+    /// *action* it does not implement — and lists the valid names for
+    /// whichever it was.
+    fn unsupported(&self, module: &str, spec: &RuleSpec) -> crate::Error {
+        match self.capabilities().iter().find(|c| c.module == module) {
+            None => {
+                let modules: Vec<&str> = self.capabilities().iter().map(|c| c.module).collect();
+                crate::Error::UnsupportedOperation(format!(
+                    "unknown module `{}::{}`; {}",
+                    self.lang(),
+                    module,
+                    crate::suggest::candidates_note(module, "modules", &modules)
+                ))
+            }
+            Some(cap) => {
+                let actions: Vec<&str> = cap.actions.iter().map(|a| a.name).collect();
+                crate::Error::UnsupportedOperation(format!(
+                    "`{}::{}` does not support the `{}` action; {}",
+                    self.lang(),
+                    module,
+                    spec.action_name(),
+                    crate::suggest::candidates_note(spec.action_name(), "actions", &actions)
+                ))
+            }
+        }
+    }
 }
 
 /// Lookup table mapping language names to their backends. The binary

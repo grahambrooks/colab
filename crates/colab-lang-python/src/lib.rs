@@ -11,7 +11,7 @@ pub mod symbols;
 use std::cell::RefCell;
 
 use colab_core::{
-    ActionCapability, Capability, Error, LanguageBackend, Operation, Result, RuleSpec,
+    ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec,
 };
 use tree_sitter::{Parser, Tree};
 
@@ -106,10 +106,7 @@ impl LanguageBackend for PythonBackend {
                 from: target,
                 to: replacement,
             })),
-            (other, spec) => Err(Error::UnsupportedOperation(format!(
-                "python::{} does not support {:?}",
-                other, spec
-            ))),
+            (other, spec) => Err(self.unsupported(other, &spec)),
         }
     }
 }

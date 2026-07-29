@@ -1,0 +1,10 @@
+// Rename `Config` in the core crate only.
+//
+// `rust::symbol` is a syntactic, whole-file rename with no scope
+// analysis — without the `in` clause this would also rewrite the
+// unrelated `Config` in cli/, which is a different type that happens to
+// share a name. The glob is matched against the path as the walker sees
+// it, relative to where you invoke colab.
+refactor "scoped-config-rename" {
+    match rust::symbol "Config" in "**/core/**" { replace "CoreConfig" }
+}

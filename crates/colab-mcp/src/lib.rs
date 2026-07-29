@@ -1,14 +1,43 @@
 //! Model Context Protocol (MCP) server for colab.
 //!
-//! Wraps the same operations as the CLI as four MCP tools so an
-//! agent in Claude Code (or any MCP-aware host) can call them
-//! directly:
+//! Wraps the same operations as the CLI as MCP tools so an agent in
+//! Claude Code (or any MCP-aware host) can call them directly:
 //!
-//! - `colab.schema` — capability discovery (no input).
+//! - `colab.list_languages` — the registered backends, by name.
+//! - `colab.list_rules` — one backend's modules and actions.
+//! - `colab.schema` — the full capability schema, optionally for one
+//!   language.
 //! - `colab.lint_script` — parse + compile a script without running.
-//! - `colab.preview` — apply a script to one or more paths and
-//!   return a unified diff per file.
+//! - `colab.preview` — apply a script to one or more paths and report
+//!   what would change.
 //! - `colab.apply` — same, but write back to disk.
+//!
+//! ## Response shape
+//!
+//! `preview` / `apply` return aggregate counters, per-rule match counts,
+//! and the changed paths — with diffs only when asked for:
+//!
+//! ```json
+//! {"summary":{"visited":412,"scanned":38,"changed":3,"skipped":0,"elapsed_ms":84},
+//!  "rules":[{"i":0,"rule":"go::import \"a\" -> \"b\"","files":3},
+//!           {"i":1,"rule":"go::symbol \"X\" -> \"Y\"","files":0}],
+//!  "changed":["cmd/main.go"],
+//!  "applied":false,
+//!  "warnings":["rule 2 matched no files: go::symbol \"X\" -> \"Y\""]}
+//! ```
+//!
+//! Files that were scanned but unchanged never appear. The three
+//! counters in `summary` distinguish the three ways a run can come back
+//! empty (nothing walked / nothing of that language / nothing matched),
+//! which one flat list of results cannot.
+//!
+//! ## Errors
+//!
+//! A tool that ran and rejected its input returns `isError: true` with
+//! `{"error": {kind, message, exit_code, …}}` — including `line`,
+//! `column`, and `expected` for a parse failure. JSON-RPC error
+//! responses are reserved for malformed *calls* (unknown method or tool,
+//! missing or mistyped arguments).
 //!
 //! ## Wire format
 //!
@@ -25,8 +54,12 @@
 //! crate is one more frontend.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
+use colab_core::render::{self, ChangeCollector, Detail, RenderOptions};
+use colab_core::report::RunReport;
+use colab_core::suggest;
 use colab_core::{BackendRegistry, walker};
 use colab_dsl::compile;
 use serde_json::{Map, Value, json};
@@ -36,9 +69,12 @@ mod tools;
 /// JSON-RPC error code for "method not found" (-32601).
 const METHOD_NOT_FOUND: i64 = -32601;
 /// JSON-RPC error code for "invalid params" (-32602).
+///
+/// This is the only error code tool calls produce. A tool that *ran* and
+/// rejected its input reports `isError: true` with a structured body
+/// instead — `-32603 INTERNAL_ERROR` would claim a server fault for what
+/// is really a bad script.
 const INVALID_PARAMS: i64 = -32602;
-/// JSON-RPC error code for "internal error" (-32603).
-const INTERNAL_ERROR: i64 = -32603;
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
@@ -159,15 +195,88 @@ fn handle_call(id: Option<Value>, params: Option<&Value>, backends: &BackendRegi
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
-    match call_tool(name, &arguments, backends) {
-        Ok(content) => make_response(
+    tool_response(id, call_tool(name, &arguments, backends))
+}
+
+/// Turn a tool outcome into a `tools/call` response.
+///
+/// Failures come back as `isError: true` with a structured payload
+/// rather than a JSON-RPC error, so a caller sees the same shape however
+/// the tool failed and can read `line`/`column`/`expected` directly.
+/// JSON-RPC errors are reserved for envelope problems (bad method, bad
+/// params) — things that are wrong with the *call*, not the script.
+fn tool_response(id: Option<Value>, outcome: Result<Value, ToolError>) -> Value {
+    match outcome {
+        Ok(value) => make_response(
             id,
             json!({
-                "content": [{ "type": "text", "text": content }],
+                "content": [{ "type": "text", "text": compact(&value) }],
                 "isError": false,
             }),
         ),
-        Err(err) => make_error(id, INTERNAL_ERROR, &err),
+        Err(ToolError::Protocol(message)) => make_error(id, INVALID_PARAMS, &message),
+        Err(ToolError::Tool(payload)) => make_response(
+            id,
+            json!({
+                "content": [{ "type": "text", "text": compact(&json!({ "error": payload })) }],
+                "isError": true,
+            }),
+        ),
+    }
+}
+
+/// Compact, not pretty-printed: this JSON is nested inside an MCP text
+/// string, so indentation is escaped and paid for twice.
+fn compact(value: &Value) -> String {
+    serde_json::to_string(value).expect("serializing a serde_json::Value cannot fail")
+}
+
+/// How a tool call failed.
+enum ToolError {
+    /// The request itself was malformed — wrong tool name, missing or
+    /// mistyped arguments. Maps to JSON-RPC `-32602`.
+    Protocol(String),
+    /// The tool ran and rejected its input — a script that will not
+    /// parse, a path that does not exist. Maps to `isError: true` with a
+    /// structured body.
+    Tool(Value),
+}
+
+impl ToolError {
+    fn protocol(message: impl Into<String>) -> Self {
+        ToolError::Protocol(message.into())
+    }
+
+    /// Build the structured body for a [`colab_core::Error`], surfacing
+    /// the parse position and expected-token list when there is one.
+    fn from_error(err: colab_core::Error) -> Self {
+        let mut payload = Map::new();
+        payload.insert("message".into(), json!(err.to_string()));
+        payload.insert("exit_code".into(), json!(err.exit_code()));
+        match &err {
+            colab_core::Error::Parse(detail) => {
+                payload.insert("kind".into(), json!("parse"));
+                payload.insert("line".into(), json!(detail.line));
+                payload.insert("column".into(), json!(detail.column));
+                payload.insert("offset".into(), json!(detail.offset));
+                if !detail.expected.is_empty() {
+                    payload.insert("expected".into(), json!(detail.expected));
+                }
+                if let Some(snippet) = &detail.snippet {
+                    payload.insert("snippet".into(), json!(snippet));
+                }
+            }
+            colab_core::Error::UnsupportedOperation(_) => {
+                payload.insert("kind".into(), json!("unsupported"));
+            }
+            colab_core::Error::Io { .. } => {
+                payload.insert("kind".into(), json!("io"));
+            }
+            colab_core::Error::Config(_) => {
+                payload.insert("kind".into(), json!("config"));
+            }
+        }
+        ToolError::Tool(Value::Object(payload))
     }
 }
 
@@ -230,19 +339,8 @@ fn handle_call_with_progress<W: Write>(
         _ => return Ok(handle_call(id, Some(params), backends)),
     };
 
-    match run_script_with_progress(&arguments, backends, mode, writer, token) {
-        Ok(value) => Ok(make_response(
-            id,
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": serde_json::to_string_pretty(&value).unwrap(),
-                }],
-                "isError": false,
-            }),
-        )),
-        Err(err) => Ok(make_error(id, INTERNAL_ERROR, &err)),
-    }
+    let outcome = run_script_with_progress(&arguments, backends, mode, writer, token);
+    Ok(tool_response(id, outcome))
 }
 
 /// Like [`run_script`], but emits a `notifications/progress`
@@ -254,32 +352,30 @@ fn run_script_with_progress<W: Write>(
     mode: RunMode,
     writer: &mut W,
     token: &Value,
-) -> Result<Value, String> {
+) -> Result<Value, ToolError> {
     let script = arg_str(args, "script")?;
-    let paths = arg_paths(args, "paths")?;
+    let cwd = arg_opt_path(args, "cwd")?;
+    let paths = arg_paths(args, "paths", cwd.as_deref())?;
+    let options = arg_render_options(args)?;
 
-    let refactoring = compile(&script, backends).map_err(|e| e.to_string())?;
+    let refactoring =
+        compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
 
-    let mut results: Vec<Value> = Vec::new();
+    let started = Instant::now();
+    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut collector = ChangeCollector::new(options);
     let mut files_processed: u64 = 0;
     let mut last_emitted: u64 = 0;
 
     for target in &paths {
-        walker::walk(&refactoring, target, &mut |change| {
-            let mut entry = Map::new();
-            entry.insert("path".into(), json!(change.path.to_string_lossy()));
-            entry.insert("changed".into(), json!(change.changed()));
-            entry.insert("bytes_before".into(), json!(change.before.len()));
-            entry.insert("bytes_after".into(), json!(change.after.len()));
-            if change.changed() {
-                if matches!(mode, RunMode::Apply) {
-                    std::fs::write(&change.path, &change.after)
-                        .map_err(|e| colab_core::Error::io_at(&change.path, e))?;
-                }
-                let diff = unified_diff(&change.path, &change.before, &change.after);
-                entry.insert("diff".into(), json!(diff));
+        let outcome = walker::walk(&refactoring, target, &mut |change| {
+            report.record(&change);
+            if change.changed() && matches!(mode, RunMode::Apply) {
+                std::fs::write(&change.path, &change.after)
+                    .map_err(|e| colab_core::Error::io_at(&change.path, e))?;
             }
-            results.push(Value::Object(entry));
+            collector.push(&change);
+
             files_processed += 1;
             if files_processed - last_emitted >= PROGRESS_BATCH {
                 last_emitted = files_processed;
@@ -290,12 +386,15 @@ fn run_script_with_progress<W: Write>(
             }
             Ok(())
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(ToolError::from_error)?;
+        report.files_visited += outcome.files_visited;
+        report.skipped.extend(outcome.skipped);
     }
+    report.elapsed = started.elapsed();
 
     // Final 100% notification.
     let _ = emit_progress(writer, token, files_processed, Some(files_processed));
-    Ok(json!({ "results": results }))
+    Ok(finish_report(&collector, &report, mode))
 }
 
 /// One progress notification per N files. Hand-tuned to be small
@@ -323,40 +422,64 @@ fn emit_progress<W: Write>(
     write_message(writer, &notification)
 }
 
-fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<String, String> {
+fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
     match name {
-        "colab.schema" => {
-            let value = colab_schema_json(backends);
-            Ok(serde_json::to_string_pretty(&value).expect("schema JSON"))
+        "colab.list_languages" => Ok(json!({ "languages": backends.languages() })),
+        "colab.list_rules" => {
+            let lang = arg_str(args, "lang")?;
+            let backend = backends.get(&lang).ok_or_else(|| {
+                ToolError::from_error(colab_core::Error::UnsupportedOperation(format!(
+                    "unknown language `{}`; {}",
+                    lang,
+                    suggest::candidates_note(&lang, "languages", &backends.languages())
+                )))
+            })?;
+            Ok(language_capabilities(backend))
         }
+        "colab.schema" => match args.get("lang").and_then(|v| v.as_str()) {
+            Some(lang) => {
+                let backend = backends.get(lang).ok_or_else(|| {
+                    ToolError::from_error(colab_core::Error::UnsupportedOperation(format!(
+                        "unknown language `{}`; {}",
+                        lang,
+                        suggest::candidates_note(lang, "languages", &backends.languages())
+                    )))
+                })?;
+                Ok(json!({ "languages": [language_capabilities(backend)] }))
+            }
+            None => Ok(colab_schema_json(backends)),
+        },
         "colab.lint_script" => {
             let script = arg_str(args, "script")?;
-            match compile(&script, backends) {
-                Ok(refactoring) => Ok(serde_json::to_string_pretty(&json!({
-                    "ok": true,
-                    "name": refactoring.name,
-                    "rule_count": refactoring.len(),
-                }))
-                .unwrap()),
-                Err(err) => Ok(serde_json::to_string_pretty(&json!({
-                    "ok": false,
-                    "error": err.to_string(),
-                    "exit_code": err.exit_code(),
-                }))
-                .unwrap()),
-            }
+            let cwd = arg_opt_path(args, "cwd")?;
+            let refactoring =
+                compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
+            let rules: Vec<String> = refactoring.rules.iter().map(|r| r.to_string()).collect();
+            Ok(json!({
+                "ok": true,
+                "name": refactoring.name,
+                "rule_count": refactoring.len(),
+                "rules": rules,
+            }))
         }
-        "colab.preview" => {
-            let outcome = run_script(args, backends, RunMode::Preview)?;
-            Ok(serde_json::to_string_pretty(&outcome).unwrap())
-        }
-        "colab.apply" => {
-            let outcome = run_script(args, backends, RunMode::Apply)?;
-            Ok(serde_json::to_string_pretty(&outcome).unwrap())
-        }
-        other => Err(format!("unknown tool: {}", other)),
+        "colab.preview" => run_script(args, backends, RunMode::Preview),
+        "colab.apply" => run_script(args, backends, RunMode::Apply),
+        other => Err(ToolError::protocol(format!(
+            "unknown tool `{}`; {}",
+            other,
+            suggest::candidates_note(other, "tools", &TOOL_NAMES)
+        ))),
     }
 }
+
+const TOOL_NAMES: [&str; 6] = [
+    "colab.list_languages",
+    "colab.list_rules",
+    "colab.schema",
+    "colab.lint_script",
+    "colab.preview",
+    "colab.apply",
+];
 
 #[derive(Clone, Copy)]
 enum RunMode {
@@ -364,73 +487,150 @@ enum RunMode {
     Apply,
 }
 
+/// Compile a script, rooting `include "..."` resolution at `cwd` when
+/// one was supplied.
+///
+/// Without a base path `include` is unusable, and the underlying error
+/// names Rust API functions an MCP caller cannot reach — so `cwd` is what
+/// makes includes work over this transport at all.
+fn compile_script(
+    script: &str,
+    cwd: Option<&Path>,
+    backends: &BackendRegistry,
+) -> Result<colab_dsl::Refactoring, colab_core::Error> {
+    match cwd {
+        // `compile_at_path` resolves includes against the file's parent,
+        // so point it at a notional script inside `cwd`.
+        Some(dir) => colab_dsl::compile_at_source(script, &dir.join("<script>"), backends),
+        None => compile(script, backends),
+    }
+}
+
 fn run_script(
     args: &Value,
     backends: &BackendRegistry,
     mode: RunMode,
-) -> Result<Value, String> {
+) -> Result<Value, ToolError> {
     let script = arg_str(args, "script")?;
-    let paths = arg_paths(args, "paths")?;
+    let cwd = arg_opt_path(args, "cwd")?;
+    let paths = arg_paths(args, "paths", cwd.as_deref())?;
+    let options = arg_render_options(args)?;
 
-    let refactoring = compile(&script, backends).map_err(|e| e.to_string())?;
+    let refactoring =
+        compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
 
-    let mut results: Vec<Value> = Vec::new();
+    let started = Instant::now();
+    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut collector = ChangeCollector::new(options);
+
     for target in &paths {
-        walker::walk(&refactoring, target, &mut |change| {
-            let mut entry = Map::new();
-            entry.insert("path".into(), json!(change.path.to_string_lossy()));
-            entry.insert("changed".into(), json!(change.changed()));
-            entry.insert("bytes_before".into(), json!(change.before.len()));
-            entry.insert("bytes_after".into(), json!(change.after.len()));
-            if change.changed() {
-                if matches!(mode, RunMode::Apply) {
-                    std::fs::write(&change.path, &change.after)
-                        .map_err(|e| colab_core::Error::io_at(&change.path, e))?;
-                }
-                let diff = unified_diff(&change.path, &change.before, &change.after);
-                entry.insert("diff".into(), json!(diff));
+        let outcome = walker::walk(&refactoring, target, &mut |change| {
+            report.record(&change);
+            if change.changed() && matches!(mode, RunMode::Apply) {
+                std::fs::write(&change.path, &change.after)
+                    .map_err(|e| colab_core::Error::io_at(&change.path, e))?;
             }
-            results.push(Value::Object(entry));
+            collector.push(&change);
             Ok(())
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(ToolError::from_error)?;
+        report.files_visited += outcome.files_visited;
+        report.skipped.extend(outcome.skipped);
     }
-    Ok(json!({ "results": results }))
+    report.elapsed = started.elapsed();
+
+    Ok(finish_report(&collector, &report, mode))
 }
 
-fn unified_diff(path: &std::path::Path, before: &str, after: &str) -> String {
-    let display = path.display();
-    let header_a = format!("a/{}", display);
-    let header_b = format!("b/{}", display);
-    similar::TextDiff::from_lines(before, after)
-        .unified_diff()
-        .header(&header_a, &header_b)
-        .to_string()
+/// Attach the advisories every run should carry: dead rules, and why a
+/// run that changed nothing changed nothing.
+fn finish_report(collector: &ChangeCollector, report: &RunReport, mode: RunMode) -> Value {
+    let mut value = collector.to_json(report);
+    let obj = value.as_object_mut().expect("render produces an object");
+
+    obj.insert(
+        "applied".into(),
+        json!(matches!(mode, RunMode::Apply)),
+    );
+
+    let warnings = render::advisories(report);
+    if !warnings.is_empty() {
+        obj.insert("warnings".into(), json!(warnings));
+    }
+    value
 }
 
-fn arg_str(args: &Value, key: &str) -> Result<String, String> {
+fn arg_str(args: &Value, key: &str) -> Result<String, ToolError> {
     args.get(key)
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .ok_or_else(|| format!("missing string argument: {}", key))
+        .ok_or_else(|| ToolError::protocol(format!("missing string argument `{}`", key)))
 }
 
-fn arg_paths(args: &Value, key: &str) -> Result<Vec<PathBuf>, String> {
+fn arg_opt_path(args: &Value, key: &str) -> Result<Option<PathBuf>, ToolError> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => Ok(Some(PathBuf::from(s))),
+        Some(_) => Err(ToolError::protocol(format!(
+            "argument `{}` must be a string",
+            key
+        ))),
+    }
+}
+
+fn arg_usize(args: &Value, key: &str, default: usize) -> Result<usize, ToolError> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(default),
+        Some(value) => value
+            .as_u64()
+            .map(|n| n as usize)
+            .ok_or_else(|| ToolError::protocol(format!("argument `{}` must be a number", key))),
+    }
+}
+
+fn arg_render_options(args: &Value) -> Result<RenderOptions, ToolError> {
+    let detail = match args.get("detail") {
+        None | Some(Value::Null) => Detail::default(),
+        Some(Value::String(s)) => Detail::parse(s).ok_or_else(|| {
+            ToolError::protocol(format!(
+                "unknown detail level `{}`; expected one of: {}",
+                s,
+                Detail::NAMES.join(", ")
+            ))
+        })?,
+        Some(_) => return Err(ToolError::protocol("argument `detail` must be a string")),
+    };
+    Ok(RenderOptions {
+        detail,
+        max_files: arg_usize(args, "max_files", render::DEFAULT_MAX_FILES)?,
+        max_diff_bytes: arg_usize(args, "max_diff_bytes", render::DEFAULT_MAX_DIFF_BYTES)?,
+    })
+}
+
+/// Resolve the `paths` argument, rooting relative entries at `cwd`.
+fn arg_paths(args: &Value, key: &str, cwd: Option<&Path>) -> Result<Vec<PathBuf>, ToolError> {
     let value = args
         .get(key)
-        .ok_or_else(|| format!("missing argument: {}", key))?;
-    let array = value
-        .as_array()
-        .ok_or_else(|| format!("argument `{}` must be an array of strings", key))?;
+        .ok_or_else(|| ToolError::protocol(format!("missing argument `{}`", key)))?;
+    let array = value.as_array().ok_or_else(|| {
+        ToolError::protocol(format!("argument `{}` must be an array of strings", key))
+    })?;
     let mut out = Vec::with_capacity(array.len());
     for item in array {
-        let s = item
-            .as_str()
-            .ok_or_else(|| format!("argument `{}` must contain strings", key))?;
-        out.push(PathBuf::from(s));
+        let s = item.as_str().ok_or_else(|| {
+            ToolError::protocol(format!("argument `{}` must contain strings", key))
+        })?;
+        let path = PathBuf::from(s);
+        out.push(match cwd {
+            Some(dir) if path.is_relative() => dir.join(path),
+            _ => path,
+        });
     }
     if out.is_empty() {
-        return Err(format!("argument `{}` cannot be empty", key));
+        return Err(ToolError::protocol(format!(
+            "argument `{}` cannot be empty",
+            key
+        )));
     }
     Ok(out)
 }
@@ -573,10 +773,90 @@ mod tests {
             }}
         });
         let resp = handle(&req, &registry()).unwrap();
+        // A failed tool call is flagged as such — not silently `isError:
+        // false` with the failure buried in the body.
+        assert_eq!(resp["result"]["isError"], true, "got: {resp}");
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         let parsed: Value = serde_json::from_str(text).unwrap();
-        assert_eq!(parsed["ok"], false);
-        assert_eq!(parsed["exit_code"], 3);
+        assert_eq!(parsed["error"]["kind"], "unsupported");
+        assert_eq!(parsed["error"]["exit_code"], 3);
+        // The message names the languages that do exist.
+        let message = parsed["error"]["message"].as_str().unwrap();
+        assert!(message.contains("known languages: go, rust"), "{message}");
+    }
+
+    #[test]
+    fn a_parse_failure_reports_line_column_and_expected_tokens() {
+        let req = json!({
+            "jsonrpc":"2.0","id":60,"method":"tools/call",
+            "params":{"name":"colab.lint_script","arguments":{
+                "script":"refactor \"x\" {\n  match go::import \"a\" { replac \"b\" }\n}\n"
+            }}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["result"]["isError"], true, "got: {resp}");
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).unwrap();
+
+        assert_eq!(parsed["error"]["kind"], "parse");
+        assert_eq!(parsed["error"]["exit_code"], 2);
+        assert_eq!(parsed["error"]["line"], 2);
+        assert_eq!(parsed["error"]["column"], 26);
+        let expected = parsed["error"]["expected"].as_array().expect("expected list");
+        assert!(
+            expected.iter().any(|e| e.as_str().unwrap().contains("replace")),
+            "got: {expected:?}"
+        );
+        assert!(parsed["error"]["snippet"].as_str().unwrap().contains('^'));
+    }
+
+    #[test]
+    fn an_unknown_tool_is_a_protocol_error_that_names_the_real_tools() {
+        let req = json!({
+            "jsonrpc":"2.0","id":61,"method":"tools/call",
+            "params":{"name":"colab.previw","arguments":{}}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["error"]["code"], -32602, "got: {resp}");
+        let message = resp["error"]["message"].as_str().unwrap();
+        assert!(message.contains("did you mean `colab.preview`?"), "{message}");
+    }
+
+    #[test]
+    fn list_rules_is_a_fraction_of_the_full_schema() {
+        let call = |name: &str, args: Value| {
+            let req = json!({
+                "jsonrpc":"2.0","id":62,"method":"tools/call",
+                "params":{"name": name, "arguments": args}
+            });
+            let resp = handle(&req, &registry()).unwrap();
+            resp["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        let languages = call("colab.list_languages", json!({}));
+        let one_lang = call("colab.list_rules", json!({"lang": "go"}));
+        let filtered = call("colab.schema", json!({"lang": "go"}));
+        let everything = call("colab.schema", json!({}));
+
+        assert!(languages.contains("\"go\""));
+        assert!(languages.len() < one_lang.len());
+        assert!(one_lang.len() < everything.len());
+        assert!(filtered.len() < everything.len());
+    }
+
+    #[test]
+    fn list_rules_rejects_an_unknown_language_with_a_suggestion() {
+        let req = json!({
+            "jsonrpc":"2.0","id":63,"method":"tools/call",
+            "params":{"name":"colab.list_rules","arguments":{"lang":"rustt"}}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["result"]["isError"], true, "got: {resp}");
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("did you mean `rust`?"), "{text}");
     }
 
     #[test]
@@ -606,21 +886,138 @@ mod tests {
         let original = "package main\nimport \"old.module\"\n";
         fs::write(&go_path, original).unwrap();
 
+        let script =
+            "refactor \"r\" { match go::import \"old.module\" { replace \"new.module\" } }";
+
+        // Default detail: counts, no diff.
         let req = json!({
             "jsonrpc":"2.0","id":8,"method":"tools/call",
             "params":{"name":"colab.preview","arguments":{
-                "script":"refactor \"r\" { match go::import \"old.module\" { replace \"new.module\" } }",
+                "script": script,
                 "paths":[go_path.to_string_lossy()],
+            }}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["result"]["isError"], false);
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).unwrap();
+
+        assert_eq!(parsed["summary"]["scanned"], 1);
+        assert_eq!(parsed["summary"]["changed"], 1);
+        assert_eq!(parsed["rules"][0]["files"], 1);
+        assert_eq!(parsed["changed"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["applied"], false);
+        assert!(parsed.get("diffs").is_none(), "counts must not carry diffs");
+        assert!(parsed.get("warnings").is_none(), "got: {parsed}");
+        // Compact, not pretty-printed.
+        assert!(!text.contains("\n  \""), "response should be compact: {text}");
+
+        // Explicit diff detail adds hunks.
+        let req = json!({
+            "jsonrpc":"2.0","id":9,"method":"tools/call",
+            "params":{"name":"colab.preview","arguments":{
+                "script": script,
+                "paths":[go_path.to_string_lossy()],
+                "detail":"diff",
             }}
         });
         let resp = handle(&req, &registry()).unwrap();
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         let parsed: Value = serde_json::from_str(text).unwrap();
-        let entry = &parsed["results"][0];
-        assert_eq!(entry["changed"], true);
-        assert!(entry["diff"].as_str().unwrap().contains("--- a/"));
-        // File on disk untouched.
+        assert!(
+            parsed["diffs"][0]["diff"]
+                .as_str()
+                .unwrap()
+                .contains("--- a/")
+        );
+
+        // File on disk untouched by either call.
         assert_eq!(fs::read_to_string(&go_path).unwrap(), original);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn preview_flags_a_dead_rule_without_needing_a_diff() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("colab-mcp-dead-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.go"), "package main\nimport \"old.module\"\n").unwrap();
+
+        let req = json!({
+            "jsonrpc":"2.0","id":10,"method":"tools/call",
+            "params":{"name":"colab.preview","arguments":{
+                "script": "refactor \"r\" {\n\
+                    match go::import \"old.module\" { replace \"new.module\" }\n\
+                    match go::import \"absent.module\" { replace \"x\" }\n\
+                  }",
+                "paths":[dir.to_string_lossy()],
+            }}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).unwrap();
+
+        assert_eq!(parsed["rules"][0]["files"], 1);
+        assert_eq!(parsed["rules"][1]["files"], 0);
+        let warnings = parsed["warnings"].as_array().expect("warnings");
+        assert!(
+            warnings[0].as_str().unwrap().contains("matched no files"),
+            "got: {warnings:?}"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn relative_paths_resolve_against_cwd() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("colab-mcp-cwd-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.go"), "package main\nimport \"old.module\"\n").unwrap();
+
+        let req = json!({
+            "jsonrpc":"2.0","id":11,"method":"tools/call",
+            "params":{"name":"colab.preview","arguments":{
+                "script":"refactor \"r\" { match go::import \"old.module\" { replace \"new.module\" } }",
+                "paths":["main.go"],
+                "cwd": dir.to_string_lossy(),
+            }}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["result"]["isError"], false, "got: {resp}");
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(parsed["summary"]["changed"], 1);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_empty_result_says_which_kind_of_empty_it_was() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("colab-mcp-empty-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        // A file of a language the script does not target.
+        fs::write(dir.join("notes.txt"), "nothing to see\n").unwrap();
+
+        let req = json!({
+            "jsonrpc":"2.0","id":12,"method":"tools/call",
+            "params":{"name":"colab.preview","arguments":{
+                "script":"refactor \"r\" { match go::import \"old.module\" { replace \"new.module\" } }",
+                "paths":[dir.to_string_lossy()],
+            }}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        let parsed: Value = serde_json::from_str(text).unwrap();
+
+        assert_eq!(parsed["summary"]["visited"], 1);
+        assert_eq!(parsed["summary"]["scanned"], 0);
+        let warnings = parsed["warnings"].as_array().unwrap();
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.as_str().unwrap().contains("none belong to a language")),
+            "got: {warnings:?}"
+        );
         fs::remove_dir_all(&dir).ok();
     }
 

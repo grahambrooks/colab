@@ -5,10 +5,10 @@
 //! - **Diagnostics.** Every open / change of a `.codemod` file
 //!   triggers `colab_dsl::compile` against the binary's default
 //!   [`BackendRegistry`]; parse errors and unsupported-namespace
-//!   errors surface as LSP diagnostics. Position info is lost when
-//!   `Error::Parse` collapses the LALRPOP error to a string, so for
-//!   now diagnostics point at line 0; the message text retains the
-//!   parser's `at byte N` pointer.
+//!   errors surface as LSP diagnostics. Parse errors carry a
+//!   [`colab_core::ParseDetail`] and so are placed on the offending
+//!   line and column; errors without a position (an unsupported
+//!   namespace, say) fall back to the start of the file.
 //! - **Completion.** Suggests namespaces (`go::`, `rust::`, …),
 //!   modules (per backend), and actions (`replace`/`delete`/`ensure`/
 //!   `replace_call`) based on cursor context. Items are sourced from
@@ -25,8 +25,28 @@ use tower_lsp::jsonrpc::Result as LspResult;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-use colab_core::BackendRegistry;
+use colab_core::{BackendRegistry, Error};
 use colab_dsl::compile;
+
+/// Place a diagnostic at the position the error carries.
+///
+/// LSP positions are 0-based; [`colab_core::ParseDetail`] is 1-based.
+/// The range covers a single character at the offending token — enough
+/// for an editor to put the squiggle in the right place. Errors with no
+/// position (an unsupported namespace) land at the start of the file.
+fn error_range(err: &Error) -> Range {
+    match err {
+        Error::Parse(detail) => {
+            let line = detail.line.saturating_sub(1) as u32;
+            let character = detail.column.saturating_sub(1) as u32;
+            Range::new(
+                Position::new(line, character),
+                Position::new(line, character + 1),
+            )
+        }
+        _ => Range::new(Position::new(0, 0), Position::new(0, 0)),
+    }
+}
 
 const STATIC_ACTIONS: &[(&str, &str)] = &[
     ("replace", "replace \"$0\""),
@@ -52,14 +72,13 @@ impl Backend {
         }
     }
 
-    /// Run `colab_dsl::compile` and convert any [`Error`] into an LSP
-    /// diagnostic at line 0. Empty diagnostics list means the script
-    /// compiled cleanly.
+    /// Run `colab_dsl::compile` and convert any error into an LSP
+    /// diagnostic. An empty list means the script compiled cleanly.
     fn diagnose(&self, text: &str) -> Vec<Diagnostic> {
         match compile(text, &self.backends) {
             Ok(_) => Vec::new(),
             Err(err) => vec![Diagnostic {
-                range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+                range: error_range(&err),
                 severity: Some(DiagnosticSeverity::ERROR),
                 code: Some(NumberOrString::Number(err.exit_code())),
                 source: Some("colab".into()),

@@ -46,7 +46,7 @@ colab schema           # full JSON capability schema
 colab list-languages   # backends registered in this build
 colab list-rules go    # modules and actions for one backend
 colab server           # LSP: diagnostics + completion for .codemod files
-colab mcp              # MCP server: preview / apply / schema / lint_script tools
+colab mcp              # MCP server: preview / apply / schema / list-* / lint_script tools
 ```
 
 ## Quick start
@@ -89,6 +89,14 @@ This rewrites the `[dependencies]` entry in every `Cargo.toml` and
 every `use tokio::…` declaration in every `.rs` file under the
 current directory. Re-running is a no-op.
 
+A rule can be narrowed to part of the tree with `in "<glob>"`, which
+matters most for `symbol` renames since they are syntactic and would
+otherwise rewrite an unrelated type that happens to share a name:
+
+```
+match rust::symbol "Config" in "crates/core/**" { replace "CoreConfig" }
+```
+
 The complete DSL is documented in [`docs/dsl.md`](docs/dsl.md).
 
 ## Output formats
@@ -96,13 +104,19 @@ The complete DSL is documented in [`docs/dsl.md`](docs/dsl.md).
 ```sh
 colab refactor --script s.codemod --format human .   # default on TTY: write + log
 colab refactor --script s.codemod --format diff .    # unified diff to stdout
-colab refactor --script s.codemod --format json .    # one JSON object per file
+colab refactor --script s.codemod --format json .    # one JSON doc: counters + per-rule counts
 colab refactor --script s.codemod --check .          # exit 10 if changes pending
 cat foo.go | colab refactor --script s.codemod --stdin --path foo.go
 ```
 
 Defaults: `human` on a TTY implies `--write`; everything else
-defaults to `--dry-run`. `--check` always overrides. See
+defaults to `--dry-run`. `--check` always overrides.
+
+`--format json` answers "what would this do?" in a few hundred bytes —
+how many files were visited, scanned, and changed, and how many each
+rule matched. **A rule reported with `"files": 0` matched nothing** and
+is almost certainly wrong; check that before you `--write`. Add
+`--detail diff` when you want the hunks too. See
 [`docs/cli.md`](docs/cli.md) for the full flag reference and exit
 codes.
 
@@ -154,7 +168,8 @@ crates/
   colab-lang-js/      # JS/TS backend
   colab-lang-python/  # Python backend
   colab-lang-rust/    # Rust backend
-  colab-mcp/          # MCP server (preview / apply / schema / lint_script)
+  colab-mcp/          # MCP server (preview / apply / schema / list_rules /
+                      # list_languages / lint_script)
   colab-cli/          # The `colab` binary; LSP server; `colab mcp` launcher
 ```
 

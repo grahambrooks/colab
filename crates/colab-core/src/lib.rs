@@ -7,6 +7,10 @@
 
 pub mod backend;
 pub mod error;
+pub mod render;
+pub mod report;
+pub mod scoped;
+pub mod suggest;
 pub mod template;
 pub mod transformer;
 pub mod walker;
@@ -14,7 +18,10 @@ pub mod walker;
 pub use backend::{
     ActionCapability, BackendRegistry, Capability, LanguageBackend, Operation, RuleSpec,
 };
-pub use error::{Error, Result};
+pub use error::{Error, ParseDetail, Result};
+pub use render::{ChangeCollector, Detail, RenderOptions, write_unified_diff};
+pub use report::{RuleStat, RunReport, SkippedFile};
+pub use scoped::ScopedOperation;
 pub use template::render_call_template;
-pub use transformer::CodeTransformer;
-pub use walker::{FileChange, WalkOptions};
+pub use transformer::{ApplyOutcome, CodeTransformer};
+pub use walker::{FileChange, WalkOptions, WalkOutcome};

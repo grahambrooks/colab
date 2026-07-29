@@ -22,12 +22,17 @@ pub enum Item {
     Include(String),
 }
 
-/// One `match <namespace> "<target>" { <action> }` block. A script
-/// may contain any number of these; they are applied in source order.
+/// One `match <namespace> "<target>" [in "<glob>"] { <action> }` block.
+/// A script may contain any number of these; they are applied in source
+/// order.
 #[derive(PartialEq, Debug)]
 pub struct Match {
     pub namespace: Namespace,
     pub match_string: String,
+    /// Optional path glob from an `in "<glob>"` clause. `None` means the
+    /// rule applies wherever its language backend considers a file
+    /// relevant.
+    pub scope: Option<String>,
     pub action: Action,
 }
 

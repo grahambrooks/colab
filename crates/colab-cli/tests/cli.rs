@@ -150,7 +150,7 @@ fn write_rewrites_in_place() {
 }
 
 #[test]
-fn format_json_emits_one_object_per_file_and_does_not_write() {
+fn format_json_emits_one_document_and_does_not_write() {
     let root = workspace_temp("format-json");
     let script = root.join("rename.codemod");
     let target = root.join("main.go");
@@ -175,32 +175,110 @@ fn format_json_emits_one_object_per_file_and_does_not_write() {
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     let lines: Vec<&str> = stdout.lines().collect();
-    // Now: one file event + one summary event.
-    assert_eq!(lines.len(), 2, "got: {stdout}");
+    assert_eq!(lines.len(), 1, "expected a single document, got: {stdout}");
 
-    let file_event: Value = serde_json::from_str(lines[0]).expect("valid file JSON");
-    assert_eq!(file_event["type"], "file");
-    assert_eq!(file_event["changed"], true);
+    let doc: Value = serde_json::from_str(lines[0]).expect("valid JSON");
+    assert_eq!(doc["summary"]["scanned"], 1);
+    assert_eq!(doc["summary"]["changed"], 1);
     assert_eq!(
-        file_event["bytes_before"].as_u64().unwrap(),
+        doc["summary"]["bytes_before"].as_u64().unwrap(),
         GO_INPUT.len() as u64
     );
     assert_eq!(
-        file_event["bytes_after"].as_u64().unwrap(),
+        doc["summary"]["bytes_after"].as_u64().unwrap(),
         GO_EXPECTED.len() as u64
     );
+    assert!(doc["summary"]["elapsed_ms"].is_u64());
 
-    let summary: Value = serde_json::from_str(lines[1]).expect("valid summary JSON");
-    assert_eq!(summary["type"], "summary");
-    assert_eq!(summary["files_seen"], 1);
-    assert_eq!(summary["files_changed"], 1);
-    assert!(summary["elapsed_ms"].is_u64());
+    // Per-rule attribution, and the changed path — but no diff at the
+    // default `counts` detail.
+    assert_eq!(doc["rules"][0]["i"], 0);
+    assert_eq!(doc["rules"][0]["files"], 1);
+    assert_eq!(doc["changed"].as_array().unwrap().len(), 1);
+    assert!(doc.get("diffs").is_none(), "got: {stdout}");
+    assert!(doc.get("warnings").is_none(), "got: {stdout}");
 
     fs::remove_dir_all(&root).ok();
 }
 
 #[test]
-fn summary_only_suppresses_per_file_events() {
+fn json_detail_diff_adds_capped_diffs() {
+    let root = workspace_temp("format-json-diff");
+    let script = root.join("rename.codemod");
+    let target = root.join("main.go");
+    write(&script, SCRIPT);
+    write(&target, GO_INPUT);
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--format",
+            "json",
+            "--detail",
+            "diff",
+            target.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let doc: Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
+    let diff = doc["diffs"][0]["diff"].as_str().expect("a diff");
+    assert!(diff.contains("@@"), "got: {diff}");
+}
+
+#[test]
+fn a_rule_that_matches_nothing_is_reported_as_dead() {
+    let root = workspace_temp("dead-rule");
+    let script = root.join("dead.codemod");
+    let target = root.join("main.go");
+    write(
+        &script,
+        "refactor \"dead\" {\n  match go::import \"nowhere/at/all\" { replace \"x\" }\n}\n",
+    );
+    write(&target, GO_INPUT);
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--format",
+            "json",
+            target.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let doc: Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
+    assert_eq!(doc["rules"][0]["files"], 0);
+    let warnings = doc["warnings"].as_array().expect("warnings");
+    assert!(
+        warnings.iter().any(|w| w
+            .as_str()
+            .unwrap()
+            .contains("matched no files")),
+        "got: {stdout}"
+    );
+    // And the summary explains which of the three empty-result causes
+    // this was: files were scanned, the rule just did not match.
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("no rule matched")),
+        "got: {stdout}"
+    );
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn summary_only_suppresses_per_file_detail() {
     let root = workspace_temp("summary-only");
     let script = root.join("rename.codemod");
     let a = root.join("a.go");
@@ -224,12 +302,53 @@ fn summary_only_suppresses_per_file_events() {
     assert_eq!(output.status.code(), Some(0));
 
     let stdout = String::from_utf8(output.stdout).unwrap();
+    let doc: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(doc["summary"]["scanned"], 2);
+    assert_eq!(doc["summary"]["changed"], 2);
+    // `summary` detail carries the counters and nothing else.
+    assert!(doc.get("rules").is_none(), "got: {stdout}");
+    assert!(doc.get("changed").is_none(), "got: {stdout}");
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn ndjson_streams_changed_files_then_a_summary() {
+    let root = workspace_temp("format-ndjson");
+    let script = root.join("rename.codemod");
+    let changed = root.join("a.go");
+    let untouched = root.join("b.go");
+    write(&script, SCRIPT);
+    write(&changed, GO_INPUT);
+    write(&untouched, "package demo\n");
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--format",
+            "ndjson",
+            root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
     let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines.len(), 1, "expected only summary, got: {stdout}");
-    let summary: Value = serde_json::from_str(lines[0]).unwrap();
+    // The unchanged file produces no event at all.
+    assert_eq!(lines.len(), 2, "got: {stdout}");
+
+    let file_event: Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(file_event["type"], "file");
+    assert_eq!(file_event["rules"][0], 0);
+
+    let summary: Value = serde_json::from_str(lines[1]).unwrap();
     assert_eq!(summary["type"], "summary");
-    assert_eq!(summary["files_seen"], 2);
-    assert_eq!(summary["files_changed"], 2);
+    assert_eq!(summary["summary"]["scanned"], 2);
+    assert_eq!(summary["summary"]["changed"], 1);
+    assert_eq!(summary["rules"][0]["files"], 1);
 
     fs::remove_dir_all(&root).ok();
 }
@@ -345,7 +464,121 @@ fn explain_returns_parsed_ir() {
     assert_eq!(value["items"][0]["kind"], "match");
     assert_eq!(value["items"][0]["namespace"], "go::import");
     assert_eq!(value["items"][0]["match"], "some.module");
-    assert_eq!(value["items"][0]["action"]["replace"], "new.module");
+    // One shape for every action: a name plus an optional value.
+    assert_eq!(value["items"][0]["action"], "replace");
+    assert_eq!(value["items"][0]["value"], "new.module");
+    assert!(value["items"][0]["scope"].is_null());
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn explain_reports_an_in_scope_clause() {
+    let root = workspace_temp("explain-scope");
+    let script = root.join("scoped.codemod");
+    write(
+        &script,
+        "refactor \"scoped\" {\n  \
+         match rust::symbol \"Config\" in \"crates/colab-core/**\" { replace \"CoreConfig\" }\n\
+         }\n",
+    );
+
+    let output = colab()
+        .args(["explain", "--script", script.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(value["items"][0]["scope"], "crates/colab-core/**");
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn a_parse_error_reports_line_column_and_expected_tokens() {
+    let root = workspace_temp("parse-detail");
+    let script = root.join("broken.codemod");
+    write(
+        &script,
+        "refactor \"x\" {\n  match go::import \"a\" { replac \"b\" }\n}\n",
+    );
+
+    let output = colab()
+        .args(["explain", "--script", script.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+
+    // The CLI reports errors on stderr; the position must be a line and
+    // column, not the parser's raw byte offset.
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("line 2, column 26"), "got: {stderr}");
+    assert!(stderr.contains("expected one of"), "got: {stderr}");
+    assert!(stderr.contains("\"replace\""), "got: {stderr}");
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn an_unknown_module_names_the_closest_real_one() {
+    let root = workspace_temp("typo-module");
+    let script = root.join("typo.codemod");
+    write(
+        &script,
+        "refactor \"x\" {\n  match go::improt \"a\" { replace \"b\" }\n}\n",
+    );
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--dry-run",
+            root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("unknown module `go::improt`"), "got: {stderr}");
+    assert!(stderr.contains("did you mean `import`?"), "got: {stderr}");
+    // And it no longer leaks the Rust Debug form of RuleSpec.
+    assert!(!stderr.contains("RuleSpec"), "got: {stderr}");
+    assert!(!stderr.contains("Replace {"), "got: {stderr}");
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn an_unsupported_action_names_the_action_and_the_valid_ones() {
+    let root = workspace_temp("bad-action");
+    let script = root.join("bad.codemod");
+    // `js::import` supports rename and delete, but not ensure.
+    write(
+        &script,
+        "refactor \"x\" {\n  match js::import \"lodash\" { ensure }\n}\n",
+    );
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--dry-run",
+            root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("does not support the `ensure` action"),
+        "got: {stderr}"
+    );
+    assert!(stderr.contains("known actions:"), "got: {stderr}");
 
     fs::remove_dir_all(&root).ok();
 }

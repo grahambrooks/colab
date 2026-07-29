@@ -130,12 +130,10 @@ fn run_case(case: &Case) -> Result<(), String> {
             .get(rel)
             .ok_or_else(|| format!("missing expected file {}", rel.display()))?;
 
-        let applies = refactoring.is_file_relevant(rel);
-        let first = if applies {
-            refactoring.apply(source)
-        } else {
-            source.clone()
-        };
+        // `apply_at` is what the walker calls, so the corpus exercises
+        // per-rule path gating, the literal prefilter, and rule
+        // attribution — not just the path-blind fallback.
+        let first = refactoring.apply_at(rel, source).output;
 
         if &first != want {
             return Err(format!(
@@ -147,11 +145,10 @@ fn run_case(case: &Case) -> Result<(), String> {
         }
 
         // Idempotency: a second application must not change the output.
-        let second = if applies {
-            refactoring.apply(&first)
-        } else {
-            first.clone()
-        };
+        // This is also the guard against an over-narrow prefilter — a
+        // rule that skipped work on pass one but not pass two shows up
+        // here.
+        let second = refactoring.apply_at(rel, &first).output;
         if second != first {
             return Err(format!(
                 "{}: transform is not idempotent on its own output",

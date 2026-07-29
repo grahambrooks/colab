@@ -30,7 +30,13 @@ just the readable form.
 The DSL is the same across backends; the table above just records
 which `(module, action)` pairs are wired up. Asking for an
 unsupported pair raises `Error::UnsupportedOperation` (CLI exit
-code 3).
+code 3), naming the valid modules or actions and the closest match to
+what you typed.
+
+Any rule, in any backend, can be narrowed to a subset of the tree with
+[`in "<glob>"`](./dsl.md#path-scope-in-glob). It is most useful on the
+`symbol` rows, which are whole-file syntactic renames with no scope
+analysis.
 
 ---
 

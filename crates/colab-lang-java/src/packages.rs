@@ -28,6 +28,10 @@ impl Operation for PackageRename {
     fn apply(&self, source_code: &str) -> String {
         rename(&self.from, &self.to, source_code)
     }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.from)
+    }
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {

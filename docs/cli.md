@@ -23,7 +23,8 @@ colab refactor --script <path> [--write|--dry-run|--check]
                                 [--verify <CMD>] [--commit-per-rule]
                                 [--bisect <CMD>]
                                 [--backup <DIR>]
-                                [--summary-only]
+                                [--detail summary|counts|diff] [--summary-only]
+                                [--max-files <N>] [--max-diff-bytes <N>]
                                 [paths...]
 ```
 
@@ -31,7 +32,7 @@ colab refactor --script <path> [--write|--dry-run|--check]
 | ---- | ------- | ------- |
 | `--script <path>` | required | The `.codemod` file to execute. |
 | `-C`, `--change-dir <dir>` | `.` | Resolve `paths` relative to this directory. |
-| `--format <h|j|n|d>` | `human` | Output format. `human` is coloured log lines on a TTY (auto-disabled when stdout is not a TTY or when `NO_COLOR` is set). `json` and `ndjson` emit one JSON event per file. `diff` emits a unified diff per changed file. |
+| `--format <h|j|n|d>` | `human` | Output format. `human` is coloured log lines plus a summary. `json` emits one JSON document for the whole run. `ndjson` streams one object per *changed* file then a summary. `diff` emits a unified diff per changed file. |
 | `--write` | — | Apply changes in place. |
 | `--dry-run` | — | Report what would change without writing. |
 | `--check` | — | Like `--dry-run`, but exit code 10 if any file would change. CI-friendly. |
@@ -47,7 +48,10 @@ colab refactor --script <path> [--write|--dry-run|--check]
 | `--commit-per-rule` | — | After each successful rule, `git add -u && git commit -m "colab: <rule>"`. Requires a git repo. Implies `--write`. |
 | `--bisect <CMD>` | — | After applying every rule, run `<CMD>`. On failure, binary-search the rule list to identify the single breaking rule, then revert the working tree to its pre-run state. Conflicts with `--verify`. |
 | `--backup <DIR>` | — | Before any rule writes a file, save the pre-modification contents to `<DIR>/<rel-path>`. Pair with `colab undo --from <DIR>` to roll back. |
-| `--summary-only` | — | Suppress per-file events (json/diff/human); emit only the final aggregate summary. Pairs well with `--format json` for headless runs. |
+| `--detail <level>` | `counts` (`diff` for `--format diff`) | How much to report. `summary`: aggregate counters only. `counts`: adds per-rule match counts and changed paths. `diff`: adds capped unified diffs. |
+| `--max-files <N>` | `20` | At `--detail diff`, the maximum number of per-file diffs to render. The residue is reported under `truncated`. |
+| `--max-diff-bytes <N>` | `2000` | At `--detail diff`, the maximum size of any single rendered diff. |
+| `--summary-only` | — | Alias for `--detail summary`. |
 | `paths...` | `.` | Files or directories to walk recursively. Multiple roots are walked in order. |
 
 **Default execution mode** is resolved from `--format` and TTY state:
@@ -64,17 +68,34 @@ default. They are mutually exclusive (clap rejects combinations).
 
 #### `--format` shapes
 
-- **`human`** — coloured log lines to stderr like
-  `2026-05-09 12:34:56 [INFO] Wrote /path/to/file.go`. No stdout
-  output during a refactor; the file system is the side-effect.
-- **`json` / `ndjson`** — one object per processed file, newline
-  separated, followed by a final summary event. Stable schema:
-  ```json
-  {"type": "file", "path": "main.go", "changed": true, "bytes_before": 42, "bytes_after": 48}
-  {"type": "summary", "files_seen": 1, "files_changed": 1, "bytes_before": 42, "bytes_after": 48, "elapsed_ms": 12}
+Files that were scanned but not changed produce no output in any
+format. They are counted in the summary and nothing more.
+
+- **`human`** — per-file lines go to stderr via the logger
+  (`[INFO] Wrote /path/to/file.go`); the summary, the per-rule counts,
+  and any warnings go to **stdout**:
   ```
-  Combine with `--summary-only` to skip the per-file events and
-  emit just the summary.
+  38 file(s) scanned, 3 changed, 91204 → 91250 bytes in 84 ms
+    rule 1: 3 file(s) — go::import "a" -> "b"
+    rule 2: 0 file(s) — go::symbol "X" -> "Y"
+  warning: matched no files: go::symbol "X" -> "Y"
+  ```
+- **`json`** — one compact JSON document for the whole run:
+  ```json
+  {"summary":{"visited":412,"scanned":38,"changed":3,"skipped":0,"bytes_before":91204,"bytes_after":91250,"elapsed_ms":84},
+   "rules":[{"i":0,"rule":"go::import \"a\" -> \"b\"","files":3},
+            {"i":1,"rule":"go::symbol \"X\" -> \"Y\"","files":0}],
+   "changed":["cmd/main.go","internal/a.go","internal/b.go"]}
+  ```
+  `--detail diff` adds a `diffs` array (capped by `--max-files` /
+  `--max-diff-bytes`, with any residue reported under `truncated`).
+  `--detail summary` emits the `summary` object alone.
+- **`ndjson`** — one object per *changed* file, newline separated,
+  then a final summary object carrying the per-rule counts:
+  ```json
+  {"type":"file","path":"cmd/main.go","bytes_before":42,"bytes_after":48,"rules":[0]}
+  {"type":"summary","summary":{...},"rules":[{"i":0,"rule":"…","files":3}]}
+  ```
 - **`diff`** — unified diff per changed file:
   ```diff
   --- a/main.go
@@ -86,6 +107,39 @@ default. They are mutually exclusive (clap rejects combinations).
   +	"new.module"
    )
   ```
+
+#### Reading the result
+
+Three counters, not one, so an empty result says *which* kind of empty it
+was:
+
+| Counter | Meaning | If it is 0 |
+| ------- | ------- | ---------- |
+| `visited` | Regular files the walker yielded. | The paths or `--include`/`--exclude` globs matched nothing, or `.gitignore` excluded the tree (try `--no-ignore`). |
+| `scanned` | Of those, the ones a rule considered relevant and read. | Nothing there is written in a language the script targets. |
+| `changed` | Of those, the ones actually rewritten. | Files were parsed; no rule matched. Check the per-rule counts. |
+
+`rules[].files` is how many files each rule changed. **A rule with
+`files: 0` is dead** — it compiled and it ran, but it never changed a
+byte, which almost always means the match string is wrong. Every format
+warns about this; it is the cheapest check to make before `--write`.
+
+`skipped` counts files that could not be read or decoded (a non-UTF-8
+blob that survived the extension filter, say). These are recorded and the
+run continues rather than aborting.
+
+The useful loop, at roughly increasing cost:
+
+```sh
+# 1. Blast radius. Cheap enough to run on every edit of the script.
+colab refactor --script s.codemod --format json .
+
+# 2. Sample the hunks once the counts look right.
+colab refactor --script s.codemod --format diff .
+
+# 3. Apply.
+colab refactor --script s.codemod --write .
+```
 
 #### `--stdin` pipeline
 
@@ -195,8 +249,9 @@ Output:
 {
   "name": "two-renames",
   "items": [
-    {"kind": "match", "namespace": "go::import", "match": "old.module", "action": {"replace": "new.module"}},
-    {"kind": "match", "namespace": "go::import", "match": "another", "action": "delete"},
+    {"kind": "match", "namespace": "go::import", "match": "old.module", "scope": null, "action": "replace", "value": "new.module"},
+    {"kind": "match", "namespace": "go::import", "match": "another", "scope": null, "action": "delete", "value": null},
+    {"kind": "match", "namespace": "rust::symbol", "match": "Config", "scope": "core/**", "action": "replace", "value": "CoreConfig"},
     {"kind": "include", "path": "shared/javax-to-jakarta.codemod"}
   ]
 }
@@ -205,6 +260,11 @@ Output:
 `items` preserves source order — match clauses and `include`
 directives are intermixed exactly as they appeared in the script.
 The runtime IR sees the post-expansion flat list.
+
+`action` is always the action's name and `value` its argument (`null`
+for `delete` / `ensure`), so a consumer handles one shape rather than
+two. `scope` carries any [`in "<glob>"`](./dsl.md#path-scope-in-glob)
+clause.
 
 ### `colab server`
 
@@ -229,15 +289,33 @@ informational.
 ### `colab mcp`
 
 Start the Model Context Protocol server on stdio. Wraps the same
-operations as the CLI as four MCP tools so an agent in Claude Code
-(or any MCP-aware host) can call them directly:
+operations as the CLI as MCP tools so an agent in Claude Code (or any
+MCP-aware host) can call them directly:
 
 | Tool | Inputs | Output |
 | ---- | ------ | ------ |
-| `colab.schema` | — | Full JSON capability schema (matches `colab schema`). |
-| `colab.lint_script` | `script` | `{ok: true, name, rule_count}` or `{ok: false, error, exit_code}`. |
-| `colab.preview` | `script`, `paths[]` | Per-file `{path, changed, bytes_before, bytes_after, diff?}`. Disk untouched. |
-| `colab.apply` | `script`, `paths[]` | Same shape as preview, but writes changes back. |
+| `colab.list_languages` | — | The registered backends, by name. Start here — it is far smaller than the full schema. |
+| `colab.list_rules` | `lang` | One backend's modules and actions. |
+| `colab.schema` | `lang?` | Full capability schema, or one language's slice of it. |
+| `colab.lint_script` | `script`, `cwd?` | `{ok: true, name, rule_count, rules[]}`. |
+| `colab.preview` | `script`, `paths[]`, `cwd?`, `detail?`, `max_files?`, `max_diff_bytes?` | Summary, per-rule match counts, changed paths, and (at `detail: "diff"`) capped diffs. Disk untouched. |
+| `colab.apply` | same as preview | Same shape, but writes changes back. |
+
+`detail` defaults to `counts`, which describes the blast radius without
+paying for diffs. Every tool is annotated (`readOnlyHint`, and
+`destructiveHint` on `colab.apply`) so a host can distinguish reads from
+writes.
+
+`cwd` is the directory relative `paths` resolve against and the base for
+`include "..."` directives. Supply it: without it, relative paths depend
+on wherever the server process happened to start, and `include` does not
+work at all.
+
+**Errors.** A tool that ran and rejected its input returns
+`isError: true` with a structured body — `{"error": {kind, message,
+exit_code, line?, column?, expected?, snippet?}}`. JSON-RPC error
+responses (`-32602`) are reserved for malformed *calls*: unknown method
+or tool, missing or mistyped arguments.
 
 Wire format: JSON-RPC 2.0 over stdio with LSP-style
 `Content-Length` framing. Methods supported: `initialize`,

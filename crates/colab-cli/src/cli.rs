@@ -14,12 +14,14 @@ use log::info;
 
 use std::time::Instant;
 
-use colab_core::walker::{self, FileChange, WalkOptions};
+use colab_core::render::{self, Detail, RenderOptions};
+use colab_core::report::RunReport;
+use colab_core::walker::{self, FileChange, WalkOptions, WalkOutcome};
 use colab_core::{BackendRegistry, CodeTransformer, Error, Result};
 use colab_dsl as codemod;
 
 use crate::discover;
-use crate::format::{self, ExecMode, Format, RunSummary};
+use crate::format::{self, ExecMode, Format};
 use crate::language_server;
 
 static VERSION: &str = concat!(
@@ -216,10 +218,26 @@ struct RefactorArgs {
     #[arg(long, value_name = "DIR", conflicts_with_all = ["dry_run", "check"])]
     backup: Option<PathBuf>,
 
+    /// How much detail to report: `summary` (aggregate counters only),
+    /// `counts` (adds per-rule match counts and changed paths), or
+    /// `diff` (adds capped unified diffs). Defaults to `counts`, or
+    /// `diff` for `--format diff`.
+    #[arg(long, value_name = "LEVEL", value_parser = parse_detail)]
+    detail: Option<Detail>,
+
+    /// Maximum number of per-file diffs to render at `--detail diff`.
+    #[arg(long = "max-files", value_name = "N",
+          default_value_t = render::DEFAULT_MAX_FILES)]
+    max_files: usize,
+
+    /// Maximum size of any single rendered diff, in bytes.
+    #[arg(long = "max-diff-bytes", value_name = "N",
+          default_value_t = render::DEFAULT_MAX_DIFF_BYTES)]
+    max_diff_bytes: usize,
+
     /// Suppress per-file events; emit only the final aggregate
-    /// summary. Useful on millions-of-files runs where the
-    /// per-file trace is the bottleneck.
-    #[arg(long = "summary-only")]
+    /// summary. Alias for `--detail summary`.
+    #[arg(long = "summary-only", conflicts_with = "detail")]
     summary_only: bool,
 
     /// Files or directories to process. Defaults to the (possibly
@@ -298,27 +316,44 @@ fn io_to_error(err: io::Error) -> Error {
 /// `--staged`), invoking the visitor for files the transformer
 /// considers relevant. Skips paths that no longer exist on disk
 /// — `git diff` may report files that have been deleted.
-fn run_against_paths<T, F>(transformer: &T, paths: &[PathBuf], visit: &mut F) -> Result<()>
+fn run_against_paths<T, F>(
+    transformer: &T,
+    paths: &[PathBuf],
+    visit: &mut F,
+) -> Result<WalkOutcome>
 where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
 {
+    let mut outcome = WalkOutcome::default();
     for path in paths {
         if !path.is_file() {
             continue;
         }
+        outcome.files_visited += 1;
         if !transformer.is_file_relevant(path) {
             continue;
         }
-        let before = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
-        let after = transformer.apply(&before);
+        let before = match fs::read_to_string(path) {
+            Ok(before) => before,
+            // Match the tree walk: an unreadable file is recorded, not fatal.
+            Err(e) => {
+                outcome.skipped.push(colab_core::SkippedFile {
+                    path: path.clone(),
+                    reason: e.to_string(),
+                });
+                continue;
+            }
+        };
+        let applied = transformer.apply_at(path, &before);
         visit(FileChange {
             path: path.clone(),
             before,
-            after,
+            after: applied.output,
+            rules_fired: applied.rules_fired,
         })?;
     }
-    Ok(())
+    Ok(outcome)
 }
 
 /// Drive a single transformer through the chosen file source
@@ -329,7 +364,7 @@ fn run_transformer<T, F>(
     args: &RefactorArgs,
     targets: &[PathBuf],
     visit: &mut F,
-) -> Result<()>
+) -> Result<WalkOutcome>
 where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
@@ -348,10 +383,13 @@ where
             follow_symlinks: false,
             jobs: resolve_jobs(args.jobs),
         };
+        let mut outcome = WalkOutcome::default();
         for target in targets {
-            walker::walk_with(transformer, target, &opts, visit)?;
+            let one = walker::walk_with(transformer, target, &opts, visit)?;
+            outcome.files_visited += one.files_visited;
+            outcome.skipped.extend(one.skipped);
         }
-        Ok(())
+        Ok(outcome)
     }
 }
 
@@ -386,6 +424,35 @@ fn git_paths(args: &[&str]) -> Result<Vec<PathBuf>> {
         .filter(|l| !l.is_empty())
         .map(PathBuf::from)
         .collect())
+}
+
+/// `--detail` value parser. Rejects unknown levels by name rather than
+/// silently falling back, and lists the valid ones.
+fn parse_detail(s: &str) -> std::result::Result<Detail, String> {
+    Detail::parse(s).ok_or_else(|| {
+        format!(
+            "unknown detail level `{}`; expected one of: {}",
+            s,
+            Detail::NAMES.join(", ")
+        )
+    })
+}
+
+impl RefactorArgs {
+    /// Resolve the rendering limits from the flags, applying the
+    /// per-format default when `--detail` was not supplied.
+    fn render_options(&self) -> RenderOptions {
+        let detail = if self.summary_only {
+            Detail::Summary
+        } else {
+            self.detail.unwrap_or_else(|| self.format.default_detail())
+        };
+        RenderOptions {
+            detail,
+            max_files: self.max_files,
+            max_diff_bytes: self.max_diff_bytes,
+        }
+    }
 }
 
 /// Pick the worker-thread count from `--jobs`, falling back to
@@ -437,14 +504,13 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
         args.format,
         stdout_is_tty,
     );
-    let mut reporter = format::make_reporter(args.format, exec_mode);
+    let mut reporter = format::make_reporter(args.format, exec_mode, args.render_options());
     let started = Instant::now();
-    let mut summary = RunSummary::default();
-    let summary_only = args.summary_only;
+    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
 
     let backup_dir = args.backup.clone();
     let mut visit = |change: FileChange| -> Result<()> {
-        summary.record(&change);
+        report.record(&change);
         if change.changed() && matches!(exec_mode, ExecMode::Write) {
             if let Some(dir) = &backup_dir {
                 write_backup_snapshot(dir, &change.path, &change.before)?;
@@ -452,21 +518,20 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
             fs::write(&change.path, &change.after)
                 .map_err(|e| Error::io_at(&change.path, e))?;
         }
-        if !summary_only {
-            reporter
-                .report(&change)
-                .map_err(|e| Error::io_at(&change.path, e))?;
-        }
+        reporter
+            .report(&change)
+            .map_err(|e| Error::io_at(&change.path, e))?;
         Ok(())
     };
 
-    run_transformer(&refactoring, &args, &targets, &mut visit)?;
-    summary.elapsed = started.elapsed();
-    reporter.report_summary(&summary).map_err(io_to_error)?;
-    reporter.finish().map_err(io_to_error)?;
+    let outcome = run_transformer(&refactoring, &args, &targets, &mut visit)?;
+    report.files_visited = outcome.files_visited;
+    report.skipped = outcome.skipped;
+    report.elapsed = started.elapsed();
+    reporter.finish(&report).map_err(io_to_error)?;
 
     Ok(
-        if matches!(exec_mode, ExecMode::Check) && summary.files_changed > 0 {
+        if matches!(exec_mode, ExecMode::Check) && report.files_changed > 0 {
             10
         } else {
             0
@@ -486,10 +551,12 @@ fn run_refactor_per_rule(
     args: &RefactorArgs,
     targets: &[PathBuf],
 ) -> Result<i32> {
-    let mut reporter = format::make_reporter(args.format, ExecMode::Write);
+    let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
-    let mut summary = RunSummary::default();
-    let summary_only = args.summary_only;
+    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    // Each rule gets its own walk, so every file is visited once per
+    // rule. Count the tree only once, from the first rule's pass.
+    let mut files_visited = 0u64;
 
     for (idx, rule) in refactoring.rules.iter().enumerate() {
         let single = codemod::SingleRule::new(rule.as_ref());
@@ -509,8 +576,11 @@ fn run_refactor_per_rule(
         let mut backups: std::collections::HashMap<PathBuf, String> =
             std::collections::HashMap::new();
         let backup_dir = args.backup.clone();
-        let mut visit = |change: FileChange| -> Result<()> {
-            summary.record(&change);
+        let mut visit = |mut change: FileChange| -> Result<()> {
+            // `SingleRule` always reports index 0; re-index it against
+            // the full script so the report reads the same as a normal run.
+            change.rules_fired = change.rules_fired.into_iter().map(|_| idx).collect();
+            report.record(&change);
             if change.changed() {
                 backups
                     .entry(change.path.clone())
@@ -521,15 +591,17 @@ fn run_refactor_per_rule(
                 fs::write(&change.path, &change.after)
                     .map_err(|e| Error::io_at(&change.path, e))?;
             }
-            if !summary_only {
-                reporter
-                    .report(&change)
-                    .map_err(|e| Error::io_at(&change.path, e))?;
-            }
+            reporter
+                .report(&change)
+                .map_err(|e| Error::io_at(&change.path, e))?;
             Ok(())
         };
 
-        run_transformer(&single, args, targets, &mut visit)?;
+        let outcome = run_transformer(&single, args, targets, &mut visit)?;
+        if idx == 0 {
+            files_visited = outcome.files_visited;
+        }
+        report.skipped.extend(outcome.skipped);
 
         if let Some(cmd) = &args.verify {
             info!("Verifying rule {} with `{}`", idx + 1, cmd);
@@ -552,9 +624,9 @@ fn run_refactor_per_rule(
         }
     }
 
-    summary.elapsed = started.elapsed();
-    reporter.report_summary(&summary).map_err(io_to_error)?;
-    reporter.finish().map_err(io_to_error)?;
+    report.files_visited = files_visited;
+    report.elapsed = started.elapsed();
+    reporter.finish(&report).map_err(io_to_error)?;
     Ok(0)
 }
 
@@ -620,10 +692,9 @@ fn run_refactor_bisect(
         return Ok(0);
     }
 
-    let mut reporter = format::make_reporter(args.format, ExecMode::Write);
+    let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
-    let mut summary = RunSummary::default();
-    let summary_only = args.summary_only;
+    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
 
     // Phase 1: full apply, recording snapshots along the way.
     let mut snapshots: std::collections::HashMap<PathBuf, String> =
@@ -631,7 +702,7 @@ fn run_refactor_bisect(
     let backup_dir = args.backup.clone();
     {
         let mut visit = |change: FileChange| -> Result<()> {
-            summary.record(&change);
+            report.record(&change);
             if change.changed() {
                 snapshots
                     .entry(change.path.clone())
@@ -642,22 +713,21 @@ fn run_refactor_bisect(
                 fs::write(&change.path, &change.after)
                     .map_err(|e| Error::io_at(&change.path, e))?;
             }
-            if !summary_only {
-                reporter
-                    .report(&change)
-                    .map_err(|e| Error::io_at(&change.path, e))?;
-            }
+            reporter
+                .report(&change)
+                .map_err(|e| Error::io_at(&change.path, e))?;
             Ok(())
         };
-        run_transformer(refactoring, args, targets, &mut visit)?;
+        let outcome = run_transformer(refactoring, args, targets, &mut visit)?;
+        report.files_visited = outcome.files_visited;
+        report.skipped = outcome.skipped;
     }
 
     // Phase 2: full-set verify.
     info!("Verifying with `{}`", verify_cmd);
     if run_verify(verify_cmd)? {
-        summary.elapsed = started.elapsed();
-        reporter.report_summary(&summary).map_err(io_to_error)?;
-        reporter.finish().map_err(io_to_error)?;
+        report.elapsed = started.elapsed();
+        reporter.finish(&report).map_err(io_to_error)?;
         return Ok(0);
     }
 
@@ -674,9 +744,8 @@ fn run_refactor_bisect(
         fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
     }
 
-    summary.elapsed = started.elapsed();
-    reporter.report_summary(&summary).map_err(io_to_error)?;
-    reporter.finish().map_err(io_to_error)?;
+    report.elapsed = started.elapsed();
+    reporter.finish(&report).map_err(io_to_error)?;
 
     Err(Error::Config(format!(
         "rule {}/{} `{}` breaks `{}`; reverted {} file(s)",
@@ -832,30 +901,34 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
         .read_to_string(&mut source)
         .map_err(io_to_error)?;
 
-    let after = if refactoring.is_file_relevant(&path) {
-        refactoring.apply(&source)
-    } else {
-        source.clone()
-    };
+    let applied = refactoring.apply_at(&path, &source);
 
     let change = FileChange {
         path,
         before: source,
-        after,
+        after: applied.output,
+        rules_fired: applied.rules_fired,
     };
+
+    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    report.files_visited = 1;
+    report.record(&change);
 
     match args.format {
         Format::Human => {
+            // The transformed source *is* the output for `--stdin`; the
+            // report would corrupt it, so it is deliberately omitted.
             let mut out = io::stdout().lock();
             out.write_all(change.after.as_bytes())
                 .map_err(io_to_error)?;
         }
         Format::Json | Format::Ndjson | Format::Diff => {
-            let mut reporter = format::make_reporter(args.format, ExecMode::DryRun);
+            let mut reporter =
+                format::make_reporter(args.format, ExecMode::DryRun, args.render_options());
             reporter
                 .report(&change)
                 .map_err(|e| Error::io_at(&change.path, e))?;
-            reporter.finish().map_err(io_to_error)?;
+            reporter.finish(&report).map_err(io_to_error)?;
         }
     }
 

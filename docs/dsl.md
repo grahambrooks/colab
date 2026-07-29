@@ -9,7 +9,7 @@ match site).
 ```
 refactor "name" {
     match <lang>::<module> "<target>" { <action> }
-    match <lang>::<module> "<target>" { <action> }
+    match <lang>::<module> "<target>" in "<glob>" { <action> }
     ...
 }
 ```
@@ -25,7 +25,8 @@ Whitespace is insignificant outside string literals.
 
 ```ebnf
 program     = "refactor" string "{" match* "}"
-match       = "match" namespace string "{" action "}"
+match       = "match" namespace string [ scope ] "{" action "}"
+scope       = "in" string
 namespace   = identifier "::" identifier
 identifier  = [a-zA-Z_][a-zA-Z0-9_]*
 string      = '"' (any-char-except-double-quote)* '"'
@@ -191,6 +192,39 @@ In every case matching is on tree-sitter node text, not raw substrings
 — `tokio` does **not** match `my_tokio` and `another.module` does
 **not** match `yet.another.module`.
 
+## Path scope: `in "<glob>"`
+
+An optional `in "<glob>"` clause after the match string restricts one
+rule to matching paths:
+
+```
+match rust::symbol "Config" in "crates/colab-core/**" { replace "CoreConfig" }
+```
+
+This matters most for `<lang>::symbol`, which is a whole-file syntactic
+rename with no scope analysis: without a scope, an identically-named type
+in an unrelated crate is renamed too. Scoping is enforced through the
+rule's relevance check, so a file outside the glob is never parsed by that
+rule — it shows up as a lower `scanned` count, not just a suppressed edit.
+
+| Pattern | Matches |
+| ------- | ------- |
+| `core/**` | everything under a top-level `core/` |
+| `**/core/**` | everything under any `core/` directory, at any depth |
+| `src/*.rs` | Rust files directly in `src/`, not in subdirectories |
+| `**/*_test.go` | test files anywhere |
+
+`*` stops at a path separator; `**` crosses directories. Globs are matched
+against the path as the walker yields it, so the directory you invoke
+`colab` from (and any `-C`) affects what a glob sees. An invalid glob is
+rejected when the script compiles rather than silently matching nothing.
+
+`in` scopes a single rule; [`--include` / `--exclude`](./cli.md) filter the
+whole run. Reach for `--include` to narrow what colab looks at, and `in`
+when one rule in a multi-rule script needs a tighter boundary than the
+rest. See [`examples/rust/scoped_rename`](../examples/rust/scoped_rename/)
+for a worked example.
+
 ## Idempotency
 
 Every transform must satisfy: applying it twice produces the same
@@ -279,7 +313,7 @@ refactor "javax-to-jakarta" {
 The following identifiers are grammar keywords and cannot appear as
 namespace, module, or action names:
 
-`refactor`, `match`, `replace`, `delete`, `ensure`, `replace_call`.
+`refactor`, `match`, `in`, `replace`, `delete`, `ensure`, `replace_call`.
 
 `::` is the namespace separator. `//` starts a line comment.
 
@@ -293,5 +327,7 @@ The DSL is intentionally small. Capabilities being considered:
   rewrites where a tree-sitter rule does not suffice.
 - An `include "other.codemod"` directive so library packs compose.
 - A scope-aware `<lang>::symbol` mode that respects shadowing.
+  (`in "<glob>"` narrows a rename by *path*; this would narrow it by
+  lexical scope.)
 
 Track these in [`development-plan.md`](development-plan.md) and the project issue tracker.

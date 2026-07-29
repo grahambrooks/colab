@@ -68,9 +68,13 @@ pub fn list_languages(backends: &BackendRegistry) -> Value {
 /// JSON for `colab list-rules <lang>`. Errors when the lang is not
 /// registered; this maps to exit code 3 (unsupported operation).
 pub fn list_rules(backends: &BackendRegistry, lang: &str) -> Result<Value> {
-    let backend = backends
-        .get(lang)
-        .ok_or_else(|| Error::UnsupportedOperation(format!("unknown language: {}", lang)))?;
+    let backend = backends.get(lang).ok_or_else(|| {
+        Error::UnsupportedOperation(format!(
+            "unknown language `{}`; {}",
+            lang,
+            colab_core::suggest::candidates_note(lang, "languages", &backends.languages())
+        ))
+    })?;
     Ok(language_capabilities(backend))
 }
 
@@ -87,17 +91,23 @@ fn explain_command(cmd: &ast::Command) -> Value {
         .iter()
         .map(|item| match item {
             ast::Item::Match(m) => {
-                let action = match &m.action {
-                    ast::Action::Replace(s) => json!({ "replace": s }),
-                    ast::Action::Delete => json!("delete"),
-                    ast::Action::Ensure => json!("ensure"),
-                    ast::Action::ReplaceCall(t) => json!({ "replace_call": t }),
+                // One shape for every action: a name plus an optional
+                // value. The alternative — a bare string for `delete` and
+                // an object for `replace` — forces every consumer to
+                // handle two shapes for one field.
+                let (action, value) = match &m.action {
+                    ast::Action::Replace(s) => ("replace", Some(s)),
+                    ast::Action::Delete => ("delete", None),
+                    ast::Action::Ensure => ("ensure", None),
+                    ast::Action::ReplaceCall(t) => ("replace_call", Some(t)),
                 };
                 json!({
                     "kind": "match",
                     "namespace": format!("{}::{}", m.namespace.lang, m.namespace.module),
                     "match": m.match_string,
+                    "scope": m.scope,
                     "action": action,
+                    "value": value,
                 })
             }
             ast::Item::Include(path) => json!({
