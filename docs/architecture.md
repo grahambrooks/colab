@@ -22,6 +22,15 @@ crates/
                       # suggest ("did you mean"). No internal deps.
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR.
                       # Depends only on colab-core; never on a backend.
+  colab-rewrite/      # Tree-sitter rewriting primitives shared by all
+                      # backends (apply_edits, delete_lines, visit_all,
+                      # rename_nodes_by_text). Depends on tree-sitter
+                      # only, so colab-dsl and colab-mcp never inherit
+                      # a grammar engine.
+  colab-backends/     # The single composition root: registry() wires
+                      # every backend. Runtime dep of colab-cli, dev-only
+                      # for colab-dsl / colab-mcp. Home of the
+                      # cross-backend contract tests.
   colab-lang-c/       # C backend (tree-sitter-c).
   colab-lang-cpp/     # C++ backend (tree-sitter-cpp).
   colab-lang-csharp/  # C# backend (tree-sitter-c-sharp).

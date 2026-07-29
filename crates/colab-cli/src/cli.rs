@@ -30,24 +30,12 @@ static VERSION: &str = concat!(
     include_str!(concat!(env!("OUT_DIR"), "/version.txt"))
 );
 
-/// Build the registry of language backends compiled into this binary.
+/// The registry of language backends compiled into this binary.
 ///
-/// New `colab-lang-*` crates plug in here.
+/// Registration lives in `colab-backends` so the binary, the corpus
+/// harness, and the MCP tests cannot disagree about which backends exist.
 fn default_backends() -> BackendRegistry {
-    let mut registry = BackendRegistry::new();
-    registry.register(Box::new(colab_lang_c::CBackend));
-    registry.register(Box::new(colab_lang_cpp::CppBackend));
-    registry.register(Box::new(colab_lang_csharp::CSharpBackend));
-    registry.register(Box::new(colab_lang_go::GoBackend));
-    registry.register(Box::new(colab_lang_java::JavaBackend));
-    registry.register(Box::new(colab_lang_js::JsBackend));
-    registry.register(Box::new(colab_lang_kotlin::KotlinBackend));
-    registry.register(Box::new(colab_lang_php::PhpBackend));
-    registry.register(Box::new(colab_lang_python::PythonBackend));
-    registry.register(Box::new(colab_lang_ruby::RubyBackend));
-    registry.register(Box::new(colab_lang_rust::RustBackend));
-    registry.register(Box::new(colab_lang_swift::SwiftBackend));
-    registry
+    colab_backends::registry()
 }
 
 #[derive(Parser, Debug)]
@@ -532,8 +520,7 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     };
 
     let outcome = run_transformer(&refactoring, &args, &targets, &mut visit)?;
-    report.files_visited = outcome.files_visited;
-    report.skipped = outcome.skipped;
+    report.record_walk(outcome);
     report.elapsed = started.elapsed();
     reporter.finish(&report).map_err(io_to_error)?;
 
@@ -605,6 +592,9 @@ fn run_refactor_per_rule(
         };
 
         let outcome = run_transformer(&single, args, targets, &mut visit)?;
+        // Each rule re-walks the same tree, so only the first pass's
+        // visit count is meaningful; the rest would multiply it by the
+        // rule count.
         if idx == 0 {
             files_visited = outcome.files_visited;
         }
@@ -726,8 +716,7 @@ fn run_refactor_bisect(
             Ok(())
         };
         let outcome = run_transformer(refactoring, args, targets, &mut visit)?;
-        report.files_visited = outcome.files_visited;
-        report.skipped = outcome.skipped;
+        report.record_walk(outcome);
     }
 
     // Phase 2: full-set verify.

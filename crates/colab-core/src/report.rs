@@ -101,6 +101,17 @@ impl RunReport {
         }
     }
 
+    /// Fold a completed walk's outcome into the report.
+    ///
+    /// Every caller previously assigned `files_visited` and `skipped`
+    /// field-by-field, in four places, each having to remember that
+    /// multiple targets *accumulate* visits while a per-rule run must not
+    /// double-count them. Doing it here means that decision is made once.
+    pub fn record_walk(&mut self, outcome: crate::walker::WalkOutcome) {
+        self.files_visited += outcome.files_visited;
+        self.skipped.extend(outcome.skipped);
+    }
+
     /// Record a file that could not be read or decoded.
     pub fn skip(&mut self, path: impl Into<PathBuf>, reason: impl Into<String>) {
         self.skipped.push(SkippedFile {

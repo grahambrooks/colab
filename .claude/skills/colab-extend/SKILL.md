@@ -17,11 +17,14 @@ into a `Box<dyn Operation>` by asking a `BackendRegistry` — so it has
 the resulting `Refactoring` over the filesystem, calling
 `CodeTransformer::apply_at(path, source)` per file. Each
 `colab-lang-*` crate owns one `LanguageBackend` and its `Operation`
-impls. `colab-cli` is the only place that knows all backends exist.
+impls, using `colab-rewrite` for the tree-walking and edit mechanics.
+`colab-backends` is the only place that knows all backends exist — the
+binary, the corpus harness, and the MCP tests all call its `registry()`.
 
 The hard rule: **`colab-dsl` must never depend on a `colab-lang-*` crate
-at runtime** (dev-dependency for tests only). The CI matrix relies on it
-so one broken backend cannot block unrelated work.
+(or on `colab-backends`) at runtime** — dev-dependency for tests only.
+The CI matrix relies on it so one broken backend cannot block unrelated
+work.
 
 ## Adding a module or action to an existing backend
 
@@ -29,7 +32,12 @@ Four places, in order:
 
 1. **The `Operation` impl** — a new struct in the right module of the
    `colab-lang-*` crate (e.g. `crates/colab-lang-go/src/imports.rs`).
-   Implement `is_file_relevant`, `apply`, and `prefilter`.
+   Implement `is_file_relevant`, `apply`, and `prefilter`. **Use
+   `colab-rewrite` for the mechanics** — `visit_all` to walk,
+   `apply_edits` to apply byte-range edits, `delete_lines` for whole-line
+   removal, `rename_nodes_by_text` for a symbol rename. Do not hand-roll
+   a cursor recursion or a reverse-order edit loop; those were duplicated
+   across twelve crates until they were extracted.
 2. **`build_rule`** — a match arm in that crate's `LanguageBackend`
    mapping `(module, RuleSpec)` to your operation.
 3. **`capabilities()`** — add the module/action so `colab schema`,
@@ -49,8 +57,9 @@ Same as above, plus:
 - a new `crates/colab-lang-<name>/` crate depending on `colab-core` and
   its tree-sitter grammar;
 - one `registry.register(Box::new(<Backend>))` line in
-  `colab-cli/src/cli.rs::default_backends` — **the only** line the
-  binary needs;
+  `colab-backends/src/lib.rs::registry`, and a bump to `BACKEND_COUNT`
+  — **the only** registration site; `colab-cli`, the corpus harness, and
+  the MCP tests all call `colab_backends::registry()`;
 - workspace member + dependency entries in the root `Cargo.toml`;
 - at least one corpus case, which is a merge gate.
 
@@ -85,8 +94,11 @@ before comparing, return `None`.
 
 **`ensure`-style operations must return `None`.** They act precisely
 when the target is *absent*; a prefilter would suppress them in exactly
-the files that need the insert. There is a regression test for this in
-`crates/colab-dsl/src/model.rs`.
+the files that need the insert. This is enforced generically for every
+registered backend in `colab-backends/tests/contracts.rs`, alongside a
+check that any prefilter is derived from the target and that its absence
+implies a no-op. You do not need to add a test for it — but you do need
+to satisfy it.
 
 Where the literal is not contiguous, pick the discriminating part that
 is. `go::struct_tag` matches `key:"value"` in the source but its match
@@ -114,10 +126,12 @@ non-idempotent and must not appear in a corpus case.
 
 ### Tree-sitter edits are applied in reverse byte order
 
-Collect `(start, end, replacement)` edits, sort by start, then apply
-in reverse so earlier offsets stay valid. See
-`crates/colab-lang-go/src/imports.rs` for the canonical shape; follow it
-in any new rewriter.
+You should never write this yourself: `colab_rewrite::apply_edits` does
+it, and exists precisely because twelve backends each carried their own
+copy. Collect `colab_rewrite::Edit` values and hand them over. The same
+goes for `delete_lines` (whole-line removal, dedup after widening),
+`visit_all` (depth-first descent), and `rename_nodes_by_text` (the whole
+of `<lang>::symbol`).
 
 ### Unknown names fail loudly and name the alternatives
 
@@ -183,6 +197,9 @@ change. A case that passes either way tests nothing.
 - [ ] `capabilities()` updated — drives schema, `list-rules`, completion
 - [ ] `registry.register(...)` in `default_backends` (new backend only)
 - [ ] Corpus case that fails without the change
+- [ ] `cargo test -p colab-backends` passes — the generic contract tests
+      cover prefilter soundness and DSL-spellability for your new module
+      automatically
 - [ ] Idempotent: corpus second pass is a no-op
 - [ ] A runnable example under `examples/` (required by `CLAUDE.md`)
 - [ ] `docs/dsl.md` updated; `docs/features.md` if the matrix changed

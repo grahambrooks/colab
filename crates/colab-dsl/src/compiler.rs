@@ -241,9 +241,9 @@ mod tests {
     use colab_core::CodeTransformer;
 
     fn registry() -> BackendRegistry {
-        let mut r = BackendRegistry::new();
-        r.register(Box::new(colab_lang_go::GoBackend));
-        r
+        // The real registry, so a compiler test cannot pass against a
+        // backend set the binary does not actually ship.
+        colab_backends::registry()
     }
 
     #[test]

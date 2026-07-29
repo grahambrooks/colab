@@ -349,10 +349,7 @@ mod tests {
     }
 
     fn registry() -> BackendRegistry {
-        let mut r = BackendRegistry::new();
-        r.register(Box::new(colab_lang_go::GoBackend));
-        r.register(Box::new(colab_lang_rust::RustBackend));
-        r
+        colab_backends::registry()
     }
 
     #[tokio::test]

@@ -299,12 +299,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "colab-cli"
+name = "colab-backends"
 version = "2026.7.0"
 dependencies = [
- "assert_cmd",
- "chrono",
- "clap",
  "colab-core",
  "colab-dsl",
  "colab-lang-c",
@@ -319,6 +316,18 @@ dependencies = [
  "colab-lang-ruby",
  "colab-lang-rust",
  "colab-lang-swift",
+]
+
+[[package]]
+name = "colab-cli"
+version = "2026.7.0"
+dependencies = [
+ "assert_cmd",
+ "chrono",
+ "clap",
+ "colab-backends",
+ "colab-core",
+ "colab-dsl",
  "colab-mcp",
  "colored",
  "criterion",
@@ -348,19 +357,8 @@ dependencies = [
 name = "colab-dsl"
 version = "2026.7.0"
 dependencies = [
+ "colab-backends",
  "colab-core",
- "colab-lang-c",
- "colab-lang-cpp",
- "colab-lang-csharp",
- "colab-lang-go",
- "colab-lang-java",
- "colab-lang-js",
- "colab-lang-kotlin",
- "colab-lang-php",
- "colab-lang-python",
- "colab-lang-ruby",
- "colab-lang-rust",
- "colab-lang-swift",
  "lalrpop",
  "lalrpop-util",
 ]
@@ -490,10 +488,9 @@ dependencies = [
 name = "colab-mcp"
 version = "2026.7.0"
 dependencies = [
+ "colab-backends",
  "colab-core",
  "colab-dsl",
- "colab-lang-go",
- "colab-lang-rust",
  "log",
  "serde",
  "serde_json",

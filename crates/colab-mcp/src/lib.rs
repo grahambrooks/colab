@@ -387,8 +387,7 @@ fn run_script_with_progress<W: Write>(
             Ok(())
         })
         .map_err(ToolError::from_error)?;
-        report.files_visited += outcome.files_visited;
-        report.skipped.extend(outcome.skipped);
+        report.record_walk(outcome);
     }
     report.elapsed = started.elapsed();
 
@@ -534,8 +533,7 @@ fn run_script(
             Ok(())
         })
         .map_err(ToolError::from_error)?;
-        report.files_visited += outcome.files_visited;
-        report.skipped.extend(outcome.skipped);
+        report.record_walk(outcome);
     }
     report.elapsed = started.elapsed();
 
@@ -690,10 +688,7 @@ mod tests {
     use super::*;
 
     fn registry() -> BackendRegistry {
-        let mut r = BackendRegistry::new();
-        r.register(Box::new(colab_lang_go::GoBackend));
-        r.register(Box::new(colab_lang_rust::RustBackend));
-        r
+        colab_backends::registry()
     }
 
     #[test]
@@ -782,7 +777,9 @@ mod tests {
         assert_eq!(parsed["error"]["exit_code"], 3);
         // The message names the languages that do exist.
         let message = parsed["error"]["message"].as_str().unwrap();
-        assert!(message.contains("known languages: go, rust"), "{message}");
+        assert!(message.contains("known languages:"), "{message}");
+        assert!(message.contains("go"), "{message}");
+        assert!(message.contains("rust"), "{message}");
     }
 
     #[test]

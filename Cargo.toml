@@ -15,6 +15,7 @@ members = [
     "crates/colab-lang-ruby",
     "crates/colab-lang-rust",
     "crates/colab-lang-swift",
+    "crates/colab-backends",
     "crates/colab-rewrite",
     "crates/colab-mcp",
     "crates/colab-cli",
@@ -28,6 +29,7 @@ license = "MIT"
 repository = "https://github.com/grahambrooks/colab"
 
 [workspace.dependencies]
+colab-backends = { path = "crates/colab-backends" }
 colab-core = { path = "crates/colab-core" }
 colab-dsl = { path = "crates/colab-dsl" }
 colab-lang-c = { path = "crates/colab-lang-c" }

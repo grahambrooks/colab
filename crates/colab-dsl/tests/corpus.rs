@@ -20,20 +20,9 @@ use colab_core::{BackendRegistry, CodeTransformer};
 use colab_dsl::compile_at_path;
 
 fn registry() -> BackendRegistry {
-    let mut r = BackendRegistry::new();
-    r.register(Box::new(colab_lang_c::CBackend));
-    r.register(Box::new(colab_lang_cpp::CppBackend));
-    r.register(Box::new(colab_lang_csharp::CSharpBackend));
-    r.register(Box::new(colab_lang_go::GoBackend));
-    r.register(Box::new(colab_lang_java::JavaBackend));
-    r.register(Box::new(colab_lang_js::JsBackend));
-    r.register(Box::new(colab_lang_kotlin::KotlinBackend));
-    r.register(Box::new(colab_lang_php::PhpBackend));
-    r.register(Box::new(colab_lang_python::PythonBackend));
-    r.register(Box::new(colab_lang_ruby::RubyBackend));
-    r.register(Box::new(colab_lang_rust::RustBackend));
-    r.register(Box::new(colab_lang_swift::SwiftBackend));
-    r
+    // Shared with the binary, so a backend cannot be registered in one
+    // and missing from the other.
+    colab_backends::registry()
 }
 
 /// Resolve `tests/corpus/` at the workspace root from the dsl crate's

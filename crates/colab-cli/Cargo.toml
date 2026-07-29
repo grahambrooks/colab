@@ -13,20 +13,9 @@ name = "colab"
 path = "src/main.rs"
 
 [dependencies]
+colab-backends = { workspace = true }
 colab-core = { workspace = true }
 colab-dsl = { workspace = true }
-colab-lang-c = { workspace = true }
-colab-lang-cpp = { workspace = true }
-colab-lang-csharp = { workspace = true }
-colab-lang-go = { workspace = true }
-colab-lang-java = { workspace = true }
-colab-lang-js = { workspace = true }
-colab-lang-kotlin = { workspace = true }
-colab-lang-php = { workspace = true }
-colab-lang-python = { workspace = true }
-colab-lang-ruby = { workspace = true }
-colab-lang-rust = { workspace = true }
-colab-lang-swift = { workspace = true }
 colab-mcp = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }

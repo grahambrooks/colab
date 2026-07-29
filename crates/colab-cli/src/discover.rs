@@ -125,31 +125,57 @@ mod tests {
     use colab_core::BackendRegistry;
 
     fn registry() -> BackendRegistry {
-        let mut r = BackendRegistry::new();
-        r.register(Box::new(colab_lang_go::GoBackend));
-        r
+        colab_backends::registry()
     }
 
     #[test]
     fn schema_lists_go_import_replace() {
         let value = schema(&registry());
-        let go = &value["languages"][0];
-        assert_eq!(go["name"], "go");
-        let import = &go["modules"][0];
-        assert_eq!(import["name"], "import");
-        assert_eq!(import["actions"][0]["name"], "replace");
+        // Look up by name — registration order changes whenever a
+        // backend is added.
+        let go = value["languages"]
+            .as_array()
+            .expect("languages")
+            .iter()
+            .find(|l| l["name"] == "go")
+            .expect("go registered");
+        let import = go["modules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["name"] == "import")
+            .expect("go::import");
+        let actions: Vec<&str> = import["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["name"].as_str().unwrap())
+            .collect();
+        assert!(actions.contains(&"replace"), "got: {actions:?}");
     }
 
     #[test]
     fn list_languages_only_carries_top_level() {
         let value = list_languages(&registry());
-        assert_eq!(value["languages"][0]["name"], "go");
-        assert!(value["languages"][0].get("modules").is_none());
+        let langs = value["languages"].as_array().expect("languages");
+        assert!(langs.iter().any(|l| l["name"] == "go"));
+        for lang in langs {
+            assert!(
+                lang.get("modules").is_none(),
+                "list-languages must stay the cheap call: {lang}"
+            );
+        }
+    }
+
+    #[test]
+    fn list_rules_for_a_registered_lang_succeeds() {
+        let value = list_rules(&registry(), "rust").expect("rust is registered");
+        assert_eq!(value["name"], "rust");
     }
 
     #[test]
     fn list_rules_for_unknown_lang_is_unsupported() {
-        let err = list_rules(&registry(), "rust").unwrap_err();
+        let err = list_rules(&registry(), "klingon").unwrap_err();
         assert_eq!(err.exit_code(), 3);
     }
 }

@@ -130,10 +130,7 @@ fn build_mixed_corpus(label: &str, n: usize) -> PathBuf {
 }
 
 fn registry() -> BackendRegistry {
-    let mut r = BackendRegistry::new();
-    r.register(Box::new(colab_lang_go::GoBackend));
-    r.register(Box::new(colab_lang_rust::RustBackend));
-    r
+    colab_backends::registry()
 }
 
 /// Reproduces the pre-gating execution model: every rule is applied to

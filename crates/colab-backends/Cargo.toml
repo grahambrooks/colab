@@ -1,0 +1,28 @@
+[package]
+name = "colab-backends"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The one place every colab language backend is registered. Composition root for the binary, and the same registry the test harnesses use."
+
+[dependencies]
+colab-core = { workspace = true }
+colab-lang-c = { workspace = true }
+colab-lang-cpp = { workspace = true }
+colab-lang-csharp = { workspace = true }
+colab-lang-go = { workspace = true }
+colab-lang-java = { workspace = true }
+colab-lang-js = { workspace = true }
+colab-lang-kotlin = { workspace = true }
+colab-lang-php = { workspace = true }
+colab-lang-python = { workspace = true }
+colab-lang-ruby = { workspace = true }
+colab-lang-rust = { workspace = true }
+colab-lang-swift = { workspace = true }
+
+[dev-dependencies]
+# Tests assert every registered module name is spellable in the DSL, so
+# they need the grammar. Production code here must not depend on the DSL.
+colab-dsl = { workspace = true }
