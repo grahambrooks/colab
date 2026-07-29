@@ -147,6 +147,25 @@ for the workspace layout and an extension walk-through.
 - [`docs/development-plan.md`](docs/development-plan.md) — roadmap
   and non-goals.
 
+### Agent skills
+
+The repo ships [Claude Code](https://claude.com/claude-code) skills in
+[`.claude/skills/`](.claude/skills/). They are picked up automatically
+when working in this repo:
+
+- **`colab-codemod`** — deciding whether colab fits a change, writing
+  the script, checking blast radius before applying, and diagnosing a
+  run. Includes per-namespace recipes and troubleshooting.
+- **`colab-extend`** — adding a backend, namespace, or action to colab
+  itself, with the invariants a change must not break.
+
+To use `colab-codemod` in *other* repos, copy it into your user skills
+directory:
+
+```sh
+cp -r .claude/skills/colab-codemod ~/.claude/skills/
+```
+
 ## Development
 
 ```sh
