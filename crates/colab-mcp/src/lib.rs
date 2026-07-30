@@ -232,6 +232,7 @@ fn compact(value: &Value) -> String {
 }
 
 /// How a tool call failed.
+#[derive(Debug)]
 enum ToolError {
     /// The request itself was malformed — wrong tool name, missing or
     /// mistyped arguments. Maps to JSON-RPC `-32602`.
@@ -339,61 +340,13 @@ fn handle_call_with_progress<W: Write>(
         _ => return Ok(handle_call(id, Some(params), backends)),
     };
 
-    let outcome = run_script_with_progress(&arguments, backends, mode, writer, token);
+    let mut sink = Notifications {
+        writer,
+        token,
+        last_emitted: 0,
+    };
+    let outcome = run_script(&arguments, backends, mode, &mut sink);
     Ok(tool_response(id, outcome))
-}
-
-/// Like [`run_script`], but emits a `notifications/progress`
-/// message every [`PROGRESS_BATCH`] files plus a final 100%
-/// notification before the response is written.
-fn run_script_with_progress<W: Write>(
-    args: &Value,
-    backends: &BackendRegistry,
-    mode: RunMode,
-    writer: &mut W,
-    token: &Value,
-) -> Result<Value, ToolError> {
-    let script = arg_str(args, "script")?;
-    let cwd = arg_opt_path(args, "cwd")?;
-    let paths = arg_paths(args, "paths", cwd.as_deref())?;
-    let options = arg_render_options(args)?;
-
-    let refactoring =
-        compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
-
-    let started = Instant::now();
-    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
-    let mut collector = ChangeCollector::new(options);
-    let mut files_processed: u64 = 0;
-    let mut last_emitted: u64 = 0;
-
-    for target in &paths {
-        let outcome = walker::walk(&refactoring, target, &mut |change| {
-            report.record(&change);
-            if change.changed() && matches!(mode, RunMode::Apply) {
-                std::fs::write(&change.path, &change.after)
-                    .map_err(|e| colab_core::Error::io_at(&change.path, e))?;
-            }
-            collector.push(&change);
-
-            files_processed += 1;
-            if files_processed - last_emitted >= PROGRESS_BATCH {
-                last_emitted = files_processed;
-                // Errors writing a notification are non-fatal —
-                // the client may have closed early; the response
-                // attempt below will surface a real failure.
-                let _ = emit_progress(writer, token, files_processed, None);
-            }
-            Ok(())
-        })
-        .map_err(ToolError::from_error)?;
-        report.record_walk(outcome);
-    }
-    report.elapsed = started.elapsed();
-
-    // Final 100% notification.
-    let _ = emit_progress(writer, token, files_processed, Some(files_processed));
-    Ok(finish_report(&collector, &report, mode))
 }
 
 /// One progress notification per N files. Hand-tuned to be small
@@ -461,8 +414,8 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
                 "rules": rules,
             }))
         }
-        "colab.preview" => run_script(args, backends, RunMode::Preview),
-        "colab.apply" => run_script(args, backends, RunMode::Apply),
+        "colab.preview" => run_script(args, backends, RunMode::Preview, &mut NoProgress),
+        "colab.apply" => run_script(args, backends, RunMode::Apply, &mut NoProgress),
         other => Err(ToolError::protocol(format!(
             "unknown tool `{}`; {}",
             other,
@@ -505,10 +458,63 @@ fn compile_script(
     }
 }
 
-fn run_script(
+/// Where per-file progress goes while a script runs.
+///
+/// The streaming and synchronous entry points differ *only* in this, so
+/// modelling it as a sink keeps one implementation of the run itself.
+/// When these were two functions they were 61% identical, and a change to
+/// the report shape had to be made in both — a divergence would have
+/// meant an agent that passes a `progressToken` seeing different
+/// behaviour from one that does not.
+trait ProgressSink {
+    /// Called once per processed file.
+    fn tick(&mut self, processed: u64);
+    /// Called once when the run finishes, with the final count.
+    fn finish(&mut self, total: u64);
+}
+
+/// The synchronous path: no notifications.
+struct NoProgress;
+
+impl ProgressSink for NoProgress {
+    fn tick(&mut self, _processed: u64) {}
+    fn finish(&mut self, _total: u64) {}
+}
+
+/// The streaming path: a `notifications/progress` message every
+/// [`PROGRESS_BATCH`] files, plus a final 100% tick.
+struct Notifications<'a, W: Write> {
+    writer: &'a mut W,
+    token: &'a Value,
+    last_emitted: u64,
+}
+
+impl<W: Write> ProgressSink for Notifications<'_, W> {
+    fn tick(&mut self, processed: u64) {
+        if processed - self.last_emitted >= PROGRESS_BATCH {
+            self.last_emitted = processed;
+            // Errors writing a notification are non-fatal — the client
+            // may have closed early; the response attempt will surface a
+            // real failure.
+            let _ = emit_progress(self.writer, self.token, processed, None);
+        }
+    }
+
+    fn finish(&mut self, total: u64) {
+        let _ = emit_progress(self.writer, self.token, total, Some(total));
+    }
+}
+
+/// Compile and run a script, reporting progress through `sink`.
+///
+/// The single implementation behind both `colab.preview`/`colab.apply`
+/// entry points. Pass [`NoProgress`] for the synchronous path and
+/// [`Notifications`] when the client supplied a `progressToken`.
+fn run_script<P: ProgressSink>(
     args: &Value,
     backends: &BackendRegistry,
     mode: RunMode,
+    sink: &mut P,
 ) -> Result<Value, ToolError> {
     let script = arg_str(args, "script")?;
     let cwd = arg_opt_path(args, "cwd")?;
@@ -521,6 +527,7 @@ fn run_script(
     let started = Instant::now();
     let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
     let mut collector = ChangeCollector::new(options);
+    let mut files_processed: u64 = 0;
 
     for target in &paths {
         let outcome = walker::walk(&refactoring, target, &mut |change| {
@@ -530,15 +537,19 @@ fn run_script(
                     .map_err(|e| colab_core::Error::io_at(&change.path, e))?;
             }
             collector.push(&change);
+            files_processed += 1;
+            sink.tick(files_processed);
             Ok(())
         })
         .map_err(ToolError::from_error)?;
         report.record_walk(outcome);
     }
     report.elapsed = started.elapsed();
+    sink.finish(files_processed);
 
     Ok(finish_report(&collector, &report, mode))
 }
+
 
 /// Attach the advisories every run should carry: dead rules, and why a
 /// run that changed nothing changed nothing.
@@ -930,6 +941,59 @@ mod tests {
 
         // File on disk untouched by either call.
         assert_eq!(fs::read_to_string(&go_path).unwrap(), original);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn streaming_and_synchronous_paths_report_identically() {
+        // The two entry points share one `run_script` behind a
+        // ProgressSink, but that is an implementation detail — this
+        // asserts the observable guarantee: whether or not a client
+        // supplies a progressToken changes only the notifications, never
+        // the report. When these were two 61%-duplicated functions,
+        // nothing enforced that.
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("colab-mcp-equiv-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("main.go"), "package main\nimport \"old/pkg\"\n").unwrap();
+
+        let script = "refactor \"r\" { match go::import \"old/pkg\" { replace \"new/pkg\" } }";
+        let arguments = json!({
+            "script": script,
+            "paths": ["."],
+            "cwd": dir.to_string_lossy(),
+        });
+
+        // Synchronous: no sink.
+        let sync = run_script(&arguments, &registry(), RunMode::Preview, &mut NoProgress)
+            .expect("synchronous run");
+
+        // Streaming: notifications go to a buffer we then ignore.
+        let mut buffer: Vec<u8> = Vec::new();
+        let token = json!("tok-1");
+        let mut sink = Notifications {
+            writer: &mut buffer,
+            token: &token,
+            last_emitted: 0,
+        };
+        let streamed = run_script(&arguments, &registry(), RunMode::Preview, &mut sink)
+            .expect("streaming run");
+
+        // `elapsed_ms` is wall-clock and will differ; everything else
+        // must match exactly.
+        let strip = |mut v: Value| {
+            v["summary"]
+                .as_object_mut()
+                .expect("summary")
+                .remove("elapsed_ms");
+            v
+        };
+        assert_eq!(
+            strip(sync),
+            strip(streamed),
+            "the progressToken changed the report, not just the notifications"
+        );
+
         fs::remove_dir_all(&dir).ok();
     }
 
