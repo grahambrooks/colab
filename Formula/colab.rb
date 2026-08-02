@@ -6,8 +6,8 @@ class Colab < Formula
 
   on_macos do
     on_arm do
-      url "https://github.com/grahambrooks/colab/releases/download/v2026.7.0/colab-v2026.7.0-aarch64-apple-darwin.tar.gz"
-      sha256 "460be8b281860e9cec4bb6eaa0b7a30ac82fa0286df091672c54dc0c09023eb1"
+      url "https://github.com/grahambrooks/colab/archive/refs/tags/v2026.8.1.tar.gz"
+      sha256 "bb71ddab2ab76803625f9220cf33579bb3752addb98ea5c67c26fac939a1f3ab"
     end
     on_intel do
       odie "Intel Mac binaries are not provided. Run `cargo install --git https://github.com/grahambrooks/colab --locked` to build from source."
