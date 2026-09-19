@@ -7,7 +7,7 @@
 //! clause is enforced.
 
 use std::fmt;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use globset::{Glob, GlobBuilder, GlobMatcher};
 
@@ -40,9 +40,7 @@ impl ScopedOperation {
         let glob: Glob = GlobBuilder::new(pattern)
             .literal_separator(true)
             .build()
-            .map_err(|e| {
-                Error::Config(format!("invalid scope glob `{}`: {}", pattern, e))
-            })?;
+            .map_err(|e| Error::Config(format!("invalid scope glob `{}`: {}", pattern, e)))?;
         Ok(Self {
             inner,
             pattern: pattern.to_string(),
@@ -73,7 +71,13 @@ impl fmt::Display for ScopedOperation {
 
 impl Operation for ScopedOperation {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        self.inner.is_file_relevant(path) && self.matcher.is_match(path)
+        // Walking `.` yields `./core/lib.rs`; the glob `core/**` means the
+        // same file, so leading `./` components are not part of the match.
+        let relative: PathBuf = path
+            .components()
+            .skip_while(|part| matches!(part, Component::CurDir))
+            .collect();
+        self.inner.is_file_relevant(path) && self.matcher.is_match(&relative)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -128,6 +132,14 @@ mod tests {
         // Inside the glob, but not a Rust file.
         let op = scoped("crates/**");
         assert!(!op.is_file_relevant(Path::new("crates/colab-core/README.md")));
+    }
+
+    #[test]
+    fn a_leading_dot_slash_does_not_defeat_the_glob() {
+        // `colab refactor -C repo --script s .` hands the walker `./…` paths.
+        let op = scoped("crates/colab-core/**");
+        assert!(op.is_file_relevant(Path::new("./crates/colab-core/src/lib.rs")));
+        assert!(!op.is_file_relevant(Path::new("./crates/colab-cli/src/lib.rs")));
     }
 
     #[test]
