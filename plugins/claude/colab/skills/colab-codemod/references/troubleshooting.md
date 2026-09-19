@@ -1,12 +1,12 @@
 # Diagnosing a colab run
 
-colab is designed so the output tells you which thing went wrong. Read
-the counters and the per-rule counts before changing anything.
+colab is built so the output tells you which thing went wrong. Read the
+counters and the per-rule counts before changing anything.
 
 ## Nothing changed
 
-The three file counters exist to separate three different failures that
-would otherwise look identical.
+The three file counters exist to separate three failures that would
+otherwise look identical.
 
 ```json
 "summary":{"visited":412,"scanned":38,"changed":0}
@@ -18,8 +18,8 @@ would otherwise look identical.
 | `visited: N, scanned: 0` | Files exist; none belong to a language the script targets. | Wrong namespace for this codebase, or the files have an extension the backend does not claim. `js::*` covers `.js .mjs .cjs .jsx .ts .tsx`; `rust::crate` only ever matches `Cargo.toml`. |
 | `scanned: N, changed: 0` | Files were parsed; no rule matched. | The match string is wrong. Go to the per-rule counts. |
 
-colab also prints a `warnings` array saying which of these it was, so you
-usually do not have to work it out yourself.
+colab also prints a `warnings` array saying which of these it was, so
+you usually do not have to work it out yourself.
 
 ## One rule matched nothing
 
@@ -28,9 +28,15 @@ usually do not have to work it out yourself.
          {"i":1,"rule":"go::symbol \"X\" -> \"Y\"","files":0}]
 ```
 
-Rule 1 (`i: 1`) compiled and ran but changed nothing. This is nearly
-always a match-string convention mismatch, not a typo. Check the target
-against the convention for that namespace in
+Rule 1 (`i: 1`) compiled and ran but changed nothing.
+
+First, check you are not looking at an already-applied run: every rule
+reports `0` the second time, because the transforms are idempotent.
+That is success, not failure — `colab refactor --check` exiting 0 says
+the same thing.
+
+Otherwise it is nearly always a match-string convention mismatch, not a
+typo. Check the target against the convention for that namespace in
 [recipes.md](recipes.md#what-the-match-string-means):
 
 - **`go::import`** is an *exact* path. `"logger"` will not match
@@ -41,11 +47,16 @@ against the convention for that namespace in
 - **`go::struct_tag`** takes `key:value` with **no quotes**, and tag
   options are part of the value. `"json:name"` does not match
   `json:"name,omitempty"`.
-- **`go::call` / `rust::call`** match the function text verbatim. If the
-  source says `pkg.Old(…)`, the target is `"pkg.Old"`, not `"Old"`.
-  `rust::call` never matches method calls (`x.foo()`).
-- **`*::symbol`** matches identifier node text exactly. It will not match
-  a substring of a longer name.
+- **`<lang>::call`** matches the function text verbatim. If the source
+  says `pkg.Old(…)`, the target is `"pkg.Old"`, not `"Old"`.
+  `rust::call` never matches method calls (`x.foo()`); `kotlin::call`
+  skips trailing-lambda calls; `ruby::call` only rewrites parenthesised
+  calls.
+- **`<lang>::symbol`** matches identifier node text exactly. It will not
+  match a substring of a longer name.
+- **`json::key`** is a JSON Pointer — it starts with `/`. A dotted path
+  (`scripts.test`) silently matches nothing; that is `toml::key`
+  syntax.
 
 Confirm the text you are targeting actually appears:
 
@@ -53,9 +64,9 @@ Confirm the text you are targeting actually appears:
 rg -n 'old/logger' --type go | head
 ```
 
-If the string is in the file but the rule does not fire, you are matching
-the wrong *node kind* — e.g. using `go::symbol` for something that is
-part of an import path.
+If the string is in the file but the rule does not fire, you are
+matching the wrong *node kind* — e.g. using `go::symbol` for something
+that is part of an import path.
 
 ## Far too many files changed
 
@@ -77,13 +88,17 @@ If the name is common *within* the crate that owns it too — a local
 variable also called `config` — colab is the wrong tool. Make the edits
 directly.
 
+An unscoped `set` or `insert` does the same thing to config files: it
+creates the key in every `.toml` / `.json` / `.md` in the tree. Always
+give those rules an `in "<glob>"`.
+
 ## The script will not compile
 
 **Exit 2, parse error.** The message carries the position and what would
 have been valid there:
 
 ```
-parse error at line 2, column 26: unexpected token `replac`; expected one of: "delete", "ensure", "replace", "replace_call"
+parse error at line 2, column 28: unexpected token `replac`; expected one of: "delete", "ensure", "insert", "replace", "replace_call", "set"
 ```
 
 Over MCP the same information is structured (`line`, `column`,
@@ -93,12 +108,14 @@ Over MCP the same information is structured (`line`, `column`,
 says which:
 
 ```
-unknown module `go::improt`; known modules: call, import, struct_tag, symbol (did you mean `import`?)
-`js::import` does not support the `ensure` action; known actions: delete, replace
+unknown module `rust::symbl`; known modules: call, crate, symbol, use (did you mean `symbol`?)
+`rust::crate` does not support the `ensure` action; known actions: delete, replace
+`toml::key` does not support the `replace` action; known actions: delete, insert, set
 ```
 
-The second is not a typo — some backends genuinely lack some actions.
-Check `colab list-rules <lang>`.
+The second form is not a typo — some backends genuinely lack some
+actions, and the config backends take a different set entirely
+(`set`/`insert`/`delete`). Check `colab list-rules <lang>`.
 
 **`include` fails over MCP.** Pass `cwd`. Without a base path colab
 cannot resolve a relative include.
@@ -109,13 +126,13 @@ The transform is not idempotent. The usual cause is a `replace_call`
 template that keeps the function name:
 
 ```
-match go::call "f" { replace_call "f(ctx, $args)" }   // wraps on every run
+match go::call "f" { replace_call "f(ctx, $args)" }   // wraps every run
 ```
 
 Every run adds another `ctx`. Apply once with a single `--write`, verify
 with `--format diff` first, and keep the rule out of CI. A template that
-*renames* the function (`f` → `g`) is safe because the second pass finds
-no `f` to match.
+*renames* the function (`f` → `g`) is safe, because the second pass
+finds no `f` to match.
 
 The other cause is a rename whose replacement still matches the target
 (`io` → `my_io` under substring semantics). colab matches node text, not
@@ -136,6 +153,10 @@ happens to carry a source extension. Exclude it:
 --exclude 'gen/**'
 ```
 
+A config file that does not parse — or, for Markdown, has repeated or
+unbalanced markers — is left untouched by design, rather than being
+rewritten from a partial parse.
+
 ## The build broke after applying
 
 Do not guess which rule did it. Let colab find out:
@@ -145,9 +166,9 @@ Do not guess which rule did it. Let colab find out:
 colab refactor --script fix.codemod --bisect 'cargo check' .
 ```
 
-`--bisect` applies everything, runs the command, and on failure binary
--searches the rule list to name the single breaking rule, then reverts
-the tree.
+`--bisect` applies everything, runs the command, and on failure
+binary-searches the rule list to name the single breaking rule, then
+reverts the tree.
 
 To avoid the situation next time, apply rule-by-rule with a build check
 after each — a failure reverts just that rule:
@@ -179,13 +200,15 @@ diff`, which implies it). Cap it:
 ```
 
 Truncation is reported under `truncated`, so a capped response never
-silently pretends to be complete.
+silently pretends to be complete. `--detail summary` (or
+`--summary-only`) drops to the aggregate counters alone.
 
 ## Reference
 
 - Exit codes: `0` success · `1` config · `2` parse · `3` unsupported ·
   `4` I/O · `10` `--check` found pending changes.
-- `--format human` on a TTY defaults to `--write`. Everything else
-  defaults to `--dry-run`. `--check` always overrides.
-- Per-file progress lines go to **stderr**; the summary and warnings go
-  to **stdout**, so `colab … | jq` and `2>/dev/null` both behave.
+- `--format human` on a TTY defaults to `--write`. Everything else,
+  including any non-TTY stdout, defaults to `--dry-run`. `--check`
+  always overrides.
+- Per-file progress lines go to **stderr**; the report and warnings go
+  to **stdout**, so `colab … 2>/dev/null | jq` behaves.

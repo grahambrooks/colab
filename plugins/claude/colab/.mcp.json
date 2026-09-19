@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "colab": {
+      "command": "colab",
+      "args": ["mcp"],
+      "description": "Syntactic, tree-sitter-backed codemods — preview and apply repo-wide structural edits across 15 language and config backends"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "colab",
+  "description": "Run mechanical, repo-wide code changes with colab, the tree-sitter codemod tool — import paths, dependency renames, symbols, call sites, struct tags, and TOML/JSON/Markdown config, across 15 backends",
+  "version": "2026.9.1",
+  "author": {
+    "name": "Graham Brooks",
+    "email": "graham@grahambrooks.com"
+  },
+  "homepage": "https://github.com/grahambrooks/colab",
+  "license": "MIT"
+}

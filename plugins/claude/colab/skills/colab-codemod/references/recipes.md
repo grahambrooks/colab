@@ -6,10 +6,10 @@ the most common source of a rule that matches nothing.
 
 ## Capability matrix
 
-Every backend has the same floor: an import-equivalent (named for the
-language's own construct) taking `replace`/`delete`/`ensure`, a `symbol`
-rename, and a `call` rewrite. Languages with a namespace or package
-declaration expose one too.
+Every source backend has the same floor: an import-equivalent (named for
+the language's own construct) taking `replace`/`delete`/`ensure`, a
+`symbol` rename, and a `call` rewrite. Languages with a namespace or
+package declaration expose one too.
 
 | Namespace | Import-equivalent | Namespace/package | Extra | Applies to |
 | --------- | ----------------- | ----------------- | ----- | ---------- |
@@ -23,18 +23,28 @@ declaration expose one too.
 | `php`    | `use`     | `namespace` | — | `.php` `.phtml` |
 | `python` | `import`  | — | — | `.py` |
 | `ruby`   | `require` | — | — | `.rb` `.rake` `.gemspec` `.ru` `Rakefile` `Gemfile` … |
-| `rust`   | `use`     | — | `crate` (`.toml`, no `ensure`) | `.rs` `Cargo.toml` |
+| `rust`   | `use`     | — | `crate` (`.toml`; `replace`/`delete` only) | `.rs` `Cargo.toml` |
 | `swift`  | `import`  | — | — | `.swift` |
 
-So: `<lang>::symbol` and `<lang>::call` exist for all twelve. The
-import-equivalent module always takes all three of
-`replace`/`delete`/`ensure`, with two exceptions worth knowing:
+So `<lang>::symbol` and `<lang>::call` exist for all twelve source
+backends, and the import-equivalent always takes all three of
+`replace`/`delete`/`ensure`. Two caveats worth knowing:
 
 - **`rust::crate` has no `ensure`** — adding a dependency needs a version
-  the DSL cannot express. Use `cargo add`.
+  the action cannot express. Use `toml::key "dependencies.<name>" in
+  "Cargo.toml" { insert '"1"' }`, or `cargo add`.
 - **`.h` is claimed by both `c` and `cpp`.** The extension cannot tell
   them apart. A mixed script runs both over `.h`; every op is idempotent
   so the result is the same, at the cost of an extra parse.
+
+The three config backends address data rather than syntax, and share one
+module with the `set` / `insert` / `delete` actions:
+
+| Namespace | Module | Address | Applies to |
+| --------- | ------ | ------- | ---------- |
+| `json`     | `key`   | JSON Pointer — `/a/b`, `~1` for `/`, `~0` for `~` | `.json` |
+| `markdown` | `block` | managed-block name, between `<!-- name:begin -->` and `<!-- name:end -->` | `.md` `.markdown` |
+| `toml`     | `key`   | dotted path; `name[field=value]` selects an array element | `.toml` |
 
 Confirm at runtime rather than trusting this table:
 `colab list-rules <lang>`.
@@ -49,27 +59,24 @@ Confirm at runtime rather than trusting this table:
 | `csharp::namespace` | Exact dotted namespace, block or file-scoped. | `"Old.App"` |
 | `go::import` | Exact import path. | `"fmt"`, `"github.com/x/y"` |
 | `go::package` | Package clause identifier. | `"oldpkg"` |
+| `go::struct_tag` | `<key>:<value>`, **no quotes around the value**. | `"json:old_name"` |
+| `java::import` | Exact dotted import name. | `"java.util.List"` |
+| `java::package` | Exact dotted package. | `"com.old"` |
+| `js::import` | Exact ES module specifier (the string after `from`). | `"lodash"` |
 | `kotlin::import` | Qualified name; for `a.b.*` write `"a.b"`. | `"com.old.Client"` |
 | `kotlin::package` | Exact dotted package. | `"com.old.app"` |
 | `php::use` | Backslash-separated name, **single backslash**. | `"App\Old\Thing"` |
 | `php::namespace` | Exact backslash-separated namespace. | `"App\Old"` |
-| `ruby::require` | Quoted path from `require`/`require_relative`. | `"old/client"` |
-| `swift::import` | Module path. | `"OldLog"`, `"UIKit.UIView"` |
-| `<lang>::call` | Callee text **exactly as the call reads**, receiver included. | `"Log.write"`, `"Old::run"` (PHP), `"$obj->run"` (PHP) |
-| `go::symbol` | Identifier text. | `"OldType"` |
-| `go::struct_tag` | `<key>:<value>`, **no quotes around the value**. | `"json:old_name"` |
-| `go::call` | Verbatim source text of the function called. | `"pkg.Old"`, `"Old"` |
-| `rust::use` | Leading path prefix, segment-wise. | `"tokio"`, `"tokio::sync"` |
-| `rust::symbol` | Identifier text. | `"OldThing"` |
-| `rust::crate` | `Cargo.toml` dependency key. | `"old_crate"` |
-| `rust::call` | Verbatim function text. Method calls (`x.foo()`) excluded. | `"old_fn"`, `"pkg::old"` |
-| `java::import` | Exact dotted import name. | `"java.util.List"` |
-| `java::package` | Exact dotted package. | `"com.old"` |
-| `java::symbol` | Identifier text. | `"OldGreeter"` |
 | `python::import` | Leading dotted prefix, segment-wise. Covers `import x` and `from x import y`. | `"old_pkg"`, `"old_pkg.sub"` |
-| `python::symbol` | Identifier text. | `"old_helper"` |
-| `js::import` | Exact ES module specifier (the string after `from`). | `"lodash"` |
-| `js::symbol` | Identifier text. | `"oldHelper"` |
+| `ruby::require` | Quoted path from `require`/`require_relative`. | `"old/client"` |
+| `rust::use` | Leading path prefix, segment-wise. | `"tokio"`, `"tokio::sync"` |
+| `rust::crate` | `Cargo.toml` dependency key. | `"old_crate"` |
+| `swift::import` | Module path. | `"OldLog"`, `"UIKit.UIView"` |
+| `<lang>::symbol` | Identifier node text, exact. | `"OldType"`, `"old_helper"` |
+| `<lang>::call` | Callee text **exactly as the call reads**, receiver included. | `"pkg.Old"`, `"Log.write"`, `"Old::run"` and `"$obj->run"` (PHP) |
+| `json::key` | JSON Pointer from the document root. | `"/scripts/test"` |
+| `markdown::block` | Managed-block name, without the marker syntax. | `"conventions"` |
+| `toml::key` | Dotted path, with optional `[field=value]` selectors. | `"workspace.package.edition"` |
 
 Matching is on tree-sitter node text, never raw substrings: `tokio` does
 not match `my_tokio`, and `another.module` does not match
@@ -96,9 +103,9 @@ refactor "tokio-fork" {
 }
 ```
 
-`rust::crate` edits `Cargo.toml` via `toml_edit`-validated line scanning;
-`rust::use` rewrites the leading segment of every `use tokio::…`.
-Re-running is a no-op.
+`rust::crate` edits `Cargo.toml` through `toml_edit`; `rust::use`
+rewrites the leading segment of every `use tokio::…`. Re-running is a
+no-op.
 
 ### Move a Go module
 
@@ -108,9 +115,9 @@ refactor "logger-move" {
 }
 ```
 
-If callers also reference the package by a different name after the move,
-add a `go::call` rule — the import path and the call-site qualifier are
-separate edits.
+If callers also reference the package by a different name after the
+move, add a `go::call` rule — the import path and the call-site
+qualifier are separate edits.
 
 ### Drop a dead import and guarantee its replacement (Python)
 
@@ -122,8 +129,7 @@ refactor "urllib2-to-requests" {
 ```
 
 `ensure` inserts the import only where it is missing, so it is safe to
-re-run. Note that `ensure` is the one action with no cheap pre-filter —
-it acts precisely when the target is *absent*.
+re-run.
 
 ### javax → jakarta (Java)
 
@@ -208,9 +214,8 @@ refactor "core-config" {
 }
 ```
 
-Without `in`, both are renamed. See
-[`examples/rust/scoped_rename`](../../../../examples/rust/scoped_rename/)
-in this repo for a runnable version.
+Without `in`, both are renamed. A runnable version is in
+[`examples/rust/scoped_rename`](https://github.com/grahambrooks/colab/tree/main/examples/rust/scoped_rename).
 
 ### Migrate a JS package
 
@@ -222,11 +227,10 @@ refactor "lodash-to-es-toolkit" {
 ```
 
 Specifier matching is exact, so subpath imports need their own rule.
-`js::import` has no `ensure`.
 
 ### A multi-rule script across concerns
 
-Rules compose left to right on each file. This one changes an import, a
+Rules compose in order on each file. This one changes an import, a
 struct tag, and a call site in a single pass:
 
 ```
@@ -242,29 +246,6 @@ The per-rule counts tell you all three landed:
 ```json
 "rules":[{"i":0,"files":1,...},{"i":1,"files":1,...},{"i":2,"files":1,...}]
 ```
-
-## Reusable packs
-
-Put shared migrations in their own `.codemod` file and `include` them.
-`colab pack list` shows the packs colab can find. A pack with no match
-clauses compiles to zero rules and does nothing — the run reports
-`scanned: N, changed: 0`, which is the signal that you included a
-placeholder.
-
-## Stdin
-
-For an editor hook or a one-file check, skip the walker entirely:
-
-```sh
-cat foo.go | colab refactor --script s.codemod --stdin --path foo.go
-```
-
-`--path` is a hint used only to decide which rules are relevant; no file
-is opened. The rewritten source goes to stdout.
-
----
-
-## Recipes for the newer backends
 
 ### Swap a header and its call sites (C / C++)
 
@@ -325,7 +306,7 @@ refactor "php-move" {
 single node for one member, and rewriting half a group would corrupt it.
 Expand the group first.
 
-PHP call targets carry the call syntax: `"helper"`, `"Old::run"`, and
+PHP call targets carry the call syntax: `"helper"`, `"Old::run"` and
 `"$obj->run"` are three distinct targets.
 
 ### Ruby requires
@@ -339,9 +320,9 @@ refactor "ruby-migrate" {
 ```
 
 `require` is an ordinary method call, so matching is on the string
-argument — a computed `require File.join(dir, 'x')` never matches. Rename
-preserves the quote style and the `require`/`require_relative` form.
-`ensure` places the new require below any magic comment.
+argument — a computed `require File.join(dir, 'x')` never matches.
+Rename preserves the quote style and the `require`/`require_relative`
+form. `ensure` places the new require below any magic comment.
 
 Ruby has no namespace module: `module` and `class` names are constants,
 which `ruby::symbol` already covers.
@@ -359,9 +340,9 @@ refactor "kotlin-move" {
 ```
 
 For `import a.b.C as D` the target is `a.b.C`, not the alias. A star
-import `import a.b.*` is matched by `"a.b"` — the `*` is punctuation, not
-part of the name — which correspondingly means `"a.b"` does *not* match
-`import a.b.C`.
+import `import a.b.*` is matched by `"a.b"` — the `*` is punctuation,
+not part of the name — which correspondingly means `"a.b"` does *not*
+match `import a.b.C`.
 
 Trailing-lambda calls (`list.map { it }`) are skipped by `kotlin::call`:
 a template cannot express a closure body.
@@ -389,11 +370,11 @@ match swift::call "Old.run" { replace_call "New.run($2, $1)" }
 
 ### One script, many languages
 
-Rules for a language colab is not currently looking at are skipped before
-parsing, not run and discarded — so a polyglot script costs about what a
-single-language one does. See
-[`examples/polyglot`](../../../../examples/polyglot/) for a runnable
-twelve-rule, six-language version.
+Rules for a language colab is not currently looking at are skipped
+before parsing, not run and discarded — so a polyglot script costs about
+what a single-language one does. A runnable twelve-rule, six-language
+version is in
+[`examples/polyglot`](https://github.com/grahambrooks/colab/tree/main/examples/polyglot).
 
 ```
 refactor "logger-v2" {
@@ -405,3 +386,84 @@ refactor "logger-v2" {
     match swift::import "OldLog" { replace "NewLog" }
 }
 ```
+
+---
+
+## Config-file recipes
+
+These roll a convention out across a repo — or across many repos, with
+the same script and the same `--check` gate as a source refactoring.
+Because `set` and `insert` create what is missing, **scope every rule**
+with `in "<glob>"` or a named file.
+
+### TOML: a key, and an element of an array
+
+```
+refactor "workspace-edition" {
+    match toml::key "workspace.package.edition" in "Cargo.toml" { set '"2024"' }
+    match toml::key "profile.release.lto" in "Cargo.toml" { insert 'true' }
+    match toml::key "repos[repo=local].hooks[id=cargo-fmt]" in "prek.toml" {
+        insert '{ id = "cargo-fmt", entry = "cargo fmt --all --check", stages = ["pre-commit"] }'
+    }
+}
+```
+
+Segments are separated by `.`; `name[field=value]` selects the element
+of an array — of tables (`[[repos]]`) or of inline tables — whose
+`field` equals `value`. A missing selected parent is created holding
+just its selector field. A value for a selected element must be an
+inline table carrying that field, or it could never be found again; the
+script is rejected otherwise. Edits go through `toml_edit`, so comments
+and formatting survive.
+
+### JSON: by pointer
+
+```
+refactor "npm-scripts" {
+    match json::key "/scripts/test" in "package.json" { set '"vitest run"' }
+    match json::key "/scripts/lint" in "package.json" { insert '"eslint ."' }
+    match json::key "/devDependencies/tslint" in "package.json" { delete }
+}
+```
+
+RFC 6901 pointers: `~1` is a literal `/` inside a key, `~0` a literal
+`~`. The edit is one splice located with tree-sitter — key order,
+indentation and every other byte are kept. An array step must be an
+existing index: `set` and `insert` never grow arrays, and `delete` does
+not remove array elements.
+
+### Markdown: a managed block
+
+```
+refactor "agent-conventions" {
+    match markdown::block "conventions" in "AGENTS.md" { set '## Conventions
+- run `make check` before committing
+- no direct pushes to main' }
+}
+```
+
+The block is the lines between `<!-- conventions:begin -->` and
+`<!-- conventions:end -->`; text outside the markers is never touched. A
+missing block is appended at the end of the file. A file whose markers
+are repeated or unbalanced is left alone. Values span lines, so quote
+them with `'…'` and put the text inline as above.
+
+## Reusable packs
+
+Put shared migrations in their own `.codemod` file and `include` them.
+`colab pack list` shows the packs colab can find in
+`<repo>/.colab/packs/` and `~/.colab/packs/`. A pack with no match
+clauses compiles to zero rules and does nothing — the run reports
+`scanned: N, changed: 0`, which is the signal that you included a
+placeholder.
+
+## Stdin
+
+For an editor hook or a one-file check, skip the walker entirely:
+
+```sh
+cat foo.go | colab refactor --script s.codemod --stdin --path foo.go
+```
+
+`--path` is a hint used only to decide which rules are relevant; no file
+is opened. The rewritten source goes to stdout.
