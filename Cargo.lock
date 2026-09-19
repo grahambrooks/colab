@@ -300,7 +300,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "colab-backends"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-lang-c",
@@ -322,7 +322,7 @@ dependencies = [
 
 [[package]]
 name = "colab-cli"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "colab-core"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "globset",
  "ignore",
@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "colab-dsl"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-backends",
  "colab-core",
@@ -367,7 +367,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-c"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -377,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-cpp"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -387,7 +387,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-csharp"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -397,7 +397,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-go"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -407,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-java"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -417,7 +417,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-js"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-json"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -438,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-kotlin"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -448,14 +448,14 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-markdown"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
 ]
 
 [[package]]
 name = "colab-lang-php"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -465,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-python"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -475,7 +475,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-ruby"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -485,7 +485,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-rust"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -496,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-swift"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "colab-rewrite",
@@ -506,7 +506,7 @@ dependencies = [
 
 [[package]]
 name = "colab-lang-toml"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-core",
  "toml_edit",
@@ -514,7 +514,7 @@ dependencies = [
 
 [[package]]
 name = "colab-mcp"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "colab-backends",
  "colab-core",
@@ -527,7 +527,7 @@ dependencies = [
 
 [[package]]
 name = "colab-rewrite"
-version = "2026.7.0"
+version = "2026.9.2"
 dependencies = [
  "tree-sitter",
 ]
