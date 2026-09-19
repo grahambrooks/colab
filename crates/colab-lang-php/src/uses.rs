@@ -44,29 +44,28 @@ where
     F: FnMut(Node<'_>, Node<'_>),
 {
     colab_rewrite::visit_all(tree, |node| {
-    if node.kind() == "namespace_use_declaration" {
-        // A declaration containing a group is left alone entirely.
-        let has_group = (0..node.named_child_count()).any(|i| {
-            node.named_child(i as u32)
-                .map(|c| c.kind() == "namespace_use_group")
-                .unwrap_or(false)
-        });
-        if !has_group {
-            for i in 0..node.named_child_count() {
-                let Some(clause) = node.named_child(i as u32) else {
-                    break;
-                };
-                if let Some((name_node, text)) = clause_name(clause, source)
-                    && text == target
-                {
-                    visit(node, name_node);
+        if node.kind() == "namespace_use_declaration" {
+            // A declaration containing a group is left alone entirely.
+            let has_group = (0..node.named_child_count()).any(|i| {
+                node.named_child(i as u32)
+                    .map(|c| c.kind() == "namespace_use_group")
+                    .unwrap_or(false)
+            });
+            if !has_group {
+                for i in 0..node.named_child_count() {
+                    let Some(clause) = node.named_child(i as u32) else {
+                        break;
+                    };
+                    if let Some((name_node, text)) = clause_name(clause, source)
+                        && text == target
+                    {
+                        visit(node, name_node);
+                    }
                 }
             }
         }
-    }
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // Rename
@@ -234,7 +233,8 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 mod tests {
     use super::*;
 
-    const SRC: &str = "<?php\nnamespace App;\n\nuse App\\Old\\Thing;\nuse App\\Other;\n\nclass C {}\n";
+    const SRC: &str =
+        "<?php\nnamespace App;\n\nuse App\\Old\\Thing;\nuse App\\Other;\n\nclass C {}\n";
 
     #[test]
     fn renames_a_qualified_use() {

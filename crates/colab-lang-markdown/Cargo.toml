@@ -1,0 +1,11 @@
+[package]
+name = "colab-lang-markdown"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Markdown edits for colab: set, insert or delete a managed block between HTML-comment markers."
+
+[dependencies]
+colab-core = { workspace = true }

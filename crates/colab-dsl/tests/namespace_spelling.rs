@@ -27,10 +27,14 @@ fn every_module_name_is_spellable_in_the_dsl() {
                 "delete" => "delete".to_string(),
                 "ensure" => "ensure".to_string(),
                 "replace_call" => "replace_call \"y($args)\"".to_string(),
+                "set" => "set '1'".to_string(),
+                "insert" => "insert '1'".to_string(),
                 other => panic!("unhandled action `{other}`"),
             };
-            let script =
-                format!("refactor \"t\" {{ match {lang}::{} \"x\" {{ {body} }} }}", capability.module);
+            let script = format!(
+                "refactor \"t\" {{ match {lang}::{} \"x\" {{ {body} }} }}",
+                capability.module
+            );
             colab_dsl::parse(&script).unwrap_or_else(|e| {
                 panic!(
                     "`{lang}::{}` does not parse as a namespace — is `{}` a DSL \
@@ -42,7 +46,10 @@ fn every_module_name_is_spellable_in_the_dsl() {
             checked += 1;
         }
     }
-    assert!(checked >= 12, "expected at least one module per backend, saw {checked}");
+    assert!(
+        checked >= 12,
+        "expected at least one module per backend, saw {checked}"
+    );
 }
 
 #[test]
@@ -90,9 +97,9 @@ fn every_module_name_is_also_scopable() {
                 "refactor \"t\" {{ match {lang}::{} \"x\" in \"src/**\" {{ {body} }} }}",
                 capability.module
             );
-            colab_dsl::parse(&script)
-                .unwrap_or_else(|e| panic!("scoped `{lang}::{}` fails to parse: {e}",
-                                          capability.module));
+            colab_dsl::parse(&script).unwrap_or_else(|e| {
+                panic!("scoped `{lang}::{}` fails to parse: {e}", capability.module)
+            });
         }
     }
 }

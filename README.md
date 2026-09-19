@@ -4,7 +4,10 @@ A scripted, AST-aware code refactoring (codemod) tool. Point it at a
 repo, hand it a small `.codemod` script, and it will rewrite source
 files deterministically — using tree-sitter for the matching, not
 regex — across twelve languages: **C, C++, C#, Go, Java,
-JavaScript/TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**.
+JavaScript/TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**. It
+also edits **TOML, JSON and Markdown** configuration by key path, JSON
+Pointer or managed block, so a repository convention can be rolled out
+the same way (see [`examples/config`](examples/config/repo_migration/)).
 
 ```sh
 colab refactor --script rename-tokio.codemod --check .

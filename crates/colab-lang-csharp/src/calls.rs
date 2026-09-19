@@ -54,7 +54,9 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     };
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, function, template, &mut edits));
+    colab_rewrite::visit_all(&tree, |node| {
+        collect(node, source_code, function, template, &mut edits)
+    });
 
     colab_rewrite::apply_edits(
         source_code,
@@ -127,7 +129,10 @@ mod tests {
     #[test]
     fn handles_zero_args() {
         let src = "class C { void M() { X(); } }\n";
-        assert_eq!(rewrite("X", "Y($args)", src), "class C { void M() { Y(); } }\n");
+        assert_eq!(
+            rewrite("X", "Y($args)", src),
+            "class C { void M() { Y(); } }\n"
+        );
     }
 
     #[test]

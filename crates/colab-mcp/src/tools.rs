@@ -9,12 +9,10 @@ use colab_core::render::{DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_FILES};
 use serde_json::{Value, json};
 
 const SCRIPT_PARAM: &str = "Codemod script source (the contents of a `.codemod` file).";
-const PATHS_PARAM: &str =
-    "Files or directories to walk recursively. Each entry is processed in order. \
+const PATHS_PARAM: &str = "Files or directories to walk recursively. Each entry is processed in order. \
      Relative paths resolve against `cwd` when given, otherwise the server's \
      working directory.";
-const CWD_PARAM: &str =
-    "Directory that relative `paths` resolve against, and the base for `include \"...\"` \
+const CWD_PARAM: &str = "Directory that relative `paths` resolve against, and the base for `include \"...\"` \
      directives in the script. Strongly recommended: without it, relative paths depend on \
      wherever the server process was started.";
 const DETAIL_PARAM: &str = "How much to return. `summary`: counters only (cheapest). \
@@ -164,7 +162,10 @@ mod tests {
         for tool in list() {
             let name = tool["name"].as_str().unwrap();
             if name == "colab.preview" || name == "colab.apply" {
-                assert_eq!(tool["inputSchema"]["properties"]["detail"]["default"], "counts");
+                assert_eq!(
+                    tool["inputSchema"]["properties"]["detail"]["default"],
+                    "counts"
+                );
             }
         }
     }

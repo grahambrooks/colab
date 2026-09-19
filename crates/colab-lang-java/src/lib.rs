@@ -6,16 +6,14 @@
 //!   (handles both regular and `import static`).
 //! - `java::package` — rename the file's `package` declaration.
 
-pub mod imports;
 pub mod calls;
+pub mod imports;
 pub mod packages;
 pub mod symbols;
 
 use std::cell::RefCell;
 
-use colab_core::{
-    ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec,
-};
+use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
 use tree_sitter::{Parser, Tree};
 
 thread_local! {

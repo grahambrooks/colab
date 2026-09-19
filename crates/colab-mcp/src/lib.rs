@@ -142,8 +142,8 @@ fn read_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing Content-Length"))?;
     let mut buf = vec![0u8; len];
     reader.read_exact(&mut buf)?;
-    let value: Value = serde_json::from_slice(&buf)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let value: Value =
+        serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     Ok(Some(value))
 }
 
@@ -550,17 +550,13 @@ fn run_script<P: ProgressSink>(
     Ok(finish_report(&collector, &report, mode))
 }
 
-
 /// Attach the advisories every run should carry: dead rules, and why a
 /// run that changed nothing changed nothing.
 fn finish_report(collector: &ChangeCollector, report: &RunReport, mode: RunMode) -> Value {
     let mut value = collector.to_json(report);
     let obj = value.as_object_mut().expect("render produces an object");
 
-    obj.insert(
-        "applied".into(),
-        json!(matches!(mode, RunMode::Apply)),
-    );
+    obj.insert("applied".into(), json!(matches!(mode, RunMode::Apply)));
 
     let warnings = render::advisories(report);
     if !warnings.is_empty() {
@@ -810,9 +806,13 @@ mod tests {
         assert_eq!(parsed["error"]["exit_code"], 2);
         assert_eq!(parsed["error"]["line"], 2);
         assert_eq!(parsed["error"]["column"], 26);
-        let expected = parsed["error"]["expected"].as_array().expect("expected list");
+        let expected = parsed["error"]["expected"]
+            .as_array()
+            .expect("expected list");
         assert!(
-            expected.iter().any(|e| e.as_str().unwrap().contains("replace")),
+            expected
+                .iter()
+                .any(|e| e.as_str().unwrap().contains("replace")),
             "got: {expected:?}"
         );
         assert!(parsed["error"]["snippet"].as_str().unwrap().contains('^'));
@@ -827,7 +827,10 @@ mod tests {
         let resp = handle(&req, &registry()).unwrap();
         assert_eq!(resp["error"]["code"], -32602, "got: {resp}");
         let message = resp["error"]["message"].as_str().unwrap();
-        assert!(message.contains("did you mean `colab.preview`?"), "{message}");
+        assert!(
+            message.contains("did you mean `colab.preview`?"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -918,7 +921,10 @@ mod tests {
         assert!(parsed.get("diffs").is_none(), "counts must not carry diffs");
         assert!(parsed.get("warnings").is_none(), "got: {parsed}");
         // Compact, not pretty-printed.
-        assert!(!text.contains("\n  \""), "response should be compact: {text}");
+        assert!(
+            !text.contains("\n  \""),
+            "response should be compact: {text}"
+        );
 
         // Explicit diff detail adds hunks.
         let req = json!({
@@ -1185,7 +1191,11 @@ mod tests {
             .collect();
         let responses: Vec<&Value> = messages.iter().filter(|m| m.get("id").is_some()).collect();
 
-        assert!(progress.len() >= 2, "got {} progress messages", progress.len());
+        assert!(
+            progress.len() >= 2,
+            "got {} progress messages",
+            progress.len()
+        );
         assert_eq!(responses.len(), 1, "got {:?}", responses);
         assert_eq!(responses[0]["id"], 42);
         // Each progress carries the original token.

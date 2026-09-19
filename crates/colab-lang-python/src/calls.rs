@@ -53,7 +53,9 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     };
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, function, template, &mut edits));
+    colab_rewrite::visit_all(&tree, |node| {
+        collect(node, source_code, function, template, &mut edits)
+    });
 
     colab_rewrite::apply_edits(
         source_code,
@@ -122,13 +124,19 @@ mod tests {
     #[test]
     fn reorders_args_via_positional_placeholders() {
         let src = "old_fn(a, b)\n";
-        assert_eq!(rewrite("old_fn", "new_fn($2, $1, None)", src), "new_fn(b, a, None)\n");
+        assert_eq!(
+            rewrite("old_fn", "new_fn($2, $1, None)", src),
+            "new_fn(b, a, None)\n"
+        );
     }
 
     #[test]
     fn keyword_arguments_travel_with_their_names() {
         let src = "old_fn(x=1, y=2)\n";
-        assert_eq!(rewrite("old_fn", "new_fn($2, $1)", src), "new_fn(y=2, x=1)\n");
+        assert_eq!(
+            rewrite("old_fn", "new_fn($2, $1)", src),
+            "new_fn(y=2, x=1)\n"
+        );
     }
 
     #[test]

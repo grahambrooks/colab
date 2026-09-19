@@ -55,7 +55,9 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     };
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, function, template, &mut edits));
+    colab_rewrite::visit_all(&tree, |node| {
+        collect(node, source_code, function, template, &mut edits)
+    });
 
     colab_rewrite::apply_edits(
         source_code,

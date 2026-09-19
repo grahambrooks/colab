@@ -58,11 +58,11 @@ where
     F: FnMut(Node<'_>, Node<'_>),
 {
     colab_rewrite::visit_all(tree, |node| {
-    if let Some((content_node, text)) = require_path(node, source)
-        && text == target
-    {
-        visit(node, content_node);
-    }
+        if let Some((content_node, text)) = require_path(node, source)
+            && text == target
+        {
+            visit(node, content_node);
+        }
     });
 }
 
@@ -247,13 +247,19 @@ mod tests {
     fn renames_a_require_path() {
         let out = rename("old/lib", "new/lib", SRC);
         assert!(out.contains("require 'new/lib'"), "got: {out}");
-        assert!(out.contains("require_relative 'helpers'"), "others untouched");
+        assert!(
+            out.contains("require_relative 'helpers'"),
+            "others untouched"
+        );
     }
 
     #[test]
     fn renames_a_require_relative_path() {
         let out = rename("helpers", "support/helpers", SRC);
-        assert!(out.contains("require_relative 'support/helpers'"), "got: {out}");
+        assert!(
+            out.contains("require_relative 'support/helpers'"),
+            "got: {out}"
+        );
     }
 
     #[test]

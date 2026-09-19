@@ -165,12 +165,7 @@ mod tests {
     #[test]
     fn unknown_module_is_rejected_with_alternatives() {
         let err = RubyBackend
-            .build_rule(
-                "requires",
-                RuleSpec::Delete {
-                    target: "x".into(),
-                },
-            )
+            .build_rule("requires", RuleSpec::Delete { target: "x".into() })
             .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unknown module `ruby::requires`"), "{msg}");

@@ -1,0 +1,9 @@
+// Refresh a managed block; the rest of AGENTS.md is the author's.
+refactor "agents-context" {
+    match markdown::block "myspec" in "AGENTS.md" {
+        set '## myspec
+
+- `myspec report` — compliance against the rust profile standards.
+- `myspec tools status` — the agent toolchain this repository declares.'
+    }
+}

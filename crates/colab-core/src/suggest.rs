@@ -128,6 +128,9 @@ mod tests {
 
     #[test]
     fn note_handles_an_empty_registry() {
-        assert_eq!(candidates_note("go", "languages", &[]), "no languages are registered");
+        assert_eq!(
+            candidates_note("go", "languages", &[]),
+            "no languages are registered"
+        );
     }
 }

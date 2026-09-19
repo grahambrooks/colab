@@ -17,14 +17,14 @@ where
     F: FnMut(Node<'_>),
 {
     colab_rewrite::visit_all(tree, |node| {
-    if node.is_named()
-        && node.kind() == "import_spec"
-        && let Some(path_node) = node.child_by_field_name("path")
-        && let Ok(path_text) = path_node.utf8_text(source.as_bytes())
-        && path_text.trim_matches('"') == target
-    {
-        visit(node);
-    }
+        if node.is_named()
+            && node.kind() == "import_spec"
+            && let Some(path_node) = node.child_by_field_name("path")
+            && let Ok(path_text) = path_node.utf8_text(source.as_bytes())
+            && path_text.trim_matches('"') == target
+        {
+            visit(node);
+        }
     });
 }
 
@@ -87,7 +87,6 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
             .collect(),
     )
 }
-
 
 // ---------------------------------------------------------------------------
 // Delete

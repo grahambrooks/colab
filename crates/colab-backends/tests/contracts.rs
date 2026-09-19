@@ -52,28 +52,46 @@ fn sentinel_rules(
         let backend = registry.get(lang).expect("registry lists it");
         for capability in backend.capabilities() {
             for action in capability.actions {
+                // A JSON Pointer must start with `/`; the sentinel is still a
+                // substring, so the prefilter checks below are unaffected.
+                let target = if lang == "json" {
+                    format!("/{SENTINEL}")
+                } else {
+                    SENTINEL.to_string()
+                };
                 let spec = match action.name {
                     "replace" => RuleSpec::Replace {
-                        target: SENTINEL.to_string(),
+                        target: target.clone(),
                         replacement: "Zq_colab_replacement".to_string(),
                     },
                     "delete" => RuleSpec::Delete {
-                        target: SENTINEL.to_string(),
+                        target: target.clone(),
                     },
                     "ensure" => RuleSpec::Ensure {
-                        target: SENTINEL.to_string(),
+                        target: target.clone(),
                     },
                     "replace_call" => RuleSpec::ReplaceCall {
-                        target: SENTINEL.to_string(),
+                        target: target.clone(),
                         template: "Zq_colab_replacement($args)".to_string(),
+                    },
+                    // `1` is a valid value in every config syntax.
+                    "set" => RuleSpec::Set {
+                        target: target.clone(),
+                        value: "1".to_string(),
+                    },
+                    "insert" => RuleSpec::Insert {
+                        target: target.clone(),
+                        value: "1".to_string(),
                     },
                     other => panic!("unhandled action `{other}` — add it to this test"),
                 };
                 let op = backend
                     .build_rule(capability.module, spec)
                     .unwrap_or_else(|e| {
-                        panic!("{lang}::{} advertises `{}` but build_rule rejected it: {e}",
-                               capability.module, action.name)
+                        panic!(
+                            "{lang}::{} advertises `{}` but build_rule rejected it: {e}",
+                            capability.module, action.name
+                        )
                     });
                 out.push((
                     lang.to_string(),
@@ -92,7 +110,8 @@ fn ensure_operations_have_no_prefilter() {
     let registry = colab_backends::registry();
     let mut checked = 0;
     for (lang, module, action, op) in sentinel_rules(&registry) {
-        if action != "ensure" {
+        // `set` and `insert` also act when their target is absent.
+        if !matches!(action, "ensure" | "set" | "insert") {
             continue;
         }
         assert_eq!(
@@ -131,7 +150,10 @@ fn a_prefilter_is_derived_from_the_match_target() {
             checked += 1;
         }
     }
-    assert!(checked > 0, "no prefiltered operations found — test is vacuous");
+    assert!(
+        checked > 0,
+        "no prefiltered operations found — test is vacuous"
+    );
 }
 
 #[test]

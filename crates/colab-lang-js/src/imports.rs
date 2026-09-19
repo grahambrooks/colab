@@ -22,7 +22,6 @@ pub(crate) fn is_relevant(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-
 /// For each `import_statement` / `export_statement` whose `source`
 /// field is a string literal equal to `target`, invoke the visitor
 /// with the enclosing statement and the inner-string byte range
@@ -32,14 +31,14 @@ where
     F: FnMut(Node<'_>, usize, usize),
 {
     colab_rewrite::visit_all(tree, |node| {
-    if matches!(node.kind(), "import_statement" | "export_statement")
-        && let Some(specifier) = node.child_by_field_name("source")
-        && specifier.kind() == "string"
-        && let Some((inner_start, inner_end, value)) = string_inner_bytes(specifier, source)
-        && value == target
-    {
-        visit(node, inner_start, inner_end);
-    }
+        if matches!(node.kind(), "import_statement" | "export_statement")
+            && let Some(specifier) = node.child_by_field_name("source")
+            && specifier.kind() == "string"
+            && let Some((inner_start, inner_end, value)) = string_inner_bytes(specifier, source)
+            && value == target
+        {
+            visit(node, inner_start, inner_end);
+        }
     });
 }
 

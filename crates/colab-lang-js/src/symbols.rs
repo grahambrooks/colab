@@ -16,9 +16,11 @@ use std::path::Path;
 use colab_core::Operation;
 
 /// Node kinds this backend treats as renameable identifiers.
-const RENAME_KINDS: &[&str] = &["identifier",
+const RENAME_KINDS: &[&str] = &[
+    "identifier",
     "property_identifier",
-    "shorthand_property_identifier",];
+    "shorthand_property_identifier",
+];
 
 #[derive(Debug)]
 pub struct SymbolRename {

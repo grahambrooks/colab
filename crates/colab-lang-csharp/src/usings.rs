@@ -46,14 +46,13 @@ where
     F: FnMut(Node<'_>, Node<'_>),
 {
     colab_rewrite::visit_all(tree, |node| {
-    if let Some((name_node, text)) = using_name(node, source)
-        && text == target
-    {
-        visit(node, name_node);
-    }
+        if let Some((name_node, text)) = using_name(node, source)
+            && text == target
+        {
+            visit(node, name_node);
+        }
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // Rename
@@ -212,8 +211,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 mod tests {
     use super::*;
 
-    const SRC: &str =
-        "using System;\nusing System.Text;\n\nnamespace Demo;\n\nclass C { }\n";
+    const SRC: &str = "using System;\nusing System.Text;\n\nnamespace Demo;\n\nclass C { }\n";
 
     #[test]
     fn renames_a_using_directive() {

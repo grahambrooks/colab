@@ -45,6 +45,8 @@ pub Action: Action = {
     "delete" => Action::Delete,
     "ensure" => Action::Ensure,
     "replace_call" <string: StringLiteral> => Action::ReplaceCall(string),
+    "set" <string: StringLiteral> => Action::Set(string),
+    "insert" <string: StringLiteral> => Action::Insert(string),
 };
 
 // Namespace segments may be spelled like DSL keywords: a backend's
@@ -60,9 +62,15 @@ pub Identifier: String = {
     "ensure" => "ensure".to_string(),
     "replace" => "replace".to_string(),
     "in" => "in".to_string(),
+    "set" => "set".to_string(),
+    "insert" => "insert".to_string(),
 };
 
+// Two spellings, neither with escapes. A double-quoted string cannot
+// contain `"`; a single-quoted one cannot contain `'`. Single quotes exist
+// for values that are themselves quoted text — a TOML inline table or a
+// JSON object passed to `set` / `insert`. Both may span lines.
 pub StringLiteral: String = {
-    // Match opening quote, characters inside, and closing quote
-     <s:r#""[^"]*""#> => s.trim_matches('"').to_string()
+    <s:r#""[^"]*""#> => s[1..s.len() - 1].to_string(),
+    <s:r#"'[^']*'"#> => s[1..s.len() - 1].to_string(),
 };

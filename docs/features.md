@@ -9,54 +9,65 @@ just the readable form.
 
 ## At a glance
 
-| Namespace | `replace` | `delete` | `ensure` | `replace_call` | Applies to |
-| --------- | :-------: | :------: | :------: | :------------: | ---------- |
-| `c::include`        | ✅ | ✅ | ✅ |    | `.c`, `.h` |
-| `c::symbol`         | ✅ |    |    |    | `.c`, `.h` |
-| `c::call`           |    |    |    | ✅ | `.c`, `.h` |
-| `cpp::include`      | ✅ | ✅ | ✅ |    | `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.h` |
-| `cpp::namespace`    | ✅ |    |    |    | as `cpp::include` |
-| `cpp::symbol`       | ✅ |    |    |    | as `cpp::include` |
-| `cpp::call`         |    |    |    | ✅ | as `cpp::include` |
-| `csharp::using`     | ✅ | ✅ | ✅ |    | `.cs`, `.csx` |
-| `csharp::namespace` | ✅ |    |    |    | `.cs`, `.csx` |
-| `csharp::symbol`    | ✅ |    |    |    | `.cs`, `.csx` |
-| `csharp::call`      |    |    |    | ✅ | `.cs`, `.csx` |
-| `go::import`        | ✅ | ✅ | ✅ |    | `.go` |
-| `go::package`       | ✅ |    |    |    | `.go` |
-| `go::symbol`        | ✅ |    |    |    | `.go` |
-| `go::struct_tag`    | ✅ |    |    |    | `.go` |
-| `go::call`          |    |    |    | ✅ | `.go` |
-| `java::import`      | ✅ | ✅ | ✅ |    | `.java` |
-| `java::package`     | ✅ |    |    |    | `.java` |
-| `java::symbol`      | ✅ |    |    |    | `.java` |
-| `java::call`        |    |    |    | ✅ | `.java` |
-| `js::import`        | ✅ | ✅ | ✅ |    | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` |
-| `js::symbol`        | ✅ |    |    |    | as `js::import` |
-| `js::call`          |    |    |    | ✅ | as `js::import` |
-| `kotlin::import`    | ✅ | ✅ | ✅ |    | `.kt`, `.kts` |
-| `kotlin::package`   | ✅ |    |    |    | `.kt`, `.kts` |
-| `kotlin::symbol`    | ✅ |    |    |    | `.kt`, `.kts` |
-| `kotlin::call`      |    |    |    | ✅ | `.kt`, `.kts` |
-| `php::use`          | ✅ | ✅ | ✅ |    | `.php`, `.phtml` |
-| `php::namespace`    | ✅ |    |    |    | `.php`, `.phtml` |
-| `php::symbol`       | ✅ |    |    |    | `.php`, `.phtml` |
-| `php::call`         |    |    |    | ✅ | `.php`, `.phtml` |
-| `python::import`    | ✅ | ✅ | ✅ |    | `.py` |
-| `python::symbol`    | ✅ |    |    |    | `.py` |
-| `python::call`      |    |    |    | ✅ | `.py` |
-| `ruby::require`     | ✅ | ✅ | ✅ |    | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile`, `Guardfile`, `Capfile` |
-| `ruby::symbol`      | ✅ |    |    |    | as `ruby::require` |
-| `ruby::call`        |    |    |    | ✅ | as `ruby::require` |
-| `rust::use`         | ✅ | ✅ | ✅ |    | `.rs` |
-| `rust::symbol`      | ✅ |    |    |    | `.rs` |
-| `rust::crate`       | ✅ | ✅ |    |    | `Cargo.toml` |
-| `rust::call`        |    |    |    | ✅ | `.rs` |
-| `swift::import`     | ✅ | ✅ | ✅ |    | `.swift` |
-| `swift::symbol`     | ✅ |    |    |    | `.swift` |
-| `swift::call`       |    |    |    | ✅ | `.swift` |
+| Namespace | `replace` | `delete` | `ensure` | `replace_call` | `set` | `insert` | Applies to |
+| --------- | :-------: | :------: | :------: | :------------: | :---: | :------: | ---------- |
+| `c::include`        | ✅ | ✅ | ✅ |    |    |    | `.c`, `.h` |
+| `c::symbol`         | ✅ |    |    |    |    |    | `.c`, `.h` |
+| `c::call`           |    |    |    | ✅ |    |    | `.c`, `.h` |
+| `cpp::include`      | ✅ | ✅ | ✅ |    |    |    | `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.h` |
+| `cpp::namespace`    | ✅ |    |    |    |    |    | as `cpp::include` |
+| `cpp::symbol`       | ✅ |    |    |    |    |    | as `cpp::include` |
+| `cpp::call`         |    |    |    | ✅ |    |    | as `cpp::include` |
+| `csharp::using`     | ✅ | ✅ | ✅ |    |    |    | `.cs`, `.csx` |
+| `csharp::namespace` | ✅ |    |    |    |    |    | `.cs`, `.csx` |
+| `csharp::symbol`    | ✅ |    |    |    |    |    | `.cs`, `.csx` |
+| `csharp::call`      |    |    |    | ✅ |    |    | `.cs`, `.csx` |
+| `go::import`        | ✅ | ✅ | ✅ |    |    |    | `.go` |
+| `go::package`       | ✅ |    |    |    |    |    | `.go` |
+| `go::symbol`        | ✅ |    |    |    |    |    | `.go` |
+| `go::struct_tag`    | ✅ |    |    |    |    |    | `.go` |
+| `go::call`          |    |    |    | ✅ |    |    | `.go` |
+| `java::import`      | ✅ | ✅ | ✅ |    |    |    | `.java` |
+| `java::package`     | ✅ |    |    |    |    |    | `.java` |
+| `java::symbol`      | ✅ |    |    |    |    |    | `.java` |
+| `java::call`        |    |    |    | ✅ |    |    | `.java` |
+| `js::import`        | ✅ | ✅ | ✅ |    |    |    | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` |
+| `js::symbol`        | ✅ |    |    |    |    |    | as `js::import` |
+| `js::call`          |    |    |    | ✅ |    |    | as `js::import` |
+| `kotlin::import`    | ✅ | ✅ | ✅ |    |    |    | `.kt`, `.kts` |
+| `kotlin::package`   | ✅ |    |    |    |    |    | `.kt`, `.kts` |
+| `kotlin::symbol`    | ✅ |    |    |    |    |    | `.kt`, `.kts` |
+| `kotlin::call`      |    |    |    | ✅ |    |    | `.kt`, `.kts` |
+| `php::use`          | ✅ | ✅ | ✅ |    |    |    | `.php`, `.phtml` |
+| `php::namespace`    | ✅ |    |    |    |    |    | `.php`, `.phtml` |
+| `php::symbol`       | ✅ |    |    |    |    |    | `.php`, `.phtml` |
+| `php::call`         |    |    |    | ✅ |    |    | `.php`, `.phtml` |
+| `python::import`    | ✅ | ✅ | ✅ |    |    |    | `.py` |
+| `python::symbol`    | ✅ |    |    |    |    |    | `.py` |
+| `python::call`      |    |    |    | ✅ |    |    | `.py` |
+| `ruby::require`     | ✅ | ✅ | ✅ |    |    |    | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile`, `Guardfile`, `Capfile` |
+| `ruby::symbol`      | ✅ |    |    |    |    |    | as `ruby::require` |
+| `ruby::call`        |    |    |    | ✅ |    |    | as `ruby::require` |
+| `rust::use`         | ✅ | ✅ | ✅ |    |    |    | `.rs` |
+| `rust::symbol`      | ✅ |    |    |    |    |    | `.rs` |
+| `rust::crate`       | ✅ | ✅ |    |    |    |    | `Cargo.toml` |
+| `rust::call`        |    |    |    | ✅ |    |    | `.rs` |
+| `swift::import`     | ✅ | ✅ | ✅ |    |    |    | `.swift` |
+| `swift::symbol`     | ✅ |    |    |    |    |    | `.swift` |
+| `swift::call`       |    |    |    | ✅ |    |    | `.swift` |
+| `json::key`         |    | ✅ |    |    | ✅ | ✅ | `.json` |
+| `markdown::block`   |    | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
+| `toml::key`         |    | ✅ |    |    | ✅ | ✅ | `.toml` |
 
-**The capability floor.** Every backend provides an import-equivalent
+**Config-file backends.** `json`, `markdown` and `toml` edit data files
+rather than source, so they do not share the source floor below. Each has
+one module whose target is an address — a JSON Pointer, a managed-block
+name, or a dotted TOML path with `[field=value]` selectors — and the
+`set` / `insert` / `delete` actions. `set` and `insert` create what is
+missing, so scope them with `in "<glob>"` or run them on named files. See
+[Config-file backends](#config-file-backends) below.
+
+**The capability floor.** Every source backend provides an import-equivalent
 (`replace`/`delete`/`ensure`), a `symbol` rename, and a `call` rewrite.
 On top of that, languages with a namespace or package declaration expose
 one, and Go additionally has `struct_tag` and Rust `crate`.
@@ -64,8 +75,8 @@ one, and Go additionally has `struct_tag` and Rust `crate`.
 Two deliberate gaps:
 
 - **`rust::crate` has no `ensure`.** Adding a dependency requires a
-  version, and the DSL has no way to express one. Edit `Cargo.toml` or
-  run `cargo add` instead.
+  version. Use `toml::key "dependencies.<name>" in "Cargo.toml" { insert '"1"' }`,
+  or run `cargo add`.
 - **Swift has no `package` module.** Swift source has no package or
   namespace declaration — module membership comes from the build system.
 
@@ -438,3 +449,74 @@ attached to its value.
 
 Like Kotlin, trailing-closure calls are skipped. There is no
 `swift::package` — Swift source has no package declaration.
+
+## Config-file backends (`colab-lang-json`, `colab-lang-markdown`, `colab-lang-toml`)
+
+These edit configuration and documentation files, where the unit of change
+is a key or a block rather than a syntax node. They exist so a repository
+convention (a new pre-commit hook, a settings entry, a managed section of
+`AGENTS.md`) can be applied across many repositories by the same scripts
+and `--check` gate as a source refactoring.
+
+All three share the same three actions:
+
+| Action | Present, same value | Present, different | Absent |
+| ------ | ------------------- | ------------------ | ------ |
+| `set '<value>'`    | no change | overwritten | created, with missing parents |
+| `insert '<value>'` | no change | **left alone** | created, with missing parents |
+| `delete`           | removed   | removed        | no change |
+
+Values are compared by meaning, not text, so a `set` whose value is already
+present in another format is a no-op, and every rule is idempotent. A file
+that does not parse (or, for Markdown, has repeated or unbalanced markers)
+is left untouched. Values are usually quoted text themselves, so write them
+in single quotes: `set '{ id = "gitleaks" }'`.
+
+### `toml::key` — dotted path with selectors
+
+```
+match toml::key "project.profile_version" in "myspec.toml" { set '2' }
+match toml::key "repos[repo=local].hooks[id=cargo-fmt]" in "prek.toml" {
+  insert '{ id = "cargo-fmt", entry = "cargo fmt --all --check", stages = ["pre-commit"] }'
+}
+```
+
+- Segments are separated by `.`. `name[field=value]` selects the element of
+  an array — of tables (`[[repos]]`) or of inline tables
+  (`hooks = [{…}]`) — whose `field` equals `value`. A value for a selected
+  element must be an inline table carrying that field, or the element could
+  never be found again; the script is rejected otherwise.
+- A missing selected parent is created holding just its selector field
+  (`[[repos]]` with `repo = "local"`).
+- Edits go through `toml_edit` (TOML 1.1, so multi-line inline tables
+  parse). An overwritten value keeps its trailing comment; an element
+  appended to a one-per-line array takes the previous element's layout.
+- Keys containing `.`, `[` or `]` cannot be addressed.
+
+### `json::key` — JSON Pointer
+
+```
+match json::key "/enabledPlugins/code-intelligence@gb-agent-skills" in ".claude/settings.json" { set 'true' }
+```
+
+- RFC 6901: `~1` is `/` inside a key, `~0` is `~`.
+- The edit is a single splice of the file's text, located with
+  tree-sitter-json: key order, indentation and every other byte are kept. A
+  new member follows the last one, one per line or inline to match the
+  object; missing parent objects are written compactly on one line.
+- An array step must be an existing index; `set` and `insert` never grow
+  arrays, and `delete` does not remove array elements.
+
+### `markdown::block` — managed block
+
+```
+match markdown::block "myspec" in "AGENTS.md" { set '## myspec
+- run `make check` before committing' }
+```
+
+- The block is the lines between `<!-- <name>:begin … -->` (anything after
+  the name is kept) and `<!-- <name>:end -->`. Text outside the markers is
+  never touched.
+- `set` makes the content exactly the value, with leading and trailing blank
+  lines dropped. A missing block is appended at the end of the file, after a
+  blank line. `delete` removes the markers too.

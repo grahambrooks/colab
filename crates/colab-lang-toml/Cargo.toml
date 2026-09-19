@@ -1,0 +1,12 @@
+[package]
+name = "colab-lang-toml"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "TOML config edits for colab: set, insert or delete a key or an array element by path, preserving formatting via toml_edit."
+
+[dependencies]
+colab-core = { workspace = true }
+toml_edit = { workspace = true }

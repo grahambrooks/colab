@@ -221,10 +221,7 @@ mod tests {
         // second range would be shifted and corrupt the output — this is
         // the invariant the whole crate exists to hold in one place.
         let source = "aaa bbb ccc";
-        let edits = vec![
-            Edit::new(0, 3, "LONGER"),
-            Edit::new(8, 11, "X"),
-        ];
+        let edits = vec![Edit::new(0, 3, "LONGER"), Edit::new(8, 11, "X")];
         assert_eq!(apply_edits(source, edits), "LONGER bbb X");
     }
 

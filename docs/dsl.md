@@ -30,10 +30,13 @@ scope       = "in" string
 namespace   = identifier "::" identifier
 identifier  = [a-zA-Z_][a-zA-Z0-9_]* | keyword   -- see "Reserved tokens"
 string      = '"' (any-char-except-double-quote)* '"'
+            | "'" (any-char-except-single-quote)* "'"
 action      = "replace" string
             | "delete"
             | "ensure"
             | "replace_call" string
+            | "set" string
+            | "insert" string
 comment     = "//" any-char-except-newline*
 ```
 
@@ -106,6 +109,28 @@ match go::call "pkg.Old" { replace_call "pkg.New($2, $1, nil)" }
 // Wrap-style: prepend a context argument.
 match go::call "logger.Info" { replace_call "logger.WithContext(ctx).Info($args)" }
 ```
+
+### `set '<value>'` and `insert '<value>'`
+
+The config-file backends (`toml::key`, `json::key`, `markdown::block`)
+address a key or block and give it a value written in the file's own
+syntax. `set` creates the target — and any missing parents — or
+overwrites a value that differs; `insert` creates it only when it is
+absent and never overwrites. Values are compared by meaning, so both are
+idempotent. `delete` removes the target.
+
+```
+match toml::key "project.profile_version" in "myspec.toml" { set '2' }
+match toml::key "repos[repo=local].hooks[id=cargo-fmt]" in "prek.toml" {
+    insert '{ id = "cargo-fmt", entry = "cargo fmt --all --check", stages = ["pre-commit"] }'
+}
+match json::key "/enabledPlugins/code-intelligence@gb-agent-skills" in ".claude/settings.json" { set 'true' }
+```
+
+Because `set` and `insert` act where the target is missing, an unscoped
+rule would add it to every file of that type. Scope it with `in "<glob>"`
+or run it on named files. The address syntax of each backend is in
+[features.md](./features.md#config-file-backends).
 
 > **Idempotency caveat.** `replace_call` is idempotent only if the
 > template *renames the function*. Templates that keep the function
@@ -243,7 +268,10 @@ rule — it shows up as a lower `scanned` count, not just a suppressed edit.
 
 `*` stops at a path separator; `**` crosses directories. Globs are matched
 against the path as the walker yields it, so the directory you invoke
-`colab` from (and any `-C`) affects what a glob sees. An invalid glob is
+`colab` from (and any `-C`) affects what a glob sees. A leading `./` is
+ignored, so `colab refactor -C repo --script s .` and a glob of `core/**`
+agree; an absolute path argument yields absolute paths, which a relative
+glob does not match. An invalid glob is
 rejected when the script compiles rather than silently matching nothing.
 
 `in` scopes a single rule; [`--include` / `--exclude`](./cli.md) filter the
@@ -340,7 +368,7 @@ refactor "javax-to-jakarta" {
 The grammar keywords are:
 
 `refactor`, `match`, `in`, `include`, `replace`, `delete`, `ensure`,
-`replace_call`.
+`replace_call`, `set`, `insert`.
 
 `::` is the namespace separator. `//` starts a line comment.
 
@@ -349,12 +377,15 @@ is named after the language's own construct, and C's is `#include` — so
 `match c::include "stdio.h" { ... }` parses fine even though `include` is
 also the pack directive. The two positions are never ambiguous, because a
 namespace only ever follows `match`. The same holds for `delete`,
-`ensure`, `replace`, and `in` should a backend ever want them as module
-names.
+`ensure`, `replace`, `in`, `set` and `insert` should a backend ever want
+them as module names.
 
 **String literals have no escape sequences.** A backslash is a literal
 backslash, which is what makes PHP namespaces (`"App\Old\Thing"`) work
-naturally. It also means a target cannot contain a double quote.
+naturally. It also means a double-quoted string cannot contain `"`, so a
+second spelling exists: a single-quoted string, which cannot contain `'`.
+Use it for values that are quoted text themselves — a TOML inline table,
+a JSON object. Either spelling may span lines.
 
 ## Future directions
 

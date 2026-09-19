@@ -1,0 +1,17 @@
+// A profile migration: add a hook to prek.toml, drop a retired key, and
+// record the new profile version. Cargo.toml is out of scope and untouched.
+refactor "rust-profile-0002" {
+    match toml::key "repos[repo=local].hooks[id=cargo-clippy]" in "prek.toml" {
+        insert '{
+    id = "cargo-clippy",
+    name = "cargo clippy",
+    entry = "cargo clippy --all-targets -- -D warnings",
+    language = "system",
+    pass_filenames = false,
+    files = "\\.rs$",
+    stages = ["pre-push"]
+  }'
+    }
+    match toml::key "project.profile_version" in "myspec.toml" { set '2' }
+    match toml::key "project.created_by" in "myspec.toml" { delete }
+}

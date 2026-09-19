@@ -66,7 +66,11 @@ impl ParseDetail {
 
 impl fmt::Display for ParseDetail {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "line {}, column {}: {}", self.line, self.column, self.message)?;
+        write!(
+            f,
+            "line {}, column {}: {}",
+            self.line, self.column, self.message
+        )?;
         if !self.expected.is_empty() {
             write!(f, "; expected one of: {}", self.expected.join(", "))?;
         }
@@ -196,7 +200,10 @@ mod tests {
             vec!["\"refactor\"".to_string()],
         );
         let rendered = Error::Parse(detail).to_string();
-        assert!(rendered.starts_with("parse error at line 1, column 1:"), "{rendered}");
+        assert!(
+            rendered.starts_with("parse error at line 1, column 1:"),
+            "{rendered}"
+        );
         assert!(rendered.contains("expected one of: \"refactor\""));
     }
 

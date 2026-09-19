@@ -100,6 +100,8 @@ fn explain_command(cmd: &ast::Command) -> Value {
                     ast::Action::Delete => ("delete", None),
                     ast::Action::Ensure => ("ensure", None),
                     ast::Action::ReplaceCall(t) => ("replace_call", Some(t)),
+                    ast::Action::Set(v) => ("set", Some(v)),
+                    ast::Action::Insert(v) => ("insert", Some(v)),
                 };
                 json!({
                     "kind": "match",

@@ -11,9 +11,7 @@ pub mod symbols;
 
 use std::cell::RefCell;
 
-use colab_core::{
-    ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec,
-};
+use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
 use tree_sitter::{Parser, Tree};
 
 thread_local! {

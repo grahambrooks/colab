@@ -311,11 +311,7 @@ fn io_to_error(err: io::Error) -> Error {
 /// `--staged`), invoking the visitor for files the transformer
 /// considers relevant. Skips paths that no longer exist on disk
 /// — `git diff` may report files that have been deleted.
-fn run_against_paths<T, F>(
-    transformer: &T,
-    paths: &[PathBuf],
-    visit: &mut F,
-) -> Result<WalkOutcome>
+fn run_against_paths<T, F>(transformer: &T, paths: &[PathBuf], visit: &mut F) -> Result<WalkOutcome>
 where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
@@ -400,13 +396,7 @@ fn git_paths(args: &[&str]) -> Result<Vec<PathBuf>> {
     let output = std::process::Command::new("git")
         .args(args)
         .output()
-        .map_err(|e| {
-            Error::Config(format!(
-                "could not invoke git ({}): {}",
-                args.join(" "),
-                e
-            ))
-        })?;
+        .map_err(|e| Error::Config(format!("could not invoke git ({}): {}", args.join(" "), e)))?;
     if !output.status.success() {
         return Err(Error::Config(format!(
             "git {} failed: {}",
@@ -510,8 +500,7 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
             if let Some(dir) = &backup_dir {
                 write_backup_snapshot(dir, &change.path, &change.before)?;
             }
-            fs::write(&change.path, &change.after)
-                .map_err(|e| Error::io_at(&change.path, e))?;
+            fs::write(&change.path, &change.after).map_err(|e| Error::io_at(&change.path, e))?;
         }
         reporter
             .report(&change)
@@ -774,13 +763,18 @@ fn bisect_rules(
         // Apply rules[..mid] sequentially.
         for rule in rules.iter().take(mid) {
             let single = codemod::SingleRule::new(rule.as_ref());
-            run_transformer(&single, args, targets, &mut |change: FileChange| -> Result<()> {
-                if change.changed() {
-                    fs::write(&change.path, &change.after)
-                        .map_err(|e| Error::io_at(&change.path, e))?;
-                }
-                Ok(())
-            })?;
+            run_transformer(
+                &single,
+                args,
+                targets,
+                &mut |change: FileChange| -> Result<()> {
+                    if change.changed() {
+                        fs::write(&change.path, &change.after)
+                            .map_err(|e| Error::io_at(&change.path, e))?;
+                    }
+                    Ok(())
+                },
+            )?;
         }
         if run_verify(verify_cmd)? {
             info!("[bisect] rules[..{}] OK", mid);
@@ -844,9 +838,13 @@ fn walk_undo(root: &Path, current: &Path, count: &mut u64) -> Result<()> {
         if path.is_dir() {
             walk_undo(root, &path, count)?;
         } else if path.is_file() {
-            let rel = path
-                .strip_prefix(root)
-                .map_err(|_| Error::Config(format!("path {} not under {}", path.display(), root.display())))?;
+            let rel = path.strip_prefix(root).map_err(|_| {
+                Error::Config(format!(
+                    "path {} not under {}",
+                    path.display(),
+                    root.display()
+                ))
+            })?;
             let target = Path::new(&std::path::MAIN_SEPARATOR.to_string()).join(rel);
             let content = fs::read_to_string(&path).map_err(|e| Error::io_at(&path, e))?;
             if let Some(parent) = target.parent() {

@@ -160,7 +160,10 @@ mod tests {
         assert_eq!(report.files_changed, 2);
         assert_eq!(report.rules[0].files_matched, 2);
         assert_eq!(report.rules[1].files_matched, 0);
-        assert_eq!(report.dead_rules().map(|r| r.index).collect::<Vec<_>>(), [1]);
+        assert_eq!(
+            report.dead_rules().map(|r| r.index).collect::<Vec<_>>(),
+            [1]
+        );
     }
 
     #[test]

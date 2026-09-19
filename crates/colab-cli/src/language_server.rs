@@ -53,6 +53,8 @@ const STATIC_ACTIONS: &[(&str, &str)] = &[
     ("delete", "delete"),
     ("ensure", "ensure"),
     ("replace_call", "replace_call \"$0\""),
+    ("set", "set '$0'"),
+    ("insert", "insert '$0'"),
 ];
 
 /// Tower-LSP backend. Holds the open-document store and a backend
@@ -137,10 +139,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(
                 MessageType::INFO,
-                format!(
-                    "colab LSP ready; backends: {:?}",
-                    self.backends.languages()
-                ),
+                format!("colab LSP ready; backends: {:?}", self.backends.languages()),
             )
             .await;
     }
@@ -178,10 +177,7 @@ impl LanguageServer for Backend {
         }
     }
 
-    async fn completion(
-        &self,
-        params: CompletionParams,
-    ) -> LspResult<Option<CompletionResponse>> {
+    async fn completion(&self, params: CompletionParams) -> LspResult<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
         if !is_codemod_uri(&uri) {
@@ -356,9 +352,8 @@ mod tests {
     async fn diagnose_returns_empty_for_valid_script() {
         let (service, _) = LspService::new(|client| Backend::new(client, registry()));
         let backend = service.inner();
-        let diags = backend.diagnose(
-            "refactor \"x\" { match go::import \"old\" { replace \"new\" } }",
-        );
+        let diags =
+            backend.diagnose("refactor \"x\" { match go::import \"old\" { replace \"new\" } }");
         assert!(diags.is_empty(), "got: {:?}", diags);
     }
 
@@ -376,9 +371,8 @@ mod tests {
     async fn diagnose_emits_unsupported_namespace_error() {
         let (service, _) = LspService::new(|client| Backend::new(client, registry()));
         let backend = service.inner();
-        let diags = backend.diagnose(
-            "refactor \"x\" { match klingon::module \"a\" { replace \"b\" } }",
-        );
+        let diags =
+            backend.diagnose("refactor \"x\" { match klingon::module \"a\" { replace \"b\" } }");
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].code, Some(NumberOrString::Number(3)));
     }

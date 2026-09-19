@@ -38,11 +38,11 @@ where
     F: FnMut(Node<'_>, Node<'_>),
 {
     colab_rewrite::visit_all(tree, |node| {
-    if let Some((name_node, name)) = import_name(node, source)
-        && name == target
-    {
-        visit(node, name_node);
-    }
+        if let Some((name_node, name)) = import_name(node, source)
+            && name == target
+        {
+            visit(node, name_node);
+        }
     });
 }
 
@@ -92,7 +92,6 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
             .collect(),
     )
 }
-
 
 // ---------------------------------------------------------------------------
 // Delete

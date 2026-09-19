@@ -21,14 +21,14 @@ where
     F: FnMut(Node<'_>, Node<'_>, usize),
 {
     colab_rewrite::visit_all(tree, |node| {
-    if node.is_named()
-        && node.kind() == "use_declaration"
-        && let Some(arg) = node.child_by_field_name("argument")
-        && let Ok(arg_text) = arg.utf8_text(source.as_bytes())
-        && let Some(prefix_len) = match_path_prefix(arg_text, target)
-    {
-        visit(node, arg, prefix_len);
-    }
+        if node.is_named()
+            && node.kind() == "use_declaration"
+            && let Some(arg) = node.child_by_field_name("argument")
+            && let Ok(arg_text) = arg.utf8_text(source.as_bytes())
+            && let Some(prefix_len) = match_path_prefix(arg_text, target)
+        {
+            visit(node, arg, prefix_len);
+        }
     });
 }
 
@@ -105,7 +105,6 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
             .collect(),
     )
 }
-
 
 // ---------------------------------------------------------------------------
 // Delete

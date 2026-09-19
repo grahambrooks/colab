@@ -18,7 +18,9 @@ use lalrpop_util::lalrpop_mod;
 use crate::ast::{Action, Command, Item, Match};
 use crate::model::Refactoring;
 use colab_core::suggest;
-use colab_core::{BackendRegistry, Error, Operation, ParseDetail, Result, RuleSpec, ScopedOperation};
+use colab_core::{
+    BackendRegistry, Error, Operation, ParseDetail, Result, RuleSpec, ScopedOperation,
+};
 
 lalrpop_mod!(grammar, "/codemod.rs");
 
@@ -43,12 +45,9 @@ fn parse_detail<T: fmt::Display, E: fmt::Display>(
         ParseError::InvalidToken { location } => {
             ParseDetail::at_offset(source, location, "invalid token", Vec::new())
         }
-        ParseError::UnrecognizedEof { location, expected } => ParseDetail::at_offset(
-            source,
-            location,
-            "unexpected end of script",
-            expected,
-        ),
+        ParseError::UnrecognizedEof { location, expected } => {
+            ParseDetail::at_offset(source, location, "unexpected end of script", expected)
+        }
         ParseError::UnrecognizedToken {
             token: (start, token, _),
             expected,
@@ -147,17 +146,16 @@ fn expand_includes(
             Item::Match(m) => out.push(m),
             Item::Include(rel) => {
                 let resolved = resolve_include_path(&rel, base_path)?;
-                let canonical = resolved.canonicalize().map_err(|e| {
-                    Error::io_at(&resolved, e)
-                })?;
+                let canonical = resolved
+                    .canonicalize()
+                    .map_err(|e| Error::io_at(&resolved, e))?;
                 if !seen.insert(canonical.clone()) {
                     return Err(Error::Config(format!(
                         "circular include: {} re-includes itself",
                         resolved.display()
                     )));
                 }
-                let text = fs::read_to_string(&resolved)
-                    .map_err(|e| Error::io_at(&resolved, e))?;
+                let text = fs::read_to_string(&resolved).map_err(|e| Error::io_at(&resolved, e))?;
                 let inner = parse(&text)?;
                 let nested = expand_includes(inner.items, Some(&resolved), seen)?;
                 out.extend(nested);
@@ -212,6 +210,14 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Box<dyn Operation
         Action::ReplaceCall(template) => RuleSpec::ReplaceCall {
             target: match_string,
             template,
+        },
+        Action::Set(value) => RuleSpec::Set {
+            target: match_string,
+            value,
+        },
+        Action::Insert(value) => RuleSpec::Insert {
+            target: match_string,
+            value,
         },
     };
     let operation = backend.build_rule(namespace.module.as_str(), spec)?;
@@ -305,7 +311,11 @@ mod tests {
         assert!(!refactoring.is_file_relevant(Path::new("cmd/a.go")));
 
         let inside = refactoring.apply_at(Path::new("internal/a.go"), source);
-        assert!(inside.output.contains("func New()"), "got: {}", inside.output);
+        assert!(
+            inside.output.contains("func New()"),
+            "got: {}",
+            inside.output
+        );
         assert_eq!(inside.rules_fired, vec![0]);
 
         let outside = refactoring.apply_at(Path::new("cmd/a.go"), source);
@@ -502,11 +512,7 @@ import (
 
     #[test]
     fn compile_rejects_include_without_base_path() {
-        let err = compile(
-            r#"refactor "x" { include "other.codemod" }"#,
-            &registry(),
-        )
-        .unwrap_err();
+        let err = compile(r#"refactor "x" { include "other.codemod" }"#, &registry()).unwrap_err();
         assert!(
             matches!(&err, Error::Config(msg) if msg.contains("compile_at_path")),
             "got: {err}"

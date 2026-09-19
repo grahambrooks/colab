@@ -5,15 +5,13 @@
 //! matching is segment-wise: `target = "x"` matches `x`, `x.y`, and
 //! `from x.y import z` but never `xy` (substring) or `mod.x` (mid-path).
 
-pub mod imports;
 pub mod calls;
+pub mod imports;
 pub mod symbols;
 
 use std::cell::RefCell;
 
-use colab_core::{
-    ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec,
-};
+use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
 use tree_sitter::{Parser, Tree};
 
 thread_local! {

@@ -34,14 +34,13 @@ where
     F: FnMut(Node<'_>, Node<'_>),
 {
     colab_rewrite::visit_all(tree, |node| {
-    if let Some((name_node, text)) = import_name(node, source)
-        && text == target
-    {
-        visit(node, name_node);
-    }
+        if let Some((name_node, text)) = import_name(node, source)
+            && text == target
+        {
+            visit(node, name_node);
+        }
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // Rename
@@ -214,13 +213,19 @@ mod tests {
     #[test]
     fn renames_a_submodule_import() {
         let src = "import UIKit.UIView\n";
-        assert_eq!(rename("UIKit.UIView", "UIKit.UILabel", src), "import UIKit.UILabel\n");
+        assert_eq!(
+            rename("UIKit.UIView", "UIKit.UILabel", src),
+            "import UIKit.UILabel\n"
+        );
     }
 
     #[test]
     fn a_kind_qualified_import_keeps_its_keyword() {
         let src = "import class Old.Thing\n";
-        assert_eq!(rename("Old.Thing", "New.Thing", src), "import class New.Thing\n");
+        assert_eq!(
+            rename("Old.Thing", "New.Thing", src),
+            "import class New.Thing\n"
+        );
     }
 
     #[test]

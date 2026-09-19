@@ -113,10 +113,7 @@ mod tests {
 
         let mut packs = Vec::new();
         scan(&dir, "user", &mut packs);
-        let names: Vec<&str> = packs
-            .iter()
-            .map(|p| p["name"].as_str().unwrap())
-            .collect();
+        let names: Vec<&str> = packs.iter().map(|p| p["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"first"));
         assert!(names.contains(&"second"));
         assert!(!names.iter().any(|n| n == &"README"));

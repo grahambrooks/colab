@@ -168,12 +168,7 @@ mod tests {
     #[test]
     fn unknown_module_is_rejected_with_alternatives() {
         let err = PhpBackend
-            .build_rule(
-                "uses",
-                RuleSpec::Delete {
-                    target: "x".into(),
-                },
-            )
+            .build_rule("uses", RuleSpec::Delete { target: "x".into() })
             .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unknown module `php::uses`"), "{msg}");

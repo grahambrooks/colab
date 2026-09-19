@@ -63,4 +63,11 @@ pub enum Action {
     /// - `$func` — the matched function name (verbatim).
     /// - `$$` — a literal `$`.
     ReplaceCall(String),
+    /// Give the matched key or element this value, creating it (and any
+    /// missing parents) when absent and overwriting it when different.
+    /// Config-file backends only; the value is in the file's own syntax.
+    Set(String),
+    /// Add the matched key or element with this value only when it is
+    /// absent; an existing value is left alone.
+    Insert(String),
 }

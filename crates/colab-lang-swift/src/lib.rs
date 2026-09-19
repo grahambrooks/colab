@@ -153,12 +153,7 @@ mod tests {
     #[test]
     fn unknown_module_is_rejected_with_alternatives() {
         let err = SwiftBackend
-            .build_rule(
-                "imort",
-                RuleSpec::Delete {
-                    target: "x".into(),
-                },
-            )
+            .build_rule("imort", RuleSpec::Delete { target: "x".into() })
             .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unknown module `swift::imort`"), "{msg}");

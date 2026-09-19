@@ -1,0 +1,8 @@
+// Enable a plugin and declare its marketplace in Claude Code project
+// settings, keeping the developer's own entries and key order.
+refactor "enable-code-intelligence" {
+    match json::key "/enabledPlugins/code-intelligence@gb-agent-skills" in "settings.json" { set 'true' }
+    match json::key "/extraKnownMarketplaces/gb-agent-skills" in "settings.json" {
+        insert '{"source": {"source": "github", "repo": "grahambrooks/gb-agent-skills"}}'
+    }
+}

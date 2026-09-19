@@ -104,8 +104,8 @@ fn collect_cases(root: &Path) -> Vec<Case> {
 
 fn run_case(case: &Case) -> Result<(), String> {
     let script_path = case.dir.join("script");
-    let refactoring = compile_at_path(&script_path, &registry())
-        .map_err(|e| format!("compile: {}", e))?;
+    let refactoring =
+        compile_at_path(&script_path, &registry()).map_err(|e| format!("compile: {}", e))?;
 
     let input_dir = case.dir.join("input");
     let expected_dir = case.dir.join("expected");

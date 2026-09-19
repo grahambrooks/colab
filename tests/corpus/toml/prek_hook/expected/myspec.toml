@@ -1,0 +1,6 @@
+schema_version = 1
+
+[project]
+name = "demo" # the crate name
+profile = "rust"
+profile_version = 2

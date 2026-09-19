@@ -58,14 +58,13 @@ where
 {
     let wanted = unquote(target);
     colab_rewrite::visit_all(tree, |node| {
-    if let Some((path_node, text)) = include_path(node, source)
-        && text == wanted
-    {
-        visit(node, path_node);
-    }
+        if let Some((path_node, text)) = include_path(node, source)
+            && text == wanted
+        {
+            visit(node, path_node);
+        }
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // Rename
@@ -249,13 +248,17 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 mod tests {
     use super::*;
 
-    const SRC: &str = "#include <stdio.h>\n#include \"old/lib.h\"\n\nint main(void) { return 0; }\n";
+    const SRC: &str =
+        "#include <stdio.h>\n#include \"old/lib.h\"\n\nint main(void) { return 0; }\n";
 
     #[test]
     fn renames_a_quoted_include_and_keeps_the_quotes() {
         let out = rename("old/lib.h", "new/lib.h", SRC);
         assert!(out.contains("#include \"new/lib.h\""), "got: {out}");
-        assert!(out.contains("#include <stdio.h>"), "other includes untouched");
+        assert!(
+            out.contains("#include <stdio.h>"),
+            "other includes untouched"
+        );
     }
 
     #[test]
@@ -305,7 +308,10 @@ mod tests {
         assert!(out.contains("#include \"extra.h\""), "got: {out}");
         let last_existing = out.find("old/lib.h").unwrap();
         let added = out.find("extra.h").unwrap();
-        assert!(last_existing < added, "should follow existing includes: {out}");
+        assert!(
+            last_existing < added,
+            "should follow existing includes: {out}"
+        );
     }
 
     #[test]

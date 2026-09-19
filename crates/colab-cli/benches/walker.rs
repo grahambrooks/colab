@@ -114,10 +114,7 @@ fn build_mixed_corpus(label: &str, n: usize) -> PathBuf {
     for i in 0..n {
         let (name, body) = match i % 4 {
             0 if i % 20 == 0 => (format!("dir{:02}/{:04}.go", i % 16, i), FILE_TEMPLATE),
-            0..=2 => (
-                format!("dir{:02}/{:04}.go", i % 16, i),
-                UNMATCHED_TEMPLATE,
-            ),
+            0..=2 => (format!("dir{:02}/{:04}.go", i % 16, i), UNMATCHED_TEMPLATE),
             _ => (format!("dir{:02}/{:04}.rs", i % 16, i), RUST_TEMPLATE),
         };
         let path = dir.join(name);

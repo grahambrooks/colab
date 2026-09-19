@@ -53,7 +53,9 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     };
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, function, template, &mut edits));
+    colab_rewrite::visit_all(&tree, |node| {
+        collect(node, source_code, function, template, &mut edits)
+    });
 
     colab_rewrite::apply_edits(
         source_code,
@@ -122,13 +124,19 @@ mod tests {
     #[test]
     fn reorders_args_via_positional_placeholders() {
         let src = "oldFn(a, b);\n";
-        assert_eq!(rewrite("oldFn", "newFn($2, $1, null)", src), "newFn(b, a, null);\n");
+        assert_eq!(
+            rewrite("oldFn", "newFn($2, $1, null)", src),
+            "newFn(b, a, null);\n"
+        );
     }
 
     #[test]
     fn works_on_typescript_sources_too() {
         let src = "const x: number = oldFn(1);\n";
-        assert_eq!(rewrite("oldFn", "newFn($args)", src), "const x: number = newFn(1);\n");
+        assert_eq!(
+            rewrite("oldFn", "newFn($args)", src),
+            "const x: number = newFn(1);\n"
+        );
     }
 
     #[test]

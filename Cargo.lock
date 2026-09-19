@@ -309,12 +309,15 @@ dependencies = [
  "colab-lang-go",
  "colab-lang-java",
  "colab-lang-js",
+ "colab-lang-json",
  "colab-lang-kotlin",
+ "colab-lang-markdown",
  "colab-lang-php",
  "colab-lang-python",
  "colab-lang-ruby",
  "colab-lang-rust",
  "colab-lang-swift",
+ "colab-lang-toml",
 ]
 
 [[package]]
@@ -423,6 +426,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "colab-lang-json"
+version = "2026.7.0"
+dependencies = [
+ "colab-core",
+ "colab-rewrite",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-json",
+]
+
+[[package]]
 name = "colab-lang-kotlin"
 version = "2026.7.0"
 dependencies = [
@@ -430,6 +444,13 @@ dependencies = [
  "colab-rewrite",
  "tree-sitter",
  "tree-sitter-kotlin-ng",
+]
+
+[[package]]
+name = "colab-lang-markdown"
+version = "2026.7.0"
+dependencies = [
+ "colab-core",
 ]
 
 [[package]]
@@ -481,6 +502,14 @@ dependencies = [
  "colab-rewrite",
  "tree-sitter",
  "tree-sitter-swift",
+]
+
+[[package]]
+name = "colab-lang-toml"
+version = "2026.7.0"
+dependencies = [
+ "colab-core",
+ "toml_edit",
 ]
 
 [[package]]
@@ -1999,6 +2028,16 @@ name = "tree-sitter-javascript"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-json"
+version = "0.24.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d727acca406c0020cffc6cf35516764f36c8e3dc4408e5ebe2cb35a947ec471"
 dependencies = [
  "cc",
  "tree-sitter-language",

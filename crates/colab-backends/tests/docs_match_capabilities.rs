@@ -14,7 +14,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Actions the matrix has a column for, in column order.
-const COLUMNS: [&str; 4] = ["replace", "delete", "ensure", "replace_call"];
+const COLUMNS: [&str; 6] = [
+    "replace",
+    "delete",
+    "ensure",
+    "replace_call",
+    "set",
+    "insert",
+];
 
 fn features_md() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -48,7 +55,7 @@ fn actual_matrix() -> BTreeMap<(String, String), BTreeSet<String>> {
 /// The same map, parsed out of the markdown table.
 ///
 /// Rows look like:
-/// `| `go::import` | ✅ | ✅ | ✅ |    | .go |`
+/// `| `go::import` | ✅ | ✅ | ✅ |    |    |    | .go |`
 fn documented_matrix(text: &str) -> BTreeMap<(String, String), BTreeSet<String>> {
     let mut out = BTreeMap::new();
     for line in text.lines() {
@@ -57,8 +64,8 @@ fn documented_matrix(text: &str) -> BTreeMap<(String, String), BTreeSet<String>>
             continue;
         }
         let cells: Vec<&str> = line.trim_matches('|').split('|').map(str::trim).collect();
-        // namespace + 4 action columns + at least one more (the files column)
-        if cells.len() < 6 {
+        // namespace + the action columns + at least one more (the files column)
+        if cells.len() < COLUMNS.len() + 2 {
             continue;
         }
         let Some(ns) = cells[0].strip_prefix('`').and_then(|s| s.strip_suffix('`')) else {

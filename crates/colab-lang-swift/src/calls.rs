@@ -58,7 +58,9 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     };
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, function, template, &mut edits));
+    colab_rewrite::visit_all(&tree, |node| {
+        collect(node, source_code, function, template, &mut edits)
+    });
 
     colab_rewrite::apply_edits(
         source_code,
@@ -122,13 +124,19 @@ mod tests {
     #[test]
     fn renames_a_bare_call() {
         let src = "func f() { oldFn(a, b) }\n";
-        assert_eq!(rewrite("oldFn", "newFn($args)", src), "func f() { newFn(a, b) }\n");
+        assert_eq!(
+            rewrite("oldFn", "newFn($args)", src),
+            "func f() { newFn(a, b) }\n"
+        );
     }
 
     #[test]
     fn renames_a_navigation_call() {
         let src = "func f() { Old.run(a) }\n";
-        assert_eq!(rewrite("Old.run", "New.run($args)", src), "func f() { New.run(a) }\n");
+        assert_eq!(
+            rewrite("Old.run", "New.run($args)", src),
+            "func f() { New.run(a) }\n"
+        );
     }
 
     #[test]

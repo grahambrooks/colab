@@ -157,12 +157,7 @@ mod tests {
     #[test]
     fn unknown_module_is_rejected_with_alternatives() {
         let err = CBackend
-            .build_rule(
-                "includ",
-                RuleSpec::Delete {
-                    target: "x".into(),
-                },
-            )
+            .build_rule("includ", RuleSpec::Delete { target: "x".into() })
             .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unknown module `c::includ`"), "{msg}");
@@ -172,15 +167,13 @@ mod tests {
     #[test]
     fn unsupported_action_names_the_valid_ones() {
         let err = CBackend
-            .build_rule(
-                "symbol",
-                RuleSpec::Delete {
-                    target: "x".into(),
-                },
-            )
+            .build_rule("symbol", RuleSpec::Delete { target: "x".into() })
             .unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("does not support the `delete` action"), "{msg}");
+        assert!(
+            msg.contains("does not support the `delete` action"),
+            "{msg}"
+        );
         assert!(msg.contains("replace"), "{msg}");
     }
 }

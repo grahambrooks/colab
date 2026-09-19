@@ -222,16 +222,14 @@ fn collect_paths<T: CodeTransformer>(
     if !opts.include.is_empty() || !opts.exclude.is_empty() {
         let mut overrides = OverrideBuilder::new(root);
         for pattern in &opts.include {
-            overrides
-                .add(pattern)
-                .map_err(|e| Error::Config(format!("invalid --include glob `{}`: {}", pattern, e)))?;
+            overrides.add(pattern).map_err(|e| {
+                Error::Config(format!("invalid --include glob `{}`: {}", pattern, e))
+            })?;
         }
         for pattern in &opts.exclude {
-            overrides
-                .add(&format!("!{}", pattern))
-                .map_err(|e| {
-                    Error::Config(format!("invalid --exclude glob `{}`: {}", pattern, e))
-                })?;
+            overrides.add(&format!("!{}", pattern)).map_err(|e| {
+                Error::Config(format!("invalid --exclude glob `{}`: {}", pattern, e))
+            })?;
         }
         let overrides = overrides
             .build()
@@ -374,8 +372,7 @@ where
 pub fn process_path<T: CodeTransformer + Sync>(transformer: &T, path: &Path) -> Result<()> {
     walk(transformer, path, &mut |change: FileChange| {
         if change.changed() {
-            fs::write(&change.path, &change.after)
-                .map_err(|e| Error::io_at(&change.path, e))?;
+            fs::write(&change.path, &change.after).map_err(|e| Error::io_at(&change.path, e))?;
         }
         Ok(())
     })

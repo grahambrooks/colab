@@ -259,10 +259,9 @@ fn a_rule_that_matches_nothing_is_reported_as_dead() {
     assert_eq!(doc["rules"][0]["files"], 0);
     let warnings = doc["warnings"].as_array().expect("warnings");
     assert!(
-        warnings.iter().any(|w| w
-            .as_str()
-            .unwrap()
-            .contains("matched no files")),
+        warnings
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("matched no files")),
         "got: {stdout}"
     );
     // And the summary explains which of the three empty-result causes
@@ -454,9 +453,18 @@ fn every_backend_advertises_import_symbol_and_call() {
     // The import-equivalent module is named for the language's own
     // construct, so accept any of these.
     const IMPORT_MODULES: &[&str] = &["import", "include", "use", "using", "require"];
+    // Config-file backends edit data, not source: they have no imports,
+    // symbols or calls. They are named here so a new source backend cannot
+    // slip past the floor by accident.
+    const CONFIG_FORMATS: &[&str] = &["json", "markdown", "toml"];
 
+    let mut source_backends = 0;
     for lang in value["languages"].as_array().expect("languages") {
         let name = lang["name"].as_str().unwrap();
+        if CONFIG_FORMATS.contains(&name) {
+            continue;
+        }
+        source_backends += 1;
         let modules: Vec<&str> = lang["modules"]
             .as_array()
             .unwrap()
@@ -468,9 +476,13 @@ fn every_backend_advertises_import_symbol_and_call() {
             modules.iter().any(|m| IMPORT_MODULES.contains(m)),
             "{name} has no import-equivalent module: {modules:?}"
         );
-        assert!(modules.contains(&"symbol"), "{name} lacks symbol: {modules:?}");
+        assert!(
+            modules.contains(&"symbol"),
+            "{name} lacks symbol: {modules:?}"
+        );
         assert!(modules.contains(&"call"), "{name} lacks call: {modules:?}");
     }
+    assert_eq!(source_backends, 12, "source backend count changed");
 }
 
 #[test]
@@ -588,7 +600,10 @@ fn an_unknown_module_names_the_closest_real_one() {
     assert_eq!(output.status.code(), Some(3));
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("unknown module `go::improt`"), "got: {stderr}");
+    assert!(
+        stderr.contains("unknown module `go::improt`"),
+        "got: {stderr}"
+    );
     assert!(stderr.contains("did you mean `import`?"), "got: {stderr}");
     // And it no longer leaks the Rust Debug form of RuleSpec.
     assert!(!stderr.contains("RuleSpec"), "got: {stderr}");
@@ -782,17 +797,11 @@ fn mcp_server_responds_to_tools_list() {
 
 /// Tiny helper: wait for child with a timeout (kills on expiry).
 trait WaitTimeoutExt {
-    fn wait_timeout_or_kill(
-        &mut self,
-        timeout: std::time::Duration,
-    ) -> std::io::Result<()>;
+    fn wait_timeout_or_kill(&mut self, timeout: std::time::Duration) -> std::io::Result<()>;
 }
 
 impl WaitTimeoutExt for std::process::Child {
-    fn wait_timeout_or_kill(
-        &mut self,
-        timeout: std::time::Duration,
-    ) -> std::io::Result<()> {
+    fn wait_timeout_or_kill(&mut self, timeout: std::time::Duration) -> std::io::Result<()> {
         let start = std::time::Instant::now();
         loop {
             match self.try_wait()? {
@@ -1251,10 +1260,7 @@ fn pack_list_finds_repo_packs() {
     assert_eq!(output.status.code(), Some(0));
     let v: Value = serde_json::from_slice(&output.stdout).unwrap();
     let packs = v["packs"].as_array().unwrap();
-    let names: Vec<&str> = packs
-        .iter()
-        .map(|p| p["name"].as_str().unwrap())
-        .collect();
+    let names: Vec<&str> = packs.iter().map(|p| p["name"].as_str().unwrap()).collect();
     assert!(names.contains(&"example"), "got: {names:?}");
     let sources: Vec<&str> = packs
         .iter()

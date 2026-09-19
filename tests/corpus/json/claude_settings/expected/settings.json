@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": ["Bash(ls:*)"]
+  },
+  "enabledPlugins": {
+    "mine@elsewhere": true,
+    "code-intelligence@gb-agent-skills": true
+  },
+  "extraKnownMarketplaces": {"gb-agent-skills": {"source": {"source": "github", "repo": "grahambrooks/gb-agent-skills"}}}
+}

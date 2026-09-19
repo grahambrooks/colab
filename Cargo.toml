@@ -9,12 +9,15 @@ members = [
     "crates/colab-lang-go",
     "crates/colab-lang-java",
     "crates/colab-lang-js",
+    "crates/colab-lang-json",
     "crates/colab-lang-kotlin",
+    "crates/colab-lang-markdown",
     "crates/colab-lang-php",
     "crates/colab-lang-python",
     "crates/colab-lang-ruby",
     "crates/colab-lang-rust",
     "crates/colab-lang-swift",
+    "crates/colab-lang-toml",
     "crates/colab-backends",
     "crates/colab-rewrite",
     "crates/colab-mcp",
@@ -38,12 +41,15 @@ colab-lang-csharp = { path = "crates/colab-lang-csharp" }
 colab-lang-go = { path = "crates/colab-lang-go" }
 colab-lang-java = { path = "crates/colab-lang-java" }
 colab-lang-js = { path = "crates/colab-lang-js" }
+colab-lang-json = { path = "crates/colab-lang-json" }
 colab-lang-kotlin = { path = "crates/colab-lang-kotlin" }
+colab-lang-markdown = { path = "crates/colab-lang-markdown" }
 colab-lang-php = { path = "crates/colab-lang-php" }
 colab-lang-python = { path = "crates/colab-lang-python" }
 colab-lang-ruby = { path = "crates/colab-lang-ruby" }
 colab-lang-rust = { path = "crates/colab-lang-rust" }
 colab-lang-swift = { path = "crates/colab-lang-swift" }
+colab-lang-toml = { path = "crates/colab-lang-toml" }
 colab-mcp = { path = "crates/colab-mcp" }
 colab-rewrite = { path = "crates/colab-rewrite" }
 
@@ -63,6 +69,7 @@ tree-sitter-cpp = "0.23.4"
 tree-sitter-go = "0.25.0"
 tree-sitter-java = "0.23"
 tree-sitter-javascript = "0.25"
+tree-sitter-json = "0.24"
 tree-sitter-kotlin-ng = "1.1.0"
 tree-sitter-php = "0.24.2"
 tree-sitter-python = "0.25"

@@ -429,7 +429,11 @@ mod tests {
         );
 
         report.files_scanned = 38;
-        assert!(explain_no_changes(&report).unwrap().contains("no rule matched"));
+        assert!(
+            explain_no_changes(&report)
+                .unwrap()
+                .contains("no rule matched")
+        );
 
         report.files_changed = 1;
         assert!(explain_no_changes(&report).is_none());

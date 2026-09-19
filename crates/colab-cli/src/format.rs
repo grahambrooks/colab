@@ -87,7 +87,6 @@ pub fn make_reporter(format: Format, mode: ExecMode, options: RenderOptions) -> 
     }
 }
 
-
 /// Human-friendly reporter. Per-file lines go to the log (stderr); the
 /// summary and any advisories go to **stdout**, so an agent shelling out
 /// and capturing stdout sees a result rather than nothing.

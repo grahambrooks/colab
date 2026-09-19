@@ -1,0 +1,7 @@
+schema_version = 1
+
+[project]
+name = "demo" # the crate name
+profile = "rust"
+created_by = "myspec 2026.9.0"
+profile_version = 1

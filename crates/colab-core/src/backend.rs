@@ -39,7 +39,7 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     ///
     /// Return `None` to disable the fast path. `ensure`-style operations
     /// MUST return `None`, since they act precisely when the target is
-    /// absent.
+    /// absent; so must `set` and `insert`.
     fn prefilter(&self) -> Option<&str> {
         None
     }
@@ -62,6 +62,11 @@ pub enum RuleSpec {
     /// `colab_dsl::ast::Action::ReplaceCall` for the template
     /// placeholder list.
     ReplaceCall { target: String, template: String },
+    /// `set` action: give `target` the value `value`, creating or
+    /// overwriting it. The value is in the target file's own syntax.
+    Set { target: String, value: String },
+    /// `insert` action: add `target` with `value` only when it is absent.
+    Insert { target: String, value: String },
 }
 
 impl RuleSpec {
@@ -74,6 +79,8 @@ impl RuleSpec {
             RuleSpec::Delete { .. } => "delete",
             RuleSpec::Ensure { .. } => "ensure",
             RuleSpec::ReplaceCall { .. } => "replace_call",
+            RuleSpec::Set { .. } => "set",
+            RuleSpec::Insert { .. } => "insert",
         }
     }
 
@@ -83,7 +90,9 @@ impl RuleSpec {
             RuleSpec::Replace { target, .. }
             | RuleSpec::Delete { target }
             | RuleSpec::Ensure { target }
-            | RuleSpec::ReplaceCall { target, .. } => target,
+            | RuleSpec::ReplaceCall { target, .. }
+            | RuleSpec::Set { target, .. }
+            | RuleSpec::Insert { target, .. } => target,
         }
     }
 }
