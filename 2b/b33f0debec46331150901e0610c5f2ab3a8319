@@ -1,0 +1,215 @@
+crates/colab-lang-kotlin/src/imports.rs
+  s_687c1e451e405d::t_e9b4518dcc353c 1-7,13-270,273,283-342
+  s_687c1e451e405d::t_b15084d6d5a3ce 271-272,274-282
+  s_687c1e451e405d::t_88d572fb096781 8-12
+crates/colab-lang-kotlin/src/calls.rs
+  s_687c1e451e405d::t_4510718ae49e5a 1-175
+crates/colab-lang-kotlin/src/packages.rs
+  s_687c1e451e405d::t_fb0386ed6f60f5 1-124
+crates/colab-lang-php/src/lib.rs
+  s_687c1e451e405d::t_857ca969b3e5f2 1-182
+crates/colab-lang-go/src/packages.rs
+  s_687c1e451e405d::t_34c40aa8345645 1-115
+CLAUDE.md
+  s_687c1e451e405d::t_422d6d4a3768d2 47,49-71
+crates/colab-lang-php/Cargo.toml
+  s_687c1e451e405d::t_d8aa8dfce285c0 1-13
+tests/corpus/kotlin/package_and_import/script
+  s_687c1e451e405d::t_32238ad736d025 1-6
+crates/colab-dsl/tests/corpus.rs
+  s_687c1e451e405d::t_9045e13f846f91 24-26,30-31,33,35
+.claude/skills/colab-codemod/references/recipes.md
+  s_687c1e451e405d::t_fdbbd5dc1ae3c6 9-37,46-49,51-58,264-407
+crates/colab-cli/tests/cli.rs
+  s_687c1e451e405d::t_ab103cc35b7452 424-473
+  s_687c1e451e405d::t_d0874c5310eb94 604-605,608
+examples/polyglot/src/csharp/Program.cs
+  s_687c1e451e405d::t_3c2a8e616471b2 1-10
+crates/colab-lang-go/src/lib.rs
+  s_687c1e451e405d::t_ad5c14f2097053 8,85-92,152-161
+tests/corpus/ruby/require_and_call/input/service.rb
+  s_687c1e451e405d::t_32238ad736d025 1-9
+crates/colab-lang-ruby/src/calls.rs
+  s_687c1e451e405d::t_aadf4c7c9aa1e5 100-102,104
+  s_687c1e451e405d::t_63e507f8c53ad1 1-99,103,105-194
+crates/colab-lang-csharp/src/namespaces.rs
+  s_687c1e451e405d::t_ad824781ace2f0 1-124
+crates/colab-lang-c/src/lib.rs
+  s_687c1e451e405d::t_db88ecfe7c9390 1-186
+crates/colab-lang-csharp/src/usings.rs
+  s_687c1e451e405d::t_c548f915c46877 1-335
+tests/corpus/ruby/require_and_call/script
+  s_687c1e451e405d::t_32238ad736d025 1-7
+examples/polyglot/src/php/Service.php
+  s_687c1e451e405d::t_3c2a8e616471b2 1-13
+crates/colab-lang-java/src/calls.rs
+  s_687c1e451e405d::t_34c40aa8345645 1-180
+crates/colab-lang-swift/src/calls.rs
+  s_687c1e451e405d::t_13fc7f42739507 1-180
+crates/colab-lang-js/src/lib.rs
+  s_687c1e451e405d::t_ea217c9dc6324d 58-61
+  s_687c1e451e405d::t_ad5c14f2097053 12,72-79,120-128
+tests/corpus/kotlin/package_and_import/expected/Service.kt
+  s_687c1e451e405d::t_32238ad736d025 1-7
+tests/corpus/php/use_and_namespace/input/Service.php
+  s_687c1e451e405d::t_32238ad736d025 1-13
+crates/colab-lang-csharp/src/symbols.rs
+  s_687c1e451e405d::t_3449f2a649e8a9 1-113
+crates/colab-lang-c/src/calls.rs
+  s_687c1e451e405d::t_56aae50eb47bbc 1-158
+crates/colab-lang-php/src/calls.rs
+  s_687c1e451e405d::t_0dc03f23cb0f23 1-187
+crates/colab-lang-kotlin/src/lib.rs
+  s_687c1e451e405d::t_fb0386ed6f60f5 1-185
+tests/corpus/csharp/using_and_namespace/input/Program.cs
+  s_687c1e451e405d::t_32238ad736d025 1-12
+tests/corpus/php/use_and_namespace/script
+  s_687c1e451e405d::t_fe0398ddcc1490 2-3,5-6
+  s_687c1e451e405d::t_32238ad736d025 1,4,7-8
+crates/colab-lang-c/src/includes.rs
+  s_687c1e451e405d::t_9e11849f43bb12 265-275
+  s_687c1e451e405d::t_654a955d3fab72 1-264,276-375
+crates/colab-lang-js/src/imports.rs
+  s_687c1e451e405d::t_b52182c888d06d 274-383
+tests/corpus/c/include_and_call/expected/main.c
+  s_687c1e451e405d::t_32238ad736d025 1-8
+tests/corpus/ruby/require_and_call/expected/service.rb
+  s_687c1e451e405d::t_32238ad736d025 1-10
+crates/colab-lang-swift/src/lib.rs
+  s_687c1e451e405d::t_9de84a2648f9b4 1-167
+crates/colab-dsl/Cargo.toml
+  s_687c1e451e405d::t_9045e13f846f91 18-20,24-25,27,29
+crates/colab-lang-c/Cargo.toml
+  s_687c1e451e405d::t_d8aa8dfce285c0 1-13
+crates/colab-lang-js/src/calls.rs
+  s_687c1e451e405d::t_fea3975ce2af31 1-37,39-165
+  s_687c1e451e405d::t_ea217c9dc6324d 38
+crates/colab-lang-python/src/calls.rs
+  s_687c1e451e405d::t_fea3975ce2af31 1-165
+tests/corpus/c/include_and_call/input/main.c
+  s_687c1e451e405d::t_32238ad736d025 1-7
+crates/colab-lang-swift/Cargo.toml
+  s_687c1e451e405d::t_d8aa8dfce285c0 1-13
+crates/colab-lang-php/src/namespaces.rs
+  s_687c1e451e405d::t_5268c5fbe64d51 1-122
+examples/polyglot/src/ruby/service.rb
+  s_687c1e451e405d::t_3c2a8e616471b2 1-9
+crates/colab-lang-php/src/uses.rs
+  s_687c1e451e405d::t_1e7fb615b4b9a4 1-237,242,244-247,253,257-260,262-355
+  s_687c1e451e405d::t_3b2f2fd414b452 238-241,243,248-252,254-256,261
+examples/polyglot/src/kotlin/Service.kt
+  s_687c1e451e405d::t_3c2a8e616471b2 1-7
+crates/colab-lang-php/src/symbols.rs
+  s_687c1e451e405d::t_3449f2a649e8a9 1-113
+crates/colab-lang-cpp/src/lib.rs
+  s_687c1e451e405d::t_f1c581e1a74bf6 1-193
+crates/colab-lang-python/src/lib.rs
+  s_687c1e451e405d::t_ad5c14f2097053 9,67-74,118-123
+tests/corpus/csharp/using_and_namespace/expected/Program.cs
+  s_687c1e451e405d::t_32238ad736d025 1-13
+crates/colab-dsl/src/codemod.lalrpop
+  s_687c1e451e405d::t_2ae7b33a19678b 50-55,57-62
+Cargo.toml
+  s_687c1e451e405d::t_e2c9c722fe48d1 6-8,12-13,15,17,32-34,38-39,41,43,57-59,63-64,66,68
+docs/dsl.md
+  s_687c1e451e405d::t_6435ab1e4174c8 31,81-88
+  s_687c1e451e405d::t_c20bf8d45176eb 162-166,182-186,188,199-212,340,342-343,347-357
+  s_687c1e451e405d::t_e61bd8eae9e737 358
+crates/colab-cli/Cargo.toml
+  s_687c1e451e405d::t_c8313c6d4abc3a 18-20,24-25,27,29
+crates/colab-lang-csharp/src/lib.rs
+  s_687c1e451e405d::t_27c100dc0f37e1 1-182
+tests/corpus/swift/import_and_call/script
+  s_687c1e451e405d::t_32238ad736d025 1-7
+crates/colab-lang-ruby/src/lib.rs
+  s_687c1e451e405d::t_7c6f0d55b5e757 1-179
+examples/polyglot/README.md
+  s_687c1e451e405d::t_d753413f050c88 1-75
+crates/colab-lang-java/src/lib.rs
+  s_687c1e451e405d::t_ad5c14f2097053 10,77-84,138-143
+crates/colab-lang-swift/src/symbols.rs
+  s_687c1e451e405d::t_3449f2a649e8a9 1-113
+crates/colab-lang-kotlin/src/symbols.rs
+  s_687c1e451e405d::t_3449f2a649e8a9 1-113
+crates/colab-lang-csharp/Cargo.toml
+  s_687c1e451e405d::t_d8aa8dfce285c0 1-13
+README.md
+  s_687c1e451e405d::t_6c123f745ef502 6-7,202-204,208-209,211,213,231-232
+  s_687c1e451e405d::t_cbed0c3e5c7f2b 30-46,49-56
+crates/colab-lang-cpp/src/calls.rs
+  s_687c1e451e405d::t_3e84bbdfa7c506 1-158
+crates/colab-lang-cpp/src/namespaces.rs
+  s_687c1e451e405d::t_6c09da9cf8c608 1-130
+crates/colab-lang-ruby/src/symbols.rs
+  s_687c1e451e405d::t_3449f2a649e8a9 1-113
+crates/colab-lang-kotlin/Cargo.toml
+  s_687c1e451e405d::t_d8aa8dfce285c0 1-13
+crates/colab-cli/src/cli.rs
+  s_687c1e451e405d::t_af345abcc87d9e 38-40,44-45,47,49
+tests/corpus/swift/import_and_call/input/Service.swift
+  s_687c1e451e405d::t_32238ad736d025 1-5
+examples/polyglot/src/swift/Service.swift
+  s_687c1e451e405d::t_3c2a8e616471b2 1-5
+docs/features.md
+  s_687c1e451e405d::t_a75b89acab8940 330-440
+  s_687c1e451e405d::t_c3eb64e7493da9 12-76
+tests/corpus/cpp/namespace_and_symbol/input/widget.cpp
+  s_687c1e451e405d::t_32238ad736d025 1-13
+crates/colab-lang-ruby/Cargo.toml
+  s_687c1e451e405d::t_d8aa8dfce285c0 1-13
+tests/corpus/c/include_and_call/script
+  s_687c1e451e405d::t_32238ad736d025 1-6
+docs/architecture.md
+  s_687c1e451e405d::t_422d6d4a3768d2 25-27,31-32,34,36
+crates/colab-lang-csharp/src/calls.rs
+  s_687c1e451e405d::t_152e20053ed170 1-160
+tests/corpus/cpp/namespace_and_symbol/script
+  s_687c1e451e405d::t_32238ad736d025 1-6
+crates/colab-lang-c/src/symbols.rs
+  s_687c1e451e405d::t_3449f2a649e8a9 1-113
+crates/colab-lang-ruby/src/requires.rs
+  s_687c1e451e405d::t_168f9de8ae7344 1-369
+tests/corpus/cpp/namespace_and_symbol/expected/widget.cpp
+  s_687c1e451e405d::t_32238ad736d025 1-13
+crates/colab-lang-swift/src/imports.rs
+  s_687c1e451e405d::t_13fc7f42739507 1-222,225-317
+  s_687c1e451e405d::t_dbb355f7410f06 223-224
+tests/corpus/csharp/using_and_namespace/script
+  s_687c1e451e405d::t_32238ad736d025 1-7
+tests/corpus/kotlin/package_and_import/input/Service.kt
+  s_687c1e451e405d::t_32238ad736d025 1-7
+tests/corpus/php/use_and_namespace/expected/Service.php
+  s_687c1e451e405d::t_32238ad736d025 1-13
+tests/corpus/swift/import_and_call/expected/Service.swift
+  s_687c1e451e405d::t_32238ad736d025 2-6
+  s_687c1e451e405d::t_fe0398ddcc1490 1
+crates/colab-lang-cpp/src/includes.rs
+  s_687c1e451e405d::t_3e84bbdfa7c506 1-264,276-375
+  s_687c1e451e405d::t_9e11849f43bb12 265-275
+crates/colab-lang-cpp/Cargo.toml
+  s_687c1e451e405d::t_d8aa8dfce285c0 1-13
+examples/polyglot/rename-logger.codemod
+  s_687c1e451e405d::t_3c2a8e616471b2 1-32
+examples/polyglot/src/c/main.c
+  s_687c1e451e405d::t_3c2a8e616471b2 1-7
+crates/colab-lang-cpp/src/symbols.rs
+  s_687c1e451e405d::t_3449f2a649e8a9 1-113
+Cargo.lock
+  s_687c1e451e405d::t_0a874d8e35a0f7 310-312,316-317,319,321,352-354,358-359,361,363,368-394,422-439,449-457,468-476,1932-1961,1992-2001,2008-2017,2028-2037,2048-2057
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2bb33f0debec46331150901e0610c5f2ab3a8319",
+  "prompts": {},
+  "sessions": {
+    "s_687c1e451e405d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d11b34-3229-4e42-b045-a76c4b9d5c32",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}

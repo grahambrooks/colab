@@ -1,0 +1,60 @@
+crates/colab-dsl/Cargo.toml
+  s_687c1e451e405d::t_c11808160dea19 16
+.claude/skills/colab-extend/SKILL.md
+  s_687c1e451e405d::t_fcfa0d97151fd3 35-40,60-62,97-101,129-134,200-202
+  s_687c1e451e405d::t_1f15af235f398c 20-22,25-27
+Cargo.toml
+  s_687c1e451e405d::t_aaf692e6d50bc3 18,32
+crates/colab-dsl/tests/corpus.rs
+  s_687c1e451e405d::t_c11808160dea19 23-25
+crates/colab-backends/Cargo.toml
+  s_687c1e451e405d::t_aaf692e6d50bc3 1-28
+crates/colab-mcp/src/lib.rs
+  s_687c1e451e405d::t_1f555d1a7a805d 390,536
+  s_687c1e451e405d::t_ee2908482afca5 691,780-782
+CLAUDE.md
+  s_687c1e451e405d::t_fcfa0d97151fd3 46-47,91,101-102
+crates/colab-cli/src/discover.rs
+  s_687c1e451e405d::t_65a7b276ce8fc4 134-154,160-173,178
+  s_687c1e451e405d::t_160324f12ea245 128
+crates/colab-backends/src/lib.rs
+  s_687c1e451e405d::t_aaf692e6d50bc3 1-97
+crates/colab-cli/Cargo.toml
+  s_687c1e451e405d::t_c11808160dea19 16
+crates/colab-mcp/Cargo.toml
+  s_687c1e451e405d::t_c11808160dea19 19
+crates/colab-cli/src/language_server.rs
+  s_687c1e451e405d::t_160324f12ea245 352
+crates/colab-backends/tests/contracts.rs
+  s_687c1e451e405d::t_7de69a694d15e1 1-201,227-280
+  s_687c1e451e405d::t_cb0d8e0a84d721 202-226
+crates/colab-core/src/report.rs
+  s_687c1e451e405d::t_69d7962a39db3d 104-114
+crates/colab-dsl/src/compiler.rs
+  s_687c1e451e405d::t_ee2908482afca5 244-246
+crates/colab-cli/src/cli.rs
+  s_687c1e451e405d::t_c11808160dea19 33,35-36,38
+  s_687c1e451e405d::t_1f555d1a7a805d 523,595-597,719
+crates/colab-cli/benches/walker.rs
+  s_687c1e451e405d::t_aed035f9adf155 133
+docs/architecture.md
+  s_687c1e451e405d::t_fcfa0d97151fd3 25-33
+Cargo.lock
+  s_687c1e451e405d::t_7b868fb0474dfe 302,319-330,360,491
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ab6eb90460296e23db25df82aaf3d4dc78ec46ec",
+  "prompts": {},
+  "sessions": {
+    "s_687c1e451e405d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d11b34-3229-4e42-b045-a76c4b9d5c32",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
