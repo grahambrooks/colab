@@ -9,6 +9,11 @@ also edits **TOML, JSON and Markdown** configuration by key path, JSON
 Pointer or managed block, so a repository convention can be rolled out
 the same way (see [`examples/config`](examples/config/repo_migration/)).
 
+Agents typically use diffs and tools like sed command tools to change files. Colab is a more precise, idempotent, and
+language-aware alternative. Because it is code aware a function rename not only renames the fuction to be called but
+also all the call sites. It can also rename a crate and all the `use` statements in Rust, or a package and all the
+`import` statements in Java.
+
 ```sh
 colab refactor --script rename-tokio.codemod --check .
 ```
@@ -33,20 +38,20 @@ agent.
 Twelve languages, each with the same capability floor — an
 import-equivalent, a symbol rename, and call rewriting:
 
-| Language | Namespace | Modules |
-| -------- | --------- | ------- |
-| C          | `c`      | `include`, `symbol`, `call` |
-| C++        | `cpp`    | `include`, `namespace`, `symbol`, `call` |
-| C#         | `csharp` | `using`, `namespace`, `symbol`, `call` |
-| Go         | `go`     | `import`, `package`, `symbol`, `struct_tag`, `call` |
-| Java       | `java`   | `import`, `package`, `symbol`, `call` |
-| JavaScript / TypeScript | `js` | `import`, `symbol`, `call` |
-| Kotlin     | `kotlin` | `import`, `package`, `symbol`, `call` |
-| PHP        | `php`    | `use`, `namespace`, `symbol`, `call` |
-| Python     | `python` | `import`, `symbol`, `call` |
-| Ruby       | `ruby`   | `require`, `symbol`, `call` |
-| Rust       | `rust`   | `use`, `symbol`, `crate` (Cargo.toml), `call` |
-| Swift      | `swift`  | `import`, `symbol`, `call` |
+| Language                | Namespace | Modules                                             |
+|-------------------------|-----------|-----------------------------------------------------|
+| C                       | `c`       | `include`, `symbol`, `call`                         |
+| C++                     | `cpp`     | `include`, `namespace`, `symbol`, `call`            |
+| C#                      | `csharp`  | `using`, `namespace`, `symbol`, `call`              |
+| Go                      | `go`      | `import`, `package`, `symbol`, `struct_tag`, `call` |
+| Java                    | `java`    | `import`, `package`, `symbol`, `call`               |
+| JavaScript / TypeScript | `js`      | `import`, `symbol`, `call`                          |
+| Kotlin                  | `kotlin`  | `import`, `package`, `symbol`, `call`               |
+| PHP                     | `php`     | `use`, `namespace`, `symbol`, `call`                |
+| Python                  | `python`  | `import`, `symbol`, `call`                          |
+| Ruby                    | `ruby`    | `require`, `symbol`, `call`                         |
+| Rust                    | `rust`    | `use`, `symbol`, `crate` (Cargo.toml), `call`       |
+| Swift                   | `swift`   | `import`, `symbol`, `call`                          |
 
 Actions: `replace`, `delete`, `ensure`, `replace_call` (with
 `$1`/`$args`/`$func` template placeholders). The import-equivalent module
@@ -227,14 +232,14 @@ add a corpus case.
 
 ## Examples
 
-| Example | What it does |
-| ------- | ------------ |
-| [`examples/go/imports/`](examples/go/imports/) | Single-rule Go import rename. |
-| [`examples/rust/rename_crate/`](examples/rust/rename_crate/) | End-to-end crate rename across `Cargo.toml` and `*.rs`. |
-| [`examples/rust/scoped_rename/`](examples/rust/scoped_rename/) | Scoping a symbol rename with `in "<glob>"` so a shared name is only renamed where it should be. |
-| [`examples/polyglot/`](examples/polyglot/) | One script rewriting an import and a call site across C, C#, PHP, Ruby, Kotlin, and Swift. |
-| [`examples/packs/rust/edition-2021-to-2024.codemod`](examples/packs/rust/edition-2021-to-2024.codemod) | Skeleton for an edition-migration pack. |
-| [`examples/packs/java/8-to-21.codemod`](examples/packs/java/8-to-21.codemod) | Skeleton for a Java 8→21 pack. |
+| Example                                                                                                | What it does                                                                                    |
+|--------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| [`examples/go/imports/`](examples/go/imports/)                                                         | Single-rule Go import rename.                                                                   |
+| [`examples/rust/rename_crate/`](examples/rust/rename_crate/)                                           | End-to-end crate rename across `Cargo.toml` and `*.rs`.                                         |
+| [`examples/rust/scoped_rename/`](examples/rust/scoped_rename/)                                         | Scoping a symbol rename with `in "<glob>"` so a shared name is only renamed where it should be. |
+| [`examples/polyglot/`](examples/polyglot/)                                                             | One script rewriting an import and a call site across C, C#, PHP, Ruby, Kotlin, and Swift.      |
+| [`examples/packs/rust/edition-2021-to-2024.codemod`](examples/packs/rust/edition-2021-to-2024.codemod) | Skeleton for an edition-migration pack.                                                         |
+| [`examples/packs/java/8-to-21.codemod`](examples/packs/java/8-to-21.codemod)                           | Skeleton for a Java 8→21 pack.                                                                  |
 
 ## Contributing
 
