@@ -1,0 +1,37 @@
+plugins/claude/colab/.mcp.json
+  s_06963808929524::t_300a236b8f9224 1-4,7-9
+  s_06963808929524::t_337c56d6dea8fb 5-6
+plugins/claude/colab/README.md
+  s_06963808929524::t_7cc26cbfbf1b5f 1-67
+plugins/claude/colab/.claude-plugin/plugin.json
+  s_06963808929524::t_20388e349ea4bd 1-11
+plugins/claude/colab/skills/colab-codemod/references/troubleshooting.md
+  s_06963808929524::t_ba740fd61689fd 1-30,40-214
+  s_06963808929524::t_71d7702348ac32 31-39
+crates/colab-backends/tests/skill_matches_capabilities.rs
+  s_06963808929524::t_536d79b658af36 1-33,47-108,113-232
+  s_06963808929524::t_34dec0788e254e 34-46,109-112
+plugins/claude/colab/skills/colab-codemod/references/recipes.md
+  s_06963808929524::t_da52e4a5194e22 1-469
+plugins/claude/colab/skills/colab-codemod/SKILL.md
+  s_06963808929524::t_45c0e61554e1de 1-93,99-298
+  s_06963808929524::t_16b190fc9156de 94-98
+.claude/skills/colab-codemod
+  s_06963808929524::t_a88d585d57e612 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ca5dc54bc519916f8c2a43abe1c941790e6f0b94",
+  "prompts": {},
+  "sessions": {
+    "s_06963808929524": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f4ea17da-64f6-4076-aff0-8e1508e26a3b",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}

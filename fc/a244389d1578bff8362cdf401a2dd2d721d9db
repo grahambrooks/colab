@@ -1,0 +1,14 @@
+README.md
+  h_37b3b27dede911 12-16,41-54,235-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fca244389d1578bff8362cdf401a2dd2d721d9db",
+  "prompts": {},
+  "humans": {
+    "h_37b3b27dede911": {
+      "author": "Graham Brooks <graham@grahambrooks.com>"
+    }
+  }
+}
