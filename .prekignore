@@ -1,0 +1,4 @@
+# Directories prek's workspace discovery must not treat as projects: these hold
+# prek.toml files that are test fixtures and examples, not hook configs to run.
+tests/corpus/
+examples/config/repo_migration/repo/
