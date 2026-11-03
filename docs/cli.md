@@ -317,8 +317,9 @@ exit_code, line?, column?, expected?, snippet?}}`. JSON-RPC error
 responses (`-32602`) are reserved for malformed *calls*: unknown method
 or tool, missing or mistyped arguments.
 
-Wire format: JSON-RPC 2.0 over stdio with LSP-style
-`Content-Length` framing. Methods supported: `initialize`,
+Wire format: JSON-RPC 2.0 over stdio using MCP's stdio transport:
+one JSON message per line, newline-delimited (no `Content-Length`
+headers; those are only for the LSP `colab server`). Methods supported: `initialize`,
 `initialized` (notification), `tools/list`, `tools/call`. Exiting
 the client (closing stdin or sending an `exit` notification) shuts
 the server down cleanly.

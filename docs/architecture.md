@@ -46,8 +46,9 @@ crates/
   colab-mcp/          # Model Context Protocol server (preview / apply
                       # / schema / list_rules / list_languages /
                       # lint_script as MCP tools).
-                      # JSON-RPC 2.0 over stdio with Content-Length
-                      # framing. Depends only on colab-core +
+                      # JSON-RPC 2.0 over stdio, newline-delimited
+                      # (MCP stdio transport; the LSP server keeps
+                      # Content-Length). Depends only on colab-core +
                       # colab-dsl; like colab-dsl, must not pull in
                       # any colab-lang-* crate at runtime.
   colab-cli/          # `colab` binary; assembles the default

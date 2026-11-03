@@ -41,8 +41,12 @@
 //!
 //! ## Wire format
 //!
-//! JSON-RPC 2.0 framed with LSP-style `Content-Length` headers over
-//! stdio. The supported methods are:
+//! JSON-RPC 2.0 over stdio using MCP's stdio transport: one JSON
+//! message per line, newline-delimited, with no embedded newlines.
+//! (The LSP `colab server` keeps LSP's `Content-Length` framing; that is
+//! tower-lsp in colab-cli, not this crate.) A line that is not valid
+//! JSON gets a `-32700 parse error` response and the server keeps
+//! reading. The supported methods are:
 //!
 //! - `initialize`
 //! - `initialized` (notification, no response)
@@ -68,6 +72,8 @@ mod tools;
 
 /// JSON-RPC error code for "method not found" (-32601).
 const METHOD_NOT_FOUND: i64 = -32601;
+/// JSON-RPC error code for "parse error" (-32700): a line that is not JSON.
+const PARSE_ERROR: i64 = -32700;
 /// JSON-RPC error code for "invalid params" (-32602).
 ///
 /// This is the only error code tool calls produce. A tool that *ran* and
@@ -90,9 +96,18 @@ where
     let mut writer = writer;
 
     loop {
-        let Some(message) = read_message(&mut reader)? else {
-            // EOF: client closed stdin.
-            return Ok(());
+        let message = match read_message(&mut reader)? {
+            None => return Ok(()), // EOF: client closed stdin.
+            Some(Ok(message)) => message,
+            Some(Err(e)) => {
+                let response = json!({
+                    "jsonrpc": "2.0",
+                    "id": Value::Null,
+                    "error": { "code": PARSE_ERROR, "message": format!("parse error: {e}") },
+                });
+                write_message(&mut writer, &response)?;
+                continue;
+            }
         };
         if message
             .get("method")
@@ -116,41 +131,32 @@ pub fn run(backends: BackendRegistry) -> io::Result<()> {
     serve(in_lock, out_lock, backends)
 }
 
-/// Read a single Content-Length-framed JSON-RPC message. Returns
-/// `Ok(None)` on EOF.
-fn read_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>> {
-    let mut content_length: Option<usize> = None;
-
+/// Read one newline-delimited JSON-RPC message (MCP stdio transport).
+/// Blank lines are skipped. Returns `Ok(None)` on EOF, and
+/// `Ok(Some(Err(_)))` for a line that is not valid JSON, so the caller
+/// can answer with a parse error instead of dropping the connection.
+fn read_message<R: BufRead>(
+    reader: &mut R,
+) -> io::Result<Option<Result<Value, serde_json::Error>>> {
+    let mut line = String::new();
     loop {
-        let mut line = String::new();
-        let bytes = reader.read_line(&mut line)?;
-        if bytes == 0 {
+        line.clear();
+        if reader.read_line(&mut line)? == 0 {
             return Ok(None);
         }
-        let trimmed = line.trim_end_matches(['\r', '\n']);
-        if trimmed.is_empty() {
-            break;
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Ok(Some(serde_json::from_str(trimmed)));
         }
-        if let Some(value) = trimmed.strip_prefix("Content-Length:") {
-            content_length = value.trim().parse().ok();
-        }
-        // Unknown headers (Content-Type, etc.) are silently ignored,
-        // matching how the LSP/MCP framing is forgiving.
     }
-
-    let len = content_length
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing Content-Length"))?;
-    let mut buf = vec![0u8; len];
-    reader.read_exact(&mut buf)?;
-    let value: Value =
-        serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    Ok(Some(value))
 }
 
-/// Write a single Content-Length-framed JSON-RPC message.
+/// Write one JSON-RPC message as a single line. `serde_json` emits
+/// compact JSON, which escapes every newline inside strings, so the
+/// message never spans lines.
 fn write_message<W: Write>(writer: &mut W, value: &Value) -> io::Result<()> {
-    let body = serde_json::to_vec(value)?;
-    write!(writer, "Content-Length: {}\r\n\r\n", body.len())?;
+    let mut body = serde_json::to_vec(value)?;
+    body.push(b'\n');
     writer.write_all(&body)?;
     writer.flush()
 }
@@ -1118,25 +1124,17 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
-    /// Parse a buffer of `Content-Length`-framed JSON-RPC messages
-    /// into a `Vec<Value>` for assertions.
+    /// Parse a buffer of newline-delimited JSON-RPC messages into a
+    /// `Vec<Value>`, asserting each line is exactly one message.
     fn parse_messages(buf: &[u8]) -> Vec<Value> {
         let text = std::str::from_utf8(buf).unwrap();
-        let mut out = Vec::new();
-        let mut rest = text;
-        while let Some(header_end) = rest.find("\r\n\r\n") {
-            let header = &rest[..header_end];
-            let length: usize = header
-                .lines()
-                .find_map(|l| l.strip_prefix("Content-Length:"))
-                .and_then(|v| v.trim().parse().ok())
-                .expect("Content-Length");
-            let body_start = header_end + 4;
-            let body = &rest[body_start..body_start + length];
-            out.push(serde_json::from_str(body).unwrap());
-            rest = &rest[body_start + length..];
-        }
-        out
+        assert!(
+            text.is_empty() || text.ends_with('\n'),
+            "unterminated line: {text:?}"
+        );
+        text.lines()
+            .map(|l| serde_json::from_str(l).expect("each line is one JSON message"))
+            .collect()
     }
 
     #[test]
@@ -1226,22 +1224,55 @@ mod tests {
 
     #[test]
     fn read_write_roundtrip() {
-        let mut input = Vec::new();
-        let body = b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}";
-        input.extend_from_slice(b"Content-Length: ");
-        input.extend_from_slice(body.len().to_string().as_bytes());
-        input.extend_from_slice(b"\r\n\r\n");
-        input.extend_from_slice(body);
-
+        let input = concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "\n",
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n",
+        );
         let mut output: Vec<u8> = Vec::new();
-        serve(input.as_slice(), &mut output, registry()).unwrap();
+        serve(input.as_bytes(), &mut output, registry()).unwrap();
 
-        // Output is a Content-Length-framed JSON message.
+        // One response per request, each on its own line, no headers.
         let text = String::from_utf8(output).unwrap();
-        assert!(text.starts_with("Content-Length: "));
-        let body_start = text.find("\r\n\r\n").unwrap() + 4;
-        let body_json: Value = serde_json::from_str(&text[body_start..]).unwrap();
-        assert_eq!(body_json["id"], 1);
-        assert!(body_json["result"]["tools"].is_array());
+        assert!(!text.contains("Content-Length"), "{text}");
+        let messages = parse_messages(text.as_bytes());
+        assert_eq!(messages.len(), 2, "{text}");
+        assert_eq!(messages[0]["id"], 1);
+        assert_eq!(messages[0]["result"]["protocolVersion"], PROTOCOL_VERSION);
+        assert_eq!(messages[1]["id"], 2);
+        assert!(messages[1]["result"]["tools"].is_array());
+    }
+
+    #[test]
+    fn last_line_without_newline_is_still_read() {
+        let input = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}";
+        let mut output: Vec<u8> = Vec::new();
+        serve(input.as_bytes(), &mut output, registry()).unwrap();
+        let messages = parse_messages(&output);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], 3);
+    }
+
+    #[test]
+    fn invalid_json_line_gets_parse_error_and_server_continues() {
+        let input = "not json\n{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/list\"}\n";
+        let mut output: Vec<u8> = Vec::new();
+        serve(input.as_bytes(), &mut output, registry()).unwrap();
+        let messages = parse_messages(&output);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["error"]["code"], PARSE_ERROR);
+        assert!(messages[0]["id"].is_null());
+        assert_eq!(messages[1]["id"], 4);
+    }
+
+    #[test]
+    fn newlines_inside_strings_stay_on_one_line() {
+        let mut output: Vec<u8> = Vec::new();
+        write_message(&mut output, &json!({"text": "a\nb\r\nc"})).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert_eq!(text.matches('\n').count(), 1);
+        assert!(text.ends_with('\n'));
+        assert_eq!(parse_messages(text.as_bytes())[0]["text"], "a\nb\r\nc");
     }
 }

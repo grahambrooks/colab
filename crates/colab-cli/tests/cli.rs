@@ -746,42 +746,36 @@ fn mcp_server_responds_to_tools_list() {
         .spawn()
         .expect("spawn colab mcp");
 
-    let body = br#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#;
-    let header = format!("Content-Length: {}\r\n\r\n", body.len());
+    // MCP stdio transport: one JSON-RPC message per line.
     {
         let stdin = child.stdin.as_mut().unwrap();
-        stdin.write_all(header.as_bytes()).unwrap();
-        stdin.write_all(body).unwrap();
+        stdin
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n")
+            .unwrap();
         stdin.flush().unwrap();
     }
     // Closing stdin signals EOF, which makes the server exit after
     // handling the queued request.
     drop(child.stdin.take());
 
-    // Wait for the child to exit (with a generous timeout).
     let stdout = child.stdout.take().unwrap();
     let mut reader = BufReader::new(stdout);
-
-    // Parse the framed response.
-    let mut content_length: Option<usize> = None;
-    loop {
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).unwrap();
-        assert!(n > 0, "EOF before headers");
-        let trimmed = line.trim_end_matches(['\r', '\n']);
-        if trimmed.is_empty() {
-            break;
-        }
-        if let Some(value) = trimmed.strip_prefix("Content-Length:") {
-            content_length = value.trim().parse().ok();
-        }
-    }
-    let len = content_length.expect("Content-Length header");
-    let mut buf = vec![0u8; len];
-    reader.read_exact(&mut buf).unwrap();
+    let mut line = String::new();
+    let n = reader.read_line(&mut line).unwrap();
+    assert!(n > 0, "EOF before a response line");
+    assert!(
+        line.ends_with('\n'),
+        "response is not newline-terminated: {line:?}"
+    );
+    let mut rest = String::new();
+    reader.read_to_string(&mut rest).unwrap();
+    assert!(
+        rest.is_empty(),
+        "unexpected output after the response: {rest:?}"
+    );
     let _ = child.wait_timeout_or_kill(Duration::from_secs(5));
 
-    let response: Value = serde_json::from_slice(&buf).unwrap();
+    let response: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(response["id"], 1);
     let names: Vec<&str> = response["result"]["tools"]
         .as_array()
