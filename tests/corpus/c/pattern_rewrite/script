@@ -1,0 +1,7 @@
+// Replace unbounded string copies with strlcpy, and drop debug traces.
+refactor "c-safe-strings" {
+    match c::pattern 'strcpy($DST, $SRC)' {
+        replace 'strlcpy($DST, $SRC, sizeof($DST))'
+    }
+    match c::pattern 'debug_trace($$$ARGS)' { delete }
+}

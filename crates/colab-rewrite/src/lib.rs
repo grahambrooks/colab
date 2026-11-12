@@ -17,6 +17,8 @@
 //! `colab-core` is what stops `colab-dsl` and `colab-mcp`, neither of
 //! which parses anything, from inheriting a grammar engine.
 
+pub mod pattern;
+
 use tree_sitter::{Node, Tree, TreeCursor};
 
 /// A pending replacement of one byte range with new text.

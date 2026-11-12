@@ -9,6 +9,8 @@
 //!   language.
 //! - `colab.lint_script` — parse + compile a script without running.
 //! - `colab.test_rule` — run a script over one in-memory snippet.
+//! - `colab.find` — read-only search: where each rule matches.
+//! - `colab.ast` — the syntax tree of a pattern or a snippet.
 //! - `colab.preview` — apply a script to one or more paths and report
 //!   what would change.
 //! - `colab.apply` — same, but write back to disk.
@@ -423,6 +425,8 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
             }))
         }
         "colab.test_rule" => test_rule(args, backends),
+        "colab.find" => find(args, backends),
+        "colab.ast" => ast(args, backends),
         "colab.preview" => run_script(args, backends, RunMode::Preview, &mut NoProgress),
         "colab.apply" => run_script(args, backends, RunMode::Apply, &mut NoProgress),
         other => Err(ToolError::protocol(format!(
@@ -433,7 +437,9 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
     }
 }
 
-const TOOL_NAMES: [&str; 7] = [
+const TOOL_NAMES: [&str; 9] = [
+    "colab.find",
+    "colab.ast",
     "colab.list_languages",
     "colab.list_rules",
     "colab.schema",
@@ -628,6 +634,88 @@ fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolErro
     }
     out.insert("output".into(), json!(change.after));
     Ok(Value::Object(out))
+}
+
+/// `colab.find`: read-only search, the twin of `colab find --format json`.
+fn find(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
+    use colab_core::find::{FindDetail, FindReport, Hit, Selector};
+
+    let script = arg_str(args, "script")?;
+    let cwd = arg_opt_path(args, "cwd")?;
+    let paths = arg_paths(args, "paths", cwd.as_deref())?;
+    let detail = match args.get("detail") {
+        None | Some(Value::Null) => FindDetail::Concise,
+        Some(Value::String(s)) => FindDetail::parse(s).ok_or_else(|| {
+            ToolError::protocol(format!(
+                "argument `detail` must be `concise` or `detailed`, not `{s}`"
+            ))
+        })?,
+        Some(_) => return Err(ToolError::protocol("argument `detail` must be a string")),
+    };
+    let max_results = arg_usize(args, "max_results", colab_core::find::DEFAULT_MAX_RESULTS)?;
+
+    let refactoring =
+        compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
+    let rules = &refactoring.rules;
+    let mut report = FindReport::new(rules, max_results, detail);
+    let selector = Selector { rules };
+    for target in &paths {
+        let outcome = walker::walk(&selector, target, &mut |change| {
+            report.record(rules, &change.path, &change.before);
+            Ok(())
+        })
+        .map_err(ToolError::from_error)?;
+        report.run.record_walk(outcome);
+    }
+    colab_core::near_miss::probe_disk(rules, &mut report.run);
+
+    // Report paths as the caller named them: relative to `cwd`.
+    if let Some(cwd) = &cwd {
+        report.hits = std::mem::take(&mut report.hits)
+            .into_iter()
+            .map(|hit| Hit {
+                path: hit
+                    .path
+                    .strip_prefix(cwd)
+                    .map(Path::to_path_buf)
+                    .unwrap_or(hit.path),
+                ..hit
+            })
+            .collect();
+    }
+    Ok(render::find_json(&report))
+}
+
+/// `colab.ast`: a pattern's or a snippet's syntax tree.
+fn ast(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
+    let lang = arg_str(args, "lang")?;
+    let backend = backends.get(&lang).ok_or_else(|| {
+        ToolError::from_error(colab_core::Error::UnsupportedOperation(format!(
+            "unknown language `{}`; {}",
+            lang,
+            suggest::candidates_note(&lang, "languages", &backends.languages())
+        )))
+    })?;
+    let pattern = args.get("pattern").and_then(|v| v.as_str());
+    let source = args.get("source").and_then(|v| v.as_str());
+    let (input, is_pattern) = match (pattern, source) {
+        (Some(p), None) => (colab_core::AstInput::Pattern(p), true),
+        (None, Some(s)) => (colab_core::AstInput::Source(s), false),
+        _ => {
+            return Err(ToolError::protocol(
+                "give exactly one of `pattern` or `source`",
+            ));
+        }
+    };
+    let tree = backend.syntax_tree(input).map_err(ToolError::from_error)?;
+    let mut out = json!({ "lang": lang, "tree": tree.tree });
+    if is_pattern {
+        out["context"] = json!(tree.context);
+        out["prefilter"] = json!(tree.prefilter);
+    } else {
+        out["has_error"] = json!(tree.has_error);
+    }
+    Ok(out)
 }
 
 /// Attach the advisories every run should carry: dead rules, and why a
@@ -1440,6 +1528,66 @@ mod tests {
         let req = json!({
             "jsonrpc":"2.0","id":42,"method":"tools/call",
             "params":{"name":"colab.test_rule","arguments":{"script": TEST_RULE_SCRIPT}}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["error"]["code"], INVALID_PARAMS);
+    }
+
+    fn call_ok(name: &str, arguments: Value) -> Value {
+        let req = json!({
+            "jsonrpc":"2.0","id":50,"method":"tools/call",
+            "params":{"name": name, "arguments": arguments}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["result"]["isError"], false, "{resp}");
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        serde_json::from_str(text).unwrap()
+    }
+
+    #[test]
+    fn find_reports_pattern_matches_with_captures_relative_to_cwd() {
+        let dir = std::env::temp_dir().join(format!("colab-mcp-find-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("main.go"),
+            "package main\n\nfunc f() error {\n\treturn errors.Wrap(err, \"x\")\n}\n",
+        )
+        .unwrap();
+        let parsed = call_ok(
+            "colab.find",
+            json!({
+                "script": "refactor \"f\" { match go::pattern 'errors.Wrap($E, $M)' { delete } }",
+                "paths": ["."],
+                "cwd": dir.to_str().unwrap(),
+                "detail": "detailed",
+            }),
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let m = &parsed["matches"][0];
+        assert_eq!(m["path"], "main.go");
+        assert_eq!((m["line"].as_u64(), m["col"].as_u64()), (Some(4), Some(9)));
+        assert_eq!(m["captures"]["E"], "err");
+        assert_eq!(parsed["summary"]["matches"], 1);
+    }
+
+    #[test]
+    fn ast_shows_a_pattern_tree_and_its_context() {
+        let parsed = call_ok("colab.ast", json!({"lang": "go", "pattern": "f($A)"}));
+        assert!(
+            parsed["tree"]
+                .as_str()
+                .unwrap()
+                .starts_with("call_expression")
+        );
+        assert!(parsed["context"].as_str().unwrap().contains("func _()"));
+        assert_eq!(parsed["prefilter"], "f");
+    }
+
+    #[test]
+    fn ast_needs_exactly_one_input() {
+        let req = json!({
+            "jsonrpc":"2.0","id":51,"method":"tools/call",
+            "params":{"name":"colab.ast","arguments":{"lang":"go"}}
         });
         let resp = handle(&req, &registry()).unwrap();
         assert_eq!(resp["error"]["code"], INVALID_PARAMS);

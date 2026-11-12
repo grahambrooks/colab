@@ -61,6 +61,14 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     fn observed_targets(&self, _source: &str) -> Vec<String> {
         Vec::new()
     }
+
+    /// Exactly where this rule matches in `source`, with any metavariable
+    /// bindings — for read-only search (`colab find`). `None` (the
+    /// default) means "locate me by the lines my rewrite changes", which
+    /// [`crate::find::locate`] does generically.
+    fn locate(&self, _source: &str) -> Option<Vec<crate::find::Located>> {
+        None
+    }
 }
 
 /// The lowered form of a single `match` block: action plus arguments,
@@ -155,6 +163,17 @@ pub trait LanguageBackend: Send + Sync {
     /// rejects names the same way.
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>>;
 
+    /// Debugging aid behind `colab ast`: the printed syntax tree of a
+    /// snippet ([`AstInput::Source`]) or of a compiled `pattern`
+    /// ([`AstInput::Pattern`]). Backends without a source grammar keep the
+    /// default, which says so.
+    fn syntax_tree(&self, _input: AstInput<'_>) -> Result<SyntaxTree> {
+        Err(crate::Error::UnsupportedOperation(format!(
+            "`{}` has no syntax tree to show: `colab ast` works for source-language backends",
+            self.lang()
+        )))
+    }
+
     /// The standard rejection for a `build_rule` catch-all arm.
     ///
     /// Distinguishes the two failures a single catch-all otherwise
@@ -221,4 +240,27 @@ impl BackendRegistry {
     pub fn languages(&self) -> Vec<&'static str> {
         self.backends.iter().map(|b| b.lang()).collect()
     }
+}
+
+/// What `colab ast` is asked to print.
+#[derive(Debug, Clone, Copy)]
+pub enum AstInput<'a> {
+    /// A snippet of source code.
+    Source(&'a str),
+    /// A `<lang>::pattern` target, compiled exactly as a rule would be.
+    Pattern(&'a str),
+}
+
+/// A printed syntax tree, kept as text so `colab-core` stays free of any
+/// grammar engine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxTree {
+    /// One named node per line, indented, with positions and leaf text.
+    pub tree: String,
+    /// `true` when the snippet did not parse cleanly.
+    pub has_error: bool,
+    /// For a pattern: the context wrapper it needed, if any.
+    pub context: Option<String>,
+    /// For a pattern: its prefilter literal, if any.
+    pub prefilter: Option<String>,
 }

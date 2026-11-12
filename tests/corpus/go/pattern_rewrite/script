@@ -1,0 +1,8 @@
+// Migrate pkg/errors wrapping to the standard library, and drop
+// debug prints — two code-shaped rules no fixed module can express.
+refactor "pkg-errors-to-fmt" {
+    match go::pattern 'errors.Wrap($ERR, $MSG)' {
+        replace 'fmt.Errorf("%s: %w", $MSG, $ERR)'
+    }
+    match go::pattern 'log.Println("DEBUG", $$$ARGS)' { delete }
+}

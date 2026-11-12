@@ -1,0 +1,6 @@
+refactor "unittest-modern-asserts" {
+    // assertEquals is a deprecated alias, removed in Python 3.12.
+    match python::pattern 'self.assertEquals($A, $B)' { replace 'self.assertEqual($A, $B)' }
+    // assertTrue(x == y) hides both values when it fails.
+    match python::pattern 'self.assertTrue($A == $B)' { replace 'self.assertEqual($A, $B)' }
+}

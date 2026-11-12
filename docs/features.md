@@ -14,47 +14,59 @@ just the readable form.
 | `c::include`        | ✅ | ✅ | ✅ |    |    |    | `.c`, `.h` |
 | `c::symbol`         | ✅ |    |    |    |    |    | `.c`, `.h` |
 | `c::call`           |    |    |    | ✅ |    |    | `.c`, `.h` |
+| `c::pattern`        | ✅ | ✅ |    |    |    |    | `.c`, `.h` |
 | `cpp::include`      | ✅ | ✅ | ✅ |    |    |    | `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.h` |
 | `cpp::namespace`    | ✅ |    |    |    |    |    | as `cpp::include` |
 | `cpp::symbol`       | ✅ |    |    |    |    |    | as `cpp::include` |
 | `cpp::call`         |    |    |    | ✅ |    |    | as `cpp::include` |
+| `cpp::pattern`      | ✅ | ✅ |    |    |    |    | as `cpp::include` |
 | `csharp::using`     | ✅ | ✅ | ✅ |    |    |    | `.cs`, `.csx` |
 | `csharp::namespace` | ✅ |    |    |    |    |    | `.cs`, `.csx` |
 | `csharp::symbol`    | ✅ |    |    |    |    |    | `.cs`, `.csx` |
 | `csharp::call`      |    |    |    | ✅ |    |    | `.cs`, `.csx` |
+| `csharp::pattern`   | ✅ | ✅ |    |    |    |    | `.cs`, `.csx` |
 | `go::import`        | ✅ | ✅ | ✅ |    |    |    | `.go` |
 | `go::package`       | ✅ |    |    |    |    |    | `.go` |
 | `go::symbol`        | ✅ |    |    |    |    |    | `.go` |
 | `go::struct_tag`    | ✅ |    |    |    |    |    | `.go` |
 | `go::call`          |    |    |    | ✅ |    |    | `.go` |
+| `go::pattern`       | ✅ | ✅ |    |    |    |    | `.go` |
 | `java::import`      | ✅ | ✅ | ✅ |    |    |    | `.java` |
 | `java::package`     | ✅ |    |    |    |    |    | `.java` |
 | `java::symbol`      | ✅ |    |    |    |    |    | `.java` |
 | `java::call`        |    |    |    | ✅ |    |    | `.java` |
+| `java::pattern`     | ✅ | ✅ |    |    |    |    | `.java` |
 | `js::import`        | ✅ | ✅ | ✅ |    |    |    | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` |
 | `js::symbol`        | ✅ |    |    |    |    |    | as `js::import` |
 | `js::call`          |    |    |    | ✅ |    |    | as `js::import` |
+| `js::pattern`       | ✅ | ✅ |    |    |    |    | as `js::import` |
 | `kotlin::import`    | ✅ | ✅ | ✅ |    |    |    | `.kt`, `.kts` |
 | `kotlin::package`   | ✅ |    |    |    |    |    | `.kt`, `.kts` |
 | `kotlin::symbol`    | ✅ |    |    |    |    |    | `.kt`, `.kts` |
 | `kotlin::call`      |    |    |    | ✅ |    |    | `.kt`, `.kts` |
+| `kotlin::pattern`   | ✅ | ✅ |    |    |    |    | `.kt`, `.kts` |
 | `php::use`          | ✅ | ✅ | ✅ |    |    |    | `.php`, `.phtml` |
 | `php::namespace`    | ✅ |    |    |    |    |    | `.php`, `.phtml` |
 | `php::symbol`       | ✅ |    |    |    |    |    | `.php`, `.phtml` |
 | `php::call`         |    |    |    | ✅ |    |    | `.php`, `.phtml` |
+| `php::pattern`      | ✅ | ✅ |    |    |    |    | `.php`, `.phtml` |
 | `python::import`    | ✅ | ✅ | ✅ |    |    |    | `.py` |
 | `python::symbol`    | ✅ |    |    |    |    |    | `.py` |
 | `python::call`      |    |    |    | ✅ |    |    | `.py` |
+| `python::pattern`   | ✅ | ✅ |    |    |    |    | `.py` |
 | `ruby::require`     | ✅ | ✅ | ✅ |    |    |    | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile`, `Guardfile`, `Capfile` |
 | `ruby::symbol`      | ✅ |    |    |    |    |    | as `ruby::require` |
 | `ruby::call`        |    |    |    | ✅ |    |    | as `ruby::require` |
+| `ruby::pattern`     | ✅ | ✅ |    |    |    |    | as `ruby::require` |
 | `rust::use`         | ✅ | ✅ | ✅ |    |    |    | `.rs` |
 | `rust::symbol`      | ✅ |    |    |    |    |    | `.rs` |
 | `rust::crate`       | ✅ | ✅ |    |    |    |    | `Cargo.toml` |
 | `rust::call`        |    |    |    | ✅ |    |    | `.rs` |
+| `rust::pattern`     | ✅ | ✅ |    |    |    |    | `.rs` |
 | `swift::import`     | ✅ | ✅ | ✅ |    |    |    | `.swift` |
 | `swift::symbol`     | ✅ |    |    |    |    |    | `.swift` |
 | `swift::call`       |    |    |    | ✅ |    |    | `.swift` |
+| `swift::pattern`    | ✅ | ✅ |    |    |    |    | `.swift` |
 | `json::key`         |    | ✅ |    |    | ✅ | ✅ | `.json` |
 | `markdown::block`   |    | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
 | `toml::key`         |    | ✅ |    |    | ✅ | ✅ | `.toml` |
@@ -68,9 +80,25 @@ missing, so scope them with `in "<glob>"` or run them on named files. See
 [Config-file backends](#config-file-backends) below.
 
 **The capability floor.** Every source backend provides an import-equivalent
-(`replace`/`delete`/`ensure`), a `symbol` rename, and a `call` rewrite.
+(`replace`/`delete`/`ensure`), a `symbol` rename, a `call` rewrite, and a
+`pattern` module.
 On top of that, languages with a namespace or package declaration expose
 one, and Go additionally has `struct_tag` and Rust `crate`.
+
+**`<lang>::pattern` is the escape hatch.** Its target is code with
+`$NAME` / `$$$NAME` / `$_` metavariables, matched structurally with the
+language's own grammar — see [Structural patterns](./dsl.md#structural-patterns-langpattern).
+Use it for any shape the named modules do not cover. Per-language notes:
+
+- **Go** cannot match a bare identifier (`x`): every Go wrapper declares
+  a name before the pattern, which would be selected instead, so it is
+  refused. Rename identifiers with `go::symbol`.
+- **PHP** patterns are parsed as pure PHP (no surrounding HTML), and a
+  metavariable cannot stand where only a `$variable` may — `$X = $Y;`
+  does not compile, `$y = $X;` does.
+- **JavaScript** patterns are parsed with the JavaScript grammar, so they
+  cannot contain TypeScript-only syntax (type annotations), though they
+  match inside `.ts` files.
 
 Two deliberate gaps:
 

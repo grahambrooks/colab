@@ -1,0 +1,7 @@
+// Replace android.util.Log with Timber.
+refactor "log-to-timber" {
+    match kotlin::pattern 'Log.d($TAG, $MSG)' {
+        replace 'Timber.tag($TAG).d($MSG)'
+    }
+    match kotlin::pattern 'println($$$ARGS)' { delete }
+}

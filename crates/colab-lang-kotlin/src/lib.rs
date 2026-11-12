@@ -10,6 +10,7 @@
 pub mod calls;
 pub mod imports;
 pub mod packages;
+pub mod patterns;
 pub mod symbols;
 
 use std::cell::RefCell;
@@ -93,6 +94,20 @@ const CAPABILITIES: &[Capability] = &[
             description: "Replace matched calls with the rendered template. Rename the function to stay idempotent.",
         }],
     },
+    Capability {
+        module: "pattern",
+        description: "Match code by shape: the target is Kotlin code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `Log.d($TAG, $MSG)`. An expression, statement, or declaration.",
+        actions: &[
+            ActionCapability {
+                name: "replace",
+                description: "Replace each match with the template, substituting `$NAME` / `$$$NAME` bindings.",
+            },
+            ActionCapability {
+                name: "delete",
+                description: "Remove each match; a match alone on its line takes the line with it.",
+            },
+        ],
+    },
 ];
 
 impl LanguageBackend for KotlinBackend {
@@ -106,6 +121,10 @@ impl LanguageBackend for KotlinBackend {
 
     fn capabilities(&self) -> &'static [Capability] {
         CAPABILITIES
+    }
+
+    fn syntax_tree(&self, input: colab_core::AstInput<'_>) -> Result<colab_core::SyntaxTree> {
+        patterns::syntax_tree(input)
     }
 
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>> {
@@ -152,6 +171,20 @@ impl LanguageBackend for KotlinBackend {
                     template,
                 }))
             }
+            (
+                "pattern",
+                RuleSpec::Replace {
+                    target,
+                    replacement,
+                },
+            ) => Ok(Box::new(patterns::PatternOp::compile(
+                &target,
+                colab_rewrite::pattern::PatternAction::Replace(replacement),
+            )?)),
+            ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
+                &target,
+                colab_rewrite::pattern::PatternAction::Delete,
+            )?)),
             (other, spec) => Err(self.unsupported(other, &spec)),
         }
     }

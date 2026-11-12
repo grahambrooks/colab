@@ -64,6 +64,7 @@ globset = "0.4"
 rayon = "1.10"
 num_cpus = "1.16"
 tree-sitter = "0.27.0"
+ast-grep-core = { version = "0.51.2", default-features = false, features = ["tree-sitter"] }
 tree-sitter-c = "0.24.2"
 tree-sitter-c-sharp = "0.23.5"
 tree-sitter-cpp = "0.23.4"

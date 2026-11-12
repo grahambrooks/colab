@@ -87,6 +87,11 @@ enum Commands {
     Mcp,
     /// Print the JSON capability schema for every registered backend.
     Schema,
+    /// Search: report where each rule matches, without changing anything.
+    Find(FindArgs),
+    /// Print the syntax tree of a snippet or a pattern, to see why a
+    /// pattern does or does not match.
+    Ast(AstArgs),
     /// Parse a script and print its IR as JSON without running it.
     Explain(ExplainArgs),
     /// List every language backend the binary knows about.
@@ -247,6 +252,76 @@ struct RefactorArgs {
 }
 
 #[derive(Parser, Debug)]
+struct FindArgs {
+    #[command(flatten)]
+    script: ScriptArgs,
+
+    /// Change to this working directory before resolving paths.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    change_dir: PathBuf,
+
+    /// `human`: `path:line:col: text` lines. `json`: one document.
+    #[arg(long, value_enum, default_value_t = FindFormat::Human)]
+    format: FindFormat,
+
+    /// `concise`: the first line of each match. `detailed`: adds
+    /// metavariable captures and the full (capped) match text.
+    #[arg(long, value_enum, default_value_t = FindDetailArg::Concise)]
+    detail: FindDetailArg,
+
+    /// List at most this many matches; the rest are counted.
+    #[arg(long = "max-results", value_name = "N", default_value_t = colab_core::find::DEFAULT_MAX_RESULTS)]
+    max_results: usize,
+
+    /// Whitelist files via gitignore-syntax glob. Repeatable.
+    #[arg(long = "include", value_name = "GLOB")]
+    include: Vec<String>,
+
+    /// Blacklist files via gitignore-syntax glob. Repeatable.
+    #[arg(long = "exclude", value_name = "GLOB")]
+    exclude: Vec<String>,
+
+    /// Don't honour `.gitignore` or hidden-file rules.
+    #[arg(long = "no-ignore")]
+    no_ignore: bool,
+
+    /// Files or directories to search. Defaults to `.`.
+    paths: Vec<PathBuf>,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum FindFormat {
+    Human,
+    Json,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum FindDetailArg {
+    Concise,
+    Detailed,
+}
+
+#[derive(Parser, Debug)]
+struct AstArgs {
+    /// Language backend whose grammar to use, e.g. `go`.
+    #[arg(long)]
+    lang: String,
+
+    /// Show how this pattern parses (metavariables included), instead
+    /// of a snippet.
+    #[arg(long, conflicts_with = "stdin")]
+    pattern: Option<String>,
+
+    /// Read the snippet to parse from stdin.
+    #[arg(long)]
+    stdin: bool,
+
+    /// `human`: the tree as indented text. `json`: one document.
+    #[arg(long, value_enum, default_value_t = FindFormat::Human)]
+    format: FindFormat,
+}
+
+#[derive(Parser, Debug)]
 struct ExplainArgs {
     #[command(flatten)]
     script: ScriptArgs,
@@ -375,6 +450,8 @@ pub async fn run() -> Result<i32> {
             let value = discover::explain_source(&text)?;
             print_json(&value)
         }
+        Some(Commands::Find(args)) => run_find(args),
+        Some(Commands::Ast(args)) => run_ast(args),
         Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
         Some(Commands::ListRules(args)) => {
             let value = discover::list_rules(&default_backends(), &args.lang)?;
@@ -1036,6 +1113,94 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
     } else {
         0
     })
+}
+
+fn run_find(args: FindArgs) -> Result<i32> {
+    use colab_core::find::{FindDetail, FindReport, Selector};
+
+    change_working_dir(&args.change_dir)?;
+    let backends = default_backends();
+    let refactoring = args.script.compile(&backends)?;
+    let rules = &refactoring.rules;
+    let detail = match args.detail {
+        FindDetailArg::Concise => FindDetail::Concise,
+        FindDetailArg::Detailed => FindDetail::Detailed,
+    };
+    let mut report = FindReport::new(rules, args.max_results, detail);
+
+    let opts = WalkOptions {
+        include: args.include.clone(),
+        exclude: args.exclude.clone(),
+        respect_gitignore: !args.no_ignore,
+        follow_symlinks: false,
+        jobs: None,
+    };
+    let targets = if args.paths.is_empty() {
+        vec![PathBuf::from(".")]
+    } else {
+        args.paths.clone()
+    };
+    let selector = Selector { rules };
+    for target in &targets {
+        let outcome = walker::walk_with(&selector, target, &opts, &mut |change| {
+            report.record(rules, &change.path, &change.before);
+            Ok(())
+        })?;
+        report.run.record_walk(outcome);
+    }
+    colab_core::near_miss::probe_disk(rules, &mut report.run);
+
+    match args.format {
+        FindFormat::Json => {
+            let mut out = io::stdout().lock();
+            writeln!(out, "{}", render::find_json(&report)).map_err(io_to_error)?;
+        }
+        FindFormat::Human => {
+            let mut out = io::stdout().lock();
+            render::write_find_human(&mut out, &report).map_err(io_to_error)?;
+        }
+    }
+    Ok(0)
+}
+
+fn run_ast(args: AstArgs) -> Result<i32> {
+    let backends = default_backends();
+    let value = match (&args.pattern, args.stdin) {
+        (Some(pattern), _) => discover::ast_of_pattern(&backends, &args.lang, pattern)?,
+        (None, true) => {
+            let mut source = String::new();
+            io::stdin()
+                .read_to_string(&mut source)
+                .map_err(io_to_error)?;
+            discover::ast_of_source(&backends, &args.lang, &source)?
+        }
+        (None, false) => {
+            return Err(Error::Config(
+                "`colab ast` needs `--pattern '<code>'` or `--stdin`".into(),
+            ));
+        }
+    };
+    match args.format {
+        FindFormat::Json => print_json(&value),
+        FindFormat::Human => {
+            let mut out = io::stdout().lock();
+            for key in ["context", "prefilter"] {
+                if let Some(text) = value.get(key).and_then(|v| v.as_str()) {
+                    writeln!(out, "{key}: {}", text.replace('\n', "⏎")).map_err(io_to_error)?;
+                }
+            }
+            if value.get("has_error").and_then(|v| v.as_bool()) == Some(true) {
+                writeln!(
+                    out,
+                    "warning: the snippet has syntax errors (see ERROR / MISSING nodes)"
+                )
+                .map_err(io_to_error)?;
+            }
+            let tree = value.get("tree").and_then(|v| v.as_str()).unwrap_or("");
+            write!(out, "{tree}").map_err(io_to_error)?;
+            Ok(0)
+        }
+    }
 }
 
 fn change_working_dir(path: &Path) -> Result<()> {

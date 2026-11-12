@@ -1480,3 +1480,131 @@ fn help_json_works_on_a_subcommand_with_required_args() {
         serde_json::json!(["script_path", "rules"])
     );
 }
+
+// ---- `colab find` / `colab ast` (M18) --------------------------------------
+
+const GO_WRAP: &str = "package main\n\nfunc f() error {\n\treturn errors.Wrap(err, \"read\")\n}\n";
+
+#[test]
+fn find_lists_pattern_matches_as_path_line_col() {
+    let root = workspace_temp("find-human");
+    write(&root.join("main.go"), GO_WRAP);
+
+    let output = colab()
+        .args([
+            "find",
+            "-e",
+            "match go::pattern 'errors.Wrap($E, $M)' { delete }",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("main.go:4:9: errors.Wrap(err, \"read\")"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("1 match(es) in 1 file(s)"), "{stdout}");
+    assert_eq!(
+        fs::read_to_string(root.join("main.go")).unwrap(),
+        GO_WRAP,
+        "find never writes"
+    );
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn find_json_carries_captures_truncation_and_near_misses() {
+    let root = workspace_temp("find-json");
+    write(&root.join("a.go"), GO_WRAP);
+    write(&root.join("b.go"), GO_WRAP);
+
+    let output = colab()
+        .args([
+            "find",
+            "-e",
+            "match go::pattern 'errors.Wrap($E, $M)' { delete }",
+            "-e",
+            r#"match go::call "errors.Wra" { replace_call "x()" }"#,
+            "--format",
+            "json",
+            "--detail",
+            "detailed",
+            "--max-results",
+            "1",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(value["summary"]["matches"], 2);
+    assert_eq!(value["matches"].as_array().unwrap().len(), 1);
+    assert_eq!(value["truncated"], 1);
+    assert_eq!(value["matches"][0]["captures"]["M"], "\"read\"");
+    assert_eq!(value["rules"][1]["matches"], 0);
+    assert_eq!(value["rules"][1]["near"][0]["value"], "errors.Wrap");
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn find_locates_non_pattern_rules_by_changed_lines() {
+    let root = workspace_temp("find-fallback");
+    write(&root.join("main.go"), GO_INPUT);
+
+    let output = colab()
+        .args(["find", "-e", INLINE_RULE, "--format", "json"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(value["matches"][0]["line"], 5);
+    assert_eq!(value["matches"][0]["text"], "\t\"some.module\"");
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn ast_prints_a_pattern_tree_with_its_context() {
+    let output = colab()
+        .args(["ast", "--lang", "go", "--pattern", "errors.Wrap($E, $M)"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("context: package p"), "{stdout}");
+    assert!(stdout.contains("prefilter: errors"), "{stdout}");
+    assert!(stdout.contains("identifier  \"$E\""), "{stdout}");
+}
+
+#[test]
+fn ast_parses_a_snippet_from_stdin_as_json() {
+    let output = run_with_stdin(
+        &["ast", "--lang", "go", "--stdin", "--format", "json"],
+        "package p\nfunc f() { g(1) }\n",
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(value["has_error"], false);
+    assert!(
+        value["tree"]
+            .as_str()
+            .unwrap()
+            .contains("call_expression  2:12")
+    );
+}
+
+#[test]
+fn invalid_pattern_exits_3_naming_the_attempts() {
+    let output = colab()
+        .args(["find", "-e", "match go::pattern 'func (' { delete }", "."])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("go::pattern"), "{stderr}");
+    assert!(stderr.contains("as-is"), "{stderr}");
+}

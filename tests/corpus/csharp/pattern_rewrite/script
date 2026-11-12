@@ -1,0 +1,7 @@
+// Move classic NUnit asserts to the constraint model.
+refactor "nunit-constraints" {
+    match csharp::pattern 'Assert.AreEqual($EXPECTED, $ACTUAL)' {
+        replace 'Assert.That($ACTUAL, Is.EqualTo($EXPECTED))'
+    }
+    match csharp::pattern 'Console.WriteLine($$$ARGS)' { delete }
+}

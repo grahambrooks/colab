@@ -81,9 +81,9 @@ everything that follows.
 - **Goal 3 — GenAI-friendly CLI.** ✅ Output formats, exec modes,
   exit codes, `schema`/`explain`/`list-*`, MCP server, LSP
   diagnostics + completion, inline `-e` rules, `colab.test_rule`,
-  near-miss diagnostics, `--help-json` (M17). ⏳ remaining: structural
-  patterns (M18), LSP hover / code actions / client mode (M19), agent
-  install + guardrails (M20) — see "Agent of choice" below.
+  near-miss diagnostics, `--help-json` (M17); structural patterns,
+  `colab find`, `colab ast` (M18). ⏳ remaining: LSP hover / code
+  actions / client mode (M19), agent install + guardrails (M20) — see "Agent of choice" below.
 - **Goal 4 — operational concerns.** ✅ Test corpus + idempotency
   check, CI (build/test/clippy/audit). ⏳ remaining: property tests
   (`proptest`) for the parser and edit-application; `criterion`
@@ -722,24 +722,37 @@ Ranked by leverage per unit of work:
 - **Plugin.** `plugin.json` drops `version` so it tracks git and can't
   lag a release; skill teaches `-e`, `test_rule`, `near`.
 
-### M18 — Structural patterns
+### ✅ M18 — Structural patterns
 - `match <lang>::pattern '<code with $METAVARS>' { replace '<template>' | delete }`
-  — no grammar or IR change; fits `RuleSpec::Replace` / `Delete`.
+  on all 12 source backends — no grammar or IR change; it fits
+  `RuleSpec::Replace` / `Delete`.
 - Metavariables are ast-grep's: `$NAME`, `$$$NAME`, `$_`; a repeated
   name must bind identical text.
-- Engine: embed `ast-grep-core` (0.51.x targets tree-sitter 0.27, as
-  this workspace does) behind a `colab-rewrite::pattern` wrapper, so no
-  backend sees ast-grep types. Each backend supplies its grammar, an
-  expando char, and context wrappers for fragments.
-- Invariants: prefilter = longest non-metavariable literal token (else
-  `None`); a compile-time warning when the replacement re-matches its
-  own pattern; a pattern that parses in no context is an error naming
-  the contexts tried.
-- `colab find -e …` / `colab.find`: read-only, `path:line:col: text`
-  by default, captures on request, capped.
-- `colab ast --lang <l> (--pattern | --stdin)` / `colab.ast`: the
-  "why didn't it match" tool.
-- First wave Go, Python, JS/TS, Rust; then the other eight.
+- Engine: `ast-grep-core` 0.51 (same tree-sitter 0.27 as the workspace)
+  behind `colab_rewrite::pattern`. Backends supply grammar, expando char,
+  and `@@PATTERN@@` context wrappers; fragments that are not valid files
+  compile through the first context whose parse is clean, with the
+  deepest node exactly spanning the pattern as the selector.
+- Prefilter = longest named-leaf literal of the compiled pattern (sound:
+  leaves compare by exact text); `None` for all-metavariable patterns.
+- `delete` removes only matches that stand alone on their line(s); nested
+  ones stay (removing them leaves broken code). Any pattern rewrite that
+  would turn a cleanly-parsing file into one with a syntax error is not
+  applied to that file.
+- Contexts are refused when the wrapper holds an earlier node of the
+  selector's kind (ast-grep selects the first one) — otherwise an
+  identifier pattern silently matched the wrapper's own name.
+- `colab find` / `colab.find`: read-only, `path:line:col: text`, captures
+  at `--detail detailed`, capped with `truncated`, near misses for dead
+  rules. Works for **every** module: `Operation::locate` for patterns,
+  changed-line fallback (`colab_core::find`) for the rest.
+- `colab ast` / `colab.ast`: a pattern's tree as compiled (with its
+  context and prefilter) or a snippet's, via `LanguageBackend::syntax_tree`.
+- **Deferred:** the compile-time "template re-matches its own pattern"
+  warning — rendering a template with synthetic captures and re-parsing
+  it in every context proved fiddly; the corpus idempotency check and
+  `colab find` on the output cover the same failure for now. Relational
+  constraints (`inside` / `has` / `not`) are the natural next step.
 
 ### M19 — LSP in both directions
 - **Server:** hover (module/action docs from `capabilities()`),

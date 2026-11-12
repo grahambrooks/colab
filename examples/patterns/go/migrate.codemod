@@ -1,0 +1,7 @@
+refactor "pkg-errors-to-stdlib" {
+    match go::pattern 'errors.Wrap($ERR, $MSG)' {
+        replace 'fmt.Errorf("%s: %w", $MSG, $ERR)'
+    }
+    match go::pattern 'log.Println("DEBUG", $$$ARGS)' { delete }
+    match go::import "github.com/pkg/errors" { delete }
+}

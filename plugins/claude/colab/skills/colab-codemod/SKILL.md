@@ -1,6 +1,6 @@
 ---
 name: colab-codemod
-description: Make a mechanical, repo-wide code change with colab instead of editing files one at a time or reaching for sed. Use when the same structural edit repeats across many files — an import path, a dependency rename, a symbol, a Java package, a Go struct tag, a call site, or a TOML/JSON/Markdown config key. Covers deciding whether colab fits, writing the .codemod script, checking blast radius before applying, and applying safely, via the CLI or the MCP tools.
+description: Make a mechanical, repo-wide code change with colab instead of editing files one at a time or reaching for sed. Use when the same structural edit repeats across many files — an import path, a dependency rename, a symbol, a Java package, a Go struct tag, a call site, any code shape expressible as a pattern with $METAVARS (e.g. errors.Wrap($E, $M) → fmt.Errorf(...)), or a TOML/JSON/Markdown config key. Also for read-only structural search (colab find) when grep would match strings and comments too. Covers deciding whether colab fits, writing the .codemod script, checking blast radius before applying, and applying safely, via the CLI or the MCP tools.
 ---
 
 # Running a codemod with colab
@@ -46,6 +46,11 @@ MCP](#driving-it-over-mcp). The workflow is identical.
 - a type or function is renamed and every mention should follow
 - a Java package moves; a Go struct tag key or value changes
 - call sites need rewriting, including reordered arguments
+- **any repeated code shape** — `errors.Wrap($E, $M)` → `fmt.Errorf(…)`,
+  `self.assertEquals($A, $B)` → `assertEqual`, delete every
+  `console.log($$$ARGS)` — via `<lang>::pattern` (below)
+- **structural search**: `colab find` locates a shape without the false
+  positives grep gets from strings and comments
 - a config convention rolls out across repos — a `Cargo.toml` key, a
   `.claude/settings.json` entry, a managed block in `AGENTS.md`
 
@@ -56,7 +61,8 @@ the right edit differs per call site. Those need real edits, file by
 file.
 
 **Rule of thumb:** if you can state the change as "find every X and make
-it Y" without qualification, colab will do it. If your sentence needs an
+it Y" without qualification — and X can be written as code with holes in
+it — colab will do it. If your sentence needs an
 "except when…", write the edits yourself.
 
 ## The loop
@@ -154,6 +160,52 @@ the language's own construct (`include` / `using` / `import` / `use` /
 `require`), taking `replace` / `delete` / `ensure`; a `symbol` rename;
 and a `call` rewrite via `replace_call`. Languages with a namespace or
 package declaration expose one; Go adds `struct_tag`, Rust adds `crate`.
+
+## Patterns: when no module fits
+
+`<lang>::pattern` takes **code with metavariables** instead of a name.
+Reach for it whenever the change is a shape rather than an import,
+symbol, or call name:
+
+```
+match go::pattern 'errors.Wrap($ERR, $MSG)' { replace 'fmt.Errorf("%s: %w", $MSG, $ERR)' }
+match python::pattern 'self.assertEquals($A, $B)' { replace 'self.assertEqual($A, $B)' }
+match js::pattern 'console.log($$$ARGS)' { delete }
+```
+
+- `$NAME` is one node, `$$$NAME` zero or more (an argument tail), `$_`
+  one unbound. The same name twice must bind the same text.
+- Write patterns in **single quotes** when they contain `"`.
+- The template must not re-match its own pattern, or a second run
+  changes the code again. `f($A)` → `g($A)` is safe; `f($A)` →
+  `f(ctx, $A)` is not.
+- Matches never nest in one pass: the outermost wins.
+- `delete` removes only matches standing alone on their line; nested ones
+  stay. A rewrite that would leave a syntax error is not applied to that
+  file — if `find` shows matches that `refactor` left alone, the template
+  is the problem.
+
+Search before you rewrite — it is read-only and cheap:
+
+```sh
+colab find -e "match go::pattern 'errors.Wrap(\$E, \$M)' { delete }" .
+# internal/load.go:14:15: errors.Wrap(err, "read config")
+```
+
+(`find` takes any rule; the action is ignored. Add `--detail detailed`
+to see what each `$NAME` bound to.)
+
+A pattern that matches nothing usually parses differently from the code
+you meant. Compare the trees:
+
+```sh
+colab ast --lang go --pattern 'errors.Wrap($E, $M)'
+colab ast --lang go --stdin < some/file.go
+```
+
+A pattern that is not valid code in the language fails to compile (exit
+3) and the error lists every wrapper it was tried in — fix the pattern,
+do not retry it unchanged.
 
 **The match string means something different per namespace** — an exact
 path for `go::import`, a segment prefix for `rust::use`, a `key:value`
@@ -265,6 +317,8 @@ the server process started, and `include "..."` does not work at all.
 | ---- | ---- |
 | discover | `colab.list_languages`, then `colab.list_rules {lang}` |
 | check the script | `colab.lint_script {script, cwd}` |
+| search first | `colab.find {script, paths, cwd}` — read-only; `detail: "detailed"` for captures |
+| debug a pattern | `colab.ast {lang, pattern}` vs `colab.ast {lang, source}` |
 | check it does the right thing | `colab.test_rule {script, source, path, expected?}` — one in-memory snippet, nothing on disk |
 | blast radius | `colab.preview {script, paths, cwd}` — defaults to `detail: "counts"` |
 | sample hunks | `colab.preview {..., detail: "diff", max_files: 5}` |

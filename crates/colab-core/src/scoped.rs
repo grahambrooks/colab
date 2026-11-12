@@ -95,6 +95,10 @@ impl Operation for ScopedOperation {
     fn observed_targets(&self, source: &str) -> Vec<String> {
         self.inner.observed_targets(source)
     }
+
+    fn locate(&self, source: &str) -> Option<Vec<crate::find::Located>> {
+        self.inner.locate(source)
+    }
 }
 
 #[cfg(test)]

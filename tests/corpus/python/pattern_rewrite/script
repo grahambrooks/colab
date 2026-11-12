@@ -1,0 +1,7 @@
+// assertEquals is a deprecated alias (removed in Python 3.12).
+refactor "unittest-aliases" {
+    match python::pattern 'self.assertEquals($FIRST, $SECOND)' {
+        replace 'self.assertEqual($FIRST, $SECOND)'
+    }
+    match python::pattern 'pdb.set_trace()' { delete }
+}

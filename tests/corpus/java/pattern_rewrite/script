@@ -1,0 +1,7 @@
+// Migrate JUnit 4 assertions to AssertJ and drop stdout debugging.
+refactor "junit-to-assertj" {
+    match java::pattern 'Assert.assertEquals($EXPECTED, $ACTUAL)' {
+        replace 'assertThat($ACTUAL).isEqualTo($EXPECTED)'
+    }
+    match java::pattern 'System.out.println($$$ARGS)' { delete }
+}

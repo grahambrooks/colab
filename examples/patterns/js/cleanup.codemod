@@ -1,0 +1,5 @@
+refactor "drop-console-log" {
+    // Statements go with their line. The call inside the arrow body is
+    // left alone: deleting it would leave `() => )`. `colab find` lists it.
+    match js::pattern 'console.log($$$ARGS)' { delete }
+}

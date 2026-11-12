@@ -338,6 +338,177 @@ fn display_path(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+// ---------------------------------------------------------------------------
+// Search results (`colab find` / `colab.find`)
+// ---------------------------------------------------------------------------
+
+/// The longest match text reported at `detailed`; concise output shows
+/// only the first line.
+pub const MAX_MATCH_TEXT: usize = 2000;
+
+fn first_line(text: &str) -> String {
+    let line = text.lines().next().unwrap_or("");
+    if line.len() < text.trim_end().len() {
+        format!("{line} …")
+    } else {
+        line.to_string()
+    }
+}
+
+fn capped(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_string();
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &text[..end])
+}
+
+/// One JSON document for a search: hits (capped), counters, per-rule
+/// totals with near misses for rules that found nothing, and warnings.
+pub fn find_json(report: &crate::find::FindReport) -> Value {
+    use crate::find::FindDetail;
+    let detailed = report.detail == FindDetail::Detailed;
+    let matches: Vec<Value> = report
+        .hits
+        .iter()
+        .map(|hit| {
+            let mut m = json!({
+                "path": hit.path.display().to_string(),
+                "line": hit.located.line,
+                "col": hit.located.column,
+                "rule": hit.rule,
+            });
+            if detailed {
+                m["text"] = json!(capped(&hit.located.text, MAX_MATCH_TEXT));
+                if !hit.located.captures.is_empty() {
+                    let captures: serde_json::Map<String, Value> = hit
+                        .located
+                        .captures
+                        .iter()
+                        .map(|(k, v)| (k.clone(), json!(capped(v, MAX_MATCH_TEXT))))
+                        .collect();
+                    m["captures"] = Value::Object(captures);
+                }
+            } else {
+                m["text"] = json!(first_line(&hit.located.text));
+            }
+            m
+        })
+        .collect();
+    let rules: Vec<Value> = report
+        .run
+        .rules
+        .iter()
+        .map(|r| {
+            let mut rule = json!({
+                "i": r.index,
+                "rule": r.rule,
+                "files": r.files_matched,
+                "matches": report.matches_per_rule[r.index],
+            });
+            if !r.near_misses.is_empty() {
+                rule["near"] = Value::Array(
+                    r.near_misses
+                        .iter()
+                        .map(|m| json!({"value": m.value, "files": m.files}))
+                        .collect(),
+                );
+            }
+            rule
+        })
+        .collect();
+    let mut out = json!({
+        "matches": matches,
+        "summary": {
+            "visited": report.run.files_visited,
+            "scanned": report.run.files_scanned,
+            "files": report.run.files_changed,
+            "matches": report.total,
+        },
+        "rules": rules,
+    });
+    if report.truncated() > 0 {
+        out["truncated"] = json!(report.truncated());
+    }
+    let warnings = find_warnings(report);
+    if !warnings.is_empty() {
+        out["warnings"] = json!(warnings);
+    }
+    out
+}
+
+/// Dead-rule warnings phrased for a search rather than a rewrite.
+pub fn find_warnings(report: &crate::find::FindReport) -> Vec<String> {
+    let mut out: Vec<String> = advisories(&report.run)
+        .into_iter()
+        .filter(|w| w.starts_with("matched no files"))
+        .map(|w| w.replacen("matched no files", "found nothing for", 1))
+        .collect();
+    if report.total == 0 {
+        if report.run.files_visited == 0 {
+            out.push(
+                "No files were visited — check the paths, --include/--exclude globs, \
+                 and whether .gitignore is excluding the tree (--no-ignore overrides)."
+                    .into(),
+            );
+        } else if report.run.files_scanned == 0 {
+            out.push(format!(
+                "Visited {} file(s) but none belong to a language this script targets.",
+                report.run.files_visited
+            ));
+        }
+    }
+    out
+}
+
+/// `path:line:col: text` per hit — grep's shape, so editors and agents
+/// already know how to read it — then a one-line total and warnings.
+pub fn write_find_human<W: Write>(out: &mut W, report: &crate::find::FindReport) -> io::Result<()> {
+    use crate::find::FindDetail;
+    let multi_rule = report.run.rules.len() > 1;
+    for hit in &report.hits {
+        let tag = if multi_rule {
+            format!(" [rule {}]", hit.rule + 1)
+        } else {
+            String::new()
+        };
+        writeln!(
+            out,
+            "{}:{}:{}:{} {}",
+            hit.path.display(),
+            hit.located.line,
+            hit.located.column,
+            tag,
+            first_line(&hit.located.text)
+        )?;
+        if report.detail == FindDetail::Detailed {
+            for (name, value) in &hit.located.captures {
+                writeln!(out, "    ${name} = {}", first_line(value))?;
+            }
+        }
+    }
+    write!(
+        out,
+        "{} match(es) in {} file(s); {} scanned",
+        report.total, report.run.files_changed, report.run.files_scanned
+    )?;
+    if report.truncated() > 0 {
+        write!(
+            out,
+            "; {} not shown (raise --max-results)",
+            report.truncated()
+        )?;
+    }
+    writeln!(out)?;
+    for warning in find_warnings(report) {
+        writeln!(out, "warning: {warning}")?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

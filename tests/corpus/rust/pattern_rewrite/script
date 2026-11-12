@@ -1,0 +1,7 @@
+// `map.get(k).is_some()` is clippy's `unnecessary_get_then_check`.
+refactor "contains-key" {
+    match rust::pattern '$MAP.get($KEY).is_some()' {
+        replace '$MAP.contains_key($KEY)'
+    }
+    match rust::pattern 'dbg!($$$ARGS)' { delete }
+}

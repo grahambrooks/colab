@@ -10,7 +10,7 @@ codemods as tool calls.
 | Kind | Name | Purpose |
 | ---- | ---- | ------- |
 | Skill | `colab-codemod` | When a change is mechanical and structural, write a `.codemod` script, check the blast radius, and apply it safely. Includes a namespace/match-string reference and a diagnosis guide. |
-| MCP server | `colab` | `colab.test_rule`, `colab.preview`, `colab.apply`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema` over stdio. |
+| MCP server | `colab` | `colab.find`, `colab.ast`, `colab.test_rule`, `colab.preview`, `colab.apply`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema` over stdio. |
 
 The skill triggers on mechanical multi-file changes — an import path, a
 dependency rename, a symbol, a Java package, a Go struct tag, a call

@@ -10,3 +10,8 @@ description = "Tree-sitter rewriting primitives shared by every colab language b
 
 [dependencies]
 tree-sitter = { workspace = true }
+ast-grep-core = { workspace = true }
+
+[dev-dependencies]
+tree-sitter-go = { workspace = true }
+tree-sitter-python = { workspace = true }

@@ -1,0 +1,6 @@
+// C++17 class template argument deduction makes make_pair redundant.
+refactor "cpp-ctad-pairs" {
+    match cpp::pattern 'std::make_pair($A, $B)' {
+        replace 'std::pair($A, $B)'
+    }
+}

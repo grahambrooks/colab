@@ -117,6 +117,43 @@ fn explain_command(cmd: &ast::Command) -> Value {
     json!({ "name": cmd.refactor_name, "items": items })
 }
 
+/// `colab ast --pattern`: how a pattern parses for `lang`.
+pub fn ast_of_pattern(backends: &BackendRegistry, lang: &str, pattern: &str) -> Result<Value> {
+    let tree = backend_for(backends, lang)?.syntax_tree(colab_core::AstInput::Pattern(pattern))?;
+    Ok(syntax_tree_json(lang, &tree, Some(pattern)))
+}
+
+/// `colab ast --stdin`: how a snippet parses for `lang`.
+pub fn ast_of_source(backends: &BackendRegistry, lang: &str, source: &str) -> Result<Value> {
+    let tree = backend_for(backends, lang)?.syntax_tree(colab_core::AstInput::Source(source))?;
+    Ok(syntax_tree_json(lang, &tree, None))
+}
+
+fn backend_for<'a>(
+    backends: &'a BackendRegistry,
+    lang: &str,
+) -> Result<&'a dyn colab_core::LanguageBackend> {
+    backends.get(lang).ok_or_else(|| {
+        colab_core::Error::UnsupportedOperation(format!(
+            "unknown language `{}`; {}",
+            lang,
+            colab_core::suggest::candidates_note(lang, "languages", &backends.languages())
+        ))
+    })
+}
+
+fn syntax_tree_json(lang: &str, tree: &colab_core::SyntaxTree, pattern: Option<&str>) -> Value {
+    let mut out = serde_json::json!({ "lang": lang, "tree": tree.tree });
+    if let Some(pattern) = pattern {
+        out["pattern"] = serde_json::json!(pattern);
+        out["context"] = serde_json::json!(tree.context);
+        out["prefilter"] = serde_json::json!(tree.prefilter);
+    } else {
+        out["has_error"] = serde_json::json!(tree.has_error);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

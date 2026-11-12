@@ -1,0 +1,7 @@
+// Use strict comparisons in PHPUnit and drop var_dump debugging.
+refactor "phpunit-strict" {
+    match php::pattern '$this->assertEquals($EXPECTED, $ACTUAL)' {
+        replace '$this->assertSame($EXPECTED, $ACTUAL)'
+    }
+    match php::pattern 'var_dump($$$ARGS)' { delete }
+}

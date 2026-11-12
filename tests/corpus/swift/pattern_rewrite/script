@@ -1,0 +1,7 @@
+// Replace NSLog with os.Logger and drop stray prints.
+refactor "nslog-to-logger" {
+    match swift::pattern 'NSLog($$$ARGS)' {
+        replace 'logger.info($$$ARGS)'
+    }
+    match swift::pattern 'print($$$ARGS)' { delete }
+}

@@ -7,6 +7,7 @@
 
 pub mod backend;
 pub mod error;
+pub mod find;
 pub mod near_miss;
 pub mod render;
 pub mod report;
@@ -17,7 +18,8 @@ pub mod transformer;
 pub mod walker;
 
 pub use backend::{
-    ActionCapability, BackendRegistry, Capability, LanguageBackend, Operation, RuleSpec,
+    ActionCapability, AstInput, BackendRegistry, Capability, LanguageBackend, Operation, RuleSpec,
+    SyntaxTree,
 };
 pub use error::{Error, ParseDetail, Result};
 pub use render::{ChangeCollector, Detail, RenderOptions, write_unified_diff};

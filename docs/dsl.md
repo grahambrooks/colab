@@ -163,6 +163,77 @@ compilation entry point has a known base path (the CLI's
 `compile_at_path`); compiling a bare string raises a clear error
 when an `include` directive is encountered.
 
+## Structural patterns: `<lang>::pattern`
+
+Every source backend has a `pattern` module whose target is **code with
+metavariables** rather than a name. Use it for any change the fixed
+modules cannot express:
+
+```
+refactor "modernise" {
+    // Go: pkg/errors → stdlib wrapping
+    match go::pattern 'errors.Wrap($ERR, $MSG)' {
+        replace 'fmt.Errorf("%s: %w", $MSG, $ERR)'
+    }
+    // Go: drop debug logging, whole statement and its line
+    match go::pattern 'log.Println("DEBUG", $$$ARGS)' { delete }
+}
+```
+
+| Metavariable | Matches |
+| ------------ | ------- |
+| `$NAME` | exactly one syntax node (an expression, identifier, literal, …), bound to `NAME` |
+| `$$$NAME` | zero or more sibling nodes — e.g. the rest of an argument list — bound to `NAME` |
+| `$_` | one node, not bound |
+
+Names are upper-case letters, digits and `_`. A name used twice must bind
+identical text: `$A == $A` matches `x == x` but not `x == y`. Any other
+`$` — a PHP variable, a `$` inside a string — is literal.
+
+**`replace '<template>'`** substitutes each binding's source text into the
+template: `$NAME` and `$$$NAME` (the whole span, separators included).
+**`delete`** removes each match that stands alone on its line(s) — apart
+from indentation and a trailing `;` or `,` — taking the line with it. A
+match nested inside a larger expression (`() => f(x)`, `[f(x), 2]`) is left
+in place, since removing it would leave broken code; `colab find` still
+lists it, and `replace` can rewrite it.
+
+**Never writes broken code.** If a file parsed cleanly and a pattern
+rewrite would leave a syntax error in it — usually a template that is not
+valid where it lands — that file is left unchanged and the rule reports no
+change for it. When `colab find` shows matches in a file that `refactor`
+did not change, check the template.
+
+How it matches:
+
+- **By syntax, not text.** The pattern is parsed with the language's own
+  grammar and compared node by node, so whitespace, line breaks and
+  comments inside the matched code do not matter, and `f(x)` never matches
+  inside a string or comment.
+- **Fragments are fine.** A pattern that is not a complete file — a Go
+  expression, a Java statement — is retried inside wrappers (a function
+  body, a class) until it parses. If it parses in none, the rule fails to
+  compile (exit code 3) and the error names every wrapper tried.
+- **Outermost wins.** Matches never nest within one pass: in
+  `f(f(1))`, `f($A)` rewrites the outer call only. Run again for the inner
+  one — or, better, write a template that does not re-match its own
+  pattern; the corpus harness rejects rules whose second pass changes
+  anything.
+- **Prefiltered.** The longest literal leaf in the pattern (`errors` above)
+  must appear in a file before it is parsed. A pattern made only of
+  metavariables and punctuation (`$A + $B`) parses every file of its
+  language.
+- **Quoting.** The DSL has no escapes, so write patterns containing `"`
+  with single quotes, as above.
+
+When a pattern matches nothing, look at it the way colab does:
+
+```sh
+colab ast --lang go --pattern 'errors.Wrap($ERR, $MSG)'   # the pattern's tree
+colab ast --lang go --stdin < main.go                      # the code's tree
+colab find -e "match go::pattern 'errors.Wrap(\$E, \$M)' { delete }" .   # where it matches
+```
+
 ## Inline rules
 
 The `refactor "<name>" { … }` wrapper is optional on the command line.
@@ -230,6 +301,7 @@ table below summarises:
 | `go::symbol` | Identifier text (rewrites every matching `identifier` / `type_identifier` / `field_identifier` in the file). | `"OldType"` |
 | `go::struct_tag` | `<key>:<value>` pair (no quotes around value). | `"json:old_name"` |
 | `go::call` | Verbatim source text of the function being called. | `"pkg.Old"`, `"Old"` |
+| `<lang>::pattern` | Code with `$NAME` / `$$$NAME` / `$_` metavariables — see [Structural patterns](#structural-patterns-langpattern). | `'errors.Wrap($E, $M)'`, `'console.log($$$A)'` |
 | `rust::use` | Leading path prefix, segment-wise. | `"tokio"`, `"tokio::sync"` |
 | `rust::symbol` | Identifier text. | `"OldThing"` |
 | `rust::crate` | Cargo.toml dependency key. | `"old_crate"` |
@@ -411,7 +483,8 @@ The DSL is intentionally small. Capabilities being considered:
   `replace_call "f(ctx, $args)"` pattern.
 - A query namespace (e.g. `go::regex`) for opt-in regex-based
   rewrites where a tree-sitter rule does not suffice.
-- An `include "other.codemod"` directive so library packs compose.
+- Relational pattern constraints (`inside`, `has`, `not`) in the style of
+  ast-grep rules, for "match X only within Y".
 - A scope-aware `<lang>::symbol` mode that respects shadowing.
   (`in "<glob>"` narrows a rename by *path*; this would narrow it by
   lexical scope.)

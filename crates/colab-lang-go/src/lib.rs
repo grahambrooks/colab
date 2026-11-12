@@ -6,6 +6,7 @@
 pub mod calls;
 pub mod imports;
 pub mod packages;
+pub mod patterns;
 pub mod struct_tags;
 pub mod symbols;
 
@@ -81,6 +82,20 @@ const CAPABILITIES: &[Capability] = &[
         }],
     },
     Capability {
+        module: "pattern",
+        description: "Match code by shape: the target is Go code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `errors.Wrap($ERR, $MSG)`. An expression, statement, or declaration.",
+        actions: &[
+            ActionCapability {
+                name: "replace",
+                description: "Replace each match with the template, substituting `$NAME` / `$$$NAME` bindings.",
+            },
+            ActionCapability {
+                name: "delete",
+                description: "Remove each match; a match alone on its line takes the line with it.",
+            },
+        ],
+    },
+    Capability {
         module: "package",
         description: "Rewrite the file's `package` clause. The import path is separate — pair with `go::import` for a package move.",
         actions: &[ActionCapability {
@@ -103,6 +118,10 @@ impl LanguageBackend for GoBackend {
         CAPABILITIES
     }
 
+    fn syntax_tree(&self, input: colab_core::AstInput<'_>) -> Result<colab_core::SyntaxTree> {
+        patterns::syntax_tree(input)
+    }
+
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>> {
         match (module, spec) {
             (
@@ -115,6 +134,20 @@ impl LanguageBackend for GoBackend {
                 from: target,
                 to: replacement,
             })),
+            (
+                "pattern",
+                RuleSpec::Replace {
+                    target,
+                    replacement,
+                },
+            ) => Ok(Box::new(patterns::PatternOp::compile(
+                &target,
+                colab_rewrite::pattern::PatternAction::Replace(replacement),
+            )?)),
+            ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
+                &target,
+                colab_rewrite::pattern::PatternAction::Delete,
+            )?)),
             ("import", RuleSpec::Delete { target }) => {
                 Ok(Box::new(imports::ImportDelete { target }))
             }

@@ -1,0 +1,7 @@
+// Convert RSpec `should` syntax to `expect`, and remove debugger stops.
+refactor "rspec-expect" {
+    match ruby::pattern '$ACTUAL.should == $EXPECTED' {
+        replace 'expect($ACTUAL).to eq($EXPECTED)'
+    }
+    match ruby::pattern 'binding.pry' { delete }
+}

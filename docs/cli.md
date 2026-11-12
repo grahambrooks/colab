@@ -192,6 +192,74 @@ emits the rewritten source to stdout. Combine with `--format json`
 or `--format diff` to emit a structured event instead of the
 rewritten source.
 
+### `colab find`
+
+Read-only search: where does each rule match? Nothing is written.
+
+```
+colab find (--script <path|-> | -e <rule>...) [--format human|json]
+           [--detail concise|detailed] [--max-results <N>]
+           [-C <dir>] [--include <glob>]... [--exclude <glob>]... [--no-ignore]
+           [paths...]
+```
+
+```sh
+$ colab find -e "match go::pattern 'errors.Wrap(\$E, \$M)' { delete }" .
+internal/load.go:14:15: errors.Wrap(err, "read config")
+cmd/main.go:22:15: errors.Wrap(err, "startup")
+2 match(es) in 2 file(s); 38 scanned
+```
+
+- Output is grep-shaped `path:line:col: text` (first line of the match);
+  with several rules each hit is tagged `[rule N]`.
+- `--detail detailed` adds metavariable captures (`$E = err`) and, in
+  JSON, the full match text (capped at 2000 bytes).
+- `--max-results` (default 50) caps the listed hits; the rest are counted
+  (`truncated` in JSON).
+- Any rule works, not only `pattern`. A `<lang>::pattern` rule reports its
+  exact matches; every other module reports the original lines its
+  rewrite would change.
+- Rules are searched independently against the original files, not run
+  in sequence.
+- A rule that finds nothing is warned about, with
+  [near misses](#near-misses) where its module saw something close.
+
+`--format json` is one document:
+
+```json
+{"matches":[{"path":"cmd/main.go","line":22,"col":15,"rule":0,"text":"errors.Wrap(err, \"startup\")"}],
+ "summary":{"visited":412,"scanned":38,"files":2,"matches":2},
+ "rules":[{"i":0,"rule":"go::pattern 'errors.Wrap($E, $M)' -> delete","files":2,"matches":2}]}
+```
+
+### `colab ast`
+
+Print a syntax tree — of a pattern exactly as `<lang>::pattern` compiles
+it, or of a snippet — to see why a pattern does or does not match.
+
+```
+colab ast --lang <lang> (--pattern '<code>' | --stdin) [--format human|json]
+```
+
+```sh
+$ colab ast --lang go --pattern 'errors.Wrap($E, $M)'
+context: package p⏎func _() {⏎@@PATTERN@@⏎}⏎
+prefilter: errors
+call_expression
+  function: selector_expression
+    operand: identifier  "errors"
+    field: field_identifier  "Wrap"
+  arguments: argument_list
+    identifier  "$E"
+    identifier  "$M"
+```
+
+Only named nodes are shown, one per line, with field names — the
+structure a pattern is compared on. `context` is the wrapper the pattern
+needed to parse (none if it parsed on its own); `prefilter` is the literal
+a file must contain to be considered. A snippet (`--stdin`) adds
+`line:col` positions and flags syntax errors (`ERROR` / `MISSING` nodes).
+
 ### `colab schema`
 
 Print the full capability schema as JSON. One object per registered
@@ -338,6 +406,8 @@ MCP-aware host) can call them directly:
 | `colab.schema` | `lang?` | Full capability schema, or one language's slice of it. |
 | `colab.lint_script` | `script`, `cwd?` | `{ok: true, name, rule_count, rules[]}`. |
 | `colab.test_rule` | `script`, `source`, `path`, `expected?`, `cwd?` | Runs the script over one in-memory snippet; `path` is only a filename hint. `{changed, output, rules[], diff?, matches_expected?, expected_diff?, warnings?}`. Nothing on disk is read or written. |
+| `colab.find` | `script`, `paths[]`, `cwd?`, `detail?` (`concise`/`detailed`), `max_results?` | Read-only search; same document as `colab find --format json`. Paths are reported relative to `cwd`. |
+| `colab.ast` | `lang`, one of `pattern` / `source` | A pattern's tree as compiled (with `context` and `prefilter`), or a snippet's (with `has_error`). |
 | `colab.preview` | `script`, `paths[]`, `cwd?`, `detail?`, `max_files?`, `max_diff_bytes?` | Summary, per-rule match counts, changed paths, and (at `detail: "diff"`) capped diffs. Disk untouched. |
 | `colab.apply` | same as preview | Same shape, but writes changes back. |
 

@@ -122,6 +122,53 @@ pub fn list() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "colab.find",
+            "description": "Search without changing anything: where does each rule in the script match? Works for every module — a `<lang>::pattern` rule (code with `$METAVARS`, e.g. `match go::pattern 'errors.Wrap($E, $M)' { delete }`) reports exact matches and, at `detail: \"detailed\"`, their metavariable captures; other modules report the lines their rewrite would change. Returns `matches[]` ({path, line, col, rule, text}), per-rule totals, and warnings with near misses for rules that found nothing.",
+            "annotations": { "readOnlyHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": { "type": "string", "description": SCRIPT_PARAM },
+                    "paths": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "minItems": 1,
+                        "description": PATHS_PARAM
+                    },
+                    "cwd": { "type": "string", "description": CWD_PARAM },
+                    "detail": {
+                        "type": "string",
+                        "enum": ["concise", "detailed"],
+                        "default": "concise",
+                        "description": "`concise`: the first line of each match. `detailed`: adds captures and the full (capped) match text."
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": colab_core::find::DEFAULT_MAX_RESULTS,
+                        "description": "List at most this many matches; the rest are counted under `truncated`."
+                    }
+                },
+                "required": ["script", "paths"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "colab.ast",
+            "description": "Show a syntax tree: of a `pattern` exactly as `<lang>::pattern` compiles it (with the context wrapper it needed and its prefilter literal), or of a `source` snippet. Use it when a pattern matches nothing: compare the pattern's tree with the real code's tree. Named nodes only, one per line, with field names.",
+            "annotations": { "readOnlyHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "lang": { "type": "string", "description": "Language backend, e.g. `go`." },
+                    "pattern": { "type": "string", "description": "A pattern to compile and show. Give this or `source`." },
+                    "source": { "type": "string", "description": "A code snippet to parse and show. Give this or `pattern`." }
+                },
+                "required": ["lang"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "colab.preview",
             "description": "Apply a script to one or more paths in dry-run mode. Disk is not modified. Returns a summary, per-rule match counts, and the changed paths; pass `detail: \"diff\"` for hunks.",
             "annotations": { "readOnlyHint": true },

@@ -1,0 +1,7 @@
+// Modernise membership tests and remove leftover debug logging.
+refactor "js-includes" {
+    match js::pattern '$LIST.indexOf($ITEM) !== -1' {
+        replace '$LIST.includes($ITEM)'
+    }
+    match js::pattern 'console.debug($$$ARGS)' { delete }
+}
