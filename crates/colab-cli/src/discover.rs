@@ -1,9 +1,6 @@
 //! Capability and IR discovery commands: `schema`, `list-languages`,
 //! `list-rules`, `explain`. All emit pretty-printed JSON to stdout.
 
-use std::fs;
-use std::path::Path;
-
 use colab_core::{BackendRegistry, Error, Result};
 use colab_dsl::ast;
 use serde_json::{Value, json};
@@ -79,9 +76,8 @@ pub fn list_rules(backends: &BackendRegistry, lang: &str) -> Result<Value> {
 }
 
 /// JSON IR for a parsed script (`colab explain`).
-pub fn explain(script_path: &Path) -> Result<Value> {
-    let script = fs::read_to_string(script_path).map_err(|e| Error::io_at(script_path, e))?;
-    let command = colab_dsl::parse(&script)?;
+pub fn explain_source(script: &str) -> Result<Value> {
+    let command = colab_dsl::parse(script)?;
     Ok(explain_command(&command))
 }
 

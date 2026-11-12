@@ -58,6 +58,23 @@ impl Operation for CallReplace {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.function)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.function)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        let Some(tree) = crate::parse(source) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        colab_rewrite::visit_all(&tree, |node| {
+            if let Some((_, callee)) = callee(node, source) {
+                out.push(callee.to_string());
+            }
+        });
+        out
+    }
 }
 
 pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
@@ -79,6 +96,19 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     )
 }
 
+/// The argument list of a call node and its callee: the raw source
+/// before the argument list, trailing whitespace trimmed. Taking the
+/// callee as raw source keeps the receiver in the target, which is what
+/// makes qualified and bare calls distinguishable.
+fn callee<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str)> {
+    if !CALL_KINDS.contains(&node.kind()) {
+        return None;
+    }
+    let args = node.child_by_field_name("arguments")?;
+    let callee = source.get(node.start_byte()..args.start_byte())?;
+    Some((args, callee.trim_end()))
+}
+
 fn collect(
     node: Node<'_>,
     source: &str,
@@ -86,13 +116,8 @@ fn collect(
     template: &str,
     edits: &mut Vec<(usize, usize, String)>,
 ) {
-    if CALL_KINDS.contains(&node.kind())
-        && let Some(args) = node.child_by_field_name("arguments")
-        // The callee is everything before the argument list. Taking it as
-        // raw source keeps `::` and `->` in the target, which is what
-        // makes those forms distinguishable.
-        && let Some(callee) = source.get(node.start_byte()..args.start_byte())
-        && callee.trim_end() == function
+    if let Some((args, callee)) = callee(node, source)
+        && callee == function
     {
         let arg_strs = collect_args(args, source);
         let arg_refs: Vec<&str> = arg_strs.iter().map(|s| s.as_str()).collect();

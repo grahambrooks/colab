@@ -53,6 +53,17 @@ fn match_path_prefix(text: &str, from: &str) -> Option<usize> {
     }
 }
 
+/// The argument text of every `use` declaration in `source`, for
+/// near-miss reporting. The matcher segment-prefix-matches the target
+/// against this same text.
+pub(crate) fn use_paths(source: &str) -> Vec<String> {
+    crate::parse(source)
+        .map(|tree| {
+            colab_rewrite::field_texts(&tree, source, &["use_declaration"], Some("argument"), &[])
+        })
+        .unwrap_or_default()
+}
+
 // ---------------------------------------------------------------------------
 // Rename
 // ---------------------------------------------------------------------------
@@ -81,6 +92,14 @@ impl Operation for UseRename {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        use_paths(source)
     }
 }
 
@@ -134,6 +153,14 @@ impl Operation for UseDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        use_paths(source)
     }
 }
 
@@ -229,6 +256,15 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_use_argument() {
+        let src = "use std::fmt;\nuse tokio::sync::{Mutex, RwLock};\n";
+        assert_eq!(
+            use_paths(src),
+            vec!["std::fmt", "tokio::sync::{Mutex, RwLock}"]
+        );
+    }
 
     // ---------- rename ---------------------------------------------------
 

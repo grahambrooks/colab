@@ -50,6 +50,20 @@ where
     });
 }
 
+/// Every name this module matches against in `source`, for near-miss reporting.
+pub(crate) fn import_names(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    colab_rewrite::visit_all(&tree, |node| {
+        if let Some((_, text)) = import_name(node, source) {
+            out.push(text.to_string());
+        }
+    });
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Rename
 // ---------------------------------------------------------------------------
@@ -77,6 +91,14 @@ impl Operation for ImportRename {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        import_names(source)
     }
 }
 
@@ -123,6 +145,14 @@ impl Operation for ImportDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        import_names(source)
     }
 }
 
@@ -210,6 +240,12 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_import() {
+        let src = "import a.b.C\nimport d.e.F as G\n";
+        assert_eq!(import_names(src), vec!["a.b.C", "d.e.F"]);
+    }
 
     const SRC: &str =
         "package com.demo\n\nimport com.old.Thing\nimport com.other.Other\n\nfun main() {}\n";

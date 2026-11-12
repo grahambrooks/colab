@@ -66,6 +66,20 @@ where
     });
 }
 
+/// Every include path in `source`, without its delimiters, for near-miss reporting.
+pub(crate) fn include_paths(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    colab_rewrite::visit_all(&tree, |node| {
+        if let Some((_, text)) = include_path(node, source) {
+            out.push(text.to_string());
+        }
+    });
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Rename
 // ---------------------------------------------------------------------------
@@ -95,6 +109,14 @@ impl Operation for IncludeRename {
         // The bare path appears verbatim inside whichever delimiters
         // the source used, so its absence implies a no-op.
         Some(unquote(&self.from))
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(unquote(&self.from))
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        include_paths(source)
     }
 }
 
@@ -151,6 +173,14 @@ impl Operation for IncludeDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(unquote(&self.target))
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(unquote(&self.target))
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        include_paths(source)
     }
 }
 
@@ -247,6 +277,12 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_include_unquoted() {
+        let src = "#include <stdio.h>\n#include \"local/lib.h\"\n";
+        assert_eq!(include_paths(src), vec!["stdio.h", "local/lib.h"]);
+    }
 
     const SRC: &str =
         "#include <stdio.h>\n#include \"old/lib.h\"\n\nint main(void) { return 0; }\n";

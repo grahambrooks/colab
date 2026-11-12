@@ -46,6 +46,20 @@ where
     });
 }
 
+/// Every name this module matches against in `source`, for near-miss reporting.
+pub(crate) fn import_names(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    colab_rewrite::visit_all(&tree, |node| {
+        if let Some((_, text)) = import_name(node, source) {
+            out.push(text);
+        }
+    });
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Rename
 // ---------------------------------------------------------------------------
@@ -73,6 +87,14 @@ impl Operation for ImportRename {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        import_names(source)
     }
 }
 
@@ -119,6 +141,14 @@ impl Operation for ImportDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        import_names(source)
     }
 }
 
@@ -206,6 +236,15 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_import() {
+        let src = "import java.util.List;\nimport static org.junit.Assert.assertEquals;\n";
+        assert_eq!(
+            import_names(src),
+            vec!["java.util.List", "org.junit.Assert.assertEquals"]
+        );
+    }
 
     const HELLO: &str =
         "package demo;\n\nimport java.util.List;\nimport java.util.Map;\n\npublic class Hello {}\n";

@@ -158,6 +158,38 @@ pub fn rename_nodes_by_text(
     apply_edits(source, edits)
 }
 
+/// The text of the `field` child of every node whose kind is in `kinds`,
+/// with any of `trim` stripped from both ends.
+///
+/// The read-only twin of the matchers: where a rule asks "is there an
+/// import `a/b`?", this answers "which imports are there?" — the values
+/// near-miss reporting compares a dead rule's target against. Pass
+/// `field: None` to take the node's own text.
+pub fn field_texts(
+    tree: &Tree,
+    source: &str,
+    kinds: &[&str],
+    field: Option<&str>,
+    trim: &[char],
+) -> Vec<String> {
+    let mut out = Vec::new();
+    visit_all(tree, |node| {
+        if !kinds.contains(&node.kind()) {
+            return;
+        }
+        let target = match field {
+            Some(name) => node.child_by_field_name(name),
+            None => Some(node),
+        };
+        if let Some(target) = target
+            && let Ok(text) = target.utf8_text(source.as_bytes())
+        {
+            out.push(text.trim_matches(trim).to_string());
+        }
+    });
+    out
+}
+
 /// Collect the source text of each named child of `node`.
 ///
 /// Used by every `replace_call` implementation to build the `$1`/`$args`

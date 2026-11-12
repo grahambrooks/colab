@@ -35,13 +35,13 @@ fn clause_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str
     None
 }
 
-/// Walk to each `namespace_use_clause` whose name equals `target`,
-/// yielding the enclosing declaration and the name node.
+/// Walk to each matchable `namespace_use_clause`, yielding the enclosing
+/// declaration, the name node, and its text.
 ///
 /// Clauses inside a `namespace_use_group` are skipped — see module docs.
-fn for_each_matching_use<F>(tree: &Tree, source: &str, target: &str, mut visit: F)
+fn for_each_use<F>(tree: &Tree, source: &str, mut visit: F)
 where
-    F: FnMut(Node<'_>, Node<'_>),
+    F: FnMut(Node<'_>, Node<'_>, &str),
 {
     colab_rewrite::visit_all(tree, |node| {
         if node.kind() == "namespace_use_declaration" {
@@ -56,15 +56,37 @@ where
                     let Some(clause) = node.named_child(i as u32) else {
                         break;
                     };
-                    if let Some((name_node, text)) = clause_name(clause, source)
-                        && text == target
-                    {
-                        visit(node, name_node);
+                    if let Some((name_node, text)) = clause_name(clause, source) {
+                        visit(node, name_node, text);
                     }
                 }
             }
         }
     });
+}
+
+/// Walk to each `namespace_use_clause` whose name equals `target`,
+/// yielding the enclosing declaration and the name node.
+fn for_each_matching_use<F>(tree: &Tree, source: &str, target: &str, mut visit: F)
+where
+    F: FnMut(Node<'_>, Node<'_>),
+{
+    for_each_use(tree, source, |decl, name_node, text| {
+        if text == target {
+            visit(decl, name_node);
+        }
+    });
+}
+
+/// Every matchable `use` name in `source`, for near-miss reporting.
+/// Grouped clauses are excluded, as they are from matching.
+pub(crate) fn use_names(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for_each_use(&tree, source, |_, _, text| out.push(text.to_string()));
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +116,14 @@ impl Operation for UseRename {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        use_names(source)
     }
 }
 
@@ -140,6 +170,14 @@ impl Operation for UseDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        use_names(source)
     }
 }
 
@@ -232,6 +270,12 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_ungrouped_use() {
+        let src = "<?php\nuse App\\Old\\Thing;\nuse function App\\helper;\nuse App\\Sub\\{A, B};\n";
+        assert_eq!(use_names(src), vec!["App\\Old\\Thing", "App\\helper"]);
+    }
 
     const SRC: &str =
         "<?php\nnamespace App;\n\nuse App\\Old\\Thing;\nuse App\\Other;\n\nclass C {}\n";

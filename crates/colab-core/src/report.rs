@@ -34,6 +34,18 @@ pub struct RuleStat {
     pub rule: String,
     /// How many files this rule actually changed.
     pub files_matched: u64,
+    /// For a dead rule: the values its module saw that most resemble its
+    /// target, filled in by [`crate::near_miss::probe`]. Empty otherwise.
+    pub near_misses: Vec<NearMiss>,
+}
+
+/// A value a dead rule's module saw that resembles what it was looking
+/// for, e.g. the import `a/b/v2` when the rule targets `a/b`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NearMiss {
+    pub value: String,
+    /// How many probed files contained it.
+    pub files: u64,
 }
 
 /// A file the walker could not process. Recorded rather than fatal so one
@@ -61,7 +73,14 @@ pub struct RunReport {
     /// One entry per rule in the compiled script, in source order.
     pub rules: Vec<RuleStat>,
     pub skipped: Vec<SkippedFile>,
+    /// The first [`SCANNED_SAMPLE_LIMIT`] scanned paths, kept so a rule
+    /// that matched nothing can be explained afterwards without a second
+    /// walk (see [`crate::near_miss::probe`]).
+    pub scanned_sample: Vec<PathBuf>,
 }
+
+/// How many scanned paths a [`RunReport`] remembers for near-miss probing.
+pub const SCANNED_SAMPLE_LIMIT: usize = 10_000;
 
 impl RunReport {
     /// Seed the per-rule table from a compiled script's rule descriptions.
@@ -80,6 +99,7 @@ impl RunReport {
                     index,
                     rule: rule.into(),
                     files_matched: 0,
+                    near_misses: Vec::new(),
                 })
                 .collect(),
             ..Default::default()
@@ -89,6 +109,9 @@ impl RunReport {
     /// Fold one processed file into the report.
     pub fn record(&mut self, change: &FileChange) {
         self.files_scanned += 1;
+        if self.scanned_sample.len() < SCANNED_SAMPLE_LIMIT {
+            self.scanned_sample.push(change.path.clone());
+        }
         self.bytes_before += change.before.len() as u64;
         self.bytes_after += change.after.len() as u64;
         if change.changed() {

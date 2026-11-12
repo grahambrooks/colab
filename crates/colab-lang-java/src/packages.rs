@@ -32,6 +32,36 @@ impl Operation for PackageRename {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        package_names(source)
+    }
+}
+
+/// The name in every `package` declaration in `source`, for near-miss reporting.
+fn package_names(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    colab_rewrite::visit_all(&tree, |node| {
+        if node.kind() != "package_declaration" {
+            return;
+        }
+        for i in 0..node.named_child_count() {
+            if let Some(child) = node.named_child(i as u32)
+                && matches!(child.kind(), "scoped_identifier" | "identifier")
+                && let Ok(text) = child.utf8_text(source.as_bytes())
+            {
+                out.push(text.to_string());
+            }
+        }
+    });
+    out
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {

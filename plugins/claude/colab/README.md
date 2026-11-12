@@ -10,7 +10,7 @@ codemods as tool calls.
 | Kind | Name | Purpose |
 | ---- | ---- | ------- |
 | Skill | `colab-codemod` | When a change is mechanical and structural, write a `.codemod` script, check the blast radius, and apply it safely. Includes a namespace/match-string reference and a diagnosis guide. |
-| MCP server | `colab` | `colab.preview`, `colab.apply`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema` over stdio. |
+| MCP server | `colab` | `colab.test_rule`, `colab.preview`, `colab.apply`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema` over stdio. |
 
 The skill triggers on mechanical multi-file changes — an import path, a
 dependency rename, a symbol, a Java package, a Go struct tag, a call
@@ -56,6 +56,9 @@ plugins/claude/colab/
         ├── recipes.md              # every namespace, match strings, worked examples
         └── troubleshooting.md      # reading the counters, diagnosing an empty run
 ```
+
+The manifest deliberately has no `version` field: Claude Code then
+tracks the plugin by git commit, so it can never fall behind a release.
 
 The skill is the single source of truth: the repo-local
 `.claude/skills/colab-codemod` is a symlink to it, so working inside the

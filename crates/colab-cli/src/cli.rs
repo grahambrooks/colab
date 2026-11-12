@@ -9,7 +9,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use log::info;
 
 use std::time::Instant;
@@ -68,6 +68,12 @@ Exit codes:
 struct Args {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    /// Print this command's flags, subcommands, and constraints as JSON
+    /// (for agents and scripts), then exit. Works after any subcommand:
+    /// `colab refactor --help-json`.
+    #[arg(long = "help-json", global = true)]
+    help_json: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -123,9 +129,8 @@ struct ServerArgs {
 
 #[derive(Parser, Debug)]
 struct RefactorArgs {
-    /// Path to the codemod script to execute.
-    #[arg(long = "script", required = true)]
-    script_path: PathBuf,
+    #[command(flatten)]
+    script: ScriptArgs,
 
     /// Change to this working directory before resolving paths.
     #[arg(short = 'C', long = "change-dir", default_value = ".")]
@@ -243,10 +248,96 @@ struct RefactorArgs {
 
 #[derive(Parser, Debug)]
 struct ExplainArgs {
-    /// Path to the codemod script to parse.
-    #[arg(long = "script", required = true)]
-    script_path: PathBuf,
+    #[command(flatten)]
+    script: ScriptArgs,
 }
+
+/// Where the codemod script comes from: a file, stdin, or inline rules.
+///
+/// Exactly one of `--script` / `--rule` is required. Inline rules exist
+/// so an agent (or a one-off shell command) can run a rule without
+/// first writing a `.codemod` file.
+#[derive(clap::Args, Debug)]
+#[group(required = true, multiple = false)]
+struct ScriptArgs {
+    /// Path to the codemod script. `-` reads the script from stdin.
+    #[arg(long = "script", value_name = "PATH")]
+    script_path: Option<PathBuf>,
+
+    /// An inline rule, e.g. `match go::import "a" { replace "b" }`.
+    /// Repeatable; rules run in the order given. A single value that is
+    /// a whole `refactor "…" { … }` script is used as-is.
+    #[arg(short = 'e', long = "rule", value_name = "RULE")]
+    rules: Vec<String>,
+}
+
+impl ScriptArgs {
+    /// `true` when the script itself is read from stdin (`--script -`).
+    fn reads_stdin(&self) -> bool {
+        self.script_path.as_deref() == Some(Path::new("-"))
+    }
+
+    /// The script text, plus the path `include "..."` resolves against.
+    fn load(&self) -> Result<(String, PathBuf)> {
+        let cwd = std::env::current_dir().map_err(io_to_error)?;
+        match &self.script_path {
+            Some(_) if self.reads_stdin() => {
+                let mut text = String::new();
+                io::stdin().read_to_string(&mut text).map_err(io_to_error)?;
+                Ok((text, cwd.join("<stdin>")))
+            }
+            Some(path) => {
+                let text = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
+                Ok((text, path.clone()))
+            }
+            None => Ok((inline_script(&self.rules), cwd.join("<inline>"))),
+        }
+    }
+
+    fn compile(&self, backends: &BackendRegistry) -> Result<codemod::Refactoring> {
+        let (text, base) = self.load()?;
+        codemod::compile_at_source(&text, &base, backends).map_err(|e| self.relocate(&text, e))
+    }
+
+    /// Re-anchor a parse error from the synthesised inline wrapper onto
+    /// the rules the user actually typed, so line, column, and caret
+    /// snippet all point into their `-e` text rather than the wrapper.
+    fn relocate(&self, text: &str, err: Error) -> Error {
+        let Error::Parse(detail) = err else {
+            return err;
+        };
+        let rules = self.rules.join("\n");
+        match text.strip_prefix(INLINE_PREFIX) {
+            Some(_) if self.script_path.is_none() => {
+                let offset = detail.offset.saturating_sub(INLINE_PREFIX.len());
+                Error::Parse(colab_core::ParseDetail::at_offset(
+                    &rules,
+                    offset,
+                    detail.message,
+                    detail.expected,
+                ))
+            }
+            _ => Error::Parse(detail),
+        }
+    }
+}
+
+/// Wrap inline `-e` rules in a `refactor` block.
+///
+/// The wrapper opens on the first rule's line so parse errors keep the
+/// line number the user sees in their own `-e` list (rule N is line N
+/// when each rule is a single line).
+fn inline_script(rules: &[String]) -> String {
+    if let [only] = rules
+        && only.trim_start().starts_with("refactor")
+    {
+        return only.clone();
+    }
+    format!("{INLINE_PREFIX}{}\n}}\n", rules.join("\n"))
+}
+
+/// The wrapper `inline_script` puts before the first `-e` rule.
+const INLINE_PREFIX: &str = "refactor \"inline\" { ";
 
 #[derive(Parser, Debug)]
 struct ListRulesArgs {
@@ -257,6 +348,11 @@ struct ListRulesArgs {
 /// Parse CLI arguments and dispatch to the requested subcommand.
 /// Returns the success exit code (0 or 10).
 pub async fn run() -> Result<i32> {
+    let argv: Vec<String> = std::env::args().collect();
+    if let Some(value) = crate::help_json::requested(&Args::command(), &argv) {
+        print_json(&value)?;
+        return Ok(0);
+    }
     let args = Args::parse();
     match args.command {
         Some(Commands::Refactor(refactor_args)) => run_refactor(refactor_args),
@@ -275,7 +371,8 @@ pub async fn run() -> Result<i32> {
         }
         Some(Commands::Schema) => print_json(&discover::schema(&default_backends())),
         Some(Commands::Explain(args)) => {
-            let value = discover::explain(&args.script_path)?;
+            let (text, _) = args.script.load()?;
+            let value = discover::explain_source(&text)?;
             print_json(&value)
         }
         Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
@@ -460,7 +557,7 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     change_working_dir(&args.change_dir)?;
 
     let backends = default_backends();
-    let refactoring = codemod::compile_at_path(&args.script_path, &backends)?;
+    let refactoring = args.script.compile(&backends)?;
     info!("Running script: {}", refactoring);
 
     let targets = if args.paths.is_empty() {
@@ -510,6 +607,7 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     let outcome = run_transformer(&refactoring, &args, &targets, &mut visit)?;
     report.record_walk(outcome);
+    colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
     report.elapsed = started.elapsed();
     reporter.finish(&report).map_err(io_to_error)?;
 
@@ -884,10 +982,14 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
         .expect("clap requires --path with --stdin")
         .clone();
 
-    let script =
-        fs::read_to_string(&args.script_path).map_err(|e| Error::io_at(&args.script_path, e))?;
+    if args.script.reads_stdin() {
+        return Err(Error::Config(
+            "`--script -` and `--stdin` both read stdin; pass the script as a file or with `-e`"
+                .into(),
+        ));
+    }
     let backends = default_backends();
-    let refactoring = codemod::compile(&script, &backends)?;
+    let refactoring = args.script.compile(&backends)?;
     info!("Running script: {}", refactoring);
 
     let mut source = String::new();
@@ -907,6 +1009,9 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
     let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
     report.files_visited = 1;
     report.record(&change);
+    colab_core::near_miss::probe(&refactoring.rules, &mut report, |_| {
+        Some(change.before.clone())
+    });
 
     match args.format {
         Format::Human => {

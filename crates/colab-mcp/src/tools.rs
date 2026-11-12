@@ -105,6 +105,23 @@ pub fn list() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "colab.test_rule",
+            "description": "Run a script against one in-memory snippet — no files are read or written. Use it to check a rule before previewing it across a repo. Returns `{changed, output, rules[]}`, plus `diff` when the snippet changed. Pass `expected` to get `matches_expected` and, on a mismatch, `expected_diff` (output → expected).",
+            "annotations": { "readOnlyHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": { "type": "string", "description": SCRIPT_PARAM },
+                    "source": { "type": "string", "description": "The snippet to transform, e.g. the contents of one source file." },
+                    "path": { "type": "string", "description": "A file name for the snippet, e.g. `main.go`. Only its extension and shape matter: it decides which rules apply (and is matched against `in \"<glob>\"` scopes). Nothing is opened on disk." },
+                    "expected": { "type": "string", "description": "Optional: the output you expect. The response reports whether it matched." },
+                    "cwd": { "type": "string", "description": CWD_PARAM }
+                },
+                "required": ["script", "source", "path"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "colab.preview",
             "description": "Apply a script to one or more paths in dry-run mode. Disk is not modified. Returns a summary, per-rule match counts, and the changed paths; pass `detail: \"diff\"` for hunks.",
             "annotations": { "readOnlyHint": true },

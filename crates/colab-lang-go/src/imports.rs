@@ -28,6 +28,15 @@ where
     });
 }
 
+/// Every import path in `source`, for near-miss reporting.
+pub(crate) fn import_paths(source: &str) -> Vec<String> {
+    crate::parse(source)
+        .map(|tree| {
+            colab_rewrite::field_texts(&tree, source, &["import_spec"], Some("path"), &['"'])
+        })
+        .unwrap_or_default()
+}
+
 // ---------------------------------------------------------------------------
 // Rename
 // ---------------------------------------------------------------------------
@@ -57,6 +66,14 @@ impl Operation for ImportRename {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        import_paths(source)
     }
 }
 
@@ -115,6 +132,14 @@ impl Operation for ImportDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        import_paths(source)
     }
 }
 

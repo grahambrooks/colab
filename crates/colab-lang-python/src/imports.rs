@@ -35,16 +35,41 @@ fn for_each_matching_import<F>(tree: &Tree, source: &str, target: &str, mut visi
 where
     F: FnMut(Node<'_>, Node<'_>, usize),
 {
+    for_each_import(tree, source, |stmt, dotted, text| {
+        if let Some(len) = match_path_prefix(text, target) {
+            visit(stmt, dotted, len);
+        }
+    });
+}
+
+/// Visit every module `dotted_name` inside an `import_*` statement,
+/// with the enclosing statement and the name's text. Relative imports
+/// are skipped.
+fn for_each_import<F>(tree: &Tree, source: &str, mut visit: F)
+where
+    F: FnMut(Node<'_>, Node<'_>, &str),
+{
     colab_rewrite::visit_all(tree, |node| match node.kind() {
-        "import_statement" => visit_import_statement(node, source, target, &mut visit),
-        "import_from_statement" => visit_import_from(node, source, target, &mut visit),
+        "import_statement" => visit_import_statement(node, source, &mut visit),
+        "import_from_statement" => visit_import_from(node, source, &mut visit),
         _ => {}
     });
 }
 
-fn visit_import_statement<'a, F>(node: Node<'a>, source: &'a str, target: &str, visit: &mut F)
+/// Every module path in `source`, for near-miss reporting. These are
+/// full dotted names; the matcher accepts any segment prefix of them.
+pub(crate) fn module_paths(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for_each_import(&tree, source, |_, _, text| out.push(text.to_string()));
+    out
+}
+
+fn visit_import_statement<'a, F>(node: Node<'a>, source: &'a str, visit: &mut F)
 where
-    F: FnMut(Node<'a>, Node<'a>, usize),
+    F: FnMut(Node<'a>, Node<'a>, &'a str),
 {
     // `import_statement` has multiple `name` children.
     for i in 0..node.named_child_count() {
@@ -62,15 +87,13 @@ where
         let Ok(text) = dotted.utf8_text(source.as_bytes()) else {
             continue;
         };
-        if let Some(len) = match_path_prefix(text, target) {
-            visit(node, dotted, len);
-        }
+        visit(node, dotted, text);
     }
 }
 
-fn visit_import_from<'a, F>(node: Node<'a>, source: &'a str, target: &str, visit: &mut F)
+fn visit_import_from<'a, F>(node: Node<'a>, source: &'a str, visit: &mut F)
 where
-    F: FnMut(Node<'a>, Node<'a>, usize),
+    F: FnMut(Node<'a>, Node<'a>, &'a str),
 {
     let Some(module) = node.child_by_field_name("module_name") else {
         return;
@@ -81,9 +104,7 @@ where
     let Ok(text) = module.utf8_text(source.as_bytes()) else {
         return;
     };
-    if let Some(len) = match_path_prefix(text, target) {
-        visit(node, module, len);
-    }
+    visit(node, module, text);
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +134,14 @@ impl Operation for ImportRename {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        module_paths(source)
     }
 }
 
@@ -160,6 +189,14 @@ impl Operation for ImportDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        module_paths(source)
     }
 }
 
@@ -267,6 +304,12 @@ fn leading_header_end(tree: &Tree, source: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_module_path() {
+        let src = "import os.path as p, json\nfrom a.b import c\nfrom . import d\n";
+        assert_eq!(module_paths(src), vec!["os.path", "json", "a.b"]);
+    }
 
     // ---------- rename ---------------------------------------------------
 

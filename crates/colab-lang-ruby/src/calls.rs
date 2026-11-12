@@ -52,6 +52,23 @@ impl Operation for CallReplace {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.function)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.function)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        let Some(tree) = crate::parse(source) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        colab_rewrite::visit_all(&tree, |node| {
+            if let Some((_, callee)) = paren_call(node, source) {
+                out.push(callee);
+            }
+        });
+        out
+    }
 }
 
 pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
@@ -86,6 +103,23 @@ fn callee_text(node: Node<'_>, source: &str) -> Option<String> {
     }
 }
 
+/// The argument list and callee of a parenthesised `call` node.
+///
+/// Both `f(a)` and `f a` produce an `argument_list`; only the
+/// parenthesised form starts with `(`. Rewriting the bare form could
+/// change how the surrounding expression parses, so it is skipped (see
+/// module docs).
+fn paren_call<'a>(node: Node<'a>, source: &str) -> Option<(Node<'a>, String)> {
+    if node.kind() != "call" {
+        return None;
+    }
+    let args = node.child_by_field_name("arguments")?;
+    if !source[args.start_byte()..].starts_with('(') {
+        return None;
+    }
+    Some((args, callee_text(node, source)?))
+}
+
 fn collect(
     node: Node<'_>,
     source: &str,
@@ -93,14 +127,7 @@ fn collect(
     template: &str,
     edits: &mut Vec<(usize, usize, String)>,
 ) {
-    if node.kind() == "call"
-        && let Some(args) = node.child_by_field_name("arguments")
-        // Both `f(a)` and `f a` produce an `argument_list`; only the
-        // parenthesised form starts with `(`. Rewriting the bare form
-        // could change how the surrounding expression parses, so it is
-        // skipped (see module docs).
-        && source[args.start_byte()..].starts_with('(')
-        && let Some(callee) = callee_text(node, source)
+    if let Some((args, callee)) = paren_call(node, source)
         && callee == function
     {
         let arg_strs = collect_args(args, source);

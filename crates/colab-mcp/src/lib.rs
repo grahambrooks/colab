@@ -8,6 +8,7 @@
 //! - `colab.schema` — the full capability schema, optionally for one
 //!   language.
 //! - `colab.lint_script` — parse + compile a script without running.
+//! - `colab.test_rule` — run a script over one in-memory snippet.
 //! - `colab.preview` — apply a script to one or more paths and report
 //!   what would change.
 //! - `colab.apply` — same, but write back to disk.
@@ -64,7 +65,8 @@ use std::time::Instant;
 use colab_core::render::{self, ChangeCollector, Detail, RenderOptions};
 use colab_core::report::RunReport;
 use colab_core::suggest;
-use colab_core::{BackendRegistry, walker};
+use colab_core::walker::{self, FileChange};
+use colab_core::{BackendRegistry, CodeTransformer};
 use colab_dsl::compile;
 use serde_json::{Map, Value, json};
 
@@ -420,6 +422,7 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
                 "rules": rules,
             }))
         }
+        "colab.test_rule" => test_rule(args, backends),
         "colab.preview" => run_script(args, backends, RunMode::Preview, &mut NoProgress),
         "colab.apply" => run_script(args, backends, RunMode::Apply, &mut NoProgress),
         other => Err(ToolError::protocol(format!(
@@ -430,11 +433,12 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
     }
 }
 
-const TOOL_NAMES: [&str; 6] = [
+const TOOL_NAMES: [&str; 7] = [
     "colab.list_languages",
     "colab.list_rules",
     "colab.schema",
     "colab.lint_script",
+    "colab.test_rule",
     "colab.preview",
     "colab.apply",
 ];
@@ -550,10 +554,80 @@ fn run_script<P: ProgressSink>(
         .map_err(ToolError::from_error)?;
         report.record_walk(outcome);
     }
+    colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
     report.elapsed = started.elapsed();
     sink.finish(files_processed);
 
     Ok(finish_report(&collector, &report, mode))
+}
+
+/// `colab.test_rule`: run a script over one in-memory snippet.
+///
+/// The MCP twin of `colab refactor --stdin --path <hint>`. It goes
+/// through the same `apply_at` the walker uses, so per-file gating
+/// (`is_file_relevant`, `in "<glob>"`) and per-rule attribution behave
+/// exactly as they would on disk — a rule that says `files: 0` here will
+/// say it in `colab.preview` too.
+fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
+    let script = arg_str(args, "script")?;
+    let source = arg_str(args, "source")?;
+    let path = PathBuf::from(arg_str(args, "path")?);
+    let cwd = arg_opt_path(args, "cwd")?;
+    let expected = match args.get("expected") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(_) => return Err(ToolError::protocol("argument `expected` must be a string")),
+    };
+
+    let refactoring =
+        compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
+    let applied = refactoring.apply_at(&path, &source);
+    let change = FileChange {
+        path: path.clone(),
+        before: source,
+        after: applied.output,
+        rules_fired: applied.rules_fired,
+    };
+
+    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    report.files_visited = 1;
+    report.record(&change);
+    colab_core::near_miss::probe(&refactoring.rules, &mut report, |_| {
+        Some(change.before.clone())
+    });
+
+    let mut out = Map::new();
+    out.insert("changed".into(), json!(change.changed()));
+    out.insert("rules".into(), render::rules_json(&report));
+    if change.changed() {
+        out.insert(
+            "diff".into(),
+            json!(render::unified_diff(&path, &change.before, &change.after)),
+        );
+    }
+    if let Some(expected) = expected {
+        let matched = expected == change.after;
+        out.insert("matches_expected".into(), json!(matched));
+        if !matched {
+            out.insert(
+                "expected_diff".into(),
+                json!(render::unified_diff(&path, &change.after, &expected)),
+            );
+        }
+    }
+
+    let mut warnings = render::advisories(&report);
+    if !refactoring.rules.iter().any(|r| r.is_file_relevant(&path)) {
+        warnings.push(format!(
+            "No rule applies to `{}`: check its extension against the languages the script targets, and any `in \"<glob>\"` scope.",
+            path.display()
+        ));
+    }
+    if !warnings.is_empty() {
+        out.insert("warnings".into(), json!(warnings));
+    }
+    out.insert("output".into(), json!(change.after));
+    Ok(Value::Object(out))
 }
 
 /// Attach the advisories every run should carry: dead rules, and why a
@@ -1274,5 +1348,100 @@ mod tests {
         assert_eq!(text.matches('\n').count(), 1);
         assert!(text.ends_with('\n'));
         assert_eq!(parse_messages(text.as_bytes())[0]["text"], "a\nb\r\nc");
+    }
+
+    fn test_rule_call(arguments: Value) -> Value {
+        let req = json!({
+            "jsonrpc":"2.0","id":40,"method":"tools/call",
+            "params":{"name":"colab.test_rule","arguments": arguments}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["result"]["isError"], false, "{resp}");
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        serde_json::from_str(text).unwrap()
+    }
+
+    const TEST_RULE_SCRIPT: &str = "refactor \"x\" { match go::import \"a\" { replace \"b\" } }";
+    const TEST_RULE_SOURCE: &str = "package main\n\nimport \"a\"\n";
+    const TEST_RULE_OUTPUT: &str = "package main\n\nimport \"b\"\n";
+
+    #[test]
+    fn test_rule_transforms_a_snippet_in_memory() {
+        let parsed = test_rule_call(json!({
+            "script": TEST_RULE_SCRIPT,
+            "source": TEST_RULE_SOURCE,
+            "path": "main.go",
+        }));
+        assert_eq!(parsed["changed"], true);
+        assert_eq!(parsed["output"], TEST_RULE_OUTPUT);
+        assert_eq!(parsed["rules"][0]["files"], 1);
+        assert!(parsed["diff"].as_str().unwrap().contains("+import \"b\""));
+        assert!(parsed.get("warnings").is_none());
+    }
+
+    #[test]
+    fn test_rule_compares_against_expected() {
+        let ok = test_rule_call(json!({
+            "script": TEST_RULE_SCRIPT,
+            "source": TEST_RULE_SOURCE,
+            "path": "main.go",
+            "expected": TEST_RULE_OUTPUT,
+        }));
+        assert_eq!(ok["matches_expected"], true);
+        assert!(ok.get("expected_diff").is_none());
+
+        let bad = test_rule_call(json!({
+            "script": TEST_RULE_SCRIPT,
+            "source": TEST_RULE_SOURCE,
+            "path": "main.go",
+            "expected": "package main\n\nimport \"c\"\n",
+        }));
+        assert_eq!(bad["matches_expected"], false);
+        assert!(
+            bad["expected_diff"]
+                .as_str()
+                .unwrap()
+                .contains("+import \"c\"")
+        );
+    }
+
+    #[test]
+    fn test_rule_warns_when_no_rule_applies_to_the_path() {
+        let parsed = test_rule_call(json!({
+            "script": TEST_RULE_SCRIPT,
+            "source": TEST_RULE_SOURCE,
+            "path": "main.rs",
+        }));
+        assert_eq!(parsed["changed"], false);
+        assert_eq!(parsed["output"], TEST_RULE_SOURCE);
+        let warnings = parsed["warnings"].to_string();
+        assert!(warnings.contains("matched no files"), "{warnings}");
+        assert!(
+            warnings.contains("No rule applies to `main.rs`"),
+            "{warnings}"
+        );
+    }
+
+    #[test]
+    fn test_rule_reports_script_errors_as_tool_errors() {
+        let req = json!({
+            "jsonrpc":"2.0","id":41,"method":"tools/call",
+            "params":{"name":"colab.test_rule","arguments":{
+                "script": "refactor \"x\" { match go::import \"a\" { replac \"b\" } }",
+                "source": "", "path": "main.go"
+            }}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["result"]["isError"], true);
+    }
+
+    #[test]
+    fn test_rule_requires_source_and_path() {
+        let req = json!({
+            "jsonrpc":"2.0","id":42,"method":"tools/call",
+            "params":{"name":"colab.test_rule","arguments":{"script": TEST_RULE_SCRIPT}}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["error"]["code"], INVALID_PARAMS);
     }
 }

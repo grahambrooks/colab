@@ -43,6 +43,24 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     fn prefilter(&self) -> Option<&str> {
         None
     }
+
+    /// The value this rule looks for, when it looks for one — an import
+    /// path, a function name. Paired with
+    /// [`observed_targets`](Operation::observed_targets) to explain a rule
+    /// that matched nothing ("no import `a/b`; saw `a/b/v2`").
+    ///
+    /// Return `None` (the default) to opt out of near-miss reporting.
+    fn near_miss_target(&self) -> Option<&str> {
+        None
+    }
+
+    /// Every value this rule's module recognises in `source`, whether or
+    /// not it equals the target: all import paths, all called function
+    /// names. Only called for a rule that matched nothing, on a bounded
+    /// sample of files, so it may parse.
+    fn observed_targets(&self, _source: &str) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// The lowered form of a single `match` block: action plus arguments,

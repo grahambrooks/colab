@@ -9,6 +9,7 @@
 mod cli;
 mod discover;
 mod format;
+mod help_json;
 mod language_server;
 mod packs;
 

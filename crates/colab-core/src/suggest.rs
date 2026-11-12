@@ -53,6 +53,31 @@ where
         .map(|(_, candidate)| candidate)
 }
 
+/// How far `value` is from `target`, or `None` if it does not resemble
+/// it closely enough to be worth reporting as a near miss.
+///
+/// Wider than [`closest`]: besides small edit distances it accepts a
+/// value that contains the target or is contained by it (`a/b` vs
+/// `a/b/v2`), or that shares its last path segment (`old/log` vs
+/// `new/log`) — the shapes a mistyped import path or call name takes.
+pub fn near_miss_distance(target: &str, value: &str) -> Option<usize> {
+    if target == value || target.is_empty() || value.is_empty() {
+        return None;
+    }
+    let distance = edit_distance(target, value);
+    let threshold = (target.chars().count() / 3).max(1);
+    let last = |s: &'_ str| -> String {
+        s.rsplit(['/', '.', ':', '\\'])
+            .next()
+            .unwrap_or(s)
+            .to_string()
+    };
+    let related = value.contains(target)
+        || target.contains(value)
+        || (!last(target).is_empty() && last(target) == last(value));
+    (distance <= threshold || related).then_some(distance)
+}
+
 /// Render the tail of an error message: the valid names, plus a
 /// "did you mean" when one is close.
 ///
@@ -131,6 +156,18 @@ mod tests {
         assert_eq!(
             candidates_note("go", "languages", &[]),
             "no languages are registered"
+        );
+    }
+
+    #[test]
+    fn near_miss_accepts_prefixes_suffixes_and_shared_last_segments() {
+        assert!(near_miss_distance("a/b", "a/b/v2").is_some());
+        assert!(near_miss_distance("github.com/x/log", "github.com/y/log").is_some());
+        assert!(near_miss_distance("serde_jsn", "serde_json").is_some());
+        assert!(near_miss_distance("tokio", "fmt").is_none());
+        assert!(
+            near_miss_distance("a/b", "a/b").is_none(),
+            "an exact match is not a miss"
         );
     }
 }

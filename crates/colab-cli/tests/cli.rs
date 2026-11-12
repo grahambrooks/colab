@@ -1278,3 +1278,205 @@ fn missing_script_exits_4() {
         .unwrap();
     assert_eq!(output.status.code(), Some(4));
 }
+
+// ---- Inline rules (`-e` / `--rule`) and `--script -` ----------------------
+
+const INLINE_RULE: &str = r#"match go::import "some.module" { replace "new.module" }"#;
+
+/// Run `colab` with `stdin_text` piped in, returning the finished output.
+fn run_with_stdin(args: &[&str], stdin_text: &str) -> std::process::Output {
+    let mut child = colab()
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stdin_text.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn inline_rule_applies_without_a_script_file() {
+    let root = workspace_temp("inline-write");
+    let target = root.join("main.go");
+    write(&target, GO_INPUT);
+
+    let status = colab()
+        .args(["refactor", "-e", INLINE_RULE, "--write"])
+        .arg(&root)
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&target).unwrap(), GO_EXPECTED);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn repeated_inline_rules_run_in_order_and_report_per_rule() {
+    let root = workspace_temp("inline-multi");
+    write(&root.join("main.go"), GO_INPUT);
+
+    let output = colab()
+        .args([
+            "refactor",
+            "-e",
+            INLINE_RULE,
+            "--rule",
+            r#"match go::import "absent.module" { delete }"#,
+            "--format",
+            "json",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    let rules = value["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 2);
+    assert_eq!(rules[0]["files"], 1);
+    assert_eq!(rules[1]["files"], 0);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn script_dash_reads_the_script_from_stdin() {
+    let root = workspace_temp("script-stdin");
+    let target = root.join("main.go");
+    write(&target, GO_INPUT);
+
+    let output = run_with_stdin(
+        &[
+            "refactor",
+            "--script",
+            "-",
+            "--write",
+            root.to_str().unwrap(),
+        ],
+        SCRIPT,
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(fs::read_to_string(&target).unwrap(), GO_EXPECTED);
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn inline_rule_composes_with_stdin_source() {
+    let output = run_with_stdin(
+        &[
+            "refactor",
+            "-e",
+            INLINE_RULE,
+            "--stdin",
+            "--path",
+            "main.go",
+        ],
+        GO_INPUT,
+    );
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), GO_EXPECTED);
+}
+
+#[test]
+fn script_dash_with_stdin_source_is_a_config_error() {
+    let output = run_with_stdin(
+        &["refactor", "--script", "-", "--stdin", "--path", "main.go"],
+        SCRIPT,
+    );
+    assert_eq!(output.status.code(), Some(1));
+}
+
+#[test]
+fn inline_parse_error_points_at_the_rule_as_typed() {
+    let output = colab()
+        .args([
+            "refactor",
+            "-e",
+            INLINE_RULE,
+            "-e",
+            r#"match go::import "a" { replac "b" }"#,
+            "--format",
+            "json",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("line 2, column 24"),
+        "error should be anchored to the second -e rule, got: {stderr}"
+    );
+}
+
+#[test]
+fn script_and_rule_are_mutually_exclusive() {
+    let output = colab()
+        .args(["refactor", "--script", "x.codemod", "-e", INLINE_RULE, "."])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "clap usage error");
+}
+
+#[test]
+fn explain_accepts_inline_rules() {
+    let output = colab()
+        .args(["explain", "-e", INLINE_RULE])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(value["name"], "inline");
+    assert_eq!(value["items"][0]["namespace"], "go::import");
+}
+
+// ---- `--help-json` ---------------------------------------------------------
+
+#[test]
+fn help_json_describes_the_root_command() {
+    let output = colab().arg("--help-json").output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(value["name"], "colab");
+    let subcommands: Vec<&str> = value["subcommands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert!(subcommands.contains(&"refactor"), "{subcommands:?}");
+}
+
+#[test]
+fn help_json_works_on_a_subcommand_with_required_args() {
+    let output = colab().args(["refactor", "--help-json"]).output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "required args must not block --help-json"
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(value["path"], serde_json::json!(["colab", "refactor"]));
+    let args = value["args"].as_array().unwrap();
+    let rule = args
+        .iter()
+        .find(|a| a["id"] == "rules")
+        .expect("--rule listed");
+    assert_eq!(rule["short"], "-e");
+    assert_eq!(rule["repeatable"], true);
+    let write = args.iter().find(|a| a["id"] == "write").unwrap();
+    assert_eq!(write["takes_value"], false);
+    assert!(write.get("value_name").is_none());
+    assert_eq!(
+        value["required_groups"][0]["one_of"],
+        serde_json::json!(["script_path", "rules"])
+    );
+}

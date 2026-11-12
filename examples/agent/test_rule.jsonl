@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"colab.test_rule","arguments":{"script":"refactor \"t\" { match go::import \"github.com/acme/log/v2\" { replace \"log/slog\" } }","source":"package main\n\nimport \"github.com/acme/log/v2\"\n","path":"main.go","expected":"package main\n\nimport \"log/slog\"\n"}}}

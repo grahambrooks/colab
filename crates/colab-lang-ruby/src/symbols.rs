@@ -41,6 +41,16 @@ impl Operation for SymbolRename {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        crate::parse(source)
+            .map(|tree| colab_rewrite::field_texts(&tree, source, RENAME_KINDS, None, &[]))
+            .unwrap_or_default()
+    }
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {

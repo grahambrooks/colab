@@ -220,7 +220,18 @@ pub fn rules_json(report: &RunReport) -> Value {
         report
             .rules
             .iter()
-            .map(|r| json!({"i": r.index, "rule": r.rule, "files": r.files_matched}))
+            .map(|r| {
+                let mut rule = json!({"i": r.index, "rule": r.rule, "files": r.files_matched});
+                if !r.near_misses.is_empty() {
+                    rule["near"] = Value::Array(
+                        r.near_misses
+                            .iter()
+                            .map(|m| json!({"value": m.value, "files": m.files}))
+                            .collect(),
+                    );
+                }
+                rule
+            })
             .collect(),
     )
 }
@@ -236,7 +247,18 @@ pub fn rules_json(report: &RunReport) -> Value {
 pub fn advisories(report: &RunReport) -> Vec<String> {
     let mut out: Vec<String> = report
         .dead_rules()
-        .map(|r| format!("matched no files: {}", r.rule))
+        .map(|r| {
+            let mut line = format!("matched no files: {}", r.rule);
+            if !r.near_misses.is_empty() {
+                let seen: Vec<String> = r
+                    .near_misses
+                    .iter()
+                    .map(|m| format!("`{}` ({} file(s))", m.value, m.files))
+                    .collect();
+                line.push_str(&format!("; nearest seen: {}", seen.join(", ")));
+            }
+            line
+        })
         .collect();
     if let Some(reason) = explain_no_changes(report) {
         out.push(reason);

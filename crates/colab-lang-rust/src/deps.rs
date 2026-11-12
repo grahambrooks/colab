@@ -45,6 +45,14 @@ impl Operation for CrateRename {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        dep_names(source)
+    }
 }
 
 /// `Operation` that removes a Cargo.toml dependency entry.
@@ -70,6 +78,14 @@ impl Operation for CrateDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        dep_names(source)
     }
 }
 
@@ -143,6 +159,19 @@ fn key_present_in_dep_tables(doc: &DocumentMut, from: &str) -> bool {
             .map(|t| t.contains_key(from))
             .unwrap_or(false)
     })
+}
+
+/// Every key in the standard dependency tables, for near-miss
+/// reporting — the keys [`key_present_in_dep_tables`] compares against.
+fn dep_names(source: &str) -> Vec<String> {
+    let Ok(doc) = source.parse::<DocumentMut>() else {
+        return Vec::new();
+    };
+    DEP_TABLES
+        .iter()
+        .filter_map(|name| doc.get(name).and_then(|item| item.as_table()))
+        .flat_map(|table| table.iter().map(|(key, _)| key.to_string()))
+        .collect()
 }
 
 /// Strip surrounding `[` `]`, returning the inner section name. Only

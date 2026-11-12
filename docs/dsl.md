@@ -163,6 +163,22 @@ compilation entry point has a known base path (the CLI's
 `compile_at_path`); compiling a bare string raises a clear error
 when an `include` directive is encountered.
 
+## Inline rules
+
+The `refactor "<name>" { … }` wrapper is optional on the command line.
+Each `-e` / `--rule` value is one `match` block; the CLI wraps them in
+`refactor "inline" { … }` and compiles them exactly like a file:
+
+```sh
+colab refactor -e 'match go::import "old/pkg" { replace "new/pkg" }' .
+colab explain  -e 'match python::import "six" { delete }'
+```
+
+Parse errors are reported against the rules as typed — rule N is line N,
+with the column inside that rule. Over MCP every tool already takes the
+script as text, so the same one-liner works there wrapped in a
+`refactor` block.
+
 ## Multi-rule scripts
 
 A `refactor` block may contain any number of `match` blocks. Rules

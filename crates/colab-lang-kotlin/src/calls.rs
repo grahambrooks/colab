@@ -47,6 +47,23 @@ impl Operation for CallReplace {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.function)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.function)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        let Some(tree) = crate::parse(source) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        colab_rewrite::visit_all(&tree, |node| {
+            if let Some((_, callee)) = callee(node, source) {
+                out.push(callee.to_string());
+            }
+        });
+        out
+    }
 }
 
 pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
@@ -75,6 +92,17 @@ fn value_arguments<'a>(node: Node<'a>) -> Option<Node<'a>> {
         .find(|c| c.kind() == "value_arguments")
 }
 
+/// The argument list of a `call_expression` and its callee: everything
+/// before the argument list, trailing whitespace trimmed.
+fn callee<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str)> {
+    if node.kind() != "call_expression" {
+        return None;
+    }
+    let args = value_arguments(node)?;
+    let callee = source.get(node.start_byte()..args.start_byte())?;
+    Some((args, callee.trim_end()))
+}
+
 fn collect(
     node: Node<'_>,
     source: &str,
@@ -82,11 +110,8 @@ fn collect(
     template: &str,
     edits: &mut Vec<(usize, usize, String)>,
 ) {
-    if node.kind() == "call_expression"
-        && let Some(args) = value_arguments(node)
-        // The callee is everything before the argument list.
-        && let Some(callee) = source.get(node.start_byte()..args.start_byte())
-        && callee.trim_end() == function
+    if let Some((args, callee)) = callee(node, source)
+        && callee == function
     {
         let arg_strs = collect_args(args, source);
         let arg_refs: Vec<&str> = arg_strs.iter().map(|s| s.as_str()).collect();

@@ -66,6 +66,20 @@ where
     });
 }
 
+/// Every name this module matches against in `source`, for near-miss reporting.
+pub(crate) fn require_paths(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    colab_rewrite::visit_all(&tree, |node| {
+        if let Some((_, text)) = require_path(node, source) {
+            out.push(text.to_string());
+        }
+    });
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Rename
 // ---------------------------------------------------------------------------
@@ -93,6 +107,14 @@ impl Operation for RequireRename {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        require_paths(source)
     }
 }
 
@@ -141,6 +163,14 @@ impl Operation for RequireDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        require_paths(source)
     }
 }
 
@@ -240,6 +270,12 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_import() {
+        let src = "require 'json'\nrequire_relative \"lib/thing\"\n";
+        assert_eq!(require_paths(src), vec!["json", "lib/thing"]);
+    }
 
     const SRC: &str = "require 'old/lib'\nrequire_relative 'helpers'\n\nputs 'hi'\n";
 

@@ -54,6 +54,20 @@ where
     });
 }
 
+/// Every name this module matches against in `source`, for near-miss reporting.
+pub(crate) fn using_names(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    colab_rewrite::visit_all(&tree, |node| {
+        if let Some((_, text)) = using_name(node, source) {
+            out.push(text.to_string());
+        }
+    });
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Rename
 // ---------------------------------------------------------------------------
@@ -81,6 +95,14 @@ impl Operation for UsingRename {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        using_names(source)
     }
 }
 
@@ -127,6 +149,14 @@ impl Operation for UsingDelete {
 
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
+    }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        using_names(source)
     }
 }
 
@@ -210,6 +240,12 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_import() {
+        let src = "using System.Text;\nusing Alias = Foo.Bar;\n";
+        assert_eq!(using_names(src), vec!["System.Text", "Foo.Bar"]);
+    }
 
     const SRC: &str = "using System;\nusing System.Text;\n\nnamespace Demo;\n\nclass C { }\n";
 

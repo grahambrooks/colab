@@ -87,6 +87,14 @@ impl Operation for ScopedOperation {
     fn prefilter(&self) -> Option<&str> {
         self.inner.prefilter()
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        self.inner.near_miss_target()
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        self.inner.observed_targets(source)
+    }
 }
 
 #[cfg(test)]

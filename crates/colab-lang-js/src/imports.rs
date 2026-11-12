@@ -30,16 +30,38 @@ fn for_each_matching_specifier<F>(tree: &Tree, source: &str, target: &str, mut v
 where
     F: FnMut(Node<'_>, usize, usize),
 {
+    for_each_specifier(tree, source, |node, inner_start, inner_end, value| {
+        if value == target {
+            visit(node, inner_start, inner_end);
+        }
+    });
+}
+
+/// Every `import_statement` / `export_statement` with a string-literal
+/// `source`, with the inner-string byte range and its value.
+fn for_each_specifier<F>(tree: &Tree, source: &str, mut visit: F)
+where
+    F: FnMut(Node<'_>, usize, usize, &str),
+{
     colab_rewrite::visit_all(tree, |node| {
         if matches!(node.kind(), "import_statement" | "export_statement")
             && let Some(specifier) = node.child_by_field_name("source")
             && specifier.kind() == "string"
             && let Some((inner_start, inner_end, value)) = string_inner_bytes(specifier, source)
-            && value == target
         {
-            visit(node, inner_start, inner_end);
+            visit(node, inner_start, inner_end, value);
         }
     });
+}
+
+/// Every module specifier in `source`, unquoted, for near-miss reporting.
+pub(crate) fn specifiers(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for_each_specifier(&tree, source, |_, _, _, value| out.push(value.to_string()));
+    out
 }
 
 /// Given a `string` node (with surrounding quotes), return the byte
@@ -104,6 +126,14 @@ impl Operation for SpecifierRename {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.from)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.from)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        specifiers(source)
+    }
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
@@ -150,6 +180,14 @@ impl Operation for SpecifierDelete {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.target)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        specifiers(source)
+    }
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
@@ -167,6 +205,12 @@ pub fn delete(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_targets_lists_every_specifier() {
+        let src = "import a from 'pkg/a';\nexport { b } from \"./b.js\";\n";
+        assert_eq!(specifiers(src), vec!["pkg/a", "./b.js"]);
+    }
 
     #[test]
     fn renames_default_import() {

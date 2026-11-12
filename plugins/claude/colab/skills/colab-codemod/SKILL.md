@@ -77,6 +77,16 @@ colab refactor --script fix.codemod --format diff .
 colab refactor --script fix.codemod --write .
 ```
 
+For a change of one or two rules, skip the file: pass each rule inline
+with `-e` (repeatable, run in order). Everything else is identical.
+
+```sh
+colab refactor -e 'match go::import "old/pkg" { replace "new/pkg" }' --format json .
+```
+
+Prefer a script file once there are several rules, or when the change
+should be committed and re-run later. `--script -` reads one from stdin.
+
 **Step 1 is the one that matters.** Its output:
 
 ```json
@@ -91,7 +101,10 @@ Read three things:
 
 1. **`rules[].files`** — a rule showing `0` never changed anything. It
    compiled and ran, so the match string is wrong, not the syntax. Fix
-   it before going further; colab warns but will not stop you. Judge
+   it before going further; colab warns but will not stop you. When the
+   module saw something close, the rule carries a `near` list and the
+   warning says `nearest seen: \`a/b/v2\` (14 file(s))` — usually the
+   exact string you meant. Judge
    this on the *first* preview, against unmodified code: once a rule has
    been applied, re-running it correctly reports `0` and warns "matched
    no files", because the transform is idempotent and there is nothing
@@ -252,9 +265,16 @@ the server process started, and `include "..."` does not work at all.
 | ---- | ---- |
 | discover | `colab.list_languages`, then `colab.list_rules {lang}` |
 | check the script | `colab.lint_script {script, cwd}` |
+| check it does the right thing | `colab.test_rule {script, source, path, expected?}` — one in-memory snippet, nothing on disk |
 | blast radius | `colab.preview {script, paths, cwd}` — defaults to `detail: "counts"` |
 | sample hunks | `colab.preview {..., detail: "diff", max_files: 5}` |
 | apply | `colab.apply {script, paths, cwd}` |
+
+`colab.test_rule` is the cheapest way to confirm a rule before a repo-wide
+preview: hand it a few lines shaped like the real code and the `path` it
+would live at (only the extension matters). With `expected`, it answers
+`matches_expected` and, on a mismatch, an `expected_diff` from what it
+produced to what you wanted.
 
 `colab.lint_script` compiles the script, so it catches unknown
 namespaces as well as syntax. (The CLI's `colab explain` only *parses* —

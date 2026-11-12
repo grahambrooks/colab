@@ -80,8 +80,10 @@ everything that follows.
   (`libloading`/WASM) until there is real demand.
 - **Goal 3 — GenAI-friendly CLI.** ✅ Output formats, exec modes,
   exit codes, `schema`/`explain`/`list-*`, MCP server, LSP
-  diagnostics + completion. ⏳ remaining: LSP hover/definition,
-  the "preview this rule" code action, `--help-json`.
+  diagnostics + completion, inline `-e` rules, `colab.test_rule`,
+  near-miss diagnostics, `--help-json` (M17). ⏳ remaining: structural
+  patterns (M18), LSP hover / code actions / client mode (M19), agent
+  install + guardrails (M20) — see "Agent of choice" below.
 - **Goal 4 — operational concerns.** ✅ Test corpus + idempotency
   check, CI (build/test/clippy/audit). ⏳ remaining: property tests
   (`proptest`) for the parser and edit-application; `criterion`
@@ -670,6 +672,108 @@ two-week increments.
 - `--split-pr` emits one branch / patch series per rule, paired
   with `--commit-per-rule` from M12.
 
+## Agent of choice (M17–M23)
+
+*Added 2026-11-11, from a survey of the tools agents reach for instead
+of colab today: ast-grep, GritQL, codemod.com, OpenRewrite/Moderne,
+Comby, Semgrep, Serena — and Anthropic's "writing tools for agents"
+guidance.*
+
+What sends an agent back to `Edit` / `sed` / ast-grep, in order of cost:
+
+1. **Expressiveness.** colab's vocabulary is fixed (`import`, `symbol`,
+   `call`, …). Every competitor an agent prefers accepts *code-shaped
+   patterns with metavariables* (`console.log($A)`), which models write
+   fluently. A change outside colab's modules cannot be stated at all.
+2. **Round-trips.** A script file was mandatory; there was no way to try
+   a rule on a snippet, no read-only structural search, and no AST dump
+   to debug a pattern. A dead rule said *that* it matched nothing, never
+   *what was there instead*.
+3. **Reach.** No one-command agent setup, no `npx`/`uvx` channel, no
+   post-edit guard, and colab's LSP stops at diagnostics.
+
+Ranked by leverage per unit of work:
+
+| Rank | Milestone | Borrowed from |
+| ---- | --------- | ------------- |
+| 1 | M17 Agent ergonomics | ast-grep `--inline-rules` / `test_match_code_rule`, Semgrep custom-rule tool |
+| 2 | M18 Structural patterns | ast-grep, GritQL, Comby, codemod jssg |
+| 3 | M19 LSP in both directions | Serena, Moderne `change_method_name` |
+| 4 | M20 Agent install & guardrails | `mod config agent-tools install`, `npx codemod ai`, Semgrep's post-edit hook |
+| 5 | M14 `colab.toml` + `colab fix` (above) | — |
+| 6 | M21 Distribution & CI formats | ast-grep (npm/pip), Semgrep (SARIF) |
+| 7 | M22 Workflow-shaped MCP tools | Moderne, Anthropic "fewer, workflow-shaped tools" |
+| 8 | M23 Agent eval suite | Anthropic "evaluate your tools" |
+| 9 | M16, M15 (above) — M15 largely superseded by M19 | — |
+
+### ✅ M17 — Agent ergonomics
+- **Inline rules.** `colab refactor -e '<match …>'` (repeatable,
+  `--rule`) and `--script -`; `explain` too. Parse errors are re-anchored
+  onto the rules as typed.
+- **`colab.test_rule`** MCP tool: script + snippet + path hint (+
+  optional `expected`) → output, diff, per-rule counts,
+  `matches_expected` / `expected_diff`. In-memory; the twin of `--stdin`.
+- **Near-miss diagnostics.** `Operation::near_miss_target` /
+  `observed_targets`; `colab_core::near_miss::probe` samples up to 500
+  scanned files for dead rules only, ranks by `suggest::near_miss_distance`,
+  and both surfaces render `rules[].near` plus a `nearest seen:` warning.
+  Implemented for import-equivalents, `call`, and `symbol` modules.
+- **`--help-json`** on every command, generated from clap.
+- **Plugin.** `plugin.json` drops `version` so it tracks git and can't
+  lag a release; skill teaches `-e`, `test_rule`, `near`.
+
+### M18 — Structural patterns
+- `match <lang>::pattern '<code with $METAVARS>' { replace '<template>' | delete }`
+  — no grammar or IR change; fits `RuleSpec::Replace` / `Delete`.
+- Metavariables are ast-grep's: `$NAME`, `$$$NAME`, `$_`; a repeated
+  name must bind identical text.
+- Engine: embed `ast-grep-core` (0.51.x targets tree-sitter 0.27, as
+  this workspace does) behind a `colab-rewrite::pattern` wrapper, so no
+  backend sees ast-grep types. Each backend supplies its grammar, an
+  expando char, and context wrappers for fragments.
+- Invariants: prefilter = longest non-metavariable literal token (else
+  `None`); a compile-time warning when the replacement re-matches its
+  own pattern; a pattern that parses in no context is an error naming
+  the contexts tried.
+- `colab find -e …` / `colab.find`: read-only, `path:line:col: text`
+  by default, captures on request, capped.
+- `colab ast --lang <l> (--pattern | --stdin)` / `colab.ast`: the
+  "why didn't it match" tool.
+- First wave Go, Python, JS/TS, Rust; then the other eight.
+
+### M19 — LSP in both directions
+- **Server:** hover (module/action docs from `capabilities()`),
+  pattern diagnostics, a "preview this rule" code action returning the
+  diff for the rule under the cursor.
+- **Client:** `colab rename --lsp <server-cmd>` / `<lang>::lsp_rename`
+  drives an external language server's `textDocument/rename` and feeds
+  the resulting `WorkspaceEdit` through colab's report / diff / verify
+  / backup pipeline. Scope-aware rename becomes *delegated*: colab still
+  does no semantic analysis itself (see Non-goals).
+
+### M20 — Agent install & guardrails
+- `colab agent install` detects Claude Code / Cursor / Codex and wires
+  skill + MCP server (+ optional hook).
+- Post-edit hook: run `colab fix --check` (M14 packs) on files the agent
+  just wrote; feed failures back.
+- MCP resources + `llms-full.txt` generated from `docs/`, including the
+  per-backend caveats.
+
+### M21 — Distribution & CI formats
+- npm (`npx colab`) and PyPI (`uvx colab`) wrappers around the release
+  binaries, for sandboxes with no Rust toolchain.
+- `--format sarif` and `--format github` for `--check` annotations.
+
+### M22 — Workflow-shaped MCP tools
+- `colab.rename_symbol`, `colab.move_import`, `colab.set_config_key`:
+  each generates the DSL internally and returns a preview, so a first
+  call needs no DSL at all.
+
+### M23 — Agent eval suite
+- Scripted tasks (repo-wide rename, API migration, config rollout)
+  scored on correctness, tool calls, and tokens for colab vs `Edit`/`sed`;
+  run in CI to keep output sizes honest.
+
 ### M-future — Unscheduled
 - Idiom packs populated end-to-end (Go 1.18 generics, Java 8→21
   full, Python 3.12 typing, JS/TS ESM migration).
@@ -685,7 +789,9 @@ two-week increments.
 ## Non-goals (for now)
 
 - Whole-program semantic analysis. Colab is a syntactic rewriter; if a rule
-  needs type inference it belongs in a language-specific tool, not here.
+  needs type inference it belongs in a language-specific tool, not here. (M19 *delegates*
+  scope-aware rename to the language's own server; colab still computes
+  nothing semantic itself.)
 - Refactoring UI. The VS Code extension stays minimal — a thin wrapper over
   the LSP and the CLI.
 - Conflict resolution between simultaneous edits. Rules in one script are

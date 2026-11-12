@@ -45,6 +45,16 @@ impl Operation for CallReplace {
     fn prefilter(&self) -> Option<&str> {
         Some(&self.function)
     }
+
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.function)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        crate::parse(source)
+            .map(|tree| colab_rewrite::field_texts(&tree, source, &["call"], Some("function"), &[]))
+            .unwrap_or_default()
+    }
 }
 
 pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
