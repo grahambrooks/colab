@@ -232,6 +232,62 @@ cmd/main.go:22:15: errors.Wrap(err, "startup")
  "rules":[{"i":0,"rule":"go::pattern 'errors.Wrap($E, $M)' -> delete","files":2,"matches":2}]}
 ```
 
+### `colab rename`
+
+Scope-aware rename, **delegated to the language's own server** and
+reported like a codemod. colab starts the server, waits for it to finish
+indexing, asks it for `textDocument/rename`, and runs the answer through
+the same report / diff / `--check` / `--backup` / `--verify` pipeline as
+`refactor`. colab itself still does no semantic analysis — the server
+resolves which `value` is which; colab makes its answer reviewable and
+revertable.
+
+```
+colab rename (--at FILE:LINE:COL | --symbol NAME --in FILE) --to NEW
+             [--lsp '<command>'] [--root DIR] [-C DIR]
+             [--format human|json|ndjson|diff] [--write|--dry-run|--check]
+             [--backup DIR] [--verify CMD] [--timeout SECS] [--detail LEVEL]
+```
+
+```sh
+# Rename the field, not the function that shares its name.
+$ colab rename --at src/config.rs:2:9 --to amount --format diff
+--- a/src/config.rs
+-    pub value: u32,
++    pub amount: u32,
+…
+--- a/src/main.rs
+-    println!("{} {}", c.value, value());
++    println!("{} {}", c.amount, value());
+```
+
+- **Where:** `--at` is exact (1-based line and column, in characters).
+  `--symbol NAME --in FILE` takes the first whole-word occurrence of
+  `NAME` in `FILE` — point it at the file that *declares* the symbol.
+  The server rejects a position with nothing renameable
+  (`prepareRename`), so a miss is an error, not a silent no-op.
+- **Which server:** by extension — `rust-analyzer`, `gopls`, `clangd`,
+  `pyright-langserver --stdio`, `typescript-language-server --stdio`,
+  `sourcekit-lsp`, `ruby-lsp`, `kotlin-language-server`, `jdtls`,
+  `csharp-ls`, `intelephense --stdio`. Override with `--lsp`.
+- **Root:** the nearest ancestor holding `.git`, `Cargo.toml`, `go.mod`,
+  `package.json`, `pyproject.toml`, `compile_commands.json`, … — the
+  server needs the project to resolve references. Override with `--root`.
+- **Readiness:** the rename is sent only once the server reports no work
+  in progress (`$/progress`, rust-analyzer's `serverStatus`) and has been
+  quiet for 500 ms; a server still indexing at `--timeout` (default 120 s)
+  is an error, because its answer could be partial.
+- **Refused, not half-done:** an edit that would create, rename, or
+  delete a *file*; a server without `renameProvider`; a server that is
+  not installed (the error says to pass `--lsp`).
+- **Modes and safety** match `refactor`: dry-run unless `--write` (or
+  `--format human` on a TTY); `--check` exits 10; `--backup` pairs with
+  `colab undo`; `--verify` restores every file and exits 1 if the command
+  fails.
+
+The report has one rule, `lsp rename `old` -> `new` via <server>`, so
+`--format json` has the same shape as any `refactor` run.
+
 ### `colab ast`
 
 Print a syntax tree — of a pattern exactly as `<lang>::pattern` compiles
@@ -375,13 +431,24 @@ clause.
 
 ### `colab server`
 
-Start the colab Language Server on stdio. Active features:
+Start the colab Language Server on stdio, for editing `.codemod` files:
 
-- **Diagnostics for `.codemod` files.** Every open / change runs
-  `colab_dsl::compile` against the binary's default backend
-  registry; parse errors and unsupported-namespace errors surface as
-  LSP diagnostics with the matching exit code (2 / 3) embedded in
-  the diagnostic `code` field.
+- **Diagnostics, per rule.** Every open / change lowers each `match`
+  block on its own, so every bad rule — an unknown module, an action the
+  module lacks, a `pattern` that is not valid code — is underlined where
+  it is written, with the exit code (2 / 3) in the diagnostic `code`. A
+  syntax error is reported alone, at its token; `include` problems land
+  on the first `include`.
+- **Hover.** On `<lang>::<module>`: the module's description and every
+  action it supports. On an action keyword: what it does *for that
+  rule's module* — or that the module has no such action.
+- **Code actions: apply to the workspace.** On any rule of a script
+  that compiles, *colab: apply `<rule>` to the workspace* and *colab:
+  apply the whole script*. Each is a standard `WorkspaceEdit` (one
+  whole-file edit per changed file under the workspace roots), so the
+  editor shows its usual refactor preview before anything is written.
+  The edit is computed on `codeAction/resolve`; clients without lazy
+  resolution get it up front.
 - **Completion** for namespaces, modules, and actions. Sourced from
   the same registry as `colab list-rules`, so anything new the
   binary advertises is offered immediately.

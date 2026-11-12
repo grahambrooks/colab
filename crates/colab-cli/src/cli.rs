@@ -89,6 +89,9 @@ enum Commands {
     Schema,
     /// Search: report where each rule matches, without changing anything.
     Find(FindArgs),
+    /// Scope-aware rename, delegated to the language's own server
+    /// (rust-analyzer, gopls, clangd, …) and reported like a codemod.
+    Rename(RenameArgs),
     /// Print the syntax tree of a snippet or a pattern, to see why a
     /// pattern does or does not match.
     Ast(AstArgs),
@@ -289,6 +292,77 @@ struct FindArgs {
     paths: Vec<PathBuf>,
 }
 
+#[derive(Parser, Debug)]
+#[command(group(clap::ArgGroup::new("target").required(true).args(["at", "symbol"])))]
+struct RenameArgs {
+    /// The symbol's position: `FILE:LINE:COLUMN`, 1-based, column in
+    /// characters. Exact; prefer it when you know where the definition is.
+    #[arg(long, value_name = "FILE:LINE:COL", conflicts_with_all = ["symbol", "in_file"])]
+    at: Option<String>,
+
+    /// The symbol's current name. Its first whole-word occurrence in
+    /// `--in` is renamed — with every reference the server resolves to it.
+    #[arg(long, value_name = "NAME", requires = "in_file")]
+    symbol: Option<String>,
+
+    /// The file `--symbol` is looked up in.
+    #[arg(long = "in", value_name = "FILE", id = "in_file")]
+    in_file: Option<PathBuf>,
+
+    /// The new name.
+    #[arg(long, value_name = "NAME")]
+    to: String,
+
+    /// Language-server command, e.g. `"typescript-language-server --stdio"`.
+    /// Defaults by file extension (rust-analyzer, gopls, clangd, …).
+    #[arg(long, value_name = "CMD")]
+    lsp: Option<String>,
+
+    /// Project root to start the server in. Defaults to the nearest
+    /// ancestor of the file holding a project marker (`.git`,
+    /// `Cargo.toml`, `go.mod`, `package.json`, …).
+    #[arg(long, value_name = "DIR")]
+    root: Option<PathBuf>,
+
+    /// Change to this working directory first.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    change_dir: PathBuf,
+
+    /// Output format, as for `refactor`.
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    format: Format,
+
+    /// Apply the edits in place.
+    #[arg(long, conflicts_with_all = ["dry_run", "check"])]
+    write: bool,
+
+    /// Report what would change without writing.
+    #[arg(long = "dry-run", conflicts_with_all = ["write", "check"])]
+    dry_run: bool,
+
+    /// Like `--dry-run`, but exit 10 if anything would change.
+    #[arg(long, conflicts_with_all = ["write", "dry_run"])]
+    check: bool,
+
+    /// Save each file's pre-rename contents under this directory (see
+    /// `colab undo`).
+    #[arg(long, value_name = "DIR", conflicts_with_all = ["dry_run", "check"])]
+    backup: Option<PathBuf>,
+
+    /// After writing, run this shell command; on failure restore every
+    /// file and exit 1. Implies `--write`.
+    #[arg(long, value_name = "CMD", conflicts_with_all = ["dry_run", "check"])]
+    verify: Option<String>,
+
+    /// Seconds to allow for start-up, indexing, and the rename.
+    #[arg(long, value_name = "SECS", default_value_t = 120)]
+    timeout: u64,
+
+    /// `summary`, `counts`, or `diff`, as for `refactor`.
+    #[arg(long, value_name = "LEVEL", value_parser = parse_detail)]
+    detail: Option<Detail>,
+}
+
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 enum FindFormat {
     Human,
@@ -451,6 +525,7 @@ pub async fn run() -> Result<i32> {
             print_json(&value)
         }
         Some(Commands::Find(args)) => run_find(args),
+        Some(Commands::Rename(args)) => run_rename(args),
         Some(Commands::Ast(args)) => run_ast(args),
         Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
         Some(Commands::ListRules(args)) => {
@@ -1161,6 +1236,166 @@ fn run_find(args: FindArgs) -> Result<i32> {
         }
     }
     Ok(0)
+}
+
+/// Markers that identify a project root for a language server.
+const PROJECT_MARKERS: &[&str] = &[
+    ".git",
+    "Cargo.toml",
+    "go.mod",
+    "package.json",
+    "tsconfig.json",
+    "pyproject.toml",
+    "setup.py",
+    "compile_commands.json",
+    "CMakeLists.txt",
+    "Package.swift",
+    "Gemfile",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "composer.json",
+];
+
+fn project_root(file: &Path) -> Option<PathBuf> {
+    file.ancestors()
+        .skip(1)
+        .find(|dir| PROJECT_MARKERS.iter().any(|m| dir.join(m).exists()))
+        .map(Path::to_path_buf)
+}
+
+fn run_rename(args: RenameArgs) -> Result<i32> {
+    use colab_lsp_client::{RenameRequest, ServerCommand};
+
+    change_working_dir(&args.change_dir)?;
+    let cwd = std::env::current_dir().map_err(io_to_error)?;
+
+    // Where is the symbol?
+    let (file, offset) = if let Some(at) = &args.at {
+        let mut parts = at.rsplitn(3, ':');
+        let (column, line, file) = (parts.next(), parts.next(), parts.next());
+        let (Some(file), Some(line), Some(column)) = (file, line, column) else {
+            return Err(Error::Config(format!(
+                "--at wants FILE:LINE:COLUMN, got `{at}`"
+            )));
+        };
+        let (Ok(line), Ok(column)) = (line.parse::<usize>(), column.parse::<usize>()) else {
+            return Err(Error::Config(format!(
+                "--at wants numeric LINE and COLUMN, got `{at}`"
+            )));
+        };
+        let file = cwd.join(file);
+        let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
+        let offset = colab_lsp_client::offset_of_line_column(&text, line, column)
+            .ok_or_else(|| Error::Config(format!("{} has no line {line}", file.display())))?;
+        (file, offset)
+    } else {
+        let name = args.symbol.as_deref().expect("clap: --symbol or --at");
+        let file = cwd.join(args.in_file.as_ref().expect("clap: --symbol requires --in"));
+        let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
+        let offset = colab_lsp_client::first_occurrence(&text, name).ok_or_else(|| {
+            Error::Config(format!("`{name}` does not occur in {}", file.display()))
+        })?;
+        (file, offset)
+    };
+    let file = fs::canonicalize(&file).map_err(|e| Error::io_at(&file, e))?;
+
+    let server = match &args.lsp {
+        Some(command) => ServerCommand::parse(command)?,
+        None => ServerCommand::default_for(&file).ok_or_else(|| {
+            Error::Config(format!(
+                "no default language server for {}; pass --lsp '<command>'",
+                file.display()
+            ))
+        })?,
+    };
+    let root = match &args.root {
+        Some(root) => fs::canonicalize(root).map_err(|e| Error::io_at(root, e))?,
+        None => project_root(&file).unwrap_or_else(|| cwd.clone()),
+    };
+
+    info!("Renaming via `{}` in {}", server.display(), root.display());
+    let started = Instant::now();
+    let outcome = colab_lsp_client::rename(
+        &server,
+        &RenameRequest {
+            root,
+            file,
+            offset,
+            new_name: args.to.clone(),
+            timeout: std::time::Duration::from_secs(args.timeout),
+            settle: std::time::Duration::from_millis(500),
+        },
+    )?;
+
+    let label = format!(
+        "lsp rename `{}` -> `{}` via {}",
+        outcome.old_name.as_deref().unwrap_or("?"),
+        args.to,
+        server.program
+    );
+    let exec_mode = if args.verify.is_some() {
+        ExecMode::Write
+    } else {
+        resolve_exec_mode(
+            args.write,
+            args.dry_run,
+            args.check,
+            args.format,
+            io::stdout().is_terminal(),
+        )
+    };
+    let options = RenderOptions {
+        detail: args.detail.unwrap_or_else(|| args.format.default_detail()),
+        max_files: render::DEFAULT_MAX_FILES,
+        max_diff_bytes: render::DEFAULT_MAX_DIFF_BYTES,
+    };
+    let mut reporter = format::make_reporter(args.format, exec_mode, options);
+    let mut report = RunReport::with_rules([label]);
+    report.files_visited = outcome.changes.len() as u64;
+
+    let mut written: Vec<FileChange> = Vec::new();
+    for mut change in outcome.changes {
+        // Report paths relative to where the user is, like `refactor`.
+        if let Ok(relative) = change.path.strip_prefix(&cwd) {
+            change.path = relative.to_path_buf();
+        }
+        report.record(&change);
+        if matches!(exec_mode, ExecMode::Write) {
+            if let Some(dir) = &args.backup {
+                write_backup_snapshot(dir, &change.path, &change.before)?;
+            }
+            fs::write(&change.path, &change.after).map_err(|e| Error::io_at(&change.path, e))?;
+            written.push(change.clone());
+        }
+        reporter
+            .report(&change)
+            .map_err(|e| Error::io_at(&change.path, e))?;
+    }
+
+    if let Some(cmd) = &args.verify {
+        info!("Verifying with `{cmd}`");
+        if !run_verify(cmd)? {
+            for change in &written {
+                fs::write(&change.path, &change.before)
+                    .map_err(|e| Error::io_at(&change.path, e))?;
+            }
+            return Err(Error::Config(format!(
+                "the rename failed `--verify` (`{cmd}`); restored {} file(s)",
+                written.len()
+            )));
+        }
+    }
+
+    report.elapsed = started.elapsed();
+    reporter.finish(&report).map_err(io_to_error)?;
+    Ok(
+        if matches!(exec_mode, ExecMode::Check) && report.files_changed > 0 {
+            10
+        } else {
+            0
+        },
+    )
 }
 
 fn run_ast(args: AstArgs) -> Result<i32> {

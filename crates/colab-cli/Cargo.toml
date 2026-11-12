@@ -18,6 +18,7 @@ colab-backends = { workspace = true }
 colab-core = { workspace = true }
 colab-dsl = { workspace = true }
 colab-mcp = { workspace = true }
+colab-lsp-client = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }

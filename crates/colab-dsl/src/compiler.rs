@@ -133,6 +133,53 @@ fn compile_inner(
     })
 }
 
+/// One `match` block written in the script itself (not pulled in by an
+/// `include`), checked on its own.
+#[derive(Debug)]
+pub struct RuleCheck {
+    /// Where the block sits in the script.
+    pub span: crate::ast::Span,
+    /// `<lang>::<module>` as written.
+    pub namespace: String,
+    /// The action keyword as written (`replace`, `delete`, …).
+    pub action: &'static str,
+    /// The lowered rule's description, or why it could not be lowered.
+    pub outcome: Result<String>,
+}
+
+/// Lower each `match` block of `text` independently, so one bad rule does
+/// not hide the next and each error can be placed on its own block.
+///
+/// A syntax error still fails the whole script — there is no AST to
+/// check. `include` directives are not followed here; [`compile`] /
+/// [`compile_at_source`] report problems with them.
+///
+/// This is what the LSP diagnoses with. [`compile`] stops at the first
+/// error, which is right for running a script and wrong for editing one.
+pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
+    let command = parse(text)?;
+    Ok(command
+        .items
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::Match(m) => Some(m),
+            Item::Include(_) => None,
+        })
+        .map(|m| {
+            let span = m.span;
+            let namespace = format!("{}::{}", m.namespace.lang, m.namespace.module);
+            let action = m.action.keyword();
+            let outcome = lower_match(m, backends).map(|op| op.to_string());
+            RuleCheck {
+                span,
+                namespace,
+                action,
+                outcome,
+            }
+        })
+        .collect())
+}
+
 /// Recursively expand `include` directives, in source order.
 /// Returns the flattened list of `Match` clauses ready for lowering.
 fn expand_includes(
@@ -186,6 +233,7 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Box<dyn Operation
         match_string,
         scope,
         action,
+        span: _,
     } = m;
     let backend = backends.get(namespace.lang.as_str()).ok_or_else(|| {
         Error::UnsupportedOperation(format!(
@@ -371,6 +419,7 @@ mod tests {
                 match_string: "a.b.c".to_string(),
                 scope: None,
                 action: Action::Replace("d.e.f".to_string()),
+                span: crate::ast::Span { start: 1, end: 46 },
             }
         );
     }
@@ -576,5 +625,20 @@ import (
         );
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn check_reports_every_bad_rule_at_its_own_span() {
+        let backends = colab_backends::registry();
+        let text = "refactor \"x\" {\n  match go::import \"a\" { replace \"b\" }\n  match klingon::x \"a\" { delete }\n  match go::pattern 'func (' { delete }\n}\n";
+        let checks = check(text, &backends).unwrap();
+        assert_eq!(checks.len(), 3);
+        assert!(checks[0].outcome.is_ok());
+        assert!(checks[1].outcome.is_err());
+        assert!(checks[2].outcome.is_err());
+        let second = &text[checks[1].span.start..checks[1].span.end];
+        assert_eq!(second, "match klingon::x \"a\" { delete }");
+        assert_eq!(checks[2].namespace, "go::pattern");
+        assert_eq!(checks[2].action, "delete");
     }
 }

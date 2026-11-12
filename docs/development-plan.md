@@ -754,15 +754,28 @@ Ranked by leverage per unit of work:
   `colab find` on the output cover the same failure for now. Relational
   constraints (`inside` / `has` / `not`) are the natural next step.
 
-### M19 — LSP in both directions
-- **Server:** hover (module/action docs from `capabilities()`),
-  pattern diagnostics, a "preview this rule" code action returning the
-  diff for the rule under the cursor.
-- **Client:** `colab rename --lsp <server-cmd>` / `<lang>::lsp_rename`
-  drives an external language server's `textDocument/rename` and feeds
-  the resulting `WorkspaceEdit` through colab's report / diff / verify
-  / backup pipeline. Scope-aware rename becomes *delegated*: colab still
-  does no semantic analysis itself (see Non-goals).
+### ✅ M19 — LSP in both directions
+- **Server (`colab server`):** per-rule diagnostics via the new
+  `colab_dsl::check` (each `match` block lowered alone; blocks carry
+  byte spans), so pattern and module errors are underlined in place;
+  hover for `<lang>::<module>` and for action keywords in context;
+  code actions *apply this rule / the whole script to the workspace*
+  returning a `WorkspaceEdit` (editor-native preview), resolved lazily.
+- **Client (`colab rename`, new `colab-lsp-client` crate):** drives an
+  external server's `prepareRename` + `rename` and feeds the
+  `WorkspaceEdit` through `refactor`'s report / diff / `--check` /
+  `--backup` / `--verify`. Waits for `$/progress` and rust-analyzer's
+  `serverStatus` to go quiet (a rename mid-index can be partial); answers
+  `workspace/configuration` and friends; retries `ContentModified`;
+  negotiates UTF-8 / UTF-16 positions; refuses file operations.
+  Verified against rust-analyzer (field vs same-named function) and
+  clangd (function vs same-prefixed locals and comments); CI uses a
+  deterministic fake server (`examples/fake_lsp.rs`).
+- **Deferred:** a DSL form (`<lang>::lsp_rename`) — a server call is
+  whole-project, not per-file, so it does not fit `Operation`; an MCP
+  `colab.rename` tool — `colab-lsp-client` uses `colab-rewrite` (and so
+  `tree-sitter`), which `colab-mcp` must not depend on. Agents can call
+  the CLI. Go-to-definition in `.codemod` files (for `include`).
 
 ### M20 — Agent install & guardrails
 - `colab agent install` detects Claude Code / Cursor / Codex and wires

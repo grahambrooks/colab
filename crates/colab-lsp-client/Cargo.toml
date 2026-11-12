@@ -1,0 +1,14 @@
+[package]
+name = "colab-lsp-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Drives an external language server (rust-analyzer, gopls, clangd, …) for semantic edits such as scope-aware rename, returning plain before/after file pairs for colab's report, diff, and verify pipeline."
+
+[dependencies]
+colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
+serde_json = { workspace = true }

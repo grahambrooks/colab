@@ -367,6 +367,7 @@ dependencies = [
  "colab-backends",
  "colab-core",
  "colab-dsl",
+ "colab-lsp-client",
  "colab-mcp",
  "colored",
  "criterion",
@@ -547,6 +548,15 @@ version = "2026.11.3"
 dependencies = [
  "colab-core",
  "toml_edit",
+]
+
+[[package]]
+name = "colab-lsp-client"
+version = "2026.11.3"
+dependencies = [
+ "colab-core",
+ "colab-rewrite",
+ "serde_json",
 ]
 
 [[package]]

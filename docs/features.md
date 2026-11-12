@@ -348,10 +348,12 @@ conflict with colab's syntactic-rewriter premise.
   needs to update every importer. `colab` can do the *import*
   rewrite half via `<lang>::import` rules, but the move itself
   requires whole-program reasoning we deliberately don't do.
-- **Scope-aware rename.** `<lang>::symbol` does not know which
-  occurrences of `x` refer to which binding. We compensate with
-  `--format diff` and the corpus idempotency check; for type-aware
-  renames use IDE refactoring or a language-specific tool.
+- **Scope-aware rename — itself.** `<lang>::symbol` does not know which
+  occurrences of `x` refer to which binding. For that, use
+  [`colab rename`](./cli.md#colab-rename): it *delegates* to the
+  language's own server (rust-analyzer, gopls, clangd, …) and reports,
+  checks, backs up, and verifies the answer like any codemod. colab
+  still does no name resolution of its own.
 - **Conflict resolution between simultaneous edits.** Rules in one
   script are applied in source order, sequentially. There is no
   "merge" semantic.

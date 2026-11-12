@@ -1608,3 +1608,284 @@ fn invalid_pattern_exits_3_naming_the_attempts() {
     assert!(stderr.contains("go::pattern"), "{stderr}");
     assert!(stderr.contains("as-is"), "{stderr}");
 }
+
+// ---- LSP over stdio (M19) --------------------------------------------------
+
+/// A `colab server` child process spoken to with LSP `Content-Length`
+/// framing.
+struct LspClient {
+    child: std::process::Child,
+    stdout: std::io::BufReader<std::process::ChildStdout>,
+}
+
+impl LspClient {
+    fn start() -> Self {
+        let mut child = colab()
+            .arg("server")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let stdout = std::io::BufReader::new(child.stdout.take().unwrap());
+        Self { child, stdout }
+    }
+
+    fn send(&mut self, message: Value) {
+        let body = message.to_string();
+        let stdin = self.child.stdin.as_mut().unwrap();
+        write!(stdin, "Content-Length: {}\r\n\r\n{}", body.len(), body).unwrap();
+        stdin.flush().unwrap();
+    }
+
+    fn read(&mut self) -> Value {
+        use std::io::{BufRead, Read};
+        let mut length = 0usize;
+        loop {
+            let mut line = String::new();
+            self.stdout.read_line(&mut line).unwrap();
+            let line = line.trim_end();
+            if line.is_empty() {
+                break;
+            }
+            if let Some(n) = line.strip_prefix("Content-Length: ") {
+                length = n.parse().unwrap();
+            }
+        }
+        let mut body = vec![0u8; length];
+        self.stdout.read_exact(&mut body).unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    /// Send a request and return its response, skipping notifications.
+    fn request(&mut self, id: u64, method: &str, params: Value) -> Value {
+        self.send(
+            serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}),
+        );
+        loop {
+            let message = self.read();
+            if message.get("id") == Some(&serde_json::json!(id)) {
+                return message;
+            }
+        }
+    }
+
+    fn notify(&mut self, method: &str, params: Value) {
+        self.send(serde_json::json!({"jsonrpc": "2.0", "method": method, "params": params}));
+    }
+}
+
+impl Drop for LspClient {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn lsp_hover_and_workspace_code_action_round_trip() {
+    let root = workspace_temp("lsp-roundtrip");
+    write(&root.join("main.go"), GO_INPUT);
+    let script_path = root.join("fix.codemod");
+    write(&script_path, SCRIPT);
+    let root_uri = format!("file://{}", root.display());
+    let script_uri = format!("file://{}", script_path.display());
+
+    let mut lsp = LspClient::start();
+    let init = lsp.request(
+        1,
+        "initialize",
+        serde_json::json!({
+            "rootUri": root_uri,
+            "capabilities": {"textDocument": {"codeAction": {"resolveSupport": {"properties": ["edit"]}}}}
+        }),
+    );
+    let caps = &init["result"]["capabilities"];
+    assert_eq!(caps["hoverProvider"], true);
+    assert_eq!(caps["codeActionProvider"]["resolveProvider"], true);
+    lsp.notify("initialized", serde_json::json!({}));
+    lsp.notify(
+        "textDocument/didOpen",
+        serde_json::json!({"textDocument": {"uri": script_uri, "languageId": "codemod", "version": 1, "text": SCRIPT}}),
+    );
+
+    let hover = lsp.request(
+        2,
+        "textDocument/hover",
+        serde_json::json!({"textDocument": {"uri": script_uri}, "position": {"line": 1, "character": 12}}),
+    );
+    let markdown = hover["result"]["contents"]["value"].as_str().unwrap();
+    assert!(markdown.contains("go::import"), "{markdown}");
+
+    let actions = lsp.request(
+        3,
+        "textDocument/codeAction",
+        serde_json::json!({
+            "textDocument": {"uri": script_uri},
+            "range": {"start": {"line": 1, "character": 8}, "end": {"line": 1, "character": 8}},
+            "context": {"diagnostics": []}
+        }),
+    );
+    let list = actions["result"].as_array().unwrap();
+    assert_eq!(list.len(), 2, "rule + whole script: {list:?}");
+    assert!(list[0].get("edit").is_none(), "edits are resolved lazily");
+
+    let resolved = lsp.request(4, "codeAction/resolve", list[0].clone());
+    let changes = resolved["result"]["edit"]["changes"].as_object().unwrap();
+    let (uri, edits) = changes.iter().next().unwrap();
+    assert!(uri.ends_with("/main.go"), "{uri}");
+    assert_eq!(edits[0]["newText"], GO_EXPECTED);
+    assert_eq!(fs::read_to_string(root.join("main.go")).unwrap(), GO_INPUT);
+
+    drop(lsp);
+    fs::remove_dir_all(&root).ok();
+}
+
+// ---- `colab rename --lsp` (M19) --------------------------------------------
+
+/// The fake language server from `colab-lsp-client`'s examples, built on
+/// demand — `cargo test -p colab-cli` does not build another package's
+/// examples by itself.
+fn fake_lsp() -> String {
+    static BUILT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    BUILT
+        .get_or_init(|| {
+            let output = Command::new(env!("CARGO"))
+                .args([
+                    "build",
+                    "-q",
+                    "-p",
+                    "colab-lsp-client",
+                    "--example",
+                    "fake_lsp",
+                    "--message-format=json",
+                ])
+                .output()
+                .expect("cargo runs");
+            assert!(output.status.success(), "building fake_lsp failed");
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .lines()
+                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+                .filter(|m| m["target"]["name"] == "fake_lsp")
+                .find_map(|m| m["executable"].as_str().map(str::to_string))
+                .expect("cargo reported the fake_lsp executable")
+        })
+        .clone()
+}
+
+const RS_A: &str = "fn old() {}\nfn main() { old(); }\n";
+const RS_B: &str = "use crate::old;\n";
+
+fn rename_workspace(label: &str) -> PathBuf {
+    let root = workspace_temp(label);
+    write(&root.join("a.rs"), RS_A);
+    write(&root.join("b.rs"), RS_B);
+    root
+}
+
+#[test]
+fn rename_reports_like_a_codemod_and_check_exits_10() {
+    let root = rename_workspace("rename-check");
+    let output = colab()
+        .args([
+            "rename", "--symbol", "old", "--in", "a.rs", "--to", "new", "--lsp",
+        ])
+        .arg(fake_lsp())
+        .args(["--root", "."])
+        .args(["--format", "json", "--check", "-C"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
+    assert_eq!(value["changed"], serde_json::json!(["a.rs", "b.rs"]));
+    assert!(
+        value["rules"][0]["rule"]
+            .as_str()
+            .unwrap()
+            .starts_with("lsp rename `old` -> `new`")
+    );
+    assert_eq!(fs::read_to_string(root.join("a.rs")).unwrap(), RS_A);
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn rename_writes_with_a_backup_that_undo_restores() {
+    let root = rename_workspace("rename-write");
+    let backup = root.join(".backup");
+    let status = colab()
+        .args(["rename", "--at", "a.rs:1:4", "--to", "new", "--lsp"])
+        .arg(fake_lsp())
+        .args(["--root", ".", "--write", "--backup"])
+        .arg(&backup)
+        .arg("-C")
+        .arg(&root)
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(
+        fs::read_to_string(root.join("a.rs")).unwrap(),
+        "fn new() {}\nfn main() { new(); }\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("b.rs")).unwrap(),
+        "use crate::new;\n"
+    );
+
+    let status = colab()
+        .args(["undo", "--from"])
+        .arg(&backup)
+        .current_dir(&root)
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(fs::read_to_string(root.join("a.rs")).unwrap(), RS_A);
+    assert_eq!(fs::read_to_string(root.join("b.rs")).unwrap(), RS_B);
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn rename_verify_failure_restores_every_file() {
+    let root = rename_workspace("rename-verify");
+    let output = colab()
+        .args(["rename", "--at", "a.rs:1:4", "--to", "new", "--lsp"])
+        .arg(fake_lsp())
+        .args(["--root", ".", "--verify", "false", "-C"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("restored 2 file(s)"));
+    assert_eq!(fs::read_to_string(root.join("a.rs")).unwrap(), RS_A);
+    assert_eq!(fs::read_to_string(root.join("b.rs")).unwrap(), RS_B);
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn rename_without_a_default_server_asks_for_lsp() {
+    let root = workspace_temp("rename-nodefault");
+    write(&root.join("notes.txt"), "old\n");
+    let output = colab()
+        .args([
+            "rename",
+            "--symbol",
+            "old",
+            "--in",
+            "notes.txt",
+            "--to",
+            "new",
+            "-C",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("pass --lsp"));
+    fs::remove_dir_all(&root).ok();
+}

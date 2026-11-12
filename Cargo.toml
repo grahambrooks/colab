@@ -20,6 +20,7 @@ members = [
     "crates/colab-lang-toml",
     "crates/colab-backends",
     "crates/colab-rewrite",
+    "crates/colab-lsp-client",
     "crates/colab-mcp",
     "crates/colab-cli",
 ]
@@ -53,6 +54,7 @@ colab-lang-swift = { path = "crates/colab-lang-swift" }
 colab-lang-toml = { path = "crates/colab-lang-toml" }
 colab-mcp = { path = "crates/colab-mcp" }
 colab-rewrite = { path = "crates/colab-rewrite" }
+colab-lsp-client = { path = "crates/colab-lsp-client" }
 
 # Third-party deps shared across crates. Crates pick what they need.
 clap = { version = "4.5.31", features = ["derive"] }

@@ -34,6 +34,16 @@ pub struct Match {
     /// relevant.
     pub scope: Option<String>,
     pub action: Action,
+    /// Byte range of the whole block in the script, `match` to `}`.
+    /// Lets the LSP place a diagnostic on the rule that caused it.
+    pub span: Span,
+}
+
+/// A byte range in the script source.
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Default)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
 }
 
 /// A target namespace such as `go::import`.
@@ -70,4 +80,18 @@ pub enum Action {
     /// Add the matched key or element with this value only when it is
     /// absent; an existing value is left alone.
     Insert(String),
+}
+
+impl Action {
+    /// The DSL keyword this action is written with.
+    pub fn keyword(&self) -> &'static str {
+        match self {
+            Action::Replace(_) => "replace",
+            Action::Delete => "delete",
+            Action::Ensure => "ensure",
+            Action::ReplaceCall(_) => "replace_call",
+            Action::Set(_) => "set",
+            Action::Insert(_) => "insert",
+        }
+    }
 }

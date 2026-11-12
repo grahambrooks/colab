@@ -3,6 +3,7 @@ use crate::ast::Item;
 use crate::ast::Match;
 use crate::ast::Namespace;
 use crate::ast::Action;
+use crate::ast::Span;
 
 grammar;
 
@@ -29,7 +30,7 @@ pub Item: Item = {
 // paths. It is enforced through the operation's relevance check, so a
 // scoped rule is skipped wholesale for files outside the glob.
 pub Match: Match = {
-    "match" <namespace: Namespace> <string: StringLiteral> <scope: Scope?> "{" <action: Action> "}" => Match { namespace, match_string: string, scope, action }
+    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <scope: Scope?> "{" <action: Action> "}" <end: @R> => Match { namespace, match_string: string, scope, action, span: Span { start, end } }
 };
 
 pub Scope: String = {

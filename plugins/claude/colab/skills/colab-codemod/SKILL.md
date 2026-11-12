@@ -252,8 +252,27 @@ up — files outside the glob are never parsed.
 Before a symbol rename, check how common the name really is:
 
 ```sh
-rg -w 'Config' --stats     # everywhere? scope it, or don't use colab
+rg -w 'Config' --stats     # everywhere? scope it — or rename it semantically
 ```
+
+**When the name is shared — a field and a function both called
+`value`, a local that shadows a type — use `colab rename`.** It asks the
+language's own server (rust-analyzer, gopls, clangd, …) which
+occurrences are *the same symbol*, then reports, checks, backs up, and
+verifies the result like any codemod:
+
+```sh
+colab rename --at src/config.rs:2:9 --to amount --format json   # blast radius
+colab rename --at src/config.rs:2:9 --to amount --format diff   # hunks
+colab rename --at src/config.rs:2:9 --to amount --write --verify 'cargo check'
+```
+
+`--at FILE:LINE:COL` should point at the declaration; `--symbol NAME
+--in FILE` uses the first whole-word occurrence. It needs the server
+installed (`--lsp` to choose one) and the project root it expects
+(`.git`, `Cargo.toml`, `go.mod`, … — or `--root`). Indexing makes it
+take seconds, not milliseconds: use `<lang>::symbol` when the name is
+unique, `colab rename` when it is not.
 
 ## Applying safely
 
