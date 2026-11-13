@@ -1,0 +1,4 @@
+1 csharp::using "Old.Lib.Helpers" -> "New.Lib.Helpers"
+1 csharp::using "System.Linq" -> ensure
+1 csharp::namespace "Old.App" -> "New.App"
+1 csharp::call "Helpers.Old" -> replace_call "Helpers.New($args)"

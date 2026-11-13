@@ -1,0 +1,9 @@
+0 go::import "github.com/pkg/eror" -> delete
+    near github.com/pkg/errors (1 file(s))
+0 go::call "fmt.Prinln" -> replace_call "fmt.Println($args)"
+    near fmt.Println (1 file(s))
+0 go::symbol "NewClinet" -> "NewClient"
+    near NewClient (1 file(s))
+    near New (1 file(s))
+0 go::package "mian" -> "main"
+    near main (1 file(s))

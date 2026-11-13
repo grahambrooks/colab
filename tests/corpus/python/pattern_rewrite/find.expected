@@ -1,0 +1,7 @@
+tests/test_cart.py:11:9: [1] pdb.set_trace()
+tests/test_cart.py:12:9: [0] self.assertEquals(cart.count(), 2)
+    $FIRST = cart.count()
+    $SECOND = 2
+tests/test_cart.py:13:9: [0] self.assertEquals(cart.total(), cart.price("apple") * 2)
+    $FIRST = cart.total()
+    $SECOND = cart.price("apple") * 2

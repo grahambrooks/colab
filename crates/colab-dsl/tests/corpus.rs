@@ -9,6 +9,20 @@
 //!    under `expected/`.
 //! 2. Re-applying the transform to its own output is a no-op
 //!    (idempotency).
+//! 3. Every `match` block passes `colab_dsl::check` (what the editor
+//!    diagnoses with) and lowers to the same rule `compile` produces.
+//!
+//! Every case also pins down what the agent-facing surfaces report:
+//!
+//! - `rules.expected` — per-rule attribution after one pass: how many
+//!   files each rule changed, and for a dead rule the near-miss values
+//!   `colab_core::near_miss::probe` would suggest.
+//! - `find.expected` — what `colab find` reports over `input/`: every
+//!   `path:line:col`, the rule that matched, the matched text, and the
+//!   metavariable bindings of `<lang>::pattern` rules.
+//!
+//! Run with `COLAB_BLESS=1` to (re)write both files from the current
+//! behaviour; review the diff before committing it.
 //!
 //! Adding a new language backend is gated on landing at least one case.
 
@@ -16,8 +30,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use colab_core::{BackendRegistry, CodeTransformer};
-use colab_dsl::compile_at_path;
+use colab_core::find::locate_all;
+use colab_core::near_miss;
+use colab_core::{BackendRegistry, CodeTransformer, FileChange, RunReport};
+use colab_dsl::{Refactoring, check, compile_at_path};
 
 fn registry() -> BackendRegistry {
     // Shared with the binary, so a backend cannot be registered in one
@@ -121,6 +137,10 @@ fn run_case(case: &Case) -> Result<(), String> {
         ));
     }
 
+    check_matches_compile(&script_path, &refactoring)?;
+
+    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+
     for (rel, source) in &inputs {
         let want = expected
             .get(rel)
@@ -129,7 +149,16 @@ fn run_case(case: &Case) -> Result<(), String> {
         // `apply_at` is what the walker calls, so the corpus exercises
         // per-rule path gating, the literal prefilter, and rule
         // attribution — not just the path-blind fallback.
-        let first = refactoring.apply_at(rel, source).output;
+        let outcome = refactoring.apply_at(rel, source);
+        if refactoring.is_file_relevant(rel) {
+            report.record(&FileChange {
+                path: rel.clone(),
+                before: source.clone(),
+                after: outcome.output.clone(),
+                rules_fired: outcome.rules_fired,
+            });
+        }
+        let first = outcome.output;
 
         if &first != want {
             return Err(format!(
@@ -153,6 +182,104 @@ fn run_case(case: &Case) -> Result<(), String> {
         }
     }
 
+    near_miss::probe(&refactoring.rules, &mut report, |path| {
+        inputs.get(path).cloned()
+    });
+    expect_file(&case.dir.join("rules.expected"), &render_rules(&report))?;
+    expect_file(
+        &case.dir.join("find.expected"),
+        &render_find(&refactoring, &inputs),
+    )?;
+
+    Ok(())
+}
+
+/// The LSP lowers each `match` block on its own (`check`); a script the
+/// corpus can run must come out clean there too, rule for rule. Rules
+/// pulled in by `include` are not visible to `check`, so only a script
+/// without includes is compared index by index.
+fn check_matches_compile(script_path: &Path, refactoring: &Refactoring) -> Result<(), String> {
+    let text = fs::read_to_string(script_path).map_err(|e| format!("read script: {}", e))?;
+    let checks = check(&text, &registry()).map_err(|e| format!("check: {}", e))?;
+    for rule in &checks {
+        if let Err(e) = &rule.outcome {
+            return Err(format!(
+                "check rejects {} ({}) that compile accepted: {}",
+                rule.namespace, rule.action, e
+            ));
+        }
+    }
+    if !text.lines().any(|l| l.trim_start().starts_with("include")) {
+        let checked: Vec<&str> = checks
+            .iter()
+            .filter_map(|c| c.outcome.as_deref().ok())
+            .collect();
+        let compiled: Vec<String> = refactoring.rules.iter().map(|r| r.to_string()).collect();
+        if checked != compiled {
+            return Err(format!(
+                "check and compile disagree\n  check:   {:?}\n  compile: {:?}",
+                checked, compiled
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// One line per rule: files changed, then the rule; a dead rule's near
+/// misses follow, indented.
+fn render_rules(report: &RunReport) -> String {
+    let mut out = String::new();
+    for stat in &report.rules {
+        out.push_str(&format!("{} {}\n", stat.files_matched, stat.rule));
+        for near in &stat.near_misses {
+            out.push_str(&format!(
+                "    near {} ({} file(s))\n",
+                near.value, near.files
+            ));
+        }
+    }
+    out
+}
+
+/// `path:line:col: [rule] text`, each binding indented below it. Newlines
+/// in matched text are shown as `\n` so one location stays one line.
+fn render_find(refactoring: &Refactoring, inputs: &BTreeMap<PathBuf, String>) -> String {
+    let mut out = String::new();
+    for (rel, source) in inputs {
+        let mut hits = locate_all(&refactoring.rules, rel, source);
+        hits.sort_by_key(|(index, l)| (l.start, *index));
+        for (index, at) in hits {
+            out.push_str(&format!(
+                "{}:{}:{}: [{}] {}\n",
+                rel.display(),
+                at.line,
+                at.column,
+                index,
+                at.text.replace('\n', "\\n")
+            ));
+            for (name, value) in &at.captures {
+                out.push_str(&format!("    ${} = {}\n", name, value.replace('\n', "\\n")));
+            }
+        }
+    }
+    out
+}
+
+/// Compare `actual` against `path`; with `COLAB_BLESS` set, write it
+/// instead. The file is required, so a new case cannot skip it.
+fn expect_file(path: &Path, actual: &str) -> Result<(), String> {
+    let name = path.file_name().unwrap().to_string_lossy();
+    if std::env::var_os("COLAB_BLESS").is_some() {
+        return fs::write(path, actual).map_err(|e| format!("bless {}: {}", name, e));
+    }
+    let want = fs::read_to_string(path)
+        .map_err(|_| format!("missing {} (create it with COLAB_BLESS=1)", name))?;
+    if want != actual {
+        return Err(format!(
+            "{} differs (re-run with COLAB_BLESS=1 to accept)\n--- expected\n{}--- got\n{}",
+            name, want, actual
+        ));
+    }
     Ok(())
 }
 

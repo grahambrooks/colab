@@ -1,0 +1,2 @@
+1 js::pattern '$LIST.indexOf($ITEM) !== -1' -> '$LIST.includes($ITEM)'
+1 js::pattern 'console.debug($$$ARGS)' -> delete

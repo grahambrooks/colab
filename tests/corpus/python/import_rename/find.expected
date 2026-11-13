@@ -1,0 +1,1 @@
+main.py:1:1: [0] import old_pkg\nimport old_pkg.sub\nimport old_pkg.sub as sub\nfrom old_pkg.sub import foo, bar

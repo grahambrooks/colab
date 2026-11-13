@@ -1,0 +1,1 @@
+1 cpp::pattern 'std::make_pair($A, $B)' -> 'std::pair($A, $B)'

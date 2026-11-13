@@ -1,0 +1,1 @@
+lib.rs:2:1: [0]     let _ = old_fn(1, 2);\n    let _ = old_fn(3, 4);

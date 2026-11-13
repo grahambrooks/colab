@@ -1,0 +1,2 @@
+types.go:4:1: [0] 	Name string `json:"old_name" yaml:"keep"`
+types.go:9:1: [0] 	UserName string `json:"old_name"`

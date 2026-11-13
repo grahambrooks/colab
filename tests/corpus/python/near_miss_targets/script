@@ -1,0 +1,6 @@
+// Dead rules with near misses: a misspelled module, call, and symbol.
+refactor "near-misses" {
+    match python::import "reqests" { replace "httpx" }
+    match python::call "os.path.joim" { replace_call "os.path.join($args)" }
+    match python::symbol "fetch_dat" { replace "fetch_data" }
+}

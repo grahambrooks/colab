@@ -1,0 +1,3 @@
+1 kotlin::package "com.old.app" -> "com.new.app"
+1 kotlin::import "com.old.lib.Client" -> "com.new.lib.Client"
+1 kotlin::call "Client.oldRun" -> replace_call "Client.run($args)"

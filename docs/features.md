@@ -140,11 +140,18 @@ Import-path edits.
   `"my_fmt"` and does not match `"fmt/v2"`.
 - **`replace`:** rewrite the import path. The surrounding `import (
   … )` block, alias prefix, and other imports stay put.
-- **`delete`:** remove the entire `import_spec` line. Leaves
-  `import (…)` block braces intact.
-- **`ensure`:** insert `import "<target>"` immediately after the
-  `package` clause when no existing `import_spec` references the
-  target. Idempotent.
+- **`delete`:** remove the `import_spec` line and leave what `gofmt`
+  would: no blank line right after `(` or before `)` and none doubled.
+  A declaration left with no imports (`import ( )`, or a lone
+  `import "x"`) is removed entirely.
+- **`ensure`:** when no existing `import_spec` references the target,
+  add it where `goimports` would. It goes into the existing
+  `import ( … )` group, in sorted position within the first block of its
+  kind (standard library, i.e. no dot in the first path element, or
+  third-party), or as a new block if there is none: first for the
+  standard library, last otherwise. A lone `import "x"` becomes a group.
+  With no imports at all, `import "<target>"` follows the `package`
+  clause. Idempotent.
 
 ### `go::symbol`
 

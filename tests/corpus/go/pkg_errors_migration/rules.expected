@@ -1,0 +1,4 @@
+2 go::pattern 'errors.Wrap($ERR, $MSG)' -> 'fmt.Errorf("%s: %w", $MSG, $ERR)'
+1 go::pattern 'errors.Wrapf($ERR, $FMT, $$$ARGS)' -> 'fmt.Errorf($FMT+": %w", $$$ARGS, $ERR)'
+2 go::import "github.com/pkg/errors" -> delete
+1 go::import "fmt" -> ensure

@@ -1,0 +1,2 @@
+1 python::pattern '$X if $X else $DEFAULT' -> '$X or $DEFAULT' in "app/**"
+1 python::pattern 'warnings.simplefilter($_)' -> delete in "app/**"

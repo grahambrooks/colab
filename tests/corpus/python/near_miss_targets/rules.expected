@@ -1,0 +1,6 @@
+0 python::import "reqests" -> "httpx"
+    near requests (1 file(s))
+0 python::call "os.path.joim" -> replace_call "os.path.join($args)"
+    near os.path.join (1 file(s))
+0 python::symbol "fetch_dat" -> "fetch_data"
+    near fetch_data (1 file(s))

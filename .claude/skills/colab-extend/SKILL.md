@@ -44,7 +44,11 @@ Four places, in order:
    `colab list-rules`, and LSP completion advertise it. Discovery is
    generated from this; there is no second list to update.
 4. **A corpus case** under
-   `tests/corpus/<lang>/<case>/{script,input/,expected/}`.
+   `tests/corpus/<lang>/<case>/{script,input/,expected/}`, plus its
+   generated `rules.expected` / `find.expected`
+   (`COLAB_BLESS=1 cargo test -p colab-dsl --test corpus`, then review the
+   diff). A new module that targets a value should also land a dead-rule
+   line in a `near_miss_targets` case, proving its `observed_targets` hint.
 
 Nothing in `colab-dsl`, `walker.rs`, or `cli.rs` should need to change.
 If you find yourself editing those, the design is fighting you — say so

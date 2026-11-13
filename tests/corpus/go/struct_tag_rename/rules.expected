@@ -1,0 +1,1 @@
+1 go::struct_tag "json:old_name" -> "json:new_name"

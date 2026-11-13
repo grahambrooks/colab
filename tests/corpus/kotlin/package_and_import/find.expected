@@ -1,0 +1,3 @@
+Service.kt:1:1: [0] package com.old.app
+Service.kt:3:1: [1] import com.old.lib.Client
+Service.kt:6:1: [2]     Client.oldRun(a, 2)

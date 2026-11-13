@@ -1,0 +1,2 @@
+1 swift::pattern 'NSLog($$$ARGS)' -> 'logger.info($$$ARGS)'
+1 swift::pattern 'print($$$ARGS)' -> delete

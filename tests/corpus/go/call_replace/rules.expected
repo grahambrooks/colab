@@ -1,0 +1,1 @@
+1 go::call "pkg.Old" -> replace_call "pkg.New($2, $1, nil)"

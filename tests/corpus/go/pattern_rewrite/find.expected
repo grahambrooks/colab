@@ -1,0 +1,8 @@
+main.go:14:15: [0] errors.Wrap(err, "read config")
+    $ERR = err
+    $MSG = "read config"
+main.go:16:2: [1] log.Println("DEBUG", "loaded", len(data))
+    $ARGS = "loaded", len(data)
+main.go:22:15: [0] errors.Wrap(err, "startup")
+    $ERR = err
+    $MSG = "startup"

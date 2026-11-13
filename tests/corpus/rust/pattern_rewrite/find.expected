@@ -1,0 +1,8 @@
+src/cache.rs:9:9: [1] dbg!(key)
+    $ARGS = key
+src/cache.rs:10:9: [0] self.entries.get(key).is_some()
+    $KEY = key
+    $MAP = self.entries
+src/cache.rs:14:13: [0] self.entries.get(&key).is_some()
+    $KEY = &key
+    $MAP = self.entries

@@ -1,0 +1,9 @@
+// A metavariable used twice must bind identical text: `a if a else d`
+// collapses to `a or d`, while `a if b else d` is left alone. `$_` matches
+// anything without binding it. The `in` glob keeps vendored code untouched.
+refactor "python-idioms" {
+    match python::pattern '$X if $X else $DEFAULT' in "app/**" {
+        replace '$X or $DEFAULT'
+    }
+    match python::pattern 'warnings.simplefilter($_)' in "app/**" { delete }
+}

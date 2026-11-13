@@ -1,0 +1,2 @@
+1 python::pattern 'self.assertEquals($FIRST, $SECOND)' -> 'self.assertEqual($FIRST, $SECOND)'
+1 python::pattern 'pdb.set_trace()' -> delete

@@ -1,0 +1,2 @@
+main.go:3:1: [0] import "old/pkg"
+main.rs:1:1: [1] use old_crate::thing;

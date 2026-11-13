@@ -1,0 +1,2 @@
+1 rust::pattern '$MAP.get($KEY).is_some()' -> '$MAP.contains_key($KEY)'
+1 rust::pattern 'dbg!($$$ARGS)' -> delete

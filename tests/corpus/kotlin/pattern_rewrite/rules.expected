@@ -1,0 +1,2 @@
+1 kotlin::pattern 'Log.d($TAG, $MSG)' -> 'Timber.tag($TAG).d($MSG)'
+1 kotlin::pattern 'println($$$ARGS)' -> delete

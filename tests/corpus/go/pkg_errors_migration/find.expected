@@ -1,0 +1,16 @@
+cmd/main.go:5:1: [2] \n	"github.com/pkg/errors"
+cmd/main.go:12:9: [0] errors.Wrap(check(), "run")
+    $ERR = check()
+    $MSG = "run"
+store/store.go:4:1: [3] 
+store/store.go:5:1: [2] \n	"github.com/pkg/errors"
+store/store.go:13:15: [0] errors.Wrap(errors.Wrap(err, "open"), "store")
+    $ERR = errors.Wrap(err, "open")
+    $MSG = "store"
+store/store.go:13:27: [0] errors.Wrap(err, "open")
+    $ERR = err
+    $MSG = "open"
+store/store.go:20:10: [1] errors.Wrapf(err, "remove %s (attempt %d)", path, attempt)
+    $ARGS = path, attempt
+    $ERR = err
+    $FMT = "remove %s (attempt %d)"

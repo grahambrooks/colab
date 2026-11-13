@@ -1,0 +1,11 @@
+1 toml::key "repos[repo=local].hooks[id=cargo-clippy]" -> insert {
+    id = "cargo-clippy",
+    name = "cargo clippy",
+    entry = "cargo clippy --all-targets -- -D warnings",
+    language = "system",
+    pass_filenames = false,
+    files = "\\.rs$",
+    stages = ["pre-push"]
+  } in "prek.toml"
+1 toml::key "project.profile_version" -> set 2 in "myspec.toml"
+1 toml::key "project.created_by" -> delete in "myspec.toml"

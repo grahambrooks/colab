@@ -1,0 +1,1 @@
+1 java::package "com.old" -> "com.new"

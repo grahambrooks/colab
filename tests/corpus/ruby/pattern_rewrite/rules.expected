@@ -1,0 +1,2 @@
+1 ruby::pattern '$ACTUAL.should == $EXPECTED' -> 'expect($ACTUAL).to eq($EXPECTED)'
+1 ruby::pattern 'binding.pry' -> delete

@@ -1,0 +1,2 @@
+1 c::pattern 'strcpy($DST, $SRC)' -> 'strlcpy($DST, $SRC, sizeof($DST))'
+1 c::pattern 'debug_trace($$$ARGS)' -> delete

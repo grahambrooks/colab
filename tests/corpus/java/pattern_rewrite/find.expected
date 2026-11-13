@@ -1,0 +1,8 @@
+src/test/java/com/example/CalculatorTest.java:10:9: [1] System.out.println("calc: " + calc)
+    $ARGS = "calc: " + calc
+src/test/java/com/example/CalculatorTest.java:11:9: [0] Assert.assertEquals(4, calc.add(2, 2))
+    $ACTUAL = calc.add(2, 2)
+    $EXPECTED = 4
+src/test/java/com/example/CalculatorTest.java:12:9: [0] Assert.assertEquals(0, calc.add(-1, 1))
+    $ACTUAL = calc.add(-1, 1)
+    $EXPECTED = 0

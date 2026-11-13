@@ -1,0 +1,2 @@
+1 php::pattern '$this->assertEquals($EXPECTED, $ACTUAL)' -> '$this->assertSame($EXPECTED, $ACTUAL)'
+1 php::pattern 'var_dump($$$ARGS)' -> delete

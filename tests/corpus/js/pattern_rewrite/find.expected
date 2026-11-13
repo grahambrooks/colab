@@ -1,0 +1,8 @@
+src/roles.js:2:3: [1] console.debug('canEdit', user.id, doc.id)
+    $ARGS = 'canEdit', user.id, doc.id
+src/roles.js:3:7: [0] user.roles.indexOf('admin') !== -1
+    $ITEM = 'admin'
+    $LIST = user.roles
+src/roles.js:6:10: [0] doc.editors.indexOf(user.id) !== -1
+    $ITEM = user.id
+    $LIST = doc.editors

@@ -1,0 +1,2 @@
+1 java::pattern 'Assert.assertEquals($EXPECTED, $ACTUAL)' -> 'assertThat($ACTUAL).isEqualTo($EXPECTED)'
+1 java::pattern 'System.out.println($$$ARGS)' -> delete

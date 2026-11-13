@@ -1,0 +1,4 @@
+1 ruby::require "old/client" -> "new/client"
+1 ruby::require "json" -> ensure
+1 ruby::symbol "OldClient" -> "NewClient"
+1 ruby::call "NewClient.fetch_old" -> replace_call "NewClient.fetch($args)"

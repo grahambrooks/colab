@@ -1,0 +1,2 @@
+1 go::import "some.module" -> "new.module"
+1 go::import "another.module" -> "yet.another.module"

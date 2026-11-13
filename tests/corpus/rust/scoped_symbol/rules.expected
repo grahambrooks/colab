@@ -1,0 +1,1 @@
+1 rust::symbol "Config" -> "CoreConfig" in "core/**"

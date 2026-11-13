@@ -1,0 +1,8 @@
+tests/CartTest.php:13:9: [1] var_dump($cart)
+    $ARGS = $cart
+tests/CartTest.php:14:9: [0] $this->assertEquals(2, $cart->count())
+    $ACTUAL = $cart->count()
+    $EXPECTED = 2
+tests/CartTest.php:15:9: [0] $this->assertEquals('apple', $cart->first()->name)
+    $ACTUAL = $cart->first()->name
+    $EXPECTED = 'apple'

@@ -1,0 +1,2 @@
+1 rust::use "old_tokio" -> "tokio"
+1 rust::crate "old_tokio" -> "tokio"

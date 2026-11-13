@@ -1,0 +1,4 @@
+lib.rs:1:1: [0] pub struct OldThing {
+lib.rs:5:1: [0] impl OldThing {
+lib.rs:7:1: [0]         OldThing { value }
+lib.rs:11:1: [0] pub fn make() -> OldThing {\n    OldThing::new(42)

@@ -1,0 +1,2 @@
+main.js:1:1: [0] import _ from 'lodash';\nimport { map, filter } from "lodash";
+main.js:5:1: [0] export { something } from 'lodash';

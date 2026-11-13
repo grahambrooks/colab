@@ -1,0 +1,5 @@
+widget.cpp:2:1: [0] #include "old/widget.hpp"
+widget.cpp:4:1: [1] namespace old_ui {
+widget.cpp:6:1: [2] class OldWidget {
+widget.cpp:8:1: [2]     OldWidget() {}
+widget.cpp:11:1: [2] OldWidget make() { return OldWidget(); }

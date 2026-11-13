@@ -1,0 +1,8 @@
+CalculatorTests.cs:11:13: [1] Console.WriteLine("calc ready")
+    $ARGS = "calc ready"
+CalculatorTests.cs:12:13: [0] Assert.AreEqual(4, calc.Add(2, 2))
+    $ACTUAL = calc.Add(2, 2)
+    $EXPECTED = 4
+CalculatorTests.cs:13:13: [0] Assert.AreEqual(0, calc.Add(-1, 1))
+    $ACTUAL = calc.Add(-1, 1)
+    $EXPECTED = 0

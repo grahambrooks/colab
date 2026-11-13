@@ -1,0 +1,2 @@
+1 json::key "/enabledPlugins/code-intelligence@gb-agent-skills" -> set true in "settings.json"
+1 json::key "/extraKnownMarketplaces/gb-agent-skills" -> insert {"source": {"source": "github", "repo": "grahambrooks/gb-agent-skills"}} in "settings.json"

@@ -1,0 +1,8 @@
+Repository.kt:5:9: [0] Log.d(TAG, "loading $id")
+    $MSG = "loading $id"
+    $TAG = TAG
+Repository.kt:6:9: [1] println("debug: $id")
+    $ARGS = "debug: $id"
+Repository.kt:8:9: [0] Log.d(TAG, "loaded ${item.name}")
+    $MSG = "loaded ${item.name}"
+    $TAG = TAG

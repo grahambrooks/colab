@@ -1,0 +1,10 @@
+// Every rule here is dead: each target is a near miss of something the
+// code does contain. Nothing changes; rules.expected pins the hints the
+// report gives back (`nearest seen: ...`), which is what lets an agent
+// fix the target instead of guessing.
+refactor "near-misses" {
+    match go::import "github.com/pkg/eror" { delete }
+    match go::call "fmt.Prinln" { replace_call "fmt.Println($args)" }
+    match go::symbol "NewClinet" { replace "NewClient" }
+    match go::package "mian" { replace "main" }
+}

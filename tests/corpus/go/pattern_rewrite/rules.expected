@@ -1,0 +1,2 @@
+1 go::pattern 'errors.Wrap($ERR, $MSG)' -> 'fmt.Errorf("%s: %w", $MSG, $ERR)'
+1 go::pattern 'log.Println("DEBUG", $$$ARGS)' -> delete

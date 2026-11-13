@@ -1,0 +1,4 @@
+app/config.py:4:1: [1] warnings.simplefilter("ignore")
+app/config.py:9:14: [0] value if value else fallback
+    $DEFAULT = fallback
+    $X = value

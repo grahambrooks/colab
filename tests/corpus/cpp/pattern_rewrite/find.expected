@@ -1,0 +1,6 @@
+index.cpp:6:21: [0] std::make_pair(key, value)
+    $A = key
+    $B = value
+index.cpp:11:12: [0] std::make_pair(it->first, it->second)
+    $A = it->first
+    $B = it->second

@@ -1,0 +1,2 @@
+Hello.java:3:1: [0] public class OldGreeter {\n    public OldGreeter() {}
+Hello.java:12:1: [0]     OldGreeter g = new OldGreeter();

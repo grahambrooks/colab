@@ -1,0 +1,7 @@
+spec/cart_spec.rb:7:5: [1] binding.pry
+spec/cart_spec.rb:8:5: [0] cart.count.should == 2
+    $ACTUAL = cart.count
+    $EXPECTED = 2
+spec/cart_spec.rb:9:5: [0] cart.total.should == Cart.price(:apple) * 2
+    $ACTUAL = cart.total
+    $EXPECTED = Cart.price(:apple) * 2

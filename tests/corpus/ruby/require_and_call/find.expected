@@ -1,0 +1,3 @@
+service.rb:3:1: [0] require 'old/client'
+service.rb:4:1: [1] 
+service.rb:7:1: [2]     OldClient.fetch_old(a, 2)

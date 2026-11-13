@@ -1,0 +1,4 @@
+1 swift::import "OldNetworking" -> "NewNetworking"
+1 swift::import "Foundation" -> ensure
+1 swift::symbol "OldClient" -> "NewClient"
+1 swift::call "NewClient.fetchOld" -> replace_call "NewClient.fetch($args)"

@@ -1,0 +1,2 @@
+Cargo.toml:7:1: [0] old_crate = "1.0"
+Cargo.toml:11:1: [0] old_crate = { version = "1.0", features = ["x"] }

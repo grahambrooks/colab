@@ -1,0 +1,4 @@
+Sources/Sync.swift:5:9: [0] NSLog("syncing %d items", items.count)
+    $ARGS = "syncing %d items", items.count
+Sources/Sync.swift:6:9: [1] print("debug", items)
+    $ARGS = "debug", items

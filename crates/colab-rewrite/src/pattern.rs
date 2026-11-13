@@ -23,8 +23,9 @@ use std::borrow::Cow;
 use ast_grep_core::language::Language;
 use ast_grep_core::matcher::PatternBuilder;
 use ast_grep_core::meta_var::MetaVariable;
+use ast_grep_core::replacer::TemplateFix;
 use ast_grep_core::tree_sitter::{LanguageExt, StrDoc, TSLanguage};
-use ast_grep_core::{Pattern, PatternError};
+use ast_grep_core::{NodeMatch, Pattern, PatternError};
 use tree_sitter::{Node, Parser};
 
 use crate::{Edit, apply_edits, line_span};
@@ -283,8 +284,8 @@ impl StructuralPattern {
         self.prefilter.as_deref()
     }
 
-    /// Every match in `source`, outermost first in source order. A match
-    /// nested inside another is not reported separately.
+    /// Every match in `source` in source order, an outer match before the
+    /// matches nested inside it.
     pub fn find(&self, source: &str) -> Vec<Found> {
         let grep = self.lang.ast_grep(source);
         grep.root()
@@ -327,20 +328,34 @@ impl StructuralPattern {
     }
 
     /// Replace every match with `template`, substituting `$NAME` /
-    /// `$$$NAME` bindings. Matches never nest: the outermost wins.
+    /// `$$$NAME` bindings.
+    ///
+    /// Matches can nest — `errors.Wrap(errors.Wrap(err, "a"), "b")` holds
+    /// two. ast-grep's own `replace_all` rewrites only the outermost,
+    /// which leaves the inner one for a second run: a rule that is not
+    /// idempotent. Here every binding is rewritten first, recursively,
+    /// and the template is filled with those rewritten texts, so one pass
+    /// reaches the fixed point. Only matches present in `source` are
+    /// rewritten; text the template introduces is never re-matched, so a
+    /// wrap-style template (`f($A)` → `f(g($A))`) cannot run away.
     pub fn rewrite(&self, source: &str, template: &str) -> String {
         let grep = self.lang.ast_grep(source);
-        let edits: Vec<Edit> = grep
-            .root()
-            .replace_all(&self.pattern, template)
+        let matches: Vec<NodeMatch<'_, StrDoc<TsLang>>> =
+            grep.root().find_all(&self.pattern).collect();
+        if matches.is_empty() {
+            return source.to_string();
+        }
+        let (template, names) = transformable_template(template);
+        let fix = TemplateFix::with_transform(&template, &self.lang, &names);
+        let rewriter = Rewriter {
+            pattern: &self.pattern,
+            fix: &fix,
+            matches: &matches,
+        };
+        let edits = rewriter
+            .outermost(0..source.len(), None)
             .into_iter()
-            .map(|e| {
-                Edit::new(
-                    e.position,
-                    e.position + e.deleted_length,
-                    String::from_utf8_lossy(&e.inserted_text).into_owned(),
-                )
-            })
+            .map(|i| rewriter.render(source, i))
             .collect();
         apply_edits(source, edits)
     }
@@ -374,6 +389,129 @@ impl StructuralPattern {
     fn parses_cleanly(&self, source: &str) -> bool {
         parse_clean(&self.lang.grammar, source).is_ok()
     }
+}
+
+/// Fills a template for one match after rewriting the matches nested in
+/// its bindings — see [`StructuralPattern::rewrite`].
+struct Rewriter<'a, 't> {
+    pattern: &'a Pattern,
+    fix: &'a TemplateFix,
+    /// Every match in the source, nested ones included.
+    matches: &'a [NodeMatch<'t, StrDoc<TsLang>>],
+}
+
+impl Rewriter<'_, '_> {
+    /// Indices of the matches inside `span` that no other match inside it
+    /// contains, in source order. `outer` is the match whose binding
+    /// `span` is, so it does not count as nested in itself; of several
+    /// matches over the same bytes (a call and its expression statement),
+    /// the first is kept.
+    fn outermost(&self, span: std::ops::Range<usize>, outer: Option<usize>) -> Vec<usize> {
+        let inside: Vec<(usize, std::ops::Range<usize>)> = self
+            .matches
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| Some(i) != outer)
+            .map(|(i, m)| (i, m.range()))
+            .filter(|(_, r)| r.start >= span.start && r.end <= span.end)
+            .collect();
+        let mut out: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
+        for (i, r) in &inside {
+            let covered = inside.iter().any(|(j, other)| {
+                let contains = other.start <= r.start && r.end <= other.end;
+                contains && (other != r || j < i)
+            });
+            if !covered {
+                out.push((*i, r.clone()));
+            }
+        }
+        out.sort_by_key(|(_, r)| r.start);
+        out.into_iter().map(|(i, _)| i).collect()
+    }
+
+    /// `source[span]` with each outermost match inside it rewritten.
+    fn rewrite_span(&self, source: &str, span: std::ops::Range<usize>, outer: usize) -> String {
+        let mut out = String::new();
+        let mut at = span.start;
+        for i in self.outermost(span.clone(), Some(outer)) {
+            let edit = self.render(source, i);
+            if edit.start < at {
+                continue;
+            }
+            out.push_str(&source[at..edit.start]);
+            out.push_str(&edit.text);
+            at = edit.end;
+        }
+        out.push_str(&source[at..span.end]);
+        out
+    }
+
+    /// The edit replacing match `i`, its bindings rewritten first.
+    fn render(&self, source: &str, i: usize) -> Edit {
+        let mut nm = self.matches[i].clone();
+        let vars: Vec<MetaVariable> = nm.get_env().get_matched_variables().collect();
+        for var in vars {
+            let (name, span) = match &var {
+                MetaVariable::Capture(name, _) => {
+                    let span = nm.get_env().get_match(name).map(|n| n.range());
+                    (name.clone(), span)
+                }
+                MetaVariable::MultiCapture(name) => {
+                    let nodes = nm.get_env().get_multiple_matches(name);
+                    let span = match (nodes.first(), nodes.last()) {
+                        (Some(first), Some(last)) => Some(first.range().start..last.range().end),
+                        _ => None,
+                    };
+                    (name.clone(), span)
+                }
+                _ => continue,
+            };
+            let text = span
+                .map(|span| self.rewrite_span(source, span, i))
+                .unwrap_or_default();
+            nm.get_env_mut()
+                .insert_transformation(&var, &name, text.into_bytes());
+        }
+        let edit = nm.make_edit(self.pattern, self.fix);
+        Edit::new(
+            edit.position,
+            edit.position + edit.deleted_length,
+            String::from_utf8_lossy(&edit.inserted_text).into_owned(),
+        )
+    }
+}
+
+/// `template` with every `$$$NAME` written as `$NAME`, and the names it
+/// uses — so ast-grep takes each binding's value from the rewritten text
+/// [`Rewriter::render`] supplies instead of from the original source.
+fn transformable_template(template: &str) -> (String, Vec<String>) {
+    let mut out = String::with_capacity(template.len());
+    let mut names: Vec<String> = Vec::new();
+    let mut rest = template;
+    while let Some(i) = rest.find('$') {
+        out.push_str(&rest[..i]);
+        let tail = &rest[i..];
+        let run = tail.chars().take_while(|&c| c == '$').count().min(3);
+        let after = &tail[run..];
+        let len = after
+            .find(|c: char| !(c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()))
+            .unwrap_or(after.len());
+        let name = &after[..len];
+        let is_var = matches!(run, 1 | 3) && after.starts_with(is_var_start);
+        if is_var {
+            out.push('$');
+            out.push_str(name);
+            if !names.iter().any(|n| n == name) {
+                names.push(name.to_string());
+            }
+            rest = &after[len..];
+        } else {
+            out.push_str(&tail[..run]);
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    (out, names)
 }
 
 /// What a `<lang>::pattern` rule does with each match.
@@ -758,6 +896,40 @@ mod tests {
         );
         let out = p.rewrite(GO_SRC, "slog.Info($$$ARGS)");
         assert!(out.contains("slog.Info(\"a\", 1)"), "{out}");
+    }
+
+    #[test]
+    fn nested_matches_are_rewritten_in_one_pass() {
+        let p = StructuralPattern::compile(&go(), "errors.Wrap($ERR, $MSG)").unwrap();
+        let src = "package main\n\nfunc f() error {\n\treturn errors.Wrap(errors.Wrap(err, \"a\"), \"b\")\n}\n";
+        let tpl = "fmt.Errorf(\"%s: %w\", $MSG, $ERR)";
+        let out = p.rewrite(src, tpl);
+        assert!(
+            out.contains(
+                "return fmt.Errorf(\"%s: %w\", \"b\", fmt.Errorf(\"%s: %w\", \"a\", err))"
+            ),
+            "{out}"
+        );
+        assert_eq!(p.rewrite(&out, tpl), out, "idempotent");
+    }
+
+    #[test]
+    fn nested_multi_captures_and_wrap_templates_rewrite_each_original_match_once() {
+        let p = StructuralPattern::compile(&go(), "f($$$A)").unwrap();
+        let src = "package main\n\nfunc main() {\n\tf(1, f(2))\n}\n";
+        let out = p.rewrite(src, "f(g($$$A))");
+        assert!(out.contains("f(g(1, f(g(2))))"), "{out}");
+    }
+
+    #[test]
+    fn template_dollars_that_are_not_metavariables_survive() {
+        assert_eq!(
+            transformable_template("$this->x($$$ARGS, $A, \"$5\", $$)"),
+            (
+                "$this->x($ARGS, $A, \"$5\", $$)".to_string(),
+                vec!["ARGS".to_string(), "A".to_string()]
+            )
+        );
     }
 
     #[test]

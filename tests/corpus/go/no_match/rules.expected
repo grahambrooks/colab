@@ -1,0 +1,1 @@
+0 go::import "this.does.not.exist" -> "irrelevant"

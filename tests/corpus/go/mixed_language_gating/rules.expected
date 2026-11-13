@@ -1,0 +1,2 @@
+1 go::import "old/pkg" -> "new/pkg"
+1 rust::use "old_crate" -> "new_crate"

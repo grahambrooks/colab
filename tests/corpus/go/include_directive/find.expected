@@ -1,0 +1,3 @@
+main.go:5:1: [0] 	"shared.module"
+main.go:6:1: [1] 	"deprecated.module"
+main.go:7:1: [2] 	"local.module"

@@ -1,0 +1,2 @@
+1 csharp::pattern 'Assert.AreEqual($EXPECTED, $ACTUAL)' -> 'Assert.That($ACTUAL, Is.EqualTo($EXPECTED))'
+1 csharp::pattern 'Console.WriteLine($$$ARGS)' -> delete

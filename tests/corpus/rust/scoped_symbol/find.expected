@@ -1,0 +1,3 @@
+core/src/lib.rs:1:1: [0] pub struct Config {
+core/src/lib.rs:5:1: [0] impl Config {
+core/src/lib.rs:7:1: [0]         Config { verbose: false }

@@ -6,9 +6,12 @@
 //! answer two questions at once: what was valid here, and which valid
 //! name did you probably mean.
 
-/// Levenshtein edit distance between two strings.
+/// Edit distance between two strings, counting an adjacent swap as one
+/// edit (optimal string alignment): `mian` is one edit from `main`, not
+/// the two plain Levenshtein charges. A transposition is the commonest
+/// typo, so it must not be what pushes a name past the threshold.
 ///
-/// Two rolling rows rather than a full matrix — the inputs here are
+/// Three rolling rows rather than a full matrix — the inputs here are
 /// identifiers, but there is no reason to allocate `n × m` for them.
 fn edit_distance(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
@@ -20,6 +23,7 @@ fn edit_distance(a: &str, b: &str) -> usize {
         return a.len();
     }
 
+    let mut before: Vec<usize> = vec![0; b.len() + 1];
     let mut prev: Vec<usize> = (0..=b.len()).collect();
     let mut curr = vec![0usize; b.len() + 1];
 
@@ -27,8 +31,13 @@ fn edit_distance(a: &str, b: &str) -> usize {
         curr[0] = i + 1;
         for (j, &cb) in b.iter().enumerate() {
             let cost = usize::from(ca != cb);
-            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+            let mut best = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+            if i > 0 && j > 0 && ca == b[j - 1] && a[i - 1] == cb {
+                best = best.min(before[j - 1] + 1);
+            }
+            curr[j + 1] = best;
         }
+        std::mem::swap(&mut before, &mut prev);
         std::mem::swap(&mut prev, &mut curr);
     }
     prev[b.len()]
@@ -104,7 +113,10 @@ mod tests {
     #[test]
     fn distance_counts_single_edits() {
         assert_eq!(edit_distance("import", "import"), 0);
-        assert_eq!(edit_distance("improt", "import"), 2);
+        assert_eq!(edit_distance("improt", "import"), 1, "a swap is one edit");
+        assert_eq!(edit_distance("mian", "main"), 1);
+        assert_eq!(edit_distance("abc", "ca"), 3, "no edits inside a swap");
+        assert_eq!(edit_distance("kitten", "sitting"), 3);
         assert_eq!(edit_distance("", "abc"), 3);
         assert_eq!(edit_distance("abc", ""), 3);
     }

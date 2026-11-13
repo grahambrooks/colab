@@ -1,0 +1,8 @@
+config.c:5:5: [1] debug_trace("set name %s", name)
+    $ARGS = "set name %s", name
+config.c:6:5: [0] strcpy(cfg->name, name)
+    $DST = cfg->name
+    $SRC = name
+config.c:10:5: [0] strcpy(cfg->name, "default")
+    $DST = cfg->name
+    $SRC = "default"
