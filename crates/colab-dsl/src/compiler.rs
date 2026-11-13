@@ -15,11 +15,12 @@ use std::path::{Path, PathBuf};
 use lalrpop_util::ParseError;
 use lalrpop_util::lalrpop_mod;
 
-use crate::ast::{Action, Command, Item, Match};
+use crate::ast::{Action, Command, ImportClause, Item, Match};
 use crate::model::Refactoring;
 use colab_core::suggest;
 use colab_core::{
-    BackendRegistry, Error, Operation, ParseDetail, Result, RuleSpec, ScopedOperation,
+    BackendRegistry, Error, Followup, LanguageBackend, Operation, ParseDetail, Result, RuleSpec,
+    ScopedOperation, WithFollowups,
 };
 
 lalrpop_mod!(grammar, "/codemod.rs");
@@ -232,7 +233,9 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Box<dyn Operation
         namespace,
         match_string,
         scope,
+        constraints,
         action,
+        imports,
         span: _,
     } = m;
     let backend = backends.get(namespace.lang.as_str()).ok_or_else(|| {
@@ -268,13 +271,66 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Box<dyn Operation
             value,
         },
     };
-    let operation = backend.build_rule(namespace.module.as_str(), spec)?;
+    let operation = if constraints.is_empty() {
+        backend.build_rule(namespace.module.as_str(), spec)?
+    } else {
+        backend.build_rule_where(namespace.module.as_str(), spec, &constraints)?
+    };
+    let operation = with_import_clauses(operation, &imports, backend)?;
     match scope {
         // The glob is validated here, at compile time, so a typo fails
         // the script rather than silently matching nothing at runtime.
         Some(pattern) => Ok(Box::new(ScopedOperation::new(operation, &pattern)?)),
         None => Ok(operation),
     }
+}
+
+/// Wrap `operation` so its `requires import` / `drops import … when
+/// unused` clauses run after it, on the files it changed.
+fn with_import_clauses(
+    operation: Box<dyn Operation>,
+    imports: &[ImportClause],
+    backend: &dyn LanguageBackend,
+) -> Result<Box<dyn Operation>> {
+    if imports.is_empty() {
+        return Ok(operation);
+    }
+    // Drops run before requires, whatever order they are written in: a
+    // file whose only import is being replaced then gets a plain
+    // `import "fmt"`, not a group the deletion left with one entry.
+    let drops = imports
+        .iter()
+        .filter(|c| matches!(c, ImportClause::DropsUnused(_)));
+    let requires = imports
+        .iter()
+        .filter(|c| matches!(c, ImportClause::Requires(_)));
+    let followups = drops
+        .chain(requires)
+        .map(|clause| {
+            let op = match clause {
+                ImportClause::Requires(target) => {
+                    let module = backend.import_module().ok_or_else(|| {
+                        Error::UnsupportedOperation(format!(
+                            "`{}` has no import module, so `{clause}` cannot be used",
+                            backend.lang()
+                        ))
+                    })?;
+                    backend.build_rule(
+                        module,
+                        RuleSpec::Ensure {
+                            target: target.clone(),
+                        },
+                    )?
+                }
+                ImportClause::DropsUnused(target) => backend.drop_unused_import(target)?,
+            };
+            Ok(Followup {
+                label: clause.to_string(),
+                op,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Box::new(WithFollowups::new(operation, followups)))
 }
 
 /// Convenience: count the number of match clauses in `command`,
@@ -418,7 +474,9 @@ mod tests {
                 },
                 match_string: "a.b.c".to_string(),
                 scope: None,
+                constraints: Vec::new(),
                 action: Action::Replace("d.e.f".to_string()),
+                imports: Vec::new(),
                 span: crate::ast::Span { start: 1, end: 46 },
             }
         );
@@ -640,5 +698,102 @@ import (
         assert_eq!(second, "match klingon::x \"a\" { delete }");
         assert_eq!(checks[2].namespace, "go::pattern");
         assert_eq!(checks[2].action, "delete");
+    }
+
+    // ---------- where / import clauses (M26) ------------------------------
+
+    fn one_match(rule: &str) -> Match {
+        let command = parse(&format!("refactor \"t\" {{ {rule} }}")).unwrap();
+        match command.items.into_iter().next() {
+            Some(Item::Match(m)) => m,
+            other => panic!("expected a match, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_every_constraint_form() {
+        let m = one_match(
+            r#"match go::pattern 'f($A, $$$R)' where $A matches /^"a\/b/, $A is identifier, not $A matches "x", $$$R count 1..3, $$$R count 2.., $$$R count ..4, $$$R count 0, inside 'func $F() { $$$ }', not has 'g()' { delete }"#,
+        );
+        let shown: Vec<String> = m.constraints.iter().map(|c| c.to_string()).collect();
+        assert_eq!(
+            shown,
+            [
+                r#"$A matches /^"a\/b/"#,
+                "$A is identifier",
+                "not $A matches /x/",
+                "$$$R count 1..3",
+                "$$$R count 2..",
+                "$$$R count 0..4",
+                "$$$R count 0",
+                "inside 'func $F() { $$$ }'",
+                "not has 'g()'",
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_import_clauses_after_the_action() {
+        let m = one_match(
+            r#"match go::pattern 'f($A)' { replace 'g($A)' requires import "g" drops import "f" when unused }"#,
+        );
+        assert_eq!(
+            m.imports,
+            [
+                ImportClause::Requires("g".into()),
+                ImportClause::DropsUnused("f".into())
+            ]
+        );
+        assert!(m.constraints.is_empty());
+    }
+
+    #[test]
+    fn new_keywords_still_spell_namespaces() {
+        // `import` became a keyword for `requires import`; `go::import`
+        // must still parse.
+        let m = one_match(r#"match go::import "a" { replace "b" }"#);
+        assert_eq!(m.namespace.module, "import");
+    }
+
+    #[test]
+    fn a_where_clause_reaches_the_pattern_and_its_display() {
+        let script = r#"refactor "t" { match go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ { replace 'fmt.Errorf($M, $E)' requires import "fmt" } }"#;
+        let refactoring = compile(script, &registry()).unwrap();
+        assert_eq!(
+            refactoring.rules[0].to_string(),
+            r#"go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ -> 'fmt.Errorf($M, $E)' requires import "fmt""#
+        );
+        let src = "package p\n\nfunc f() {\n\terrors.Wrap(err, \"a\")\n\terrors.Wrap(err, m)\n}\n";
+        let out = refactoring.rules[0].apply(src);
+        assert_eq!(
+            out,
+            "package p\n\nimport \"fmt\"\n\nfunc f() {\n\tfmt.Errorf(\"a\", err)\n\terrors.Wrap(err, m)\n}\n"
+        );
+    }
+
+    #[test]
+    fn where_and_import_clauses_are_rejected_where_they_cannot_apply() {
+        let err = |rule: &str| {
+            compile(&format!("refactor \"t\" {{ {rule} }}"), &registry())
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default()
+        };
+        let e = err(r#"match go::import "a" where $A is identifier { replace "b" }"#);
+        assert!(
+            e.contains("`go::import` does not take a `where` clause"),
+            "{e}"
+        );
+        let e = err(r#"match json::key "/a" where $A is identifier { set '1' }"#);
+        assert!(e.contains("does not take a `where` clause"), "{e}");
+        let e = err(r#"match go::pattern 'f($A)' where $B is identifier { delete }"#);
+        assert!(e.contains("`$B` is not a metavariable"), "{e}");
+        let e = err(r#"match json::key "/a" { set '1' requires import "x" }"#);
+        assert!(e.contains("`json` has no import module"), "{e}");
+        let e = err(r#"match python::pattern 'f($A)' { delete drops import "os" when unused }"#);
+        assert!(
+            e.contains("cannot tell whether an import is still used"),
+            "{e}"
+        );
     }
 }

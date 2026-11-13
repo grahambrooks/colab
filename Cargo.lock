@@ -577,6 +577,8 @@ name = "colab-rewrite"
 version = "2026.11.3"
 dependencies = [
  "ast-grep-core",
+ "colab-core",
+ "regex",
  "tree-sitter",
  "tree-sitter-go",
  "tree-sitter-python",

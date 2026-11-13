@@ -144,6 +144,119 @@ impl Operation for ImportDelete {
     }
 }
 
+/// `drops import "<target>" when unused`: delete the import only when no
+/// identifier in the file could still refer to it.
+#[derive(Debug)]
+pub struct ImportDropUnused {
+    pub target: String,
+}
+
+impl fmt::Display for ImportDropUnused {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "go::import \"{}\" -> delete when unused", self.target)
+    }
+}
+
+impl Operation for ImportDropUnused {
+    fn is_file_relevant(&self, path: &Path) -> bool {
+        path.extension().and_then(|s| s.to_str()) == Some("go")
+    }
+
+    fn apply(&self, source_code: &str) -> String {
+        if is_used(&self.target, source_code) {
+            source_code.to_string()
+        } else {
+            delete(&self.target, source_code)
+        }
+    }
+
+    fn prefilter(&self) -> Option<&str> {
+        Some(&self.target)
+    }
+}
+
+/// Whether the import of `target` may still be used in `source_code`.
+///
+/// It errs towards "used": a wrong "used" leaves an import for the
+/// compiler to flag, while a wrong "unused" deletes one the code needs.
+/// So a blank (`_`) or dot import is always used, and when the import has
+/// no alias, every name its package might have counts (see
+/// [`package_names`]). Any identifier with one of those names outside the
+/// import declarations, a local variable included, keeps the import.
+pub fn is_used(target: &str, source_code: &str) -> bool {
+    let Some(tree) = crate::parse(source_code) else {
+        return true;
+    };
+    let mut names: Vec<String> = Vec::new();
+    let mut imported = false;
+    for decl in import_declarations(&tree) {
+        for spec in specs_of(decl) {
+            if spec_path(spec, source_code) != Some(target) {
+                continue;
+            }
+            imported = true;
+            match spec.child_by_field_name("name") {
+                Some(alias) => {
+                    let alias = &source_code[alias.byte_range()];
+                    if alias == "_" || alias == "." {
+                        return true;
+                    }
+                    names.push(alias.to_string());
+                }
+                None => names.extend(package_names(target)),
+            }
+        }
+    }
+    if !imported {
+        // Nothing to drop; "used" makes the caller leave the file alone.
+        return true;
+    }
+    let mut used = false;
+    colab_rewrite::visit_all(&tree, |node| {
+        if used || !matches!(node.kind(), "identifier" | "package_identifier") {
+            return;
+        }
+        let in_import = std::iter::successors(node.parent(), |n| n.parent())
+            .any(|n| n.kind() == "import_declaration");
+        if !in_import && names.iter().any(|n| *n == source_code[node.byte_range()]) {
+            used = true;
+        }
+    });
+    used
+}
+
+/// The names a package imported from `path` might be declared with. Go
+/// takes the name from the package clause, not the path, so these are the
+/// usual conventions: the last segment (`errors`), the one before a
+/// major-version suffix (`.../yaml/v3` → `yaml`), and the last segment
+/// without a `.vN` suffix, `go-` prefix or `-go` suffix, with `-` as `_`.
+fn package_names(path: &str) -> Vec<String> {
+    let segments: Vec<&str> = path.split('/').collect();
+    let mut last = segments.last().copied().unwrap_or(path);
+    let is_major = |s: &str| {
+        s.strip_prefix('v')
+            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+    };
+    let mut names = vec![last.to_string()];
+    if is_major(last) && segments.len() > 1 {
+        last = segments[segments.len() - 2];
+        names.push(last.to_string());
+    }
+    let mut base = last;
+    if let Some((stem, version)) = base.rsplit_once('.')
+        && is_major(version)
+    {
+        base = stem;
+    }
+    base = base.strip_prefix("go-").unwrap_or(base);
+    base = base.strip_suffix("-go").unwrap_or(base);
+    names.push(base.to_string());
+    names.push(base.replace(['-', '.'], "_"));
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// Remove every Go import whose path equals `target`, leaving what
 /// `gofmt` would: a group loses the spec's line and any blank line that
 /// leaves dangling (after `(`, before `)`, or doubled), and a declaration
@@ -493,6 +606,45 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---------- drop when unused -----------------------------------------
+
+    const PKG_ERRORS: &str = "package p\n\nimport (\n\t\"fmt\"\n\n\t\"github.com/pkg/errors\"\n)\n\nfunc f() error {\n\treturn fmt.Errorf(\"x\")\n}\n";
+
+    #[test]
+    fn drops_an_import_nothing_uses() {
+        let op = ImportDropUnused {
+            target: "github.com/pkg/errors".into(),
+        };
+        assert_eq!(
+            op.apply(PKG_ERRORS),
+            "package p\n\nimport (\n\t\"fmt\"\n)\n\nfunc f() error {\n\treturn fmt.Errorf(\"x\")\n}\n"
+        );
+    }
+
+    #[test]
+    fn keeps_an_import_still_used_by_name_or_alias() {
+        let used = PKG_ERRORS.replace("fmt.Errorf(\"x\")", "errors.New(\"x\")");
+        assert!(is_used("github.com/pkg/errors", &used));
+        let aliased = "package p\n\nimport pe \"github.com/pkg/errors\"\n\nvar _ = pe.New\n";
+        assert!(is_used("github.com/pkg/errors", aliased));
+        // The alias is the only name: `errors` no longer refers to it.
+        let shadow = "package p\n\nimport pe \"github.com/pkg/errors\"\n\nvar errors = 1\n";
+        assert!(!is_used("github.com/pkg/errors", shadow));
+    }
+
+    #[test]
+    fn blank_and_dot_imports_are_always_used() {
+        assert!(is_used("x/y", "package p\n\nimport _ \"x/y\"\n"));
+        assert!(is_used("x/y", "package p\n\nimport . \"x/y\"\n"));
+    }
+
+    #[test]
+    fn package_names_cover_the_usual_conventions() {
+        assert_eq!(package_names("gopkg.in/yaml.v3"), ["yaml", "yaml.v3"]);
+        assert!(package_names("github.com/go-yaml/yaml/v3").contains(&"yaml".to_string()));
+        assert!(package_names("github.com/mattn/go-sqlite3").contains(&"sqlite3".to_string()));
+    }
 
     // ---------- rename ---------------------------------------------------
 

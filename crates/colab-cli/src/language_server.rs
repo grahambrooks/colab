@@ -663,17 +663,30 @@ impl Backend {
     }
 }
 
+/// Import clauses, offered alongside the actions: they follow one inside
+/// the braces.
+const IMPORT_CLAUSES: &[(&str, &str)] = &[
+    ("requires import", "requires import \"$0\""),
+    ("drops import", "drops import \"$0\" when unused"),
+];
+
 fn action_completions() -> Vec<CompletionItem> {
+    let item = |detail: &str, (name, snippet): &(&str, &str)| CompletionItem {
+        label: (*name).into(),
+        kind: Some(CompletionItemKind::KEYWORD),
+        insert_text: Some((*snippet).into()),
+        insert_text_format: Some(InsertTextFormat::SNIPPET),
+        detail: Some(detail.into()),
+        ..Default::default()
+    };
     STATIC_ACTIONS
         .iter()
-        .map(|(name, snippet)| CompletionItem {
-            label: (*name).into(),
-            kind: Some(CompletionItemKind::KEYWORD),
-            insert_text: Some((*snippet).into()),
-            insert_text_format: Some(InsertTextFormat::SNIPPET),
-            detail: Some("DSL action".into()),
-            ..Default::default()
-        })
+        .map(|a| item("DSL action", a))
+        .chain(
+            IMPORT_CLAUSES
+                .iter()
+                .map(|c| item("import clause (after the action)", c)),
+        )
         .collect()
 }
 
@@ -797,6 +810,7 @@ mod tests {
         assert!(labels.contains(&"delete"));
         assert!(labels.contains(&"ensure"));
         assert!(labels.contains(&"replace_call"));
+        assert!(labels.contains(&"requires import"));
     }
 
     #[tokio::test]

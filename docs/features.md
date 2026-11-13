@@ -88,7 +88,13 @@ one, and Go additionally has `struct_tag` and Rust `crate`.
 **`<lang>::pattern` is the escape hatch.** Its target is code with
 `$NAME` / `$$$NAME` / `$_` metavariables, matched structurally with the
 language's own grammar — see [Structural patterns](./dsl.md#structural-patterns-langpattern).
-Use it for any shape the named modules do not cover. Per-language notes:
+Use it for any shape the named modules do not cover. Every
+`<lang>::pattern` also takes a [`where` clause](./dsl.md#constraints-where)
+(`matches`, `is`, `count`, `inside`, `has`, `not`), and every source
+backend accepts [`requires import "<x>"`](./dsl.md#imports-requires-import-and-drops-import--when-unused)
+on any rule. `drops import "<x>" when unused` is Go-only: the other
+backends cannot tell whether an import is still used, so they reject the
+clause. Per-language notes:
 
 - **Go** cannot match a bare identifier (`x`): every Go wrapper declares
   a name before the pattern, which would be selected instead, so it is

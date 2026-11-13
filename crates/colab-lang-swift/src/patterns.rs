@@ -45,8 +45,12 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
 pub struct PatternOp(pub PatternRule);
 
 impl PatternOp {
-    pub fn compile(pattern: &str, action: PatternAction) -> Result<Self> {
-        PatternRule::compile(&language(), pattern, action)
+    pub fn compile(
+        pattern: &str,
+        action: PatternAction,
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Self> {
+        PatternRule::compile(&language(), pattern, action, constraints)
             .map(Self)
             .map_err(|e| Error::UnsupportedOperation(format!("swift::pattern: {e}")))
     }
@@ -91,6 +95,7 @@ mod tests {
         let op = PatternOp::compile(
             "XCTAssertEqual($A, $B)",
             PatternAction::Replace("XCTAssertTrue($A == $B)".into()),
+            &[],
         )
         .unwrap();
         let src = "func testAdd() {\n    XCTAssertEqual(add(2, 2), 4)\n}\n";
@@ -111,6 +116,7 @@ mod tests {
         let op = PatternOp::compile(
             "NSLog($$$ARGS)",
             PatternAction::Replace("logger.info($$$ARGS)".into()),
+            &[],
         )
         .unwrap();
         let src = "func run(n: Int) {\n    NSLog(\"n=%d\", n)\n}\n";
@@ -121,7 +127,7 @@ mod tests {
 
     #[test]
     fn deletes_a_standalone_statement_line() {
-        let op = PatternOp::compile("print($$$ARGS)", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("print($$$ARGS)", PatternAction::Delete, &[]).unwrap();
         let src = "func run(n: Int) {\n    print(\"n\", n)\n    use(n)\n}\n";
         let out = op.apply(src);
         assert_eq!(out, "func run(n: Int) {\n    use(n)\n}\n");
@@ -132,7 +138,7 @@ mod tests {
     fn expression_and_statement_patterns_compile() {
         let src = "func f() -> Int {\n    let y = foo.bar(1, 2)\n    return y\n}\n";
         for pattern in ["foo.bar($A, $B)", "return $X"] {
-            let op = PatternOp::compile(pattern, PatternAction::Delete).unwrap();
+            let op = PatternOp::compile(pattern, PatternAction::Delete, &[]).unwrap();
             let found = op.locate(src).unwrap();
             assert_eq!(found.len(), 1, "{pattern}");
         }
@@ -142,7 +148,7 @@ mod tests {
     fn a_bare_identifier_compiles() {
         // The selector must be the pattern's own identifier, not the first
         // identifier of whichever context it was parsed in.
-        let op = PatternOp::compile("legacy_name", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("legacy_name", PatternAction::Delete, &[]).unwrap();
         assert_eq!(op.prefilter(), Some("legacy_name"));
         let src = "func f() -> Int {\n    let y = legacy_name.bar(1, 2)\n    return y\n}\n";
         let found = op.locate(src).unwrap();
@@ -152,7 +158,7 @@ mod tests {
 
     #[test]
     fn invalid_pattern_is_an_unsupported_operation() {
-        let err = PatternOp::compile("func (", PatternAction::Delete).unwrap_err();
+        let err = PatternOp::compile("func (", PatternAction::Delete, &[]).unwrap_err();
         assert!(matches!(err, Error::UnsupportedOperation(_)), "{err}");
         assert!(err.to_string().contains("swift::pattern"), "{err}");
     }

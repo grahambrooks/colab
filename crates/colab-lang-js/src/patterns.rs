@@ -42,8 +42,12 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
 pub struct PatternOp(pub PatternRule);
 
 impl PatternOp {
-    pub fn compile(pattern: &str, action: PatternAction) -> Result<Self> {
-        PatternRule::compile(&language(), pattern, action)
+    pub fn compile(
+        pattern: &str,
+        action: PatternAction,
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Self> {
+        PatternRule::compile(&language(), pattern, action, constraints)
             .map(Self)
             .map_err(|e| Error::UnsupportedOperation(format!("js::pattern: {e}")))
     }
@@ -88,6 +92,7 @@ mod tests {
         let op = PatternOp::compile(
             "$A.indexOf($B) !== -1",
             PatternAction::Replace("$A.includes($B)".into()),
+            &[],
         )
         .unwrap();
         let src = "if (names.indexOf(name) !== -1) {\n  greet(name);\n}\n";
@@ -105,6 +110,7 @@ mod tests {
         let op = PatternOp::compile(
             "console.log($$$ARGS)",
             PatternAction::Replace("logger.info($$$ARGS)".into()),
+            &[],
         )
         .unwrap();
         let src = "function f(a, b) {\n  console.log('sum', a + b);\n}\n";
@@ -115,7 +121,7 @@ mod tests {
 
     #[test]
     fn deletes_a_standalone_statement_line() {
-        let op = PatternOp::compile("console.debug($$$ARGS)", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("console.debug($$$ARGS)", PatternAction::Delete, &[]).unwrap();
         let src = "function f(x) {\n  console.debug('x =', x);\n  return x;\n}\n";
         let out = op.apply(src);
         assert_eq!(out, "function f(x) {\n  return x;\n}\n");
@@ -126,7 +132,7 @@ mod tests {
     fn expression_and_statement_patterns_compile() {
         let src = "function f() {\n  let y = foo.bar(1, 2);\n  y = 3;\n}\n";
         for pattern in ["foo.bar($A, $B)", "$X = $Y;"] {
-            let op = PatternOp::compile(pattern, PatternAction::Delete).unwrap();
+            let op = PatternOp::compile(pattern, PatternAction::Delete, &[]).unwrap();
             let found = op.locate(src).unwrap();
             assert_eq!(found.len(), 1, "{pattern}");
         }
@@ -136,7 +142,7 @@ mod tests {
     fn a_bare_identifier_compiles() {
         // The selector must be the pattern's own identifier, not the first
         // identifier of whichever context it was parsed in.
-        let op = PatternOp::compile("legacy_name", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("legacy_name", PatternAction::Delete, &[]).unwrap();
         assert_eq!(op.prefilter(), Some("legacy_name"));
         let src = "function f() {\n  let y = legacy_name.bar(1, 2);\n  y = 3;\n}\n";
         let found = op.locate(src).unwrap();
@@ -146,7 +152,7 @@ mod tests {
 
     #[test]
     fn invalid_pattern_is_an_unsupported_operation() {
-        let err = PatternOp::compile("function (", PatternAction::Delete).unwrap_err();
+        let err = PatternOp::compile("function (", PatternAction::Delete, &[]).unwrap_err();
         assert!(matches!(err, Error::UnsupportedOperation(_)), "{err}");
         assert!(err.to_string().contains("js::pattern"), "{err}");
     }

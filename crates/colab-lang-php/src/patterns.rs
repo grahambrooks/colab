@@ -49,8 +49,12 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
 pub struct PatternOp(pub PatternRule);
 
 impl PatternOp {
-    pub fn compile(pattern: &str, action: PatternAction) -> Result<Self> {
-        PatternRule::compile(&language(), pattern, action)
+    pub fn compile(
+        pattern: &str,
+        action: PatternAction,
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Self> {
+        PatternRule::compile(&language(), pattern, action, constraints)
             .map(Self)
             .map_err(|e| Error::UnsupportedOperation(format!("php::pattern: {e}")))
     }
@@ -95,6 +99,7 @@ mod tests {
         let op = PatternOp::compile(
             "$this->assertEquals($A, $B)",
             PatternAction::Replace("$this->assertSame($A, $B)".into()),
+            &[],
         )
         .unwrap();
         let src = "<?php\nclass T extends TestCase {\n    public function testAdd() {\n        $this->assertEquals(4, add(2, 2));\n    }\n}\n";
@@ -115,6 +120,7 @@ mod tests {
         let op = PatternOp::compile(
             "var_dump($$$ARGS)",
             PatternAction::Replace("dump($$$ARGS)".into()),
+            &[],
         )
         .unwrap();
         let src = "<?php\nvar_dump($user, $order);\n";
@@ -125,7 +131,7 @@ mod tests {
 
     #[test]
     fn deletes_a_standalone_statement_line() {
-        let op = PatternOp::compile("var_dump($X)", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("var_dump($X)", PatternAction::Delete, &[]).unwrap();
         let src = "<?php\nfunction f($x) {\n    var_dump($x);\n    return $x;\n}\n";
         let out = op.apply(src);
         assert_eq!(out, "<?php\nfunction f($x) {\n    return $x;\n}\n");
@@ -136,7 +142,7 @@ mod tests {
     fn expression_and_statement_patterns_compile() {
         let src = "<?php\nfunction f() {\n    $z = $foo->bar(1, 2);\n    $y = 3;\n}\n";
         for pattern in ["$foo->bar($A, $B)", "$y = $X;"] {
-            let op = PatternOp::compile(pattern, PatternAction::Delete).unwrap();
+            let op = PatternOp::compile(pattern, PatternAction::Delete, &[]).unwrap();
             let found = op.locate(src).unwrap();
             assert_eq!(found.len(), 1, "{pattern}");
         }
@@ -146,7 +152,7 @@ mod tests {
     fn a_bare_identifier_compiles() {
         // The selector must be the pattern's own identifier, not the first
         // identifier of whichever context it was parsed in.
-        let op = PatternOp::compile("legacy_name", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("legacy_name", PatternAction::Delete, &[]).unwrap();
         assert_eq!(op.prefilter(), Some("legacy_name"));
         let src = "<?php\nfunction f() {\n    $z = $legacy_name->bar(1, 2);\n    $y = 3;\n}\n";
         let found = op.locate(src).unwrap();
@@ -156,14 +162,14 @@ mod tests {
 
     #[test]
     fn invalid_pattern_is_an_unsupported_operation() {
-        let err = PatternOp::compile("function (", PatternAction::Delete).unwrap_err();
+        let err = PatternOp::compile("function (", PatternAction::Delete, &[]).unwrap_err();
         assert!(matches!(err, Error::UnsupportedOperation(_)), "{err}");
         assert!(err.to_string().contains("php::pattern"), "{err}");
     }
 
     #[test]
     fn matches_code_after_inline_html() {
-        let op = PatternOp::compile("var_dump($$$ARGS)", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("var_dump($$$ARGS)", PatternAction::Delete, &[]).unwrap();
         let src =
             "<ul>\n<?php\nvar_dump($items);\nforeach ($items as $i) { echo $i; }\n?>\n</ul>\n";
         assert_eq!(

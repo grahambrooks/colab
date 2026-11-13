@@ -51,8 +51,12 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
 pub struct PatternOp(pub PatternRule);
 
 impl PatternOp {
-    pub fn compile(pattern: &str, action: PatternAction) -> Result<Self> {
-        PatternRule::compile(&language(), pattern, action)
+    pub fn compile(
+        pattern: &str,
+        action: PatternAction,
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Self> {
+        PatternRule::compile(&language(), pattern, action, constraints)
             .map(Self)
             .map_err(|e| Error::UnsupportedOperation(format!("csharp::pattern: {e}")))
     }
@@ -97,6 +101,7 @@ mod tests {
         let op = PatternOp::compile(
             "Assert.AreEqual($A, $B)",
             PatternAction::Replace("Assert.That($B, Is.EqualTo($A))".into()),
+            &[],
         )
         .unwrap();
         let src =
@@ -118,6 +123,7 @@ mod tests {
         let op = PatternOp::compile(
             "Console.WriteLine($$$ARGS)",
             PatternAction::Replace("logger.LogInformation($$$ARGS)".into()),
+            &[],
         )
         .unwrap();
         let src = "class P {\n    void Run(int n) {\n        Console.WriteLine(\"n={0}\", n);\n    }\n}\n";
@@ -131,7 +137,7 @@ mod tests {
 
     #[test]
     fn deletes_a_standalone_statement_line() {
-        let op = PatternOp::compile("Debug.WriteLine($X)", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("Debug.WriteLine($X)", PatternAction::Delete, &[]).unwrap();
         let src = "class P {\n    void Run(int n) {\n        Debug.WriteLine(n);\n        Use(n);\n    }\n}\n";
         let out = op.apply(src);
         assert_eq!(
@@ -146,7 +152,7 @@ mod tests {
         let src =
             "class C {\n    void M() {\n        var y = foo.Bar(1, 2);\n        y = 3;\n    }\n}\n";
         for pattern in ["foo.Bar($A, $B)", "$X = $Y;"] {
-            let op = PatternOp::compile(pattern, PatternAction::Delete).unwrap();
+            let op = PatternOp::compile(pattern, PatternAction::Delete, &[]).unwrap();
             let found = op.locate(src).unwrap();
             assert_eq!(found.len(), 1, "{pattern}");
         }
@@ -156,7 +162,7 @@ mod tests {
     fn a_bare_identifier_compiles() {
         // The selector must be the pattern's own identifier, not the first
         // identifier of whichever context it was parsed in.
-        let op = PatternOp::compile("legacy_name", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("legacy_name", PatternAction::Delete, &[]).unwrap();
         assert_eq!(op.prefilter(), Some("legacy_name"));
         let src = "class C {\n    void M() {\n        var y = legacy_name.Bar(1, 2);\n        y = 3;\n    }\n}\n";
         let found = op.locate(src).unwrap();
@@ -166,7 +172,7 @@ mod tests {
 
     #[test]
     fn invalid_pattern_is_an_unsupported_operation() {
-        let err = PatternOp::compile("class (", PatternAction::Delete).unwrap_err();
+        let err = PatternOp::compile("class (", PatternAction::Delete, &[]).unwrap_err();
         assert!(matches!(err, Error::UnsupportedOperation(_)), "{err}");
         assert!(err.to_string().contains("csharp::pattern"), "{err}");
     }

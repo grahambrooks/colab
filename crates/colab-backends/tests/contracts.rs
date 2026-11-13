@@ -210,3 +210,74 @@ fn no_backend_claims_a_path_it_cannot_parse() {
         );
     }
 }
+
+// ---------- M26: `where` constraints and import clauses -------------------
+
+fn unbound_constraint() -> Vec<colab_core::Constraint> {
+    vec![colab_core::Constraint {
+        negated: false,
+        test: colab_core::Test::Matches {
+            var: colab_core::Var::parse("$ZZ").expect("valid metavariable"),
+            regex: "x".into(),
+        },
+    }]
+}
+
+#[test]
+fn only_pattern_modules_take_a_where_clause() {
+    let registry = colab_backends::registry();
+    for lang in registry.languages() {
+        let backend = registry.get(lang).unwrap();
+        for cap in backend.capabilities() {
+            let spec = RuleSpec::Delete {
+                target: "$A".into(),
+            };
+            let err = backend
+                .build_rule_where(cap.module, spec, &unbound_constraint())
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default();
+            let rejected_as_unsupported = err.contains("does not take a `where` clause");
+            if cap.module == "pattern" {
+                // Reaching the constraint check (or the pattern compiler)
+                // means the backend forwards constraints to the engine.
+                assert!(
+                    !rejected_as_unsupported && !err.is_empty(),
+                    "`{lang}::pattern` must compile `where` constraints through \
+                     colab_rewrite::pattern::build_rule_where; got: {err:?}"
+                );
+            } else {
+                assert!(
+                    rejected_as_unsupported,
+                    "`{lang}::{}` should reject `where`; got: {err:?}",
+                    cap.module
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_import_module_supports_ensure() {
+    let registry = colab_backends::registry();
+    for lang in registry.languages() {
+        let backend = registry.get(lang).unwrap();
+        let has_pattern = backend.capabilities().iter().any(|c| c.module == "pattern");
+        let Some(module) = backend.import_module() else {
+            assert!(
+                !has_pattern,
+                "`{lang}` has `pattern` but no import_module, so `requires import` fails"
+            );
+            continue;
+        };
+        let cap = backend
+            .capabilities()
+            .iter()
+            .find(|c| c.module == module)
+            .unwrap_or_else(|| panic!("`{lang}`'s import_module `{module}` is not a module"));
+        assert!(
+            cap.actions.iter().any(|a| a.name == "ensure"),
+            "`{lang}::{module}` must support `ensure` for `requires import`"
+        );
+    }
+}

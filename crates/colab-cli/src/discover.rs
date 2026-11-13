@@ -99,14 +99,23 @@ fn explain_command(cmd: &ast::Command) -> Value {
                     ast::Action::Set(v) => ("set", Some(v)),
                     ast::Action::Insert(v) => ("insert", Some(v)),
                 };
-                json!({
+                let mut out = json!({
                     "kind": "match",
                     "namespace": format!("{}::{}", m.namespace.lang, m.namespace.module),
                     "match": m.match_string,
                     "scope": m.scope,
                     "action": action,
                     "value": value,
-                })
+                });
+                // Present only when written, so scripts without them keep
+                // the shape they always had.
+                if !m.constraints.is_empty() {
+                    out["where"] = m.constraints.iter().map(|c| c.to_string()).collect();
+                }
+                if !m.imports.is_empty() {
+                    out["imports"] = m.imports.iter().map(|c| c.to_string()).collect();
+                }
+                out
             }
             ast::Item::Include(path) => json!({
                 "kind": "include",

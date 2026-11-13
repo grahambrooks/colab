@@ -1,0 +1,1 @@
+2 go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/, not inside 'func $F(t *testing.T) { $$$ }' -> 'fmt.Errorf($M+": %w", $E)' drops import "github.com/pkg/errors" when unused requires import "fmt"

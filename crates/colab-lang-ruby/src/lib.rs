@@ -116,6 +116,21 @@ impl LanguageBackend for RubyBackend {
         "ruby"
     }
 
+    fn import_module(&self) -> Option<&'static str> {
+        Some("require")
+    }
+
+    fn build_rule_where(
+        &self,
+        module: &str,
+        spec: RuleSpec,
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Box<dyn Operation>> {
+        colab_rewrite::pattern::build_rule_where(self, module, spec, constraints, |p, a, c| {
+            Ok(Box::new(patterns::PatternOp::compile(p, a, c)?))
+        })
+    }
+
     fn description(&self) -> &'static str {
         "Ruby source rewrites via tree-sitter-ruby."
     }
@@ -171,10 +186,12 @@ impl LanguageBackend for RubyBackend {
             ) => Ok(Box::new(patterns::PatternOp::compile(
                 &target,
                 colab_rewrite::pattern::PatternAction::Replace(replacement),
+                &[],
             )?)),
             ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
                 &target,
                 colab_rewrite::pattern::PatternAction::Delete,
+                &[],
             )?)),
             (other, spec) => Err(self.unsupported(other, &spec)),
         }

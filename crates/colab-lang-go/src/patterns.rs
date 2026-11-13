@@ -45,8 +45,12 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
 pub struct PatternOp(pub PatternRule);
 
 impl PatternOp {
-    pub fn compile(pattern: &str, action: PatternAction) -> Result<Self> {
-        PatternRule::compile(&language(), pattern, action)
+    pub fn compile(
+        pattern: &str,
+        action: PatternAction,
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Self> {
+        PatternRule::compile(&language(), pattern, action, constraints)
             .map(Self)
             .map_err(|e| Error::UnsupportedOperation(format!("go::pattern: {e}")))
     }
@@ -91,6 +95,7 @@ mod tests {
         let op = PatternOp::compile(
             "errors.Wrap($ERR, $MSG)",
             PatternAction::Replace("fmt.Errorf(\"%s: %w\", $MSG, $ERR)".into()),
+            &[],
         )
         .unwrap();
         let src = "package main\n\nfunc f() error {\n\treturn errors.Wrap(err, \"read\")\n}\n";
@@ -108,14 +113,14 @@ mod tests {
 
     #[test]
     fn top_level_declaration_pattern_compiles() {
-        let op = PatternOp::compile("var $NAME = $VALUE", PatternAction::Delete).unwrap();
+        let op = PatternOp::compile("var $NAME = $VALUE", PatternAction::Delete, &[]).unwrap();
         let out = op.apply("package p\n\nvar debug = true\n\nfunc main() {}\n");
         assert_eq!(out, "package p\n\n\nfunc main() {}\n");
     }
 
     #[test]
     fn invalid_pattern_is_an_unsupported_operation() {
-        let err = PatternOp::compile("func (", PatternAction::Delete).unwrap_err();
+        let err = PatternOp::compile("func (", PatternAction::Delete, &[]).unwrap_err();
         assert!(matches!(err, Error::UnsupportedOperation(_)), "{err}");
         assert!(err.to_string().contains("go::pattern"), "{err}");
     }

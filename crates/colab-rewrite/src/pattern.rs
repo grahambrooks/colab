@@ -26,6 +26,7 @@ use ast_grep_core::meta_var::MetaVariable;
 use ast_grep_core::replacer::TemplateFix;
 use ast_grep_core::tree_sitter::{LanguageExt, StrDoc, TSLanguage};
 use ast_grep_core::{NodeMatch, Pattern, PatternError};
+use colab_core::{Constraint, LanguageBackend, Operation, RuleSpec, Test, Var};
 use tree_sitter::{Node, Parser};
 
 use crate::{Edit, apply_edits, line_span};
@@ -98,7 +99,10 @@ fn expand(query: &str, expando: char) -> String {
         if chars[i] == '$' {
             // `$$$NAME`, `$NAME`, `$_`: a run of `$` followed by a name start.
             let run = chars[i..].iter().take_while(|&&c| c == '$').count();
-            if run <= 3 && chars.get(i + run).is_some_and(|&c| is_var_start(c)) {
+            // A bare `$$$` is an anonymous sequence: ast-grep reads
+            // `µµµ` as one, and it is an identifier where `$$$` is not.
+            let named = chars.get(i + run).is_some_and(|&c| is_var_start(c));
+            if (run <= 3 && named) || (run == 3 && !named) {
                 out.extend(std::iter::repeat_n(expando, run));
                 i += run;
                 continue;
@@ -138,6 +142,10 @@ pub struct StructuralPattern {
     context: Option<String>,
     /// The pattern's syntax tree as matched (see [`syntax_tree`]).
     tree: String,
+    /// `where` constraints every match must satisfy.
+    checks: Vec<Check>,
+    /// The constraints as written, for display.
+    constraints: Vec<Constraint>,
 }
 
 impl std::fmt::Debug for StructuralPattern {
@@ -145,6 +153,7 @@ impl std::fmt::Debug for StructuralPattern {
         f.debug_struct("StructuralPattern")
             .field("text", &self.text)
             .field("prefilter", &self.prefilter)
+            .field("constraints", &self.constraints)
             .finish()
     }
 }
@@ -256,7 +265,44 @@ impl StructuralPattern {
             prefilter,
             context,
             tree,
+            checks: Vec::new(),
+            constraints: Vec::new(),
         }
+    }
+
+    /// Narrow the pattern with `where` constraints, compiled for
+    /// `language`. Every metavariable a constraint names must be bound by
+    /// the pattern, with the same sigil; every node kind must exist in
+    /// the grammar; every regex and nested pattern must compile.
+    pub fn constrain(
+        mut self,
+        language: &PatternLanguage,
+        constraints: &[Constraint],
+    ) -> Result<Self, String> {
+        let bound = metavariables(&self.text);
+        self.checks = constraints
+            .iter()
+            .map(|c| Check::compile(language, &bound, c))
+            .collect::<Result<_, _>>()?;
+        self.constraints = constraints.to_vec();
+        Ok(self)
+    }
+
+    /// The `where` constraints, as written.
+    pub fn constraints(&self) -> &[Constraint] {
+        &self.constraints
+    }
+
+    /// Every match in the tree that satisfies the constraints.
+    fn matches<'t>(
+        &self,
+        grep: &'t ast_grep_core::AstGrep<StrDoc<TsLang>>,
+        source: &str,
+    ) -> Vec<NodeMatch<'t, StrDoc<TsLang>>> {
+        grep.root()
+            .find_all(&self.pattern)
+            .filter(|m| self.checks.iter().all(|c| c.holds(m, source)))
+            .collect()
     }
 
     /// The context wrapper the pattern needed, or `None` if it parsed on
@@ -288,8 +334,8 @@ impl StructuralPattern {
     /// matches nested inside it.
     pub fn find(&self, source: &str) -> Vec<Found> {
         let grep = self.lang.ast_grep(source);
-        grep.root()
-            .find_all(&self.pattern)
+        self.matches(&grep, source)
+            .into_iter()
             .map(|m| {
                 let range = m.range();
                 let (line, column) = line_column(source, range.start);
@@ -340,8 +386,7 @@ impl StructuralPattern {
     /// wrap-style template (`f($A)` → `f(g($A))`) cannot run away.
     pub fn rewrite(&self, source: &str, template: &str) -> String {
         let grep = self.lang.ast_grep(source);
-        let matches: Vec<NodeMatch<'_, StrDoc<TsLang>>> =
-            grep.root().find_all(&self.pattern).collect();
+        let matches = self.matches(&grep, source);
         if matches.is_empty() {
             return source.to_string();
         }
@@ -540,6 +585,233 @@ fn transformable_template(template: &str) -> (String, Vec<String>) {
     (out, names)
 }
 
+/// The metavariables `pattern` binds, in order of first use. `$_` and a
+/// bare `$$$` bind nothing.
+fn metavariables(pattern: &str) -> Vec<Var> {
+    let mut out: Vec<Var> = Vec::new();
+    let mut rest = pattern;
+    while let Some(i) = rest.find('$') {
+        let tail = &rest[i..];
+        let run = tail.chars().take_while(|&c| c == '$').count();
+        let after = &tail[run..];
+        let len = after
+            .find(|c: char| !(c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()))
+            .unwrap_or(after.len());
+        let name = &after[..len];
+        if matches!(run, 1 | 3)
+            && name != "_"
+            && after.starts_with(is_var_start)
+            && !out.iter().any(|v| v.name == name)
+        {
+            out.push(Var {
+                name: name.to_string(),
+                multi: run == 3,
+            });
+        }
+        rest = &after[len..];
+    }
+    out
+}
+
+/// One compiled `where` constraint.
+struct Check {
+    negated: bool,
+    kind: CheckKind,
+}
+
+enum CheckKind {
+    Matches {
+        var: Var,
+        regex: regex::Regex,
+    },
+    Is {
+        name: String,
+        kind: String,
+    },
+    Count {
+        name: String,
+        min: usize,
+        max: Option<usize>,
+    },
+    Inside(Pattern),
+    Has(Pattern),
+}
+
+impl Check {
+    fn compile(
+        language: &PatternLanguage,
+        bound: &[Var],
+        constraint: &Constraint,
+    ) -> Result<Self, String> {
+        let kind = match &constraint.test {
+            Test::Matches { var, regex } => {
+                require_bound(bound, var)?;
+                // `/` ends the DSL's regex literal, so it is written `\/`.
+                let regex = regex::Regex::new(&regex.replace(r"\/", "/"))
+                    .map_err(|e| format!("`{var} matches /{regex}/`: {e}"))?;
+                CheckKind::Matches {
+                    var: var.clone(),
+                    regex,
+                }
+            }
+            Test::Is { var, kind } => {
+                require_bound(bound, var)?;
+                if var.multi {
+                    return Err(format!(
+                        "`{var} is {kind}`: `is` checks one node; bind it as `${}`",
+                        var.name
+                    ));
+                }
+                if language.grammar.id_for_node_kind(kind, true) == 0 {
+                    let kinds = named_kinds(&language.grammar);
+                    let hint = colab_core::suggest::closest(kind, kinds.iter().copied())
+                        .map(|k| format!(" (did you mean `{k}`?)"))
+                        .unwrap_or_default();
+                    return Err(format!(
+                        "`{var} is {kind}`: the grammar has no node kind `{kind}`{hint}; `colab ast` shows the kinds in a snippet"
+                    ));
+                }
+                CheckKind::Is {
+                    name: var.name.clone(),
+                    kind: kind.clone(),
+                }
+            }
+            Test::Count { var, min, max } => {
+                require_bound(bound, var)?;
+                if !var.multi {
+                    return Err(format!(
+                        "`{var} count`: `count` measures a sequence; bind it as `$$${}`",
+                        var.name
+                    ));
+                }
+                if max.is_some_and(|max| max < *min) {
+                    return Err(format!("`{constraint}`: the range is empty"));
+                }
+                CheckKind::Count {
+                    name: var.name.clone(),
+                    min: *min,
+                    max: *max,
+                }
+            }
+            Test::Inside(text) => CheckKind::Inside(nested(language, "inside", text)?),
+            Test::Has(text) => CheckKind::Has(nested(language, "has", text)?),
+        };
+        Ok(Self {
+            negated: constraint.negated,
+            kind,
+        })
+    }
+
+    /// Whether match `m` in `source` satisfies this constraint.
+    fn holds(&self, m: &NodeMatch<'_, StrDoc<TsLang>>, source: &str) -> bool {
+        let env = m.get_env();
+        let result = match &self.kind {
+            CheckKind::Matches { var, regex } => {
+                let text = if var.multi {
+                    let nodes = env.get_multiple_matches(&var.name);
+                    match (nodes.first(), nodes.last()) {
+                        (Some(first), Some(last)) => {
+                            source[first.range().start..last.range().end].to_string()
+                        }
+                        _ => String::new(),
+                    }
+                } else {
+                    env.get_match(&var.name)
+                        .map(|n| n.text().into_owned())
+                        .unwrap_or_default()
+                };
+                regex.is_match(&text)
+            }
+            CheckKind::Is { name, kind } => env.get_match(name).is_some_and(|n| n.kind() == *kind),
+            CheckKind::Count { name, min, max } => {
+                // Separators (`,`) are unnamed nodes in the sequence; count
+                // what a reader would count.
+                let n = env
+                    .get_multiple_matches(name)
+                    .iter()
+                    .filter(|n| n.is_named())
+                    .count();
+                n >= *min && max.is_none_or(|max| n <= max)
+            }
+            CheckKind::Inside(pattern) => m.get_node().inside(pattern),
+            CheckKind::Has(pattern) => m.get_node().has(pattern),
+        };
+        result != self.negated
+    }
+}
+
+fn require_bound(bound: &[Var], var: &Var) -> Result<(), String> {
+    match bound.iter().find(|b| b.name == var.name) {
+        Some(b) if b.multi == var.multi => Ok(()),
+        Some(b) => Err(format!(
+            "`{var}` is written `{b}` in the pattern; use the same sigil"
+        )),
+        None if bound.is_empty() => Err(format!(
+            "`{var}` is not a metavariable of the pattern, which binds none"
+        )),
+        None => {
+            let names: Vec<String> = bound.iter().map(ToString::to_string).collect();
+            Err(format!(
+                "`{var}` is not a metavariable of the pattern; it binds {}",
+                names.join(", ")
+            ))
+        }
+    }
+}
+
+/// An `inside` / `has` pattern, compiled in the same language. Its
+/// metavariables are its own: they are not unified with the outer
+/// pattern's.
+fn nested(language: &PatternLanguage, keyword: &str, text: &str) -> Result<Pattern, String> {
+    StructuralPattern::compile(language, text)
+        .map(|p| p.pattern)
+        .map_err(|e| format!("`{keyword} '{text}'`: {e}"))
+}
+
+/// Every visible named node kind the grammar defines.
+fn named_kinds(grammar: &tree_sitter::Language) -> Vec<&str> {
+    let mut kinds: Vec<&str> = (0..grammar.node_kind_count() as u16)
+        .filter(|&id| grammar.node_kind_is_named(id) && grammar.node_kind_is_visible(id))
+        .filter_map(|id| grammar.node_kind_for_id(id))
+        .collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    kinds
+}
+
+/// The body of every source backend's
+/// [`LanguageBackend::build_rule_where`]: a block without constraints is
+/// an ordinary [`LanguageBackend::build_rule`]; constraints are accepted
+/// only on `pattern`, with `replace` or `delete`, and are compiled by
+/// `compile` (the backend's own `PatternOp::compile`).
+pub fn build_rule_where<B, F>(
+    backend: &B,
+    module: &str,
+    spec: RuleSpec,
+    constraints: &[Constraint],
+    compile: F,
+) -> colab_core::Result<Box<dyn Operation>>
+where
+    B: LanguageBackend + ?Sized,
+    F: FnOnce(&str, PatternAction, &[Constraint]) -> colab_core::Result<Box<dyn Operation>>,
+{
+    if constraints.is_empty() {
+        return backend.build_rule(module, spec);
+    }
+    if module != "pattern" {
+        return Err(colab_core::backend::where_unsupported(
+            backend.lang(),
+            module,
+        ));
+    }
+    let action = match &spec {
+        RuleSpec::Replace { replacement, .. } => PatternAction::Replace(replacement.clone()),
+        RuleSpec::Delete { .. } => PatternAction::Delete,
+        _ => return Err(backend.unsupported(module, &spec)),
+    };
+    compile(spec.target(), action, constraints)
+}
+
 /// What a `<lang>::pattern` rule does with each match.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PatternAction {
@@ -560,13 +832,16 @@ pub struct PatternRule {
 }
 
 impl PatternRule {
+    /// Compile `text` with its `where` constraints (`&[]` for none).
     pub fn compile(
         language: &PatternLanguage,
         text: &str,
         action: PatternAction,
+        constraints: &[Constraint],
     ) -> Result<Self, String> {
         Ok(Self {
-            pattern: StructuralPattern::compile(language, text)?,
+            pattern: StructuralPattern::compile(language, text)?
+                .constrain(language, constraints)?,
             action,
         })
     }
@@ -604,7 +879,12 @@ impl std::fmt::Display for PatternRule {
     /// `pattern 'errors.Wrap($E, $M)' -> 'fmt.Errorf(...)'`, without the
     /// language prefix, which the backend adds.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "pattern '{}'", self.pattern.text())?;
+        write!(
+            f,
+            "pattern '{}'{}",
+            self.pattern.text(),
+            colab_core::constraint::display_where(self.pattern.constraints())
+        )?;
         match &self.action {
             PatternAction::Replace(template) => write!(f, " -> '{template}'"),
             PatternAction::Delete => write!(f, " -> delete"),
@@ -879,6 +1159,160 @@ mod tests {
 
     const GO_SRC: &str = "package main\n\nfunc main() {\n\tif err := f(); err != nil {\n\t\treturn errors.Wrap(err, \"f failed\")\n\t}\n\tlog.Println(\"a\", 1)\n}\n";
 
+    // ---------- where constraints ----------------------------------------
+
+    fn var(text: &str) -> Var {
+        Var::parse(text).unwrap()
+    }
+
+    fn c(negated: bool, test: Test) -> Constraint {
+        Constraint { negated, test }
+    }
+
+    fn constrained(pattern: &str, constraints: &[Constraint]) -> Result<StructuralPattern, String> {
+        StructuralPattern::compile(&go(), pattern)?.constrain(&go(), constraints)
+    }
+
+    const WRAPS: &str = "package p\n\nfunc a() {\n\terrors.Wrap(err, \"lit\")\n\terrors.Wrap(err, msg)\n\tlog.Println()\n\tlog.Println(1, 2, 3)\n}\n\nfunc TestA(t *testing.T) {\n\terrors.Wrap(err, \"in test\")\n}\n";
+
+    fn lines(p: &StructuralPattern) -> Vec<usize> {
+        p.find(WRAPS).iter().map(|f| f.line).collect()
+    }
+
+    #[test]
+    fn matches_filters_on_a_bindings_text() {
+        let lit = c(
+            false,
+            Test::Matches {
+                var: var("$M"),
+                regex: "^\"".into(),
+            },
+        );
+        let p = constrained("errors.Wrap($E, $M)", std::slice::from_ref(&lit)).unwrap();
+        assert_eq!(lines(&p), [4, 11]);
+        let not_lit = Constraint {
+            negated: true,
+            ..lit
+        };
+        let p = constrained("errors.Wrap($E, $M)", &[not_lit]).unwrap();
+        assert_eq!(lines(&p), [5]);
+    }
+
+    #[test]
+    fn is_filters_on_the_bound_node_kind() {
+        let p = constrained(
+            "errors.Wrap($E, $M)",
+            &[c(
+                false,
+                Test::Is {
+                    var: var("$M"),
+                    kind: "identifier".into(),
+                },
+            )],
+        )
+        .unwrap();
+        assert_eq!(lines(&p), [5]);
+    }
+
+    #[test]
+    fn count_counts_named_nodes_in_a_sequence() {
+        let count = |min, max| {
+            constrained(
+                "log.Println($$$A)",
+                &[c(
+                    false,
+                    Test::Count {
+                        var: var("$$$A"),
+                        min,
+                        max,
+                    },
+                )],
+            )
+            .unwrap()
+        };
+        assert_eq!(lines(&count(0, Some(0))), [6]);
+        assert_eq!(lines(&count(3, Some(3))), [7]);
+        assert_eq!(lines(&count(1, None)), [7]);
+    }
+
+    #[test]
+    fn inside_and_has_test_ancestors_and_descendants() {
+        let in_test = Test::Inside("func $F(t *testing.T) { $$$ }".into());
+        let p = constrained("errors.Wrap($E, $M)", &[c(false, in_test.clone())]).unwrap();
+        assert_eq!(lines(&p), [11]);
+        let p = constrained("errors.Wrap($E, $M)", &[c(true, in_test)]).unwrap();
+        assert_eq!(lines(&p), [4, 5]);
+        let has = Test::Has("log.Println($$$)".into());
+        let p = constrained("func $F() { $$$B }", &[c(false, has)]).unwrap();
+        assert_eq!(lines(&p), [3]);
+    }
+
+    #[test]
+    fn constraints_apply_to_rewrites_too() {
+        let p = constrained(
+            "errors.Wrap($E, $M)",
+            &[c(
+                true,
+                Test::Inside("func $F(t *testing.T) { $$$ }".into()),
+            )],
+        )
+        .unwrap();
+        let out = p.rewrite(WRAPS, "fmt.Errorf($M, $E)");
+        assert!(out.contains("errors.Wrap(err, \"in test\")"), "{out}");
+        assert_eq!(out.matches("fmt.Errorf").count(), 2, "{out}");
+    }
+
+    #[test]
+    fn a_constraint_must_name_a_bound_metavariable_with_its_sigil() {
+        let matches = |name: &str| {
+            c(
+                false,
+                Test::Matches {
+                    var: var(name),
+                    regex: "x".into(),
+                },
+            )
+        };
+        let err = constrained("errors.Wrap($E, $M)", &[matches("$X")]).unwrap_err();
+        assert!(err.contains("it binds $E, $M"), "{err}");
+        let err = constrained("errors.Wrap($E, $M)", &[matches("$$$M")]).unwrap_err();
+        assert!(err.contains("written `$M`"), "{err}");
+        let count = c(
+            false,
+            Test::Count {
+                var: var("$M"),
+                min: 1,
+                max: None,
+            },
+        );
+        let err = constrained("errors.Wrap($E, $M)", &[count]).unwrap_err();
+        assert!(err.contains("bind it as `$$$M`"), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_kind_or_bad_regex_fails_at_compile_time() {
+        let is = c(
+            false,
+            Test::Is {
+                var: var("$M"),
+                kind: "identifer".into(),
+            },
+        );
+        let err = constrained("errors.Wrap($E, $M)", &[is]).unwrap_err();
+        assert!(err.contains("did you mean `identifier`"), "{err}");
+        let bad = c(
+            false,
+            Test::Matches {
+                var: var("$M"),
+                regex: "(".into(),
+            },
+        );
+        assert!(constrained("errors.Wrap($E, $M)", &[bad]).is_err());
+        let nested = c(false, Test::Inside("func (".into()));
+        let err = constrained("errors.Wrap($E, $M)", &[nested]).unwrap_err();
+        assert!(err.starts_with("`inside 'func ('`"), "{err}");
+    }
+
     #[test]
     fn a_multi_line_template_leaves_no_trailing_whitespace() {
         // ast-grep re-indents a template's later lines to the match's
@@ -892,6 +1326,7 @@ mod tests {
     fn expand_rewrites_only_metavariables() {
         assert_eq!(expand("f($A, $$$REST, $_)", 'µ'), "f(µA, µµµREST, µ_)");
         assert_eq!(expand("echo $x; \"$5\"", 'µ'), "echo $x; \"$5\"");
+        assert_eq!(expand("{ $$$ }", 'µ'), "{ µµµ }");
     }
 
     #[test]
@@ -994,6 +1429,7 @@ mod tests {
             &python(),
             "foo($A)",
             PatternAction::Replace("bar($A".into()),
+            &[],
         )
         .unwrap();
         let src = "x = foo(1)\n";
@@ -1003,6 +1439,7 @@ mod tests {
             &python(),
             "foo($A)",
             PatternAction::Replace("bar($A)".into()),
+            &[],
         )
         .unwrap();
         assert_eq!(ok.apply(src), "x = bar(1)\n");
@@ -1016,6 +1453,7 @@ mod tests {
             &python(),
             "foo($A)",
             PatternAction::Replace("bar($A)".into()),
+            &[],
         )
         .unwrap();
         assert_eq!(ok.apply("x = foo(1)\ndef (\n"), "x = bar(1)\ndef (\n");

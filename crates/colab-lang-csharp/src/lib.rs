@@ -116,6 +116,21 @@ impl LanguageBackend for CSharpBackend {
         "csharp"
     }
 
+    fn import_module(&self) -> Option<&'static str> {
+        Some("using")
+    }
+
+    fn build_rule_where(
+        &self,
+        module: &str,
+        spec: RuleSpec,
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Box<dyn Operation>> {
+        colab_rewrite::pattern::build_rule_where(self, module, spec, constraints, |p, a, c| {
+            Ok(Box::new(patterns::PatternOp::compile(p, a, c)?))
+        })
+    }
+
     fn description(&self) -> &'static str {
         "C# source rewrites via tree-sitter-c-sharp."
     }
@@ -177,10 +192,12 @@ impl LanguageBackend for CSharpBackend {
             ) => Ok(Box::new(patterns::PatternOp::compile(
                 &target,
                 colab_rewrite::pattern::PatternAction::Replace(replacement),
+                &[],
             )?)),
             ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
                 &target,
                 colab_rewrite::pattern::PatternAction::Delete,
+                &[],
             )?)),
             (other, spec) => Err(self.unsupported(other, &spec)),
         }

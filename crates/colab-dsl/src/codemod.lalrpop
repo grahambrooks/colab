@@ -4,6 +4,8 @@ use crate::ast::Match;
 use crate::ast::Namespace;
 use crate::ast::Action;
 use crate::ast::Span;
+use crate::ast::ImportClause;
+use colab_core::{Constraint, Test, Var};
 
 grammar;
 
@@ -29,12 +31,65 @@ pub Item: Item = {
 // The optional `in "<glob>"` clause restricts the rule to matching
 // paths. It is enforced through the operation's relevance check, so a
 // scoped rule is skipped wholesale for files outside the glob.
+//
+// The optional `where` clause narrows a `<lang>::pattern` match; import
+// clauses after the action run only on the files the rule changed.
 pub Match: Match = {
-    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <scope: Scope?> "{" <action: Action> "}" <end: @R> => Match { namespace, match_string: string, scope, action, span: Span { start, end } }
+    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <scope: Scope?> <constraints: Where?> "{" <action: Action> <imports: ImportClause*> "}" <end: @R> => Match { namespace, match_string: string, scope, constraints: constraints.unwrap_or_default(), action, imports, span: Span { start, end } }
 };
 
 pub Scope: String = {
     "in" <glob: StringLiteral> => glob
+};
+
+Where: Vec<Constraint> = {
+    "where" <first: Constraint> <rest: ("," <Constraint>)*> => {
+        let mut all = vec![first];
+        all.extend(rest);
+        all
+    }
+};
+
+pub Constraint: Constraint = {
+    "not" <test: Test> => Constraint { negated: true, test },
+    <test: Test> => Constraint { negated: false, test },
+};
+
+Test: Test = {
+    <var: Metavar> "matches" <regex: Regex> => Test::Matches { var, regex },
+    <var: Metavar> "matches" <regex: StringLiteral> => Test::Matches { var, regex },
+    <var: Metavar> "is" <kind: Identifier> => Test::Is { var, kind },
+    <var: Metavar> "is" <kind: StringLiteral> => Test::Is { var, kind },
+    <var: Metavar> "count" <range: CountRange> => Test::Count { var, min: range.0, max: range.1 },
+    "inside" <pattern: StringLiteral> => Test::Inside(pattern),
+    "has" <pattern: StringLiteral> => Test::Has(pattern),
+};
+
+// `count 2`, `count 1..3`, `count 1..` (no upper bound), `count ..3`.
+CountRange: (usize, Option<usize>) = {
+    <n: Number> => (n, Some(n)),
+    <n: Number> ".." <m: Number> => (n, Some(m)),
+    <n: Number> ".." => (n, None),
+    ".." <m: Number> => (0, Some(m)),
+};
+
+Number: usize = {
+    <s: r"[0-9]+"> => s.parse().unwrap_or(usize::MAX),
+};
+
+// `$NAME` or `$$$NAME`, as in the pattern.
+Metavar: Var = {
+    <s: r"\$(\$\$)?[A-Z_][A-Z0-9_]*"> => Var::parse(s).unwrap_or(Var { name: s.trim_start_matches('$').to_string(), multi: s.starts_with("$$$") }),
+};
+
+// `/re/`, with `\/` for a literal slash. Never `//`, which starts a comment.
+Regex: String = {
+    <s: r"/([^/\\\n\r]|\\.)+/"> => s[1..s.len() - 1].to_string(),
+};
+
+ImportClause: ImportClause = {
+    "requires" "import" <path: StringLiteral> => ImportClause::Requires(path),
+    "drops" "import" <path: StringLiteral> "when" "unused" => ImportClause::DropsUnused(path),
 };
 
 pub Namespace: Namespace = {
@@ -65,6 +120,18 @@ pub Identifier: String = {
     "in" => "in".to_string(),
     "set" => "set".to_string(),
     "insert" => "insert".to_string(),
+    "where" => "where".to_string(),
+    "not" => "not".to_string(),
+    "matches" => "matches".to_string(),
+    "is" => "is".to_string(),
+    "count" => "count".to_string(),
+    "inside" => "inside".to_string(),
+    "has" => "has".to_string(),
+    "requires" => "requires".to_string(),
+    "import" => "import".to_string(),
+    "drops" => "drops".to_string(),
+    "when" => "when".to_string(),
+    "unused" => "unused".to_string(),
 };
 
 // Two spellings, neither with escapes. A double-quoted string cannot

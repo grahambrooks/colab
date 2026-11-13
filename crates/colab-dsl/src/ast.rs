@@ -22,7 +22,8 @@ pub enum Item {
     Include(String),
 }
 
-/// One `match <namespace> "<target>" [in "<glob>"] { <action> }` block.
+/// One `match <namespace> "<target>" [in "<glob>"] [where …] { <action> <import clause>* }`
+/// block.
 /// A script may contain any number of these; they are applied in source
 /// order.
 #[derive(PartialEq, Debug)]
@@ -33,10 +34,34 @@ pub struct Match {
     /// rule applies wherever its language backend considers a file
     /// relevant.
     pub scope: Option<String>,
+    /// Constraints from a `where` clause, in order. Empty without one.
+    pub constraints: Vec<colab_core::Constraint>,
     pub action: Action,
+    /// `requires import` / `drops import … when unused` clauses after the
+    /// action, in order.
+    pub imports: Vec<ImportClause>,
     /// Byte range of the whole block in the script, `match` to `}`.
     /// Lets the LSP place a diagnostic on the rule that caused it.
     pub span: Span,
+}
+
+/// An import clause on a rule, run only on the files the rule changed.
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum ImportClause {
+    /// `requires import "<x>"`: ensure the import is present.
+    Requires(String),
+    /// `drops import "<x>" when unused`: delete the import if nothing in
+    /// the file still uses it.
+    DropsUnused(String),
+}
+
+impl std::fmt::Display for ImportClause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImportClause::Requires(x) => write!(f, "requires import \"{x}\""),
+            ImportClause::DropsUnused(x) => write!(f, "drops import \"{x}\" when unused"),
+        }
+    }
 }
 
 /// A byte range in the script source.

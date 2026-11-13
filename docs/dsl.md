@@ -25,8 +25,20 @@ Whitespace is insignificant outside string literals.
 
 ```ebnf
 program     = "refactor" string "{" match* "}"
-match       = "match" namespace string [ scope ] "{" action "}"
+match       = "match" namespace string [ scope ] [ where ] "{" action import* "}"
 scope       = "in" string
+where       = "where" constraint ( "," constraint )*
+constraint  = [ "not" ] test
+test        = metavar "matches" ( regex | string )
+            | metavar "is" ( identifier | string )
+            | metavar "count" range
+            | "inside" string
+            | "has" string
+range       = number | number ".." number | number ".." | ".." number
+metavar     = "$" NAME | "$$$" NAME
+regex       = "/" ( any-char-except-slash-or-newline | "\" any-char )+ "/"
+import      = "requires" "import" string
+            | "drops" "import" string "when" "unused"
 namespace   = identifier "::" identifier
 identifier  = [a-zA-Z_][a-zA-Z0-9_]* | keyword   -- see "Reserved tokens"
 string      = '"' (any-char-except-double-quote)* '"'
@@ -214,17 +226,22 @@ How it matches:
   expression, a Java statement — is retried inside wrappers (a function
   body, a class) until it parses. If it parses in none, the rule fails to
   compile (exit code 3) and the error names every wrapper tried.
-- **Outermost wins.** Matches never nest within one pass: in
-  `f(f(1))`, `f($A)` rewrites the outer call only. Run again for the inner
-  one — or, better, write a template that does not re-match its own
-  pattern; the corpus harness rejects rules whose second pass changes
-  anything.
+- **Nested matches in one pass.** In `errors.Wrap(errors.Wrap(err, "a"),
+  "b")` both calls match; the inner one is rewritten first and its result
+  fills the outer template, so one run reaches the fixed point. Text the
+  template introduces is never re-matched, so a wrap-style template
+  (`f($A)` → `f(g($A))`) cannot run away.
 - **Prefiltered.** The longest literal leaf in the pattern (`errors` above)
   must appear in a file before it is parsed. A pattern made only of
   metavariables and punctuation (`$A + $B`) parses every file of its
   language.
 - **Quoting.** The DSL has no escapes, so write patterns containing `"`
   with single quotes, as above.
+
+- **Templates are re-indented.** Lines after a template's first are
+  indented to the match's column, so write a multi-line template
+  flush-left in its final shape. (Space-indented code only; in
+  tab-indented Go they stay flush-left.)
 
 When a pattern matches nothing, look at it the way colab does:
 
@@ -233,6 +250,70 @@ colab ast --lang go --pattern 'errors.Wrap($ERR, $MSG)'   # the pattern's tree
 colab ast --lang go --stdin < main.go                      # the code's tree
 colab find -e "match go::pattern 'errors.Wrap(\$E, \$M)' { delete }" .   # where it matches
 ```
+
+### Constraints: `where`
+
+A `where` clause after the pattern (and after `in "<glob>"`, if any)
+keeps only the matches that satisfy every constraint:
+
+```
+match go::pattern 'errors.Wrap($E, $M)'
+    where $M matches /^"/, not inside 'func $F(t *testing.T) { $$$ }'
+{
+    replace 'fmt.Errorf($M+": %w", $E)'
+}
+```
+
+| Constraint | Keeps a match when |
+| ---------- | ------------------ |
+| `$X matches /re/` | the text bound to `$X` matches the regular expression (unanchored; write `\/` for `/`). `matches "re"` is the same. |
+| `$X is <kind>` | the node bound to `$X` has this syntax-node kind (`identifier`, `interpreted_string_literal`, …; `colab ast` shows them) |
+| `$$$X count n..m` | the sequence binds between `n` and `m` nodes, separators not counted. `count 2`, `count 1..`, `count ..3` also work. |
+| `inside '<pattern>'` | some enclosing node matches the pattern |
+| `has '<pattern>'` | some node within the match matches the pattern |
+| `not <constraint>` | the constraint does not hold |
+
+- Only `<lang>::pattern` takes a `where` clause; any other module rejects
+  it by name.
+- A constraint must name a metavariable the pattern binds, with the same
+  sigil (`$M`, or `$$$ARGS` for `count`). An unknown node kind gets a "did
+  you mean". A regex or nested pattern that does not compile fails the
+  script. All of these are caught at compile time, not mid-run.
+- The metavariables inside an `inside` / `has` pattern are its own. `$F`
+  above matches any test function; it is not compared with the outer
+  pattern's bindings.
+- Constraints only remove matches, so the prefilter stays sound, and
+  `colab find` lists exactly what `refactor` would change.
+
+### Imports: `requires import` and `drops import … when unused`
+
+A template that writes a new package name needs the import, but only in
+the files it changed. Import clauses go after the action, inside the
+braces:
+
+```
+match go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ {
+    replace 'fmt.Errorf($M+": %w", $E)'
+    requires import "fmt"
+    drops import "github.com/pkg/errors" when unused
+}
+```
+
+- **`requires import "<x>"`** runs the backend's import-equivalent
+  `ensure` (`go::import`, `rust::use`, `c::include`, `ruby::require`, …)
+  on each file the rule rewrote, and on no other file. Every source
+  backend supports it.
+- **`drops import "<x>" when unused`** deletes the import from a file the
+  rule rewrote, once nothing in that file can still refer to it.
+  Supported for Go: an aliased import is used while its alias appears; an
+  unaliased one while any name its package might have (`errors`; `yaml`
+  for `gopkg.in/yaml.v3`) appears as an identifier. Blank (`_`) and dot
+  imports are never dropped. Other backends reject the clause rather than
+  guess. Delete those imports with a separate rule.
+- Drops run before requires, so a file whose only import is replaced ends
+  up with `import "fmt"`.
+- The clauses belong to the rule. Its report line shows them, and when the
+  rule changes nothing, they do nothing, so the rule stays idempotent.
 
 ## Inline rules
 
@@ -456,7 +537,9 @@ refactor "javax-to-jakarta" {
 The grammar keywords are:
 
 `refactor`, `match`, `in`, `include`, `replace`, `delete`, `ensure`,
-`replace_call`, `set`, `insert`.
+`replace_call`, `set`, `insert`, and for `where` / import clauses
+`where`, `not`, `matches`, `is`, `count`, `inside`, `has`, `requires`,
+`import`, `drops`, `when`, `unused`.
 
 `::` is the namespace separator. `//` starts a line comment.
 
@@ -465,8 +548,8 @@ is named after the language's own construct, and C's is `#include` — so
 `match c::include "stdio.h" { ... }` parses fine even though `include` is
 also the pack directive. The two positions are never ambiguous, because a
 namespace only ever follows `match`. The same holds for `delete`,
-`ensure`, `replace`, `in`, `set` and `insert` should a backend ever want
-them as module names.
+`ensure`, `replace`, `in`, `set` and `insert`, and for every `where` and
+import-clause keyword: `go::import` still parses.
 
 **String literals have no escape sequences.** A backslash is a literal
 backslash, which is what makes PHP namespaces (`"App\Old\Thing"`) work
@@ -483,8 +566,9 @@ The DSL is intentionally small. Capabilities being considered:
   `replace_call "f(ctx, $args)"` pattern.
 - A query namespace (e.g. `go::regex`) for opt-in regex-based
   rewrites where a tree-sitter rule does not suffice.
-- Relational pattern constraints (`inside`, `has`, `not`) in the style of
-  ast-grep rules, for "match X only within Y".
+- Raw strings, for patterns that need both `'` and `"` (a Rust lifetime
+  and a string literal); see [`dogfood-log.md`](dogfood-log.md).
+- Type constraints (`$X has type T`) via the language server's hover.
 - A scope-aware `<lang>::symbol` mode that respects shadowing.
   (`in "<glob>"` narrows a rename by *path*; this would narrow it by
   lexical scope.)

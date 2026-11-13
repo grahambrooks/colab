@@ -77,10 +77,20 @@ Then apply it with a build check that undoes the change if the build
 fails:
 
 ```sh
-colab refactor --write --verify 'cargo check -q --workspace' --script - crates <<'EOF'
+colab refactor --write --bisect 'cargo check -q --workspace --tests' --script - crates <<'EOF'
 …
 EOF
 ```
+
+Choose the check flag by how the rules relate:
+
+- **`--bisect CMD`** applies the whole script, then runs `CMD` once. If it
+  fails, it searches for the rule that broke it and reverts everything.
+  Use it for a coordinated change, where the rules only compile together
+  (a new parameter, plus every caller that now passes it).
+- **`--verify CMD`** runs `CMD` after *each* rule, and stops and reverts
+  that rule at the first failure. Use it only when every rule stands on
+  its own. On a coordinated change it always fails at the first rule.
 
 `colab undo` reverts the last run. Run `cargo fmt` afterwards, because
 `--tidy` does not cover `refactor` yet.

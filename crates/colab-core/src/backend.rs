@@ -71,6 +71,13 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     }
 }
 
+/// The rejection for a `where` clause on a module that takes none.
+pub fn where_unsupported(lang: &str, module: &str) -> crate::Error {
+    crate::Error::UnsupportedOperation(format!(
+        "`{lang}::{module}` does not take a `where` clause; only `{lang}::pattern` does"
+    ))
+}
+
 /// The lowered form of a single `match` block: action plus arguments,
 /// kept backend-neutral so [`colab-dsl`] does not need to know which
 /// language is targeted.
@@ -162,6 +169,42 @@ pub trait LanguageBackend: Send + Sync {
     /// [`unsupported`](LanguageBackend::unsupported) so every backend
     /// rejects names the same way.
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>>;
+
+    /// [`build_rule`](LanguageBackend::build_rule) for a block with a
+    /// `where` clause. Only `<lang>::pattern` takes constraints. Source
+    /// backends override this to compile them through
+    /// `colab_rewrite::pattern::build_rule_where`, and every other backend
+    /// keeps this default, which rejects them by name.
+    fn build_rule_where(
+        &self,
+        module: &str,
+        spec: RuleSpec,
+        constraints: &[crate::Constraint],
+    ) -> Result<Box<dyn Operation>> {
+        if constraints.is_empty() {
+            return self.build_rule(module, spec);
+        }
+        Err(where_unsupported(self.lang(), module))
+    }
+
+    /// The module that `requires import "<x>"` lowers to an `ensure` on:
+    /// `import` for Go, `use` for Rust, `include` for C. `None` (the
+    /// default) rejects the clause.
+    fn import_module(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// The operation behind `drops import "<target>" when unused`: delete
+    /// the import, but only when nothing in the file still uses it. A
+    /// backend that cannot tell whether an import is used keeps this
+    /// default, which rejects the clause rather than guessing.
+    fn drop_unused_import(&self, target: &str) -> Result<Box<dyn Operation>> {
+        Err(crate::Error::UnsupportedOperation(format!(
+            "`{}` cannot tell whether an import is still used, so `drops import \"{}\" when unused` is not supported; delete it with a separate rule after checking",
+            self.lang(),
+            target
+        )))
+    }
 
     /// Debugging aid behind `colab ast`: the printed syntax tree of a
     /// snippet ([`AstInput::Source`]) or of a compiled `pattern`

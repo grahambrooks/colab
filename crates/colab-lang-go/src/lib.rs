@@ -110,6 +110,27 @@ impl LanguageBackend for GoBackend {
         "go"
     }
 
+    fn import_module(&self) -> Option<&'static str> {
+        Some("import")
+    }
+
+    fn drop_unused_import(&self, target: &str) -> Result<Box<dyn Operation>> {
+        Ok(Box::new(imports::ImportDropUnused {
+            target: target.to_string(),
+        }))
+    }
+
+    fn build_rule_where(
+        &self,
+        module: &str,
+        spec: RuleSpec,
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Box<dyn Operation>> {
+        colab_rewrite::pattern::build_rule_where(self, module, spec, constraints, |p, a, c| {
+            Ok(Box::new(patterns::PatternOp::compile(p, a, c)?))
+        })
+    }
+
     fn description(&self) -> &'static str {
         "Go source rewrites via tree-sitter."
     }
@@ -143,10 +164,12 @@ impl LanguageBackend for GoBackend {
             ) => Ok(Box::new(patterns::PatternOp::compile(
                 &target,
                 colab_rewrite::pattern::PatternAction::Replace(replacement),
+                &[],
             )?)),
             ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
                 &target,
                 colab_rewrite::pattern::PatternAction::Delete,
+                &[],
             )?)),
             ("import", RuleSpec::Delete { target }) => {
                 Ok(Box::new(imports::ImportDelete { target }))

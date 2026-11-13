@@ -1,0 +1,17 @@
+// pkg/errors -> fmt, but only where the rewrite is safe and only touching
+// imports in the files it changed:
+// - `where $M matches /^"/` rewrites calls whose message is a literal, so
+//   `$M + ": %w"` is a valid format string; a variable message is left.
+// - `not inside` leaves test helpers alone.
+// - `requires import "fmt"` adds fmt only to files the rule rewrote, and
+//   `drops import … when unused` removes pkg/errors only once nothing in
+//   the file uses it. other/other.go imports pkg/errors and is untouched.
+refactor "where-requires-import" {
+    match go::pattern 'errors.Wrap($E, $M)'
+        where $M matches /^"/, not inside 'func $F(t *testing.T) { $$$ }'
+    {
+        replace 'fmt.Errorf($M+": %w", $E)'
+        requires import "fmt"
+        drops import "github.com/pkg/errors" when unused
+    }
+}

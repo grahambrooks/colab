@@ -832,7 +832,7 @@ rename and nothing else:
 | Find Usages, Safe Delete | `colab references`, `colab safe-delete` (M25) | ✅ M25 |
 | Call / type hierarchy | none | unscheduled (`callHierarchy` / `typeHierarchy` on the M25 client) |
 | Optimize imports + reformat after every refactoring | `--tidy` on rename / mv / action / safe-delete (M25); not yet on `refactor` | ✅ M25 (partly), M26 |
-| SSR constraints (count, regex, type, within) | none | M26 |
+| SSR constraints (count, regex, type, within) | `where` on `<lang>::pattern`: `matches`, `is`, `count`, `inside`, `has`, `not` (M26); type constraints not yet | ✅ M26 |
 | Conflicts dialog before applying | after the fact only (`--verify`) | M27 |
 | `//noinspection` suppression | none | M20 |
 | Rename in comments, strings, non-code files | none (the server skips them) | M22 |
@@ -982,7 +982,29 @@ with a different request.
     M14.
   - A `colab.mv` MCP tool.
 
-### M26 — Pattern constraints and import-aware templates
+### ✅ M26 — Pattern constraints and import-aware templates
+
+Shipped as planned, with these notes:
+
+- `where` evaluation is a filter in `colab_rewrite::pattern` over the
+  match list, written with ast-grep's `Node::inside` / `has`, not its
+  rule combinators. Validation happens at compile time: bound
+  metavariables and their sigils, node kinds (with a "did you mean"),
+  regexes, nested patterns. `matches "re"` is accepted as well as `/re/`.
+- `colab-rewrite` now depends on `colab-core`. The data type and the
+  shared `build_rule_where` would otherwise have needed a conversion in
+  each of the 12 backends.
+- Import clauses run as follow-ups of the rule (`WithFollowups`), drops
+  before requires. `requires import` works in all 12 source backends;
+  `drops … when unused` in Go only (`imports::is_used`, which errs
+  towards "used"). The other backends reject it.
+- Dogfooded. colab made the 12-backend plumbing changes, and what got in
+  the way is in [`dogfood-log.md`](dogfood-log.md). A bare `$$$` failed to
+  compile for any language whose expando is not `$`; fixed.
+- Not done: type constraints via hover (no demand yet), and `--tidy` on
+  `refactor` (still the M25 deferral).
+
+Original plan:
 
 - **Constraints**, an optional `where` clause after the pattern:
 

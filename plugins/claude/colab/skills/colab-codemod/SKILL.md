@@ -179,7 +179,18 @@ match js::pattern 'console.log($$$ARGS)' { delete }
 - The template must not re-match its own pattern, or a second run
   changes the code again. `f($A)` → `g($A)` is safe; `f($A)` →
   `f(ctx, $A)` is not.
-- Matches never nest in one pass: the outermost wins.
+- Nested matches (`errors.Wrap(errors.Wrap(…))`) are all rewritten in
+  one pass.
+- **Narrow with `where`** instead of writing a cleverer pattern:
+  `where $M matches /^"/, not inside 'func $F(t *testing.T) { $$$ }'`.
+  The forms are `$X matches /re/`, `$X is <node-kind>`, `$$$X count 1..3`,
+  `inside '…'` and `has '…'`, each optionally preceded by `not`. Only
+  `pattern` takes them.
+- **Let the rule manage imports.** After the action, add
+  `requires import "fmt"` (any source language) and
+  `drops import "github.com/pkg/errors" when unused` (Go only). These touch
+  only the files the rule rewrote. A separate unconditional
+  `go::import "fmt" { ensure }` would add `fmt` to every file.
 - `delete` removes only matches standing alone on their line; nested ones
   stay. A rewrite that would leave a syntax error is not applied to that
   file — if `find` shows matches that `refactor` left alone, the template
