@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/colab-icon.svg" alt="colab icon" width="128" height="128">
+</p>
+
 # Colab (Code Lab)
 
 A scripted, AST-aware code refactoring (codemod) tool. Point it at a
@@ -17,6 +21,10 @@ also all the call sites. It can also rename a crate and all the `use` statements
 ```sh
 colab refactor --script rename-tokio.codemod --check .
 ```
+
+<p align="center">
+  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .codemod script is compiled against 15 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
+</p>
 
 ## Why
 

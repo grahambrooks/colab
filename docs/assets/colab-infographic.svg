@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" width="1200" height="860" role="img" aria-labelledby="title desc">
+  <title id="title">colab — AST-aware codemods</title>
+  <desc id="desc">A .codemod script is parsed, compiled against 15 language backends, run over the tree with tree-sitter, and reported as a diff, JSON, a CI check, or a write. Rewrites are idempotent and syntax-aware, and colab runs from the CLI, MCP and LSP.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#141c3d"/>
+      <stop offset="1" stop-color="#0c3f46"/>
+    </linearGradient>
+    <linearGradient id="hot" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="1" stop-color="#f4a03a"/>
+    </linearGradient>
+    <linearGradient id="ibg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e2a5a"/>
+      <stop offset="1" stop-color="#0f6b6e"/>
+    </linearGradient>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#ffd166"/>
+    </marker>
+    <style>
+      .sans { font-family: ui-sans-serif, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+      .h1 { font-size: 46px; font-weight: 800; fill: #fff; }
+      .tag { font-size: 20px; fill: #b8c4e6; }
+      .sec { font-size: 13px; font-weight: 700; letter-spacing: 2.5px; fill: #ffd166; }
+      .card { fill: #ffffff; fill-opacity: .06; stroke: #ffffff; stroke-opacity: .12; }
+      .st { font-size: 18px; font-weight: 700; fill: #fff; }
+      .sd { font-size: 14px; fill: #b8c4e6; }
+      .code { font-size: 14.5px; fill: #e6ebff; }
+      .kw { fill: #ff9ec7; } .ns { fill: #7fdbca; } .str { fill: #ffd166; } .cm { fill: #7d89b0; }
+      .del { fill: #ff8a8a; } .add { fill: #8ce99a; }
+      .chip { fill: #ffffff; fill-opacity: .09; }
+      .chipc { fill: #ffd166; fill-opacity: .14; }
+      .ct { font-size: 14px; fill: #e6ebff; }
+      .big { font-size: 40px; font-weight: 800; fill: url(#hot); }
+    </style>
+  </defs>
+
+  <rect width="1200" height="860" rx="28" fill="url(#bg)"/>
+
+  <!-- header -->
+  <g transform="translate(56 44) scale(.164)">
+    <rect width="512" height="512" rx="112" fill="url(#ibg)" stroke="#fff" stroke-opacity=".2" stroke-width="6"/>
+    <g fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M150 104 c-34 0 -44 16 -44 44 v58 c0 26 -12 40 -36 50 c24 10 36 24 36 50 v58 c0 28 10 44 44 44"/>
+      <path d="M362 104 c34 0 44 16 44 44 v58 c0 26 12 40 36 50 c-24 10 -36 24 -36 50 v58 c0 28 -10 44 -44 44"/>
+    </g>
+    <g stroke="#fff" stroke-width="18" stroke-linecap="round">
+      <line x1="256" y1="168" x2="190" y2="268"/><line x1="256" y1="168" x2="322" y2="268"/><line x1="190" y1="268" x2="190" y2="356"/>
+    </g>
+    <circle cx="256" cy="160" r="38" fill="#fff"/><circle cx="190" cy="272" r="32" fill="#fff"/><circle cx="190" cy="364" r="26" fill="#fff"/>
+    <circle cx="322" cy="272" r="44" fill="url(#hot)"/>
+    <path d="M302 272 h34 m-14 -16 l16 16 l-16 16" fill="none" stroke="#1e2a5a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="156" y="92" class="sans h1">colab</text>
+  <text x="156" y="124" class="sans tag">Scripted, AST-aware codemods: precise, idempotent, built for CI and agents.</text>
+
+  <!-- pipeline -->
+  <text x="56" y="186" class="sans sec">HOW A CODEMOD RUNS</text>
+  <g class="sans">
+    <rect x="56"  y="204" width="190" height="104" rx="14" class="card"/>
+    <text x="76" y="238" class="st">1 · Script</text>
+    <text x="76" y="264" class="sd">a small .codemod file,</text>
+    <text x="76" y="284" class="sd">-e rules, or stdin</text>
+
+    <rect x="286" y="204" width="190" height="104" rx="14" class="card"/>
+    <text x="306" y="238" class="st">2 · Compile</text>
+    <text x="306" y="264" class="sd">LALRPOP parse → rules</text>
+    <text x="306" y="284" class="sd">from the backend registry</text>
+
+    <rect x="516" y="204" width="190" height="104" rx="14" class="card"/>
+    <text x="536" y="238" class="st">3 · Match</text>
+    <text x="536" y="264" class="sd">tree-sitter syntax trees,</text>
+    <text x="536" y="284" class="sd">gated per file and rule</text>
+
+    <rect x="746" y="204" width="190" height="104" rx="14" class="card"/>
+    <text x="766" y="238" class="st">4 · Rewrite</text>
+    <text x="766" y="264" class="sd">byte-exact edits:</text>
+    <text x="766" y="284" class="sd">only matched nodes change</text>
+
+    <rect x="976" y="204" width="168" height="104" rx="14" fill="url(#hot)"/>
+    <text x="994" y="238" class="st" style="fill:#1e2a5a">5 · Report</text>
+    <text x="994" y="262" class="mono" style="font-size:13px;fill:#1e2a5a">--format diff</text>
+    <text x="994" y="280" class="mono" style="font-size:13px;fill:#1e2a5a">--format json</text>
+    <text x="994" y="298" class="mono" style="font-size:13px;fill:#1e2a5a">--check · --write</text>
+  </g>
+  <g stroke="#ffd166" stroke-width="2.5" marker-end="url(#arr)">
+    <line x1="250" y1="256" x2="280" y2="256"/>
+    <line x1="480" y1="256" x2="510" y2="256"/>
+    <line x1="710" y1="256" x2="740" y2="256"/>
+    <line x1="940" y1="256" x2="970" y2="256"/>
+  </g>
+
+  <!-- example -->
+  <text x="56" y="362" class="sans sec">ONE SCRIPT, EVERY FILE</text>
+  <rect x="56" y="380" width="520" height="196" rx="14" fill="#0a1029" fill-opacity=".7" stroke="#fff" stroke-opacity=".12"/>
+  <g class="mono code" xml:space="preserve">
+    <text x="78" y="414" class="cm">// rename-tokio.codemod</text>
+    <text x="78" y="442"><tspan class="kw">refactor</tspan> <tspan class="str">"tokio-major-bump"</tspan> {</text>
+    <text x="78" y="470">  <tspan class="kw">match</tspan> <tspan class="ns">rust::crate</tspan> <tspan class="str">"tokio"</tspan> {</text>
+    <text x="78" y="492">    <tspan class="kw">replace</tspan> <tspan class="str">"async_tokio"</tspan> }</text>
+    <text x="78" y="520">  <tspan class="kw">match</tspan> <tspan class="ns">rust::use</tspan> <tspan class="str">"tokio"</tspan> {</text>
+    <text x="78" y="542">    <tspan class="kw">replace</tspan> <tspan class="str">"async_tokio"</tspan> }</text>
+    <text x="78" y="566">}</text>
+  </g>
+
+  <rect x="604" y="380" width="540" height="196" rx="14" fill="#0a1029" fill-opacity=".7" stroke="#fff" stroke-opacity=".12"/>
+  <g class="mono code" xml:space="preserve">
+    <text x="626" y="414" class="cm">$ colab refactor --script rename-tokio.codemod \</text>
+    <text x="626" y="436" class="cm">    --format diff .</text>
+    <text x="626" y="468" class="del">-tokio = { version = "1", features = ["full"] }</text>
+    <text x="626" y="490" class="add">+async_tokio = { version = "1", features = ["full"] }</text>
+    <text x="626" y="520" class="del">-use tokio::sync::mpsc;</text>
+    <text x="626" y="542" class="add">+use async_tokio::sync::mpsc;</text>
+    <text x="626" y="566" class="cm">// "tokio" in strings and comments is untouched</text>
+  </g>
+
+  <!-- languages -->
+  <text x="56" y="630" class="sans sec">15 BACKENDS</text>
+  <g class="sans ct" text-anchor="middle">
+    <rect x="56"  y="646" width="58" height="32" rx="16" class="chip"/><text x="85"  y="667">C</text>
+    <rect x="122" y="646" width="64" height="32" rx="16" class="chip"/><text x="154" y="667">C++</text>
+    <rect x="194" y="646" width="58" height="32" rx="16" class="chip"/><text x="223" y="667">C#</text>
+    <rect x="260" y="646" width="58" height="32" rx="16" class="chip"/><text x="289" y="667">Go</text>
+    <rect x="326" y="646" width="70" height="32" rx="16" class="chip"/><text x="361" y="667">Java</text>
+    <rect x="404" y="646" width="90" height="32" rx="16" class="chip"/><text x="449" y="667">JS / TS</text>
+    <rect x="56"  y="686" width="78" height="32" rx="16" class="chip"/><text x="95"  y="707">Kotlin</text>
+    <rect x="142" y="686" width="64" height="32" rx="16" class="chip"/><text x="174" y="707">PHP</text>
+    <rect x="214" y="686" width="82" height="32" rx="16" class="chip"/><text x="255" y="707">Python</text>
+    <rect x="304" y="686" width="70" height="32" rx="16" class="chip"/><text x="339" y="707">Ruby</text>
+    <rect x="382" y="686" width="66" height="32" rx="16" class="chip"/><text x="415" y="707">Rust</text>
+    <rect x="456" y="686" width="72" height="32" rx="16" class="chip"/><text x="492" y="707">Swift</text>
+    <rect x="56"  y="726" width="72" height="32" rx="16" class="chipc"/><text x="92"  y="747">TOML</text>
+    <rect x="136" y="726" width="68" height="32" rx="16" class="chipc"/><text x="170" y="747">JSON</text>
+    <rect x="212" y="726" width="104" height="32" rx="16" class="chipc"/><text x="264" y="747">Markdown</text>
+  </g>
+  <text x="56" y="790" class="sans sd">Every source language: imports, symbol rename,</text>
+  <text x="56" y="810" class="sans sd">call rewriting and structural <tspan class="mono" style="fill:#e6ebff">$PATTERN</tspan> matching.</text>
+
+  <!-- guarantees -->
+  <text x="604" y="630" class="sans sec">GUARANTEES</text>
+  <g class="sans">
+    <circle cx="616" cy="660" r="7" fill="#ffd166"/>
+    <text x="634" y="666" class="st" style="font-size:16px">Idempotent</text>
+    <text x="760" y="666" class="sd">a second run is always a no-op</text>
+    <circle cx="616" cy="696" r="7" fill="#ffd166"/>
+    <text x="634" y="702" class="st" style="font-size:16px">Syntax-aware</text>
+    <text x="760" y="702" class="sd">matches nodes, not regex over text</text>
+    <circle cx="616" cy="732" r="7" fill="#ffd166"/>
+    <text x="634" y="738" class="st" style="font-size:16px">Accountable</text>
+    <text x="760" y="738" class="sd">dead rules flagged, with near misses</text>
+    <circle cx="616" cy="768" r="7" fill="#ffd166"/>
+    <text x="634" y="774" class="st" style="font-size:16px">Git-safe</text>
+    <text x="760" y="774" class="sd">file moves via git mv, with undo</text>
+  </g>
+  <text x="604" y="814" class="sans sd">Runs as a <tspan style="fill:#fff;font-weight:700">CLI</tspan>, an <tspan style="fill:#fff;font-weight:700">MCP server</tspan> for agents, and an <tspan style="fill:#fff;font-weight:700">LSP</tspan> for editors.</text>
+</svg>
