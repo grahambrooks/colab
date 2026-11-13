@@ -95,6 +95,13 @@ enum Commands {
     /// Move a file or directory with `git mv`, letting the language server
     /// update what refers to it.
     Mv(MvArgs),
+    /// Run one of the language server's code actions — extract, inline,
+    /// change signature, … — and report it like a codemod.
+    Action(crate::lsp_commands::ActionArgs),
+    /// List the references the language server finds to a symbol.
+    References(crate::lsp_commands::ReferencesArgs),
+    /// Delete a declaration only if nothing else refers to it.
+    SafeDelete(crate::lsp_commands::SafeDeleteArgs),
     /// Print the syntax tree of a snippet or a pattern, to see why a
     /// pattern does or does not match.
     Ast(AstArgs),
@@ -343,10 +350,10 @@ struct RenameArgs {
 /// Output and write flags shared by the commands that apply a language
 /// server's answer (`rename`, `mv`).
 #[derive(clap::Args, Debug)]
-struct ApplyFlags {
+pub(crate) struct ApplyFlags {
     /// Output format, as for `refactor`.
     #[arg(long, value_enum, default_value_t = Format::Human)]
-    format: Format,
+    pub(crate) format: Format,
 
     /// Apply the edits in place.
     #[arg(long, conflicts_with_all = ["dry_run", "check"])]
@@ -382,6 +389,13 @@ struct ApplyFlags {
     /// committed; anything else you have staged stays staged.
     #[arg(long = "commit-moves")]
     commit_moves: bool,
+
+    /// After the change, have the language server organize imports and
+    /// format each changed file. Reported as its own rule (`tidy via
+    /// <server>`), so you can see what the refactoring did and what
+    /// tidying did.
+    #[arg(long)]
+    pub(crate) tidy: bool,
 
     /// `summary`, `counts`, or `diff`, as for `refactor`.
     #[arg(long, value_name = "LEVEL", value_parser = parse_detail)]
@@ -572,10 +586,12 @@ pub async fn run() -> Result<i32> {
         }
         Some(Commands::Mcp) => {
             info!("Starting MCP server on stdio");
-            colab_mcp::run(default_backends()).map_err(|e| Error::Io {
-                path: None,
-                source: e,
-            })?;
+            colab_mcp::run_with(default_backends(), &crate::lsp_commands::LspTools).map_err(
+                |e| Error::Io {
+                    path: None,
+                    source: e,
+                },
+            )?;
             Ok(0)
         }
         Some(Commands::Schema) => print_json(&discover::schema(&default_backends())),
@@ -587,6 +603,9 @@ pub async fn run() -> Result<i32> {
         Some(Commands::Find(args)) => run_find(args),
         Some(Commands::Rename(args)) => run_rename(args),
         Some(Commands::Mv(args)) => run_mv(args),
+        Some(Commands::Action(args)) => crate::lsp_commands::run_action(args),
+        Some(Commands::References(args)) => crate::lsp_commands::run_references(args),
+        Some(Commands::SafeDelete(args)) => crate::lsp_commands::run_safe_delete(args),
         Some(Commands::Ast(args)) => run_ast(args),
         Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
         Some(Commands::ListRules(args)) => {
@@ -610,7 +629,7 @@ fn print_json(value: &serde_json::Value) -> Result<i32> {
     Ok(0)
 }
 
-fn io_to_error(err: io::Error) -> Error {
+pub(crate) fn io_to_error(err: io::Error) -> Error {
     Error::Io {
         path: None,
         source: err,
@@ -1325,7 +1344,7 @@ const PROJECT_MARKERS: &[&str] = &[
     "composer.json",
 ];
 
-fn project_root(file: &Path) -> Option<PathBuf> {
+pub(crate) fn project_root(file: &Path) -> Option<PathBuf> {
     file.ancestors()
         .skip(1)
         .find(|dir| PROJECT_MARKERS.iter().any(|m| dir.join(m).exists()))
@@ -1333,54 +1352,20 @@ fn project_root(file: &Path) -> Option<PathBuf> {
 }
 
 fn run_rename(args: RenameArgs) -> Result<i32> {
-    use colab_lsp_client::{RenameRequest, ServerCommand};
+    use colab_lsp_client::RenameRequest;
 
     change_working_dir(&args.change_dir)?;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
 
-    // Where is the symbol?
-    let (file, offset) = if let Some(at) = &args.at {
-        let mut parts = at.rsplitn(3, ':');
-        let (column, line, file) = (parts.next(), parts.next(), parts.next());
-        let (Some(file), Some(line), Some(column)) = (file, line, column) else {
-            return Err(Error::Config(format!(
-                "--at wants FILE:LINE:COLUMN, got `{at}`"
-            )));
-        };
-        let (Ok(line), Ok(column)) = (line.parse::<usize>(), column.parse::<usize>()) else {
-            return Err(Error::Config(format!(
-                "--at wants numeric LINE and COLUMN, got `{at}`"
-            )));
-        };
-        let file = cwd.join(file);
-        let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
-        let offset = colab_lsp_client::offset_of_line_column(&text, line, column)
-            .ok_or_else(|| Error::Config(format!("{} has no line {line}", file.display())))?;
-        (file, offset)
-    } else {
-        let name = args.symbol.as_deref().expect("clap: --symbol or --at");
-        let file = cwd.join(args.in_file.as_ref().expect("clap: --symbol requires --in"));
-        let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
-        let offset = colab_lsp_client::first_occurrence(&text, name).ok_or_else(|| {
-            Error::Config(format!("`{name}` does not occur in {}", file.display()))
-        })?;
-        (file, offset)
-    };
-    let file = fs::canonicalize(&file).map_err(|e| Error::io_at(&file, e))?;
-
-    let server = match &args.lsp {
-        Some(command) => ServerCommand::parse(command)?,
-        None => ServerCommand::default_for(&file).ok_or_else(|| {
-            Error::Config(format!(
-                "no default language server for {}; pass --lsp '<command>'",
-                file.display()
-            ))
-        })?,
-    };
-    let root = match &args.root {
-        Some(root) => fs::canonicalize(root).map_err(|e| Error::io_at(root, e))?,
-        None => project_root(&file).unwrap_or_else(|| cwd.clone()),
-    };
+    let place = crate::lsp_commands::resolve_place(
+        args.at.as_deref(),
+        args.symbol.as_deref(),
+        args.in_file.as_deref(),
+        &cwd,
+    )?;
+    let (file, offset) = (place.file, place.start);
+    let server = crate::lsp_commands::server_for(args.lsp.as_deref(), &file)?;
+    let root = crate::lsp_commands::root_for(args.root.as_deref(), &file, &cwd)?;
 
     // File operations (a class renamed with its file) only where git can
     // make and undo them; elsewhere the server is told not to send any.
@@ -1390,7 +1375,7 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
     let outcome = colab_lsp_client::rename(
         &server,
         &RenameRequest {
-            root,
+            root: root.clone(),
             file,
             offset,
             new_name: args.to.clone(),
@@ -1406,6 +1391,11 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
         args.to,
         server.program
     );
+    let tidy = crate::lsp_commands::Tidy {
+        server: &server,
+        root: &root,
+        timeout: args.timeout,
+    };
     run_change_set(
         &label,
         outcome.changes,
@@ -1413,6 +1403,7 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
         &args.apply,
         &cwd,
         started,
+        Some(tidy),
     )
 }
 
@@ -1458,6 +1449,7 @@ fn run_mv(args: MvArgs) -> Result<i32> {
     };
     let started = Instant::now();
     let mut warnings = Vec::new();
+    let tidy_root = root.clone();
     let (changes, label) = match &server {
         Some(server) => {
             info!("Moving via `{}` in {}", server.display(), root.display());
@@ -1493,19 +1485,28 @@ fn run_mv(args: MvArgs) -> Result<i32> {
             (set, "move via git".to_string())
         }
     };
-    run_change_set(&label, changes, warnings, &args.apply, &cwd, started)
+    let tidy = server.as_ref().map(|server| crate::lsp_commands::Tidy {
+        server,
+        root: &tidy_root,
+        timeout: args.timeout,
+    });
+    if args.apply.tidy && tidy.is_none() {
+        warnings.push("--tidy needs a language server; nothing was tidied".to_string());
+    }
+    run_change_set(&label, changes, warnings, &args.apply, &cwd, started, tidy)
 }
 
 /// Report, and in write mode apply, a language server's answer: file
 /// operations through git first, then edits — with `--check`,
 /// `--backup`, and `--verify` behaving as for `refactor`.
-fn run_change_set(
+pub(crate) fn run_change_set(
     label: &str,
-    set: colab_core::fileops::ChangeSet,
+    mut set: colab_core::fileops::ChangeSet,
     mut warnings: Vec<String>,
     flags: &ApplyFlags,
     cwd: &Path,
     started: Instant,
+    tidy: Option<crate::lsp_commands::Tidy<'_>>,
 ) -> Result<i32> {
     let exec_mode = if flags.verify.is_some() {
         ExecMode::Write
@@ -1523,6 +1524,13 @@ fn run_change_set(
         commit_moves: flags.commit_moves,
         backup: flags.backup.clone(),
     };
+    let mut labels = vec![label.to_string()];
+    if flags.tidy
+        && let Some(tidy) = &tidy
+    {
+        labels.push(format!("tidy via {}", tidy.server.program));
+        warnings.extend(crate::lsp_commands::tidy_change_set(tidy, &mut set, 1)?);
+    }
     let prepared = crate::apply::prepare(&set, &options)?;
     warnings.extend(prepared.warnings.iter().cloned());
 
@@ -1534,7 +1542,7 @@ fn run_change_set(
         max_diff_bytes: render::DEFAULT_MAX_DIFF_BYTES,
     };
     let mut reporter = format::make_reporter(flags.format, exec_mode, render_options);
-    let mut report = RunReport::with_rules([label]);
+    let mut report = RunReport::with_rules(labels);
     // Report paths relative to where the user is, like `refactor`.
     let relative = |p: &Path| p.strip_prefix(cwd).unwrap_or(p).to_path_buf();
     report.files_visited = set.edits.len() as u64;
@@ -1632,7 +1640,7 @@ fn run_ast(args: AstArgs) -> Result<i32> {
     }
 }
 
-fn change_working_dir(path: &Path) -> Result<()> {
+pub(crate) fn change_working_dir(path: &Path) -> Result<()> {
     let canonical = fs::canonicalize(path).map_err(|e| Error::io_at(path, e))?;
     if !canonical.is_dir() {
         return Err(Error::Config(format!(

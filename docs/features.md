@@ -341,6 +341,27 @@ rewriting; type-aware operations are out of scope.
 
 ---
 
+## Delegated refactorings (language servers)
+
+`colab rename`, `mv`, `action`, `references`, `safe-delete`, and `--tidy`
+ask the language's own server and report its answer (see
+[cli.md](cli.md#colab-action)). What you get depends on the server:
+
+| Server | Verified with colab | Expected from the server (unverified here) |
+| ------ | ------------------- | ------------------------------------------ |
+| rust-analyzer | rename, `mv` (`willRenameFiles` rewrites `mod` + paths), extract variable / constant / static / function, references, safe-delete, organize imports | inline, change signature, move item, many more assists |
+| clangd | rename | few code actions |
+| gopls | — | rename, extract function / variable, inline call, parameter refactorings |
+| jdtls | — | rename (class *with* its file — needs a git work tree, see `colab mv`), extract, inline, move, change signature |
+| typescript-language-server | — | rename, file moves that update imports, extract, move to file, organize imports |
+| pyright | — | rename, references; few code actions (pylsp with pylsp-rope adds extract / inline) |
+| sourcekit-lsp | — | rename; few code actions |
+
+`colab action --list` shows exactly what a server offers at a position,
+disabled actions with its reason. A missing capability is an error or a
+warning naming it (`no codeActionProvider`, `no
+workspace.fileOperations.willRename`), never a silent no-op.
+
 ## What `colab` does *not* do
 
 These are deliberate non-goals. They live in

@@ -12,6 +12,14 @@
 //! occurrences of the moved file's stem (think `mod old;`) in every file
 //! with the same extension.
 //!
+//! For M25 it also offers code actions (an "extract into variable" that
+//! needs `codeAction/resolve`, an "uppercase file" that is a command whose
+//! edit arrives as `workspace/applyEdit`, a disabled one, and "organize
+//! imports", which sorts the leading `use` lines), `references`
+//! (whole-word occurrences; the `fn NAME` one is the declaration),
+//! `documentSymbol` (one per `fn` item), and `formatting` (strips
+//! trailing whitespace).
+//!
 //! `FAKE_LSP_MODE` changes behaviour: `no-rename` (no renameProvider),
 //! `file-op` (a rename also renames the symbol's file to `<new>.<ext>`,
 //! like a Java class), `no-will-rename` (no willRenameFiles support),
@@ -161,8 +169,15 @@ fn main() {
                 } else {
                     json!({"prepareProvider": true})
                 };
-                let mut capabilities =
-                    json!({"renameProvider": rename, "positionEncoding": "utf-16"});
+                let mut capabilities = json!({
+                    "renameProvider": rename,
+                    "positionEncoding": "utf-16",
+                    "codeActionProvider": {"resolveProvider": true},
+                    "referencesProvider": true,
+                    "documentSymbolProvider": true,
+                    "documentFormattingProvider": true,
+                    "executeCommandProvider": {"commands": ["fake.uppercase"]},
+                });
                 if mode != "no-will-rename" {
                     capabilities["workspace"] = json!({"fileOperations": {"willRename": {"filters": [{"pattern": {"glob": "**/*"}}]}}});
                 }
@@ -197,6 +212,208 @@ fn main() {
                 open.insert(
                     doc["uri"].as_str().unwrap().into(),
                     doc["text"].as_str().unwrap().into(),
+                );
+            }
+            ("textDocument/didChange", None) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap().to_string();
+                let text = params["contentChanges"][0]["text"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+                open.insert(uri, text);
+            }
+            ("textDocument/codeAction", Some(id)) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let text = &open[uri];
+                let start = offset(
+                    text,
+                    params["range"]["start"]["line"].as_u64().unwrap(),
+                    params["range"]["start"]["character"].as_u64().unwrap(),
+                );
+                let end = offset(
+                    text,
+                    params["range"]["end"]["line"].as_u64().unwrap(),
+                    params["range"]["end"]["character"].as_u64().unwrap(),
+                );
+                let mut actions = vec![
+                    json!({"title": "Uppercase file", "kind": "refactor.rewrite.uppercase",
+                           "command": {"title": "Uppercase", "command": "fake.uppercase", "arguments": [uri]}}),
+                    json!({"title": "Convert to async", "kind": "refactor.rewrite.async",
+                           "disabled": {"reason": "not a function"}}),
+                    json!({"title": "Organize imports", "kind": "source.organizeImports",
+                           "data": {"uri": uri, "op": "organize"}}),
+                ];
+                if start < end {
+                    actions.insert(0, json!({"title": "Extract into variable", "kind": "refactor.extract.variable",
+                           "data": {"uri": uri, "op": "extract", "start": start, "end": end}}));
+                }
+                let only: Vec<String> = params
+                    .pointer("/context/only")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|k| k.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let actions: Vec<Value> = actions
+                    .into_iter()
+                    .filter(|a| {
+                        let kind = a["kind"].as_str().unwrap_or("");
+                        only.is_empty()
+                            || only
+                                .iter()
+                                .any(|k| kind == k || kind.starts_with(&format!("{k}.")))
+                    })
+                    .collect();
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": actions}),
+                );
+            }
+            ("codeAction/resolve", Some(id)) => {
+                let mut action = params.clone();
+                let data = &params["data"];
+                if data.is_null() {
+                    send(
+                        &mut out,
+                        json!({"jsonrpc": "2.0", "id": id, "result": action}),
+                    );
+                    continue;
+                }
+                let uri = data["uri"].as_str().unwrap();
+                let text = open[uri].clone();
+                let edits = match data["op"].as_str().unwrap() {
+                    "extract" => {
+                        let (s, e) = (
+                            data["start"].as_u64().unwrap() as usize,
+                            data["end"].as_u64().unwrap() as usize,
+                        );
+                        let line_start = text[..s].rfind('\n').map_or(0, |i| i + 1);
+                        let indent: String = text[line_start..]
+                            .chars()
+                            .take_while(|c| *c == ' ')
+                            .collect();
+                        vec![
+                            json!({"range": {"start": position(&text, line_start), "end": position(&text, line_start)},
+                                   "newText": format!("{indent}let extracted = {};\n", &text[s..e])}),
+                            json!({"range": {"start": position(&text, s), "end": position(&text, e)}, "newText": "extracted"}),
+                        ]
+                    }
+                    _ => {
+                        // Sort the leading `use` lines.
+                        let lines: Vec<&str> = text.split_inclusive('\n').collect();
+                        let n = lines.iter().take_while(|l| l.starts_with("use ")).count();
+                        let mut uses: Vec<&str> = lines[..n].to_vec();
+                        uses.sort();
+                        let end: usize = lines[..n].iter().map(|l| l.len()).sum();
+                        vec![
+                            json!({"range": {"start": position(&text, 0), "end": position(&text, end)}, "newText": uses.concat()}),
+                        ]
+                    }
+                };
+                action["edit"] = json!({"changes": {uri: edits}});
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": action}),
+                );
+            }
+            ("workspace/executeCommand", Some(id)) => {
+                let uri = params["arguments"][0].as_str().unwrap();
+                let text = open[uri].clone();
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": "apply-1", "method": "workspace/applyEdit", "params": {"edit": {"changes": {uri: [
+                        {"range": {"start": position(&text, 0), "end": position(&text, text.len())}, "newText": text.to_uppercase()}
+                    ]}}}}),
+                );
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": null}),
+                );
+            }
+            ("textDocument/references", Some(id)) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let text = &open[uri];
+                let at = offset(
+                    text,
+                    params["position"]["line"].as_u64().unwrap(),
+                    params["position"]["character"].as_u64().unwrap(),
+                );
+                let (s, e) = ident_at(text, at).unwrap();
+                let name = text[s..e].to_string();
+                let include = params["context"]["includeDeclaration"]
+                    .as_bool()
+                    .unwrap_or(true);
+                let ext = uri_path(uri).extension().map(|e| e.to_owned());
+                let mut files: Vec<PathBuf> = std::fs::read_dir(&root)
+                    .unwrap()
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.extension().map(|e| e.to_owned()) == ext)
+                    .collect();
+                files.sort();
+                let mut locations = Vec::new();
+                for file in files {
+                    let content = std::fs::read_to_string(&file).unwrap();
+                    for i in occurrences(&content, &name) {
+                        let declaration = content[..i].ends_with("fn ");
+                        if declaration && !include {
+                            continue;
+                        }
+                        locations.push(json!({"uri": format!("file://{}", file.display()),
+                            "range": {"start": position(&content, i), "end": position(&content, i + name.len())}}));
+                    }
+                }
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": locations}),
+                );
+            }
+            ("textDocument/documentSymbol", Some(id)) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let text = &open[uri];
+                let mut symbols = Vec::new();
+                let mut at = 0;
+                for line in text.split_inclusive('\n') {
+                    if let Some(rest) = line.trim_start().strip_prefix("fn ") {
+                        let name: String = rest
+                            .chars()
+                            .take_while(|c| c.is_alphanumeric() || *c == '_')
+                            .collect();
+                        let name_at = at + line.find(&format!("fn {name}")).unwrap() + 3;
+                        // A one-line item, or up to the next line starting with `}`.
+                        let end = if line.contains('}') {
+                            at + line.trim_end().len()
+                        } else {
+                            let tail = &text[at..];
+                            at + tail.find("\n}").map_or(tail.len(), |i| i + 2)
+                        };
+                        symbols.push(json!({"name": name, "kind": 12,
+                            "range": {"start": position(text, at), "end": position(text, end)},
+                            "selectionRange": {"start": position(text, name_at), "end": position(text, name_at + name.len())}}));
+                    }
+                    at += line.len();
+                }
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": symbols}),
+                );
+            }
+            ("textDocument/formatting", Some(id)) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let text = &open[uri];
+                let formatted: String = text
+                    .lines()
+                    .map(|l| format!("{}\n", l.trim_end()))
+                    .collect();
+                let edits = if formatted == *text {
+                    json!([])
+                } else {
+                    json!([{"range": {"start": position(text, 0), "end": position(text, text.len())}, "newText": formatted}])
+                };
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": edits}),
                 );
             }
             ("textDocument/prepareRename", Some(id)) => {

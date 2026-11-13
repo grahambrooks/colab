@@ -96,6 +96,50 @@ where
     R: Read,
     W: Write,
 {
+    serve_with(reader, writer, backends, &NoTools)
+}
+
+/// Tools contributed by the binary that hosts the server.
+///
+/// `colab-mcp` depends on `colab-core` and `colab-dsl` only, so tools
+/// backed by a language server (`colab.references`, `colab.rename`,
+/// `colab.action`) cannot live here. The binary registers them through
+/// this trait — the same composition-root pattern as the backend
+/// registry — and they are listed and dispatched alongside the built-in
+/// ones.
+pub trait ToolProvider {
+    /// Tool descriptors in the `tools/list` shape (`name`, `description`,
+    /// `inputSchema`, `annotations`).
+    fn tools(&self) -> Vec<Value>;
+
+    /// Run `name`, or `None` if it is not one of this provider's tools.
+    fn call(&self, name: &str, args: &Value) -> Option<colab_core::Result<Value>>;
+}
+
+/// No extra tools.
+pub struct NoTools;
+
+impl ToolProvider for NoTools {
+    fn tools(&self) -> Vec<Value> {
+        Vec::new()
+    }
+
+    fn call(&self, _name: &str, _args: &Value) -> Option<colab_core::Result<Value>> {
+        None
+    }
+}
+
+/// [`serve`], with the host's extra tools.
+pub fn serve_with<R, W>(
+    reader: R,
+    writer: W,
+    backends: BackendRegistry,
+    extra: &dyn ToolProvider,
+) -> io::Result<()>
+where
+    R: Read,
+    W: Write,
+{
     let mut reader = BufReader::new(reader);
     let mut writer = writer;
 
@@ -121,18 +165,23 @@ where
         {
             return Ok(());
         }
-        handle_streaming(&message, &backends, &mut writer)?;
+        handle_streaming_with(&message, &backends, extra, &mut writer)?;
     }
 }
 
 /// Convenience entry point used by the binary: reads stdin, writes
 /// stdout, locks both for the duration.
 pub fn run(backends: BackendRegistry) -> io::Result<()> {
+    run_with(backends, &NoTools)
+}
+
+/// [`run`], with the host's extra tools.
+pub fn run_with(backends: BackendRegistry, extra: &dyn ToolProvider) -> io::Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let in_lock = stdin.lock();
     let out_lock = stdout.lock();
-    serve(in_lock, out_lock, backends)
+    serve_with(in_lock, out_lock, backends, extra)
 }
 
 /// Read one newline-delimited JSON-RPC message (MCP stdio transport).
@@ -168,6 +217,15 @@ fn write_message<W: Write>(writer: &mut W, value: &Value) -> io::Result<()> {
 /// Dispatch one parsed JSON-RPC message and return the response (if
 /// any — notifications produce `None`).
 pub fn handle(message: &Value, backends: &BackendRegistry) -> Option<Value> {
+    handle_with(message, backends, &NoTools)
+}
+
+/// [`handle`], with the host's extra tools.
+pub fn handle_with(
+    message: &Value,
+    backends: &BackendRegistry,
+    extra: &dyn ToolProvider,
+) -> Option<Value> {
     let id = message.get("id").cloned();
     let method = message.get("method").and_then(|m| m.as_str())?;
 
@@ -186,15 +244,24 @@ pub fn handle(message: &Value, backends: &BackendRegistry) -> Option<Value> {
         // `initialized` is a notification: client tells server that
         // initialization is complete. No response is expected.
         "initialized" | "notifications/initialized" => None,
-        "tools/list" => Some(make_response(id, json!({ "tools": tools::list() }))),
-        "tools/call" => Some(handle_call(id, message.get("params"), backends)),
+        "tools/list" => {
+            let mut list = tools::list();
+            list.extend(extra.tools());
+            Some(make_response(id, json!({ "tools": list })))
+        }
+        "tools/call" => Some(handle_call(id, message.get("params"), backends, extra)),
         // Notifications: no `id`, no response.
         _ if id.is_none() => None,
         _ => Some(make_error(id, METHOD_NOT_FOUND, "method not found")),
     }
 }
 
-fn handle_call(id: Option<Value>, params: Option<&Value>, backends: &BackendRegistry) -> Value {
+fn handle_call(
+    id: Option<Value>,
+    params: Option<&Value>,
+    backends: &BackendRegistry,
+    extra: &dyn ToolProvider,
+) -> Value {
     let Some(params) = params else {
         return make_error(id, INVALID_PARAMS, "missing params");
     };
@@ -205,6 +272,9 @@ fn handle_call(id: Option<Value>, params: Option<&Value>, backends: &BackendRegi
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
+    if let Some(outcome) = extra.call(name, &arguments) {
+        return tool_response(id, outcome.map_err(ToolError::from_error));
+    }
     tool_response(id, call_tool(name, &arguments, backends))
 }
 
@@ -302,6 +372,16 @@ pub fn handle_streaming<W: Write>(
     backends: &BackendRegistry,
     writer: &mut W,
 ) -> io::Result<()> {
+    handle_streaming_with(message, backends, &NoTools, writer)
+}
+
+/// [`handle_streaming`], with the host's extra tools.
+pub fn handle_streaming_with<W: Write>(
+    message: &Value,
+    backends: &BackendRegistry,
+    extra: &dyn ToolProvider,
+    writer: &mut W,
+) -> io::Result<()> {
     let is_tools_call = message
         .get("method")
         .and_then(|m| m.as_str())
@@ -316,12 +396,12 @@ pub fn handle_streaming<W: Write>(
             .cloned()
     {
         let id = message.get("id").cloned();
-        let response = handle_call_with_progress(id, params, backends, writer, &token)?;
+        let response = handle_call_with_progress(id, params, backends, extra, writer, &token)?;
         write_message(writer, &response)?;
         return Ok(());
     }
 
-    if let Some(response) = handle(message, backends) {
+    if let Some(response) = handle_with(message, backends, extra) {
         write_message(writer, &response)?;
     }
     Ok(())
@@ -331,6 +411,7 @@ fn handle_call_with_progress<W: Write>(
     id: Option<Value>,
     params: &Value,
     backends: &BackendRegistry,
+    extra: &dyn ToolProvider,
     writer: &mut W,
     token: &Value,
 ) -> io::Result<Value> {
@@ -347,7 +428,7 @@ fn handle_call_with_progress<W: Write>(
     let mode = match name {
         "colab.preview" => RunMode::Preview,
         "colab.apply" => RunMode::Apply,
-        _ => return Ok(handle_call(id, Some(params), backends)),
+        _ => return Ok(handle_call(id, Some(params), backends, extra)),
     };
 
     let mut sink = Notifications {
@@ -1591,5 +1672,59 @@ mod tests {
         });
         let resp = handle(&req, &registry()).unwrap();
         assert_eq!(resp["error"]["code"], INVALID_PARAMS);
+    }
+
+    struct Extra;
+
+    impl ToolProvider for Extra {
+        fn tools(&self) -> Vec<Value> {
+            vec![
+                json!({"name": "colab.extra", "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": true}}),
+            ]
+        }
+        fn call(&self, name: &str, args: &Value) -> Option<colab_core::Result<Value>> {
+            (name == "colab.extra").then(|| match args.get("fail") {
+                Some(_) => Err(colab_core::Error::Config("extra failed".into())),
+                None => Ok(json!({"echo": args})),
+            })
+        }
+    }
+
+    #[test]
+    fn a_host_provider_adds_tools_to_the_list_and_dispatch() {
+        let list = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"});
+        let resp = handle_with(&list, &registry(), &Extra).unwrap();
+        let names: Vec<&str> = resp["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"colab.preview") && names.contains(&"colab.extra"));
+
+        let call = |args: Value| {
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "colab.extra", "arguments": args}})
+        };
+        let ok = handle_with(&call(json!({"x": 1})), &registry(), &Extra).unwrap();
+        assert_eq!(ok["result"]["isError"], false);
+        assert!(
+            ok["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("\"x\":1")
+        );
+        let err = handle_with(&call(json!({"fail": true})), &registry(), &Extra).unwrap();
+        assert_eq!(err["result"]["isError"], true);
+        assert!(
+            err["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("extra failed")
+        );
+
+        // Without the provider the tool does not exist.
+        let plain = handle(&call(json!({})), &registry()).unwrap();
+        assert_ne!(plain["result"]["isError"], false);
     }
 }

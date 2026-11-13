@@ -84,7 +84,8 @@ everything that follows.
   near-miss diagnostics, `--help-json` (M17); structural patterns,
   `colab find`, `colab ast` (M18); LSP hover / code actions /
   client-mode rename (M19); git-aware file operations and `colab mv`
-  (M24). ⏳ next: delegated code actions and references (M25), then agent install + guardrails
+  (M24); `colab action` / `references` / `safe-delete`, `--tidy`, and
+  the LSP-backed MCP tools (M25). ⏳ next: agent install + guardrails
   (M20) — see "Next steps: closing the IntelliJ gap" below.
 - **Goal 4 — operational concerns.** ✅ Test corpus + idempotency
   check, CI (build/test/clippy/audit). ⏳ remaining: property tests
@@ -826,11 +827,11 @@ rename and nothing else:
 
 | IntelliJ | colab today | Closed by |
 | -------- | ----------- | --------- |
-| Extract method / variable / constant / parameter, Inline, Change Signature, Pull Up / Push Down, Introduce Parameter Object | — | M25 (delegated code actions) |
+| Extract method / variable / constant / parameter, Inline, Change Signature, Pull Up / Push Down, Introduce Parameter Object | `colab action` — whatever the server offers (M25) | ✅ M25 |
 | Move class / file / package, rename class *and* its file | `colab mv` + file operations in `colab rename`, through git (M24) | ✅ M24; more via M25 code actions |
-| Find Usages, Safe Delete | syntactic `colab find` only | M25 |
+| Find Usages, Safe Delete | `colab references`, `colab safe-delete` (M25) | ✅ M25 |
 | Call / type hierarchy | none | unscheduled (`callHierarchy` / `typeHierarchy` on the M25 client) |
-| Optimize imports + reformat after every refactoring | hand-written `ensure` / `delete` rules | M25 `--tidy`, M26 |
+| Optimize imports + reformat after every refactoring | `--tidy` on rename / mv / action / safe-delete (M25); not yet on `refactor` | ✅ M25 (partly), M26 |
 | SSR constraints (count, regex, type, within) | none | M26 |
 | Conflicts dialog before applying | after the fact only (`--verify`) | M27 |
 | `//noinspection` suppression | none | M20 |
@@ -916,7 +917,7 @@ never loses history.
     src/helpers.rs` updates `mod util;` and `util::go()`). CI uses the
     fake server's `file-op` / `no-will-rename` modes on real git repos.
 
-### M25 — Delegated code actions, references, and `--tidy`
+### ✅ M25 — Delegated code actions, references, and `--tidy`
 
 M19's client already starts the server, waits out indexing, and turns a
 `WorkspaceEdit` into `FileChange`s. A code action is the same pipeline
@@ -959,6 +960,27 @@ with a different request.
   - `docs/features.md` gets a per-server capability table, and the CI
     fake server gains code-action, `executeCommand` and
     `willRenameFiles` modes.
+- **Shipped:**
+  - `colab action` (with `--list`, `--kind`, `--title`), `colab
+    references`, `colab safe-delete`, and `--tidy`, in
+    `colab_lsp_client::actions` and `colab-cli/src/lsp_commands.rs`.
+  - MCP tools `colab.references`, `colab.rename` and `colab.action`,
+    through `colab_mcp::ToolProvider`.
+  - Verified against rust-analyzer: extract function, references,
+    safe-delete refusing a used function and deleting an unused one, and
+    `--tidy` sorting imports.
+  - The fake server gained code actions (resolve, command +
+    `applyEdit`, disabled), references, document symbols, organize
+    imports and formatting.
+  - Two specifics: an action is resolved only when it has no edit and
+    has `data` or no command, and `--tidy` tidies the *new* contents,
+    so it works in a dry run.
+- **Deferred:**
+  - `--tidy` on `refactor`: its reporters stream per file as the walk
+    goes, so tidying needs a second pass reported as its own rule.
+  - Formatter commands configured per language in `colab.toml` wait for
+    M14.
+  - A `colab.mv` MCP tool.
 
 ### M26 — Pattern constraints and import-aware templates
 

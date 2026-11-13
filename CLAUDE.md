@@ -24,6 +24,10 @@ cargo run -p colab-cli -- find -e '<match …>' [paths...]         # read-only: 
 cargo run -p colab-cli -- ast --lang go --pattern '<code>'       # a pattern's (or --stdin snippet's) syntax tree
 cargo run -p colab-cli -- rename --at f.rs:2:9 --to new           # scope-aware rename via the language's LSP server (dry-run)
 cargo run -p colab-cli -- mv src/a.rs src/b.rs                   # git mv + the server's reference updates (willRenameFiles)
+cargo run -p colab-cli -- action --at f.rs:3:5-3:20 --list       # the server's code actions there (extract, inline, …)
+cargo run -p colab-cli -- action --at f.rs:3:5-3:20 --kind refactor.extract --title function --format diff
+cargo run -p colab-cli -- references --symbol foo --in f.rs      # scope-aware references
+cargo run -p colab-cli -- safe-delete --symbol foo --in f.rs     # delete only if unreferenced (--tidy: organize imports + format)
 cargo run -p colab-cli -- schema                                 # JSON capability schema
 cargo run -p colab-cli -- <cmd> --help-json                      # any command's flags/subcommands as JSON
 cargo run -p colab-cli -- list-languages                         # registered backends
@@ -54,8 +58,8 @@ The repo is a Cargo workspace under `crates/`:
 | `colab-backends` | The single composition root: `registry()` registers all 15 backends. `colab-cli` depends on it at runtime; `colab-dsl`/`colab-mcp` as a dev-dependency only. Owns the cross-backend contract tests. |
 | `colab-dsl`      | LALRPOP grammar, AST, compiler, `Refactoring` IR. Depends only on `colab-core`; no compile-time knowledge of any backend. |
 | `colab-lang-*`      | One crate per language, 15 in total: 12 source languages and 3 config formats (`json`, `markdown`, `toml`). Every source backend provides an import-equivalent (`replace`/`delete`/`ensure`), `symbol` (rename), and `call` (`replace_call`); see the table below and [`docs/features.md`](docs/features.md) for the per-backend extras and caveats. |
-| `colab-lsp-client`  | colab as an LSP *client*: spawns rust-analyzer / gopls / clangd / …, waits for indexing, runs `prepareRename` + `rename` or `workspace/willRenameFiles`, and turns the `WorkspaceEdit` (file operations included) into a `ChangeSet`. Used by `colab rename`; depends on `colab-core` + `colab-rewrite` only, and is deliberately not a dependency of `colab-mcp`. Tests drive `examples/fake_lsp.rs`. |
-| `colab-mcp`         | MCP server. Wraps `preview`/`apply`/`schema`/`lint_script` as MCP tools over JSON-RPC 2.0 with Content-Length framing on stdio. Depends only on `colab-core` + `colab-dsl`; never pulls in a `colab-lang-*` crate. |
+| `colab-lsp-client`  | colab as an LSP *client*: spawns rust-analyzer / gopls / clangd / …, waits for indexing, runs `prepareRename` + `rename`, `workspace/willRenameFiles`, and (`actions.rs`) code actions — resolving them or executing their command and capturing the `workspace/applyEdit` it triggers —, references, document symbols, organize-imports and formatting, and turns the `WorkspaceEdit` (file operations included) into a `ChangeSet`. Used by `colab rename`; depends on `colab-core` + `colab-rewrite` only, and is deliberately not a dependency of `colab-mcp`. Tests drive `examples/fake_lsp.rs`. |
+| `colab-mcp`         | MCP server. Wraps `preview`/`apply`/`schema`/`lint_script` as MCP tools over JSON-RPC 2.0 with Content-Length framing on stdio. Depends only on `colab-core` + `colab-dsl`; never pulls in a `colab-lang-*` crate. Tools that need other crates (`colab.references` / `colab.rename` / `colab.action`) are injected by the binary through `colab_mcp::ToolProvider` (`colab-cli/src/lsp_commands.rs::LspTools`). |
 | `colab-cli`         | The `colab` binary. Builds the default `BackendRegistry` (all 15 backends), serves the LSP (`colab server`) with diagnostics + completion for `.codemod` files, and launches the MCP server (`colab mcp`). |
 
 Language backends and the modules each adds beyond the common floor

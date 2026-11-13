@@ -13,6 +13,7 @@ mod format;
 mod git;
 mod help_json;
 mod language_server;
+mod lsp_commands;
 mod packs;
 
 use std::io::Write;

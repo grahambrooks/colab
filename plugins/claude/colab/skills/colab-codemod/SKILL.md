@@ -274,6 +274,29 @@ installed (`--lsp` to choose one) and the project root it expects
 take seconds, not milliseconds: use `<lang>::symbol` when the name is
 unique, `colab rename` when it is not.
 
+## IDE refactorings — extract, inline, references, safe delete
+
+For a *semantic* one-off (extract this into a function, inline that,
+who calls this, is this dead), ask the language server through colab
+instead of editing by hand. Each is reported, checked, and reversible
+like a codemod (`--format diff`, `--check`, `--backup`, `--verify`):
+
+```sh
+colab action --at src/lib.rs:40:9-42:30 --list                  # what the server offers here
+colab action --at src/lib.rs:40:9-42:30 --kind refactor.extract --title function --format diff
+colab references --symbol parse_header --in src/http.rs         # scope-aware, unlike rg -w
+colab safe-delete --symbol old_helper --in src/util.rs --write  # refuses (exit 1) if still used
+```
+
+- Extract needs a **selection** (`FILE:L:C-L:C`); most actions a position.
+- If several actions match, the error lists them all; re-run with a
+  sharper `--title`. Servers name kinds differently (rust-analyzer: every
+  extract is `refactor.extract`), so `--list` first.
+- Add `--tidy` to organize imports and format the changed files via the
+  same server; it shows up as a separate `tidy via …` rule.
+- Over MCP: `colab.action` (`list: true` first), `colab.references`,
+  `colab.rename` — previews unless `write: true`.
+
 ## Moving files — never `mv` by hand
 
 To move or rename a file, use `colab mv` rather than `mv` / `git mv` plus

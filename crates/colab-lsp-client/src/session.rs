@@ -35,6 +35,12 @@ pub struct Session {
     quiescent: Option<bool>,
     deadline: Instant,
     root_uri: String,
+    /// While `Some`, `workspace/applyEdit` requests are accepted and their
+    /// edits collected here instead of being refused — the result of a
+    /// code action that runs a command (see [`Session::capture_edits`]).
+    captured: Option<Vec<Value>>,
+    /// Documents opened so far, with their version.
+    versions: std::collections::HashMap<String, i64>,
 }
 
 impl Session {
@@ -64,6 +70,8 @@ impl Session {
             quiescent: None,
             deadline: Instant::now() + timeout,
             root_uri: path_to_uri(root),
+            captured: None,
+            versions: Default::default(),
         };
         let root_uri = session.root_uri.clone();
         let resource_operations = if file_operations {
@@ -86,12 +94,28 @@ impl Session {
                         "workspace": {
                             "workspaceEdit": {"documentChanges": true, "resourceOperations": resource_operations},
                             "fileOperations": {"willRename": file_operations},
+                            "applyEdit": true,
+                            "executeCommand": {},
                             "workspaceFolders": true,
                             "configuration": true
                         },
                         "textDocument": {
                             "synchronization": {"didSave": false},
-                            "rename": {"prepareSupport": true}
+                            "rename": {"prepareSupport": true},
+                            "codeAction": {
+                                "codeActionLiteralSupport": {"codeActionKind": {"valueSet": [
+                                    "", "quickfix", "refactor", "refactor.extract",
+                                    "refactor.inline", "refactor.rewrite", "refactor.move",
+                                    "source", "source.organizeImports", "source.fixAll"
+                                ]}},
+                                "resolveSupport": {"properties": ["edit", "command"]},
+                                "dataSupport": true,
+                                "isPreferredSupport": true,
+                                "disabledSupport": true
+                            },
+                            "references": {},
+                            "documentSymbol": {"hierarchicalDocumentSymbolSupport": true},
+                            "formatting": {}
                         },
                         "experimental": {"serverStatusNotification": true}
                     }
@@ -110,6 +134,42 @@ impl Session {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Tell the server about `path` with contents `text`: `didOpen` the
+    /// first time, a full-text `didChange` after that.
+    pub fn open(&mut self, path: &Path, text: &str) -> Result<()> {
+        let uri = path_to_uri(path);
+        match self.versions.get_mut(&uri) {
+            Some(version) => {
+                *version += 1;
+                let version = *version;
+                self.notify(
+                    "textDocument/didChange",
+                    json!({"textDocument": {"uri": uri, "version": version}, "contentChanges": [{"text": text}]}),
+                )
+            }
+            None => {
+                self.versions.insert(uri.clone(), 1);
+                self.notify(
+                    "textDocument/didOpen",
+                    json!({"textDocument": {"uri": uri, "languageId": crate::language_id(path), "version": 1, "text": text}}),
+                )
+            }
+        }
+    }
+
+    /// Start (or stop and collect) accepting `workspace/applyEdit`. A code
+    /// action that is a *command* makes its change by sending the client
+    /// an edit to apply; colab takes that edit as the action's result and
+    /// writes it only through its own report.
+    pub fn capture_edits(&mut self, on: bool) -> Vec<Value> {
+        if on {
+            self.captured = Some(Vec::new());
+            Vec::new()
+        } else {
+            self.captured.take().unwrap_or_default()
+        }
     }
 
     pub fn notify(&mut self, method: &str, params: Value) -> Result<()> {
@@ -284,11 +344,19 @@ impl Session {
             | "workspace/diagnostic/refresh" => {
                 json!({"jsonrpc": "2.0", "id": id, "result": Value::Null})
             }
-            "workspace/applyEdit" => {
-                // We never asked for one; refuse so nothing is applied behind
-                // colab's report.
-                json!({"jsonrpc": "2.0", "id": id, "result": {"applied": false, "failureReason": "colab applies edits itself"}})
-            }
+            "workspace/applyEdit" => match self.captured.as_mut() {
+                Some(captured) => {
+                    captured.push(params.get("edit").cloned().unwrap_or(Value::Null));
+                    // "Applied" to colab's change set, which is reported
+                    // and written (or not) by colab itself.
+                    json!({"jsonrpc": "2.0", "id": id, "result": {"applied": true}})
+                }
+                // Not running a command: refuse so nothing is applied
+                // behind colab's report.
+                None => {
+                    json!({"jsonrpc": "2.0", "id": id, "result": {"applied": false, "failureReason": "colab applies edits itself"}})
+                }
+            },
             _ => {
                 json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32601, "message": "method not supported by colab"}})
             }

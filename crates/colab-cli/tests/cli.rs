@@ -2162,3 +2162,337 @@ fn mv_says_when_the_server_cannot_update_references_and_verify_reverts_it() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+// ---------- M25: code actions, references, safe delete, tidy -------------
+
+const RS_ACT_A: &str = "use zeta;\nuse alpha;\nfn helper() {}   \nfn unused() {}\nfn main() {\n    let x = 1 + 2;\n    helper();\n}\n";
+const RS_ACT_B: &str = "fn other() { helper(); }\n";
+
+fn action_workspace(label: &str) -> PathBuf {
+    let root = workspace_temp(label);
+    write(&root.join("a.rs"), RS_ACT_A);
+    write(&root.join("b.rs"), RS_ACT_B);
+    root
+}
+
+fn lsp_cmd(root: &std::path::Path, args: &[&str]) -> std::process::Output {
+    colab()
+        .args(args)
+        .arg("--lsp")
+        .arg(fake_lsp())
+        .args(["--root", ".", "-C"])
+        .arg(root)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn action_lists_and_picks_by_kind_and_title() {
+    let root = action_workspace("action-pick");
+    let output = lsp_cmd(
+        &root,
+        &[
+            "action",
+            "--at",
+            "a.rs:6:13-6:18",
+            "--list",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let titles: Vec<&str> = value["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        titles,
+        [
+            "Extract into variable",
+            "Uppercase file",
+            "Convert to async",
+            "Organize imports"
+        ]
+    );
+    assert_eq!(value["actions"][2]["disabled"], "not a function");
+
+    // A selection + a dotted-prefix kind; the edit needs codeAction/resolve.
+    let output = lsp_cmd(
+        &root,
+        &[
+            "action",
+            "--at",
+            "a.rs:6:13-6:18",
+            "--kind",
+            "refactor.extract",
+            "--write",
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        fs::read_to_string(root.join("a.rs"))
+            .unwrap()
+            .contains("    let extracted = 1 + 2;\n    let x = extracted;\n")
+    );
+
+    // Several matches, or only a disabled one: an error naming what exists.
+    let output = lsp_cmd(
+        &root,
+        &[
+            "action",
+            "--at",
+            "a.rs:1:1",
+            "--kind",
+            "refactor.rewrite",
+            "--title",
+            "e",
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "only one enabled action matches"
+    );
+    let output = lsp_cmd(
+        &root,
+        &[
+            "action",
+            "--at",
+            "a.rs:1:1",
+            "--title",
+            "async",
+            "--dry-run",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("no action matched") && stderr.contains("disabled: not a function"),
+        "{stderr}"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn a_command_action_is_applied_from_the_edit_the_server_sends_back() {
+    let root = action_workspace("action-command");
+    let output = lsp_cmd(
+        &root,
+        &[
+            "action",
+            "--at",
+            "a.rs:1:1",
+            "--title",
+            "uppercase",
+            "--format",
+            "json",
+            "--check",
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["changed"], serde_json::json!(["a.rs"]));
+    assert!(
+        value["rules"][0]["rule"]
+            .as_str()
+            .unwrap()
+            .contains("Uppercase file")
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("a.rs")).unwrap(),
+        RS_ACT_A,
+        "--check writes nothing"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn references_are_listed_with_and_without_the_declaration() {
+    let root = action_workspace("references");
+    let output = lsp_cmd(&root, &["references", "--symbol", "helper", "--in", "a.rs"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("a.rs:7:5: helper();"), "{stdout}");
+    assert!(
+        stdout.contains("b.rs:1:14: fn other() { helper(); }"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("2 reference(s) in 2 file(s)"), "{stdout}");
+
+    let output = lsp_cmd(
+        &root,
+        &[
+            "references",
+            "--at",
+            "a.rs:3:4",
+            "--include-declaration",
+            "--format",
+            "json",
+            "--max-results",
+            "2",
+        ],
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["summary"]["references"], 3);
+    assert_eq!(value["references"].as_array().unwrap().len(), 2);
+    assert_eq!(value["truncated"], 1);
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn safe_delete_refuses_a_used_symbol_and_deletes_an_unused_one_then_tidies() {
+    let root = action_workspace("safe-delete");
+    let output = lsp_cmd(
+        &root,
+        &[
+            "safe-delete",
+            "--symbol",
+            "helper",
+            "--in",
+            "a.rs",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["deleted"], false);
+    assert_eq!(value["summary"]["references"], 2);
+    assert_eq!(fs::read_to_string(root.join("a.rs")).unwrap(), RS_ACT_A);
+
+    let output = lsp_cmd(
+        &root,
+        &[
+            "safe-delete",
+            "--symbol",
+            "unused",
+            "--in",
+            "a.rs",
+            "--tidy",
+            "--format",
+            "json",
+            "--write",
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        value["rules"][0]["rule"]
+            .as_str()
+            .unwrap()
+            .starts_with("safe delete `unused`")
+    );
+    assert!(
+        value["rules"][1]["rule"]
+            .as_str()
+            .unwrap()
+            .starts_with("tidy via")
+    );
+    assert_eq!(value["rules"][1]["files"], 1);
+    // Deleted, imports sorted, trailing whitespace gone.
+    assert_eq!(
+        fs::read_to_string(root.join("a.rs")).unwrap(),
+        "use alpha;\nuse zeta;\nfn helper() {}\nfn main() {\n    let x = 1 + 2;\n    helper();\n}\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn mcp_serves_the_language_server_tools() {
+    let root = action_workspace("mcp-lsp");
+    let lsp = fake_lsp();
+    let call = |id: u32, name: &str, args: Value| {
+        serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": {"name": name, "arguments": args}})
+        .to_string()
+    };
+    let cwd = root.to_str().unwrap();
+    let input = [
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string(),
+        call(2, "colab.references", serde_json::json!({"symbol": "helper", "in": "a.rs", "lsp": lsp, "root": ".", "cwd": cwd})),
+        call(3, "colab.rename", serde_json::json!({"symbol": "helper", "in": "a.rs", "to": "assist", "lsp": lsp, "root": ".", "cwd": cwd})),
+        call(4, "colab.action", serde_json::json!({"at": "a.rs:1:1", "title": "nope", "lsp": lsp, "root": ".", "cwd": cwd})),
+    ]
+    .join("\n")
+        + "\n";
+    let mut child = colab()
+        .arg("mcp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let names: Vec<&str> = replies[0]["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    for tool in [
+        "colab.references",
+        "colab.rename",
+        "colab.action",
+        "colab.preview",
+    ] {
+        assert!(names.contains(&tool), "{tool} in {names:?}");
+    }
+    let text = |i: usize| -> Value {
+        serde_json::from_str(replies[i]["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    };
+    assert_eq!(text(1)["summary"]["references"], 2);
+    assert_eq!(text(2)["changed"], serde_json::json!(["a.rs", "b.rs"]));
+    assert_eq!(text(2)["written"], false);
+    assert_eq!(
+        fs::read_to_string(root.join("b.rs")).unwrap(),
+        RS_ACT_B,
+        "preview only"
+    );
+    assert_eq!(replies[3]["result"]["isError"], true);
+    assert!(
+        text(3)["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no action matched")
+    );
+    fs::remove_dir_all(&root).ok();
+}

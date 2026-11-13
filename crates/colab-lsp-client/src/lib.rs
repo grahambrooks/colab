@@ -19,6 +19,7 @@
 //! `apply_edits`) only. It is used by the CLI, not by `colab-mcp`, which
 //! must stay free of `tree-sitter`.
 
+pub mod actions;
 pub mod edit;
 pub mod session;
 pub mod transport;
@@ -84,7 +85,7 @@ impl ServerCommand {
 }
 
 /// The LSP `languageId` for a file, by extension.
-fn language_id(path: &Path) -> &'static str {
+pub(crate) fn language_id(path: &Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()).unwrap_or("") {
         "rs" => "rust",
         "go" => "go",
@@ -211,7 +212,7 @@ pub fn will_rename(server: &ServerCommand, request: &MoveRequest) -> Result<Move
 
 /// A `WorkspaceEdit` in its `documentChanges` shape, converting a
 /// `changes` map, so more entries can be appended in order.
-fn as_document_changes(edit: &Value) -> Value {
+pub(crate) fn as_document_changes(edit: &Value) -> Value {
     if edit.get("documentChanges").is_some_and(Value::is_array) {
         return json!({"documentChanges": edit["documentChanges"].clone()});
     }

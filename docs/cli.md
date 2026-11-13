@@ -247,7 +247,7 @@ colab rename (--at FILE:LINE:COL | --symbol NAME --in FILE) --to NEW
              [--lsp '<command>'] [--root DIR] [-C DIR]
              [--format human|json|ndjson|diff] [--write|--dry-run|--check]
              [--backup DIR] [--verify CMD] [--allow-dirty] [--commit-moves]
-             [--timeout SECS] [--detail LEVEL]
+             [--tidy] [--timeout SECS] [--detail LEVEL]
 ```
 
 ```sh
@@ -302,7 +302,7 @@ declaration and paths, TypeScript imports, Java packages).
 colab mv FROM TO [--lsp '<command>' | --no-lsp] [--root DIR] [-C DIR]
          [--format human|json|ndjson|diff] [--write|--dry-run|--check]
          [--backup DIR] [--verify CMD] [--allow-dirty] [--commit-moves]
-         [--timeout SECS] [--detail LEVEL]
+         [--tidy] [--timeout SECS] [--detail LEVEL]
 ```
 
 ```sh
@@ -334,6 +334,94 @@ R  src/util.rs -> src/helpers.rs
   `--no-lsp` moves with git alone.
 - Everything else (modes, `--check` exit 10, `--backup`, `--verify`,
   `--format diff` as `git apply` input) is as for `rename`.
+
+### `colab action`
+
+Run one of the language server's **code actions** — the refactorings an
+IDE offers: extract function / variable / constant, inline, change
+signature, convert, organize imports — and report it like a codemod.
+colab computes none of them; the server does, and its answer goes
+through the same report, diff, `--check`, `--backup`, `--verify`, and
+git-aware file operations as `rename`.
+
+```
+colab action --at FILE:LINE:COL[-LINE:COL] (--list | [--kind KIND] [--title TEXT])
+             [--lsp '<command>'] [--root DIR] [-C DIR] [--timeout SECS]
+             [--format …] [--write|--dry-run|--check] [--backup DIR]
+             [--verify CMD] [--allow-dirty] [--commit-moves] [--tidy] [--detail LEVEL]
+```
+
+```sh
+$ colab action --at src/main.rs:11:16-11:25 --list            # rust-analyzer
+refactor.extract                 Extract into variable
+refactor.extract                 Extract into constant
+refactor.extract                 Extract into static
+refactor.extract                 Extract into function
+
+$ colab action --at src/main.rs:11:16-11:25 --kind refactor.extract --title function --format diff
+-        sum += p * 2 + 1;
++        sum += fun_name(p);
+…
++fn fun_name(p: &u32) -> u32 {
++    p * 2 + 1
++}
+```
+
+- **`--at`** is a position (`FILE:LINE:COL`) or a selection
+  (`FILE:LINE:COL-LINE:COL`), 1-based, columns in characters. Extract
+  actions need a selection; most others a position.
+- **Choosing.** `--kind` is a dotted prefix (`refactor.extract` matches
+  `refactor.extract.function`); `--title` a case-insensitive substring.
+  Exactly one *enabled* action must match — several, or none, is an error
+  that lists every action offered there, disabled ones with the server's
+  reason, so the next call can be exact. An exact title breaks a tie.
+  Servers differ: rust-analyzer gives every extract the kind
+  `refactor.extract`, so its titles are what tell them apart.
+- **How it runs.** An action without an edit is resolved
+  (`codeAction/resolve`). One that carries a *command* is executed
+  (`workspace/executeCommand`), and the edit the server then sends back
+  (`workspace/applyEdit`) becomes the result — accepted only in that
+  window, and written only through colab's report.
+
+### `colab references`
+
+```
+colab references (--at FILE:LINE:COL | --symbol NAME --in FILE) [--include-declaration]
+                 [--format human|json] [--max-results N] [--lsp …] [--root DIR] [-C DIR]
+```
+
+The references the server resolves to the symbol — scope-aware, unlike
+`rg -w`, which also matches every other symbol with the same name.
+`human` prints `path:line:col: <the whole line>`; `json` is
+`{references: [{path, line, col, text}], summary: {files, references},
+truncated?}`, the `colab find` shape. Use it to see a change's reach
+before making it.
+
+### `colab safe-delete`
+
+```
+colab safe-delete (--at FILE:LINE:COL | --symbol NAME --in FILE) [--lsp …] [--root DIR] [-C DIR]
+                  [--format …] [--write|--dry-run|--check] [--backup DIR] [--verify CMD] [--tidy]
+```
+
+Delete a declaration only if nothing outside it refers to it. The
+declaration's extent is the server's (`textDocument/documentSymbol`, so
+doc comments and attributes go with it where the server counts them);
+references inside it, such as recursion, do not keep it alive. If
+references remain, nothing is changed: they are printed (or, with
+`--format json`, returned as `{deleted: false, symbol, references, …}`)
+and the command exits 1.
+
+### `--tidy`
+
+On `rename`, `mv`, `action`, and `safe-delete`: after the change, the
+same server organizes imports (`source.organizeImports`) and formats
+(`textDocument/formatting`) each changed file — the new contents, so it
+works in a dry run too. Tidying is reported as its own rule, `tidy via
+<server>`, so the report shows which changes are the refactoring's and
+which are tidying's. A server without one of the two is warned about and
+skipped. (Not yet on `refactor`, whose report streams as it walks; and
+per-language formatter commands wait for `colab.toml`, M14.)
 
 ### File operations
 
@@ -561,6 +649,14 @@ MCP-aware host) can call them directly:
 | `colab.ast` | `lang`, one of `pattern` / `source` | A pattern's tree as compiled (with `context` and `prefilter`), or a snippet's (with `has_error`). |
 | `colab.preview` | `script`, `paths[]`, `cwd?`, `detail?`, `max_files?`, `max_diff_bytes?` | Summary, per-rule match counts, changed paths, and (at `detail: "diff"`) capped diffs. Disk untouched. |
 | `colab.apply` | same as preview | Same shape, but writes changes back. |
+| `colab.references` | `at` (`FILE:LINE:COL`) or `symbol` + `in`, `include_declaration?`, `max_results?`, `lsp?`, `root?`, `cwd?` | References the language server resolves; same document as `colab references --format json`. Read-only. |
+| `colab.rename` | position as above, `to`, `write?`, `tidy?`, `detail?`, `lsp?`, `root?`, `cwd?` | Scope-aware rename via the server; the `colab.preview` report plus `written`. |
+| `colab.action` | `at` (position or `FILE:L:C-L:C` selection), `list?`, `kind?`, `title?`, `write?`, `tidy?`, … | With `list: true`, `{actions: [{title, kind, preferred, disabled?}]}`; otherwise runs the one matching action and returns the report. |
+
+The last three are served by the `colab` binary: `colab-mcp` stays free of
+the language-server client, and the binary registers them through
+`colab_mcp::ToolProvider`. They preview unless `write: true`, and are
+annotated `destructiveHint` because they can write.
 
 `detail` defaults to `counts`, which describes the blast radius without
 paying for diffs. Every tool is annotated (`readOnlyHint`, and
