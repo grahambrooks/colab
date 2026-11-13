@@ -40,6 +40,7 @@ fn request(root: &Path, file: &str, offset: usize, new_name: &str) -> RenameRequ
         new_name: new_name.into(),
         timeout: Duration::from_secs(20),
         settle: Duration::from_millis(100),
+        file_operations: false,
     }
 }
 
@@ -75,15 +76,16 @@ fn renames_across_files_after_indexing_and_a_retry() {
     assert_eq!(outcome.old_name.as_deref(), Some("old"));
     let names: Vec<_> = outcome
         .changes
+        .edits
         .iter()
         .map(|c| c.path.file_name().unwrap().to_owned())
         .collect();
     assert_eq!(names, ["a.rs", "b.rs"]);
     assert_eq!(
-        outcome.changes[0].after,
+        outcome.changes.edits[0].after,
         "fn new() {}\nfn main() { new(); }\n"
     );
-    assert_eq!(outcome.changes[1].after, "use crate::new;\n");
+    assert_eq!(outcome.changes.edits[1].after, "use crate::new;\n");
     assert_eq!(
         std::fs::read_to_string(root.join("a.rs")).unwrap(),
         text,

@@ -7,6 +7,7 @@
 
 pub mod backend;
 pub mod error;
+pub mod fileops;
 pub mod find;
 pub mod near_miss;
 pub mod render;

@@ -10,6 +10,11 @@
 //! nothing semantic itself; the server does, and colab makes its answer
 //! reviewable and revertable.
 //!
+//! A rename can also move files (a Java class and its file), and
+//! [`will_rename`] moves a file and asks the server what must follow it.
+//! Those file operations come back in a [`ChangeSet`]; the CLI makes them
+//! with git so history survives.
+//!
 //! The crate depends on `colab-core` and `colab-rewrite` (for
 //! `apply_edits`) only. It is used by the CLI, not by `colab-mcp`, which
 //! must stay free of `tree-sitter`.
@@ -21,7 +26,7 @@ pub mod transport;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use colab_core::walker::FileChange;
+use colab_core::fileops::ChangeSet;
 use colab_core::{Error, Result};
 use serde_json::{Value, json};
 
@@ -115,15 +120,109 @@ pub struct RenameRequest {
     /// How long the server must be silent, with no work in progress,
     /// before it counts as ready.
     pub settle: Duration,
+    /// Whether colab can make file operations here (it is in a git work
+    /// tree). When true the server is told it may answer with create /
+    /// rename / delete operations; when false they are refused.
+    pub file_operations: bool,
 }
 
 /// The server's answer, as files colab can report on and write.
 #[derive(Debug)]
 pub struct RenameOutcome {
-    /// Changed files, sorted by path. Each records rule index 0.
-    pub changes: Vec<FileChange>,
+    /// File operations in order, then changed files sorted by path. Each
+    /// edit records rule index 0.
+    pub changes: ChangeSet,
     /// The symbol's current name, when the server or the file says.
     pub old_name: Option<String>,
+}
+
+/// Move a file (or directory) and let the server update what refers to it.
+#[derive(Debug, Clone)]
+pub struct MoveRequest {
+    pub root: PathBuf,
+    /// Absolute paths.
+    pub from: PathBuf,
+    pub to: PathBuf,
+    pub timeout: Duration,
+    pub settle: Duration,
+}
+
+/// The move plus whatever the server changed to follow it.
+#[derive(Debug)]
+pub struct MoveOutcome {
+    /// Starts with the server's own edits and ends with the move itself,
+    /// so an edit the server made to the moved file lands at its new path.
+    pub changes: ChangeSet,
+    /// `false` when the server does not advertise
+    /// `workspace.fileOperations.willRename`: references were not updated.
+    pub references_updated: bool,
+}
+
+/// Ask `server` which edits moving `request.from` to `request.to` needs
+/// (`workspace/willRenameFiles`), and add the move itself.
+///
+/// The server sees the move before it happens, as the protocol intends;
+/// its edits are against the files as they are now. A server that does
+/// not support `willRenameFiles` still yields the move, with
+/// `references_updated` false so the caller can say so.
+pub fn will_rename(server: &ServerCommand, request: &MoveRequest) -> Result<MoveOutcome> {
+    let mut session = Session::start(
+        &server.program,
+        &server.args,
+        &request.root,
+        request.timeout,
+        true,
+    )?;
+    let supported = session
+        .capabilities
+        .pointer("/workspace/fileOperations/willRename")
+        .is_some_and(|v| !v.is_null());
+    let mut edit = json!({"documentChanges": []});
+    if supported {
+        session.wait_until_quiet(request.settle)?;
+        let params = json!({"files": [{
+            "oldUri": path_to_uri(&request.from),
+            "newUri": path_to_uri(&request.to),
+        }]});
+        let answer = session
+            .request_retrying("workspace/willRenameFiles", params)?
+            .map_err(|e| session.server_error("workspace/willRenameFiles", &e))?;
+        if !answer.is_null() {
+            edit = as_document_changes(&answer);
+        }
+    }
+    let encoding = session.encoding;
+    session.shutdown();
+
+    edit["documentChanges"]
+        .as_array_mut()
+        .expect("as_document_changes builds an array")
+        .push(json!({
+            "kind": "rename",
+            "oldUri": path_to_uri(&request.from),
+            "newUri": path_to_uri(&request.to),
+        }));
+    let changes = edit::to_change_set(&edit, encoding, &edit::Disk, true)?;
+    Ok(MoveOutcome {
+        changes,
+        references_updated: supported,
+    })
+}
+
+/// A `WorkspaceEdit` in its `documentChanges` shape, converting a
+/// `changes` map, so more entries can be appended in order.
+fn as_document_changes(edit: &Value) -> Value {
+    if edit.get("documentChanges").is_some_and(Value::is_array) {
+        return json!({"documentChanges": edit["documentChanges"].clone()});
+    }
+    let entries: Vec<Value> = edit
+        .get("changes")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .map(|(uri, edits)| json!({"textDocument": {"uri": uri, "version": null}, "edits": edits}))
+        .collect();
+    json!({"documentChanges": entries})
 }
 
 /// Ask `server` to rename the symbol at `request.offset`.
@@ -135,6 +234,7 @@ pub fn rename(server: &ServerCommand, request: &RenameRequest) -> Result<RenameO
         &server.args,
         &request.root,
         request.timeout,
+        request.file_operations,
     )?;
 
     let rename_capability = session
@@ -198,12 +298,7 @@ pub fn rename(server: &ServerCommand, request: &RenameRequest) -> Result<RenameO
             "`{name}` returned no edit for the rename"
         )));
     }
-    let changes = edit::to_changes(&edit, encoding, |path| {
-        std::fs::read_to_string(path).map_err(|e| Error::io_at(path, e))
-    })?
-    .into_iter()
-    .filter(FileChange::changed)
-    .collect();
+    let changes = edit::to_change_set(&edit, encoding, &edit::Disk, request.file_operations)?;
     Ok(RenameOutcome { changes, old_name })
 }
 

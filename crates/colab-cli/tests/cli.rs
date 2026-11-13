@@ -1889,3 +1889,276 @@ fn rename_without_a_default_server_asks_for_lsp() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("pass --lsp"));
     fs::remove_dir_all(&root).ok();
 }
+
+// ---------- M24: git-aware file operations ------------------------------
+
+fn git(root: &std::path::Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// A committed git repo holding `files`.
+fn git_workspace(label: &str, files: &[(&str, &str)]) -> PathBuf {
+    let root = workspace_temp(label).canonicalize().unwrap();
+    for (name, text) in files {
+        write(&root.join(name), text);
+    }
+    git(&root, &["init", "-q"]);
+    git(&root, &["config", "user.email", "test@example.com"]);
+    git(&root, &["config", "user.name", "test"]);
+    git(&root, &["config", "commit.gpgsign", "false"]);
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "init"]);
+    root
+}
+
+/// `colab rename` against the fake in `file-op` mode, which also renames
+/// the symbol's file to `<new>.rs` — like a Java class rename.
+fn file_op_rename(root: &std::path::Path, extra: &[&str]) -> std::process::Output {
+    colab()
+        .env("FAKE_LSP_MODE", "file-op")
+        .args(["rename", "--at", "a.rs:1:4", "--to", "new", "--lsp"])
+        .arg(fake_lsp())
+        .args(["--root", "."])
+        .args(extra)
+        .arg("-C")
+        .arg(root)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn a_rename_that_moves_a_file_does_it_with_git_and_undo_reverses_it() {
+    let root = git_workspace("fileops-rename", &[("a.rs", RS_A), ("b.rs", RS_B)]);
+
+    let output = file_op_rename(&root, &["--format", "json", "--check"]);
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["moved"],
+        serde_json::json!([{"from": "a.rs", "to": "new.rs"}])
+    );
+    assert_eq!(value["summary"]["moved"], 1);
+    assert!(root.join("a.rs").exists(), "--check changes nothing");
+
+    let backup = workspace_temp("fileops-rename-backup");
+    let output = file_op_rename(&root, &["--write", "--backup", backup.to_str().unwrap()]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!root.join("a.rs").exists());
+    assert_eq!(
+        fs::read_to_string(root.join("new.rs")).unwrap(),
+        "fn new() {}\nfn main() { new(); }\n"
+    );
+    // The index holds the move; the work tree holds the edits.
+    let status = git(&root, &["status", "--porcelain"]);
+    assert!(status.contains("RM a.rs -> new.rs"), "{status}");
+    assert!(status.contains(" M b.rs"), "{status}");
+
+    let status = colab()
+        .args(["undo", "--from"])
+        .arg(&backup)
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(
+        git(&root, &["status", "--porcelain"]),
+        "",
+        "undo leaves a clean tree"
+    );
+    assert_eq!(fs::read_to_string(root.join("a.rs")).unwrap(), RS_A);
+    fs::remove_dir_all(&root).ok();
+    fs::remove_dir_all(&backup).ok();
+}
+
+#[test]
+fn commit_moves_keeps_the_history_of_a_moved_and_rewritten_file() {
+    let root = git_workspace("fileops-follow", &[("a.rs", RS_A), ("b.rs", RS_B)]);
+    // Without --commit-moves, the rewrite is flagged as a history risk.
+    let output = file_op_rename(&root, &["--format", "json", "--dry-run"]);
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        value["warnings"][0]
+            .as_str()
+            .unwrap()
+            .contains("--commit-moves"),
+        "{value}"
+    );
+
+    let output = file_op_rename(&root, &["--write", "--commit-moves"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        git(&root, &["log", "-1", "--format=%s"]).trim(),
+        "colab: move a.rs -> new.rs"
+    );
+    // The edits are left for the user to commit.
+    git(&root, &["commit", "-q", "-am", "rename old to new"]);
+    let history = git(&root, &["log", "--follow", "--format=%s", "--", "new.rs"]);
+    assert_eq!(
+        history.lines().collect::<Vec<_>>(),
+        ["rename old to new", "colab: move a.rs -> new.rs", "init"]
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn file_operations_refuse_dirty_paths_and_a_tree_outside_git() {
+    let root = git_workspace("fileops-dirty", &[("a.rs", RS_A), ("b.rs", RS_B)]);
+    write(&root.join("b.rs"), "use crate::old; // wip\n");
+    let output = file_op_rename(&root, &["--dry-run"]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("uncommitted changes") && stderr.contains("b.rs"),
+        "{stderr}"
+    );
+    let output = file_op_rename(&root, &["--dry-run", "--allow-dirty"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::remove_dir_all(&root).ok();
+
+    // Outside git the server is told it may not move files, and a move it
+    // sends anyway is refused.
+    let root = rename_workspace("fileops-nogit");
+    let output = file_op_rename(&root, &["--dry-run"]);
+    assert_eq!(output.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("git work tree"));
+    let output = colab()
+        .args(["mv", "--no-lsp", "a.rs", "z.rs", "--write", "-C"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    assert!(root.join("a.rs").exists());
+    fs::remove_dir_all(&root).ok();
+}
+
+const RS_MOD: &str = "mod util;\nfn main() { util::go(); }\n";
+const RS_UTIL: &str = "pub fn go() {}\n";
+
+#[test]
+fn mv_updates_references_and_prints_a_patch_git_applies() {
+    let root = git_workspace("fileops-mv", &[("main.rs", RS_MOD), ("util.rs", RS_UTIL)]);
+    let mv = |extra: &[&str]| {
+        colab()
+            .args(["mv", "util.rs", "helpers.rs", "--lsp"])
+            .arg(fake_lsp())
+            .args(["--root", "."])
+            .args(extra)
+            .arg("-C")
+            .arg(&root)
+            .output()
+            .unwrap()
+    };
+
+    let output = mv(&["--format", "diff"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let patch = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        patch.contains("similarity index 100%\nrename from util.rs\nrename to helpers.rs"),
+        "{patch}"
+    );
+    let patch_file = root.join("../mv.patch");
+    fs::write(&patch_file, &patch).unwrap();
+    git(
+        &root,
+        &["apply", "--check", "--index", patch_file.to_str().unwrap()],
+    );
+    fs::remove_file(&patch_file).ok();
+
+    let output = mv(&["--write"]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("main.rs")).unwrap(),
+        "mod helpers;\nfn main() { helpers::go(); }\n"
+    );
+    let status = git(&root, &["status", "--porcelain"]);
+    assert!(status.contains("R  util.rs -> helpers.rs"), "{status}");
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn mv_says_when_the_server_cannot_update_references_and_verify_reverts_it() {
+    let root = git_workspace(
+        "fileops-mv-nowill",
+        &[("main.rs", RS_MOD), ("util.rs", RS_UTIL)],
+    );
+    let output = colab()
+        .env("FAKE_LSP_MODE", "no-will-rename")
+        .args(["mv", "util.rs", "sub/", "--lsp"])
+        .arg(fake_lsp())
+        .args(["--root", ".", "--format", "json", "--dry-run", "-C"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        value["warnings"][0]
+            .as_str()
+            .unwrap()
+            .contains("does not update references"),
+        "{value}"
+    );
+
+    // A failing --verify puts everything back, including the directory
+    // the move had to create.
+    let output = colab()
+        .args(["mv", "util.rs", "lib/util.rs", "--lsp"])
+        .arg(fake_lsp())
+        .args(["--root", ".", "--verify", "false", "-C"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("undid 1 file operation(s)"));
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
+    assert!(
+        !root.join("lib").exists(),
+        "the directory the move made is removed again"
+    );
+    fs::remove_dir_all(&root).ok();
+}

@@ -246,7 +246,8 @@ revertable.
 colab rename (--at FILE:LINE:COL | --symbol NAME --in FILE) --to NEW
              [--lsp '<command>'] [--root DIR] [-C DIR]
              [--format human|json|ndjson|diff] [--write|--dry-run|--check]
-             [--backup DIR] [--verify CMD] [--timeout SECS] [--detail LEVEL]
+             [--backup DIR] [--verify CMD] [--allow-dirty] [--commit-moves]
+             [--timeout SECS] [--detail LEVEL]
 ```
 
 ```sh
@@ -277,9 +278,12 @@ $ colab rename --at src/config.rs:2:9 --to amount --format diff
   in progress (`$/progress`, rust-analyzer's `serverStatus`) and has been
   quiet for 500 ms; a server still indexing at `--timeout` (default 120 s)
   is an error, because its answer could be partial.
-- **Refused, not half-done:** an edit that would create, rename, or
-  delete a *file*; a server without `renameProvider`; a server that is
-  not installed (the error says to pass `--lsp`).
+- **File operations** (jdtls renaming a class *and* its file, a module
+  rename) are made through git; see [File operations](#file-operations).
+  Outside a git work tree the server is told it may not send any, and one
+  it sends anyway is refused (exit 3).
+- **Refused, not half-done:** a server without `renameProvider`; a server
+  that is not installed (the error says to pass `--lsp`).
 - **Modes and safety** match `refactor`: dry-run unless `--write` (or
   `--format human` on a TTY); `--check` exits 10; `--backup` pairs with
   `colab undo`; `--verify` restores every file and exits 1 if the command
@@ -287,6 +291,84 @@ $ colab rename --at src/config.rs:2:9 --to amount --format diff
 
 The report has one rule, `lsp rename `old` -> `new` via <server>`, so
 `--format json` has the same shape as any `refactor` run.
+
+### `colab mv`
+
+Move a file or directory with `git mv`, and let the language server
+update what refers to it (`workspace/willRenameFiles`: a Rust `mod`
+declaration and paths, TypeScript imports, Java packages).
+
+```
+colab mv FROM TO [--lsp '<command>' | --no-lsp] [--root DIR] [-C DIR]
+         [--format human|json|ndjson|diff] [--write|--dry-run|--check]
+         [--backup DIR] [--verify CMD] [--allow-dirty] [--commit-moves]
+         [--timeout SECS] [--detail LEVEL]
+```
+
+```sh
+$ colab mv src/util.rs src/helpers.rs --format diff     # rust-analyzer
+--- a/src/main.rs
++++ b/src/main.rs
+-mod util;
++mod helpers;
+ fn main() {
+-    util::go();
++    helpers::go();
+ }
+diff --git a/src/util.rs b/src/helpers.rs
+similarity index 100%
+rename from src/util.rs
+rename to src/helpers.rs
+
+$ colab mv src/util.rs src/helpers.rs --write --verify "cargo check -q"
+$ git status --short
+R  src/util.rs -> src/helpers.rs
+ M src/main.rs
+```
+
+- **`TO`** that is an existing directory means "into it", as for `mv`. An
+  existing file is never overwritten.
+- **Server:** defaults by `FROM`'s extension, as for `rename`. One that
+  does not advertise `willRename` still gets the move, with a warning that
+  references were not updated; so does a path with no default server.
+  `--no-lsp` moves with git alone.
+- Everything else (modes, `--check` exit 10, `--backup`, `--verify`,
+  `--format diff` as `git apply` input) is as for `rename`.
+
+### File operations
+
+`colab rename` and `colab mv` can move, create, or delete files. They do
+it only inside a git work tree (a repository or a linked worktree), and
+only with git, so a mistake is recoverable and history survives:
+
+- **Moves** use `git mv`, so the index records the rename at once.
+  Creates are `git add`ed and deletes are `git rm`ed. Content edits are
+  written after the operations and left **unstaged**, so
+  `git diff --staged` shows the file operations and `git diff` the edits.
+  An untracked file is moved on disk and the report says git has no
+  history to keep.
+- **Clean paths.** A run is refused if any path it touches (both ends of
+  a move, every edited file) has uncommitted changes, so undoing colab can
+  never discard your work. `--allow-dirty` overrides. The check runs in
+  every mode, so a dry run tells you whether the write would succeed.
+- **History.** Git does not store renames. It infers them when a deleted
+  and an added file are at least 50% similar, so a file that is moved
+  *and* heavily rewritten in one commit looks like a delete plus an add,
+  and `git log --follow` / `blame` stop there. colab warns about each such
+  file. `--commit-moves` commits the file operations on their own first
+  (`colab: move a.rs -> b.rs`, only those paths, with your hooks), and the
+  edits stay for you to commit, so history follows the file.
+- **Undo.** `--backup DIR` also records the operations
+  (`DIR/colab-file-ops.json`). `colab undo --from DIR` moves files back
+  with git, removes created files, restores deleted ones, then restores
+  contents. A failed `--verify` does the same, after dropping the
+  `--commit-moves` commit if it is still `HEAD`.
+- **Output.** JSON gains `moved: [{from, to}]`, `created`, and `deleted`
+  (plus counts in `summary`) only when there are file operations. ndjson
+  emits `{"type": "move"|"create"|"delete", …}` events first. Diff output
+  carries git's `rename from` / `rename to`, `new file mode`, and
+  `deleted file mode` headers, so `git apply --index` replays it.
+  `--check` counts a pending file operation as a change (exit 10).
 
 ### `colab ast`
 
@@ -349,10 +431,12 @@ colab list-rules rust
 
 ### `colab undo --from <DIR>`
 
-Restore files from a backup directory produced by `colab refactor
---backup <DIR>`. The backup directory mirrors the absolute paths
-of every file the run touched; `colab undo` walks it and writes
-each backup over its original location.
+Restore files from a backup directory produced by `colab refactor`,
+`rename`, or `mv` with `--backup <DIR>`. The backup directory mirrors the
+absolute paths of every file the run touched; `colab undo` walks it and
+writes each backup over its original location. If the run made file
+operations, they are undone first, through git (see
+[File operations](#file-operations)).
 
 ```sh
 colab refactor --script s.codemod --write --backup .colab-backup .

@@ -83,8 +83,8 @@ everything that follows.
   diagnostics + completion, inline `-e` rules, `colab.test_rule`,
   near-miss diagnostics, `--help-json` (M17); structural patterns,
   `colab find`, `colab ast` (M18); LSP hover / code actions /
-  client-mode rename (M19). ⏳ next: git-aware file operations and
-  delegated refactorings (M24–M25), then agent install + guardrails
+  client-mode rename (M19); git-aware file operations and `colab mv`
+  (M24). ⏳ next: delegated code actions and references (M25), then agent install + guardrails
   (M20) — see "Next steps: closing the IntelliJ gap" below.
 - **Goal 4 — operational concerns.** ✅ Test corpus + idempotency
   check, CI (build/test/clippy/audit). ⏳ remaining: property tests
@@ -827,7 +827,7 @@ rename and nothing else:
 | IntelliJ | colab today | Closed by |
 | -------- | ----------- | --------- |
 | Extract method / variable / constant / parameter, Inline, Change Signature, Pull Up / Push Down, Introduce Parameter Object | — | M25 (delegated code actions) |
-| Move class / file / package, rename class *and* its file | refused: `colab rename` rejects file operations | M24 + M25 |
+| Move class / file / package, rename class *and* its file | `colab mv` + file operations in `colab rename`, through git (M24) | ✅ M24; more via M25 code actions |
 | Find Usages, Safe Delete | syntactic `colab find` only | M25 |
 | Call / type hierarchy | none | unscheduled (`callHierarchy` / `typeHierarchy` on the M25 client) |
 | Optimize imports + reformat after every refactoring | hand-written `ensure` / `delete` rules | M25 `--tidy`, M26 |
@@ -843,7 +843,7 @@ below stand.
 
 Order: M24 → M25 → M20 → M26 → M27 (with M22), then M14, M21, M22, M23.
 
-### M24 — Git-aware file operations (next)
+### ✅ M24 — Git-aware file operations
 
 Agents work in a git repo or worktree, where a mistake is recoverable.
 So a file operation is made through git rather than refused, and it
@@ -898,6 +898,23 @@ never loses history.
   stays. "Anything it cannot report and revert as text is refused"
   becomes "anything it cannot report and revert *through git* is
   refused".
+
+- **Shipped as planned**, with these specifics:
+  - `colab_core::fileops::{FileOp, ChangeSet}`, with
+    `ChangeSet::origin_of` to map a final path back.
+  - `colab_lsp_client::edit::to_change_set` replays `documentChanges`
+    in order on a virtual copy of the files, and refuses overwrites and
+    directory deletes.
+  - `colab_lsp_client::will_rename`, and `colab-cli/src/{git,apply}.rs`.
+  - Edits are left unstaged after the operations, so the index holds
+    exactly the file operations.
+  - `--commit-moves` commits with `--only`, so whatever the user had
+    staged stays staged.
+  - `--commit-per-rule` is unchanged: `refactor` makes no file
+    operations.
+  - Verified against rust-analyzer (`colab mv src/util.rs
+    src/helpers.rs` updates `mod util;` and `util::go()`). CI uses the
+    fake server's `file-op` / `no-will-rename` modes on real git repos.
 
 ### M25 — Delegated code actions, references, and `--tidy`
 

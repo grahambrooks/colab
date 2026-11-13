@@ -6,9 +6,11 @@
 //! [`colab_core::Error::exit_code`] and emitted as a single error log
 //! line.
 
+mod apply;
 mod cli;
 mod discover;
 mod format;
+mod git;
 mod help_json;
 mod language_server;
 mod packs;

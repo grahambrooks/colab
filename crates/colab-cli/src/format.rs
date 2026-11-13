@@ -16,6 +16,7 @@
 use std::io::{self, Write};
 
 use clap::ValueEnum;
+use colab_core::fileops::FileOp;
 use colab_core::render::{self, ChangeCollector, Detail, RenderOptions};
 use colab_core::report::RunReport;
 use colab_core::walker::FileChange;
@@ -72,6 +73,11 @@ impl Format {
 
 /// Stream consumer of [`FileChange`] events plus a final [`RunReport`].
 pub trait Reporter {
+    /// One file operation, reported before any [`report`](Self::report)
+    /// of an edit, in the order the operations are made.
+    fn file_op(&mut self, _op: &FileOp) -> io::Result<()> {
+        Ok(())
+    }
     fn report(&mut self, change: &FileChange) -> io::Result<()>;
     /// Emit whatever the format shows at the end of a run, then flush.
     /// Called exactly once, after the last `report`.
@@ -107,6 +113,17 @@ impl HumanReporter {
 }
 
 impl Reporter for HumanReporter {
+    fn file_op(&mut self, op: &FileOp) -> io::Result<()> {
+        if self.options.detail == Detail::Summary {
+            return Ok(());
+        }
+        match self.mode {
+            ExecMode::Write => log::info!("Made {}", op),
+            ExecMode::DryRun | ExecMode::Check => log::info!("Would {}", op),
+        }
+        Ok(())
+    }
+
     fn report(&mut self, change: &FileChange) -> io::Result<()> {
         if !change.changed() {
             log::debug!("No changes for {}", change.path.display());
@@ -134,6 +151,13 @@ impl Reporter for HumanReporter {
             report.bytes_after,
             report.elapsed.as_millis()
         )?;
+        if !report.file_ops.is_empty() {
+            writeln!(
+                self.out,
+                "{} file operation(s) made through git",
+                report.file_ops.len()
+            )?;
+        }
 
         if self.options.detail != Detail::Summary {
             for rule in &report.rules {
@@ -147,6 +171,9 @@ impl Reporter for HumanReporter {
             }
         }
 
+        for op in &report.file_ops {
+            writeln!(self.out, "  {}", op)?;
+        }
         for skipped in &report.skipped {
             writeln!(
                 self.out,
@@ -215,6 +242,22 @@ impl NdjsonReporter {
 }
 
 impl Reporter for NdjsonReporter {
+    fn file_op(&mut self, op: &FileOp) -> io::Result<()> {
+        if self.options.detail == Detail::Summary {
+            return Ok(());
+        }
+        let value = match op {
+            FileOp::Move { from, to } => {
+                json!({"type": "move", "from": from.to_string_lossy(), "to": to.to_string_lossy()})
+            }
+            FileOp::Create { path } => json!({"type": "create", "path": path.to_string_lossy()}),
+            FileOp::Delete { path, .. } => {
+                json!({"type": "delete", "path": path.to_string_lossy()})
+            }
+        };
+        writeln!(self.out, "{}", value)
+    }
+
     fn report(&mut self, change: &FileChange) -> io::Result<()> {
         if !change.changed() || self.options.detail == Detail::Summary {
             return Ok(());
@@ -262,11 +305,22 @@ impl Reporter for NdjsonReporter {
 /// summary so the output stays valid `patch` input.
 pub struct DiffReporter {
     out: io::Stdout,
+    /// Where each moved or created file came from (`None`: created), so
+    /// its edits diff against the old path, as `git apply` expects.
+    origins: std::collections::HashMap<std::path::PathBuf, Option<std::path::PathBuf>>,
+    /// Rename / new-file headers not yet written, by the file's final
+    /// path. Each is written immediately above that file's hunks — one
+    /// `diff --git` block per file — or, for a pure move, at the end.
+    pending: Vec<(std::path::PathBuf, FileOp)>,
 }
 
 impl DiffReporter {
     pub fn new() -> Self {
-        Self { out: io::stdout() }
+        Self {
+            out: io::stdout(),
+            origins: Default::default(),
+            pending: Vec::new(),
+        }
     }
 }
 
@@ -277,15 +331,54 @@ impl Default for DiffReporter {
 }
 
 impl Reporter for DiffReporter {
+    fn file_op(&mut self, op: &FileOp) -> io::Result<()> {
+        match op {
+            FileOp::Move { from, to } => {
+                let origin = self.origins.remove(from).unwrap_or(Some(from.clone()));
+                self.origins.insert(to.clone(), origin);
+                self.pending.push((to.clone(), op.clone()));
+                Ok(())
+            }
+            FileOp::Create { path } => {
+                self.origins.insert(path.clone(), None);
+                self.pending.push((path.clone(), op.clone()));
+                Ok(())
+            }
+            FileOp::Delete { .. } => render::write_file_op_header(&mut self.out, op, false),
+        }
+    }
+
     fn report(&mut self, change: &FileChange) -> io::Result<()> {
         if !change.changed() {
             return Ok(());
         }
-        render::write_unified_diff(&mut self.out, &change.path, &change.before, &change.after)
+        if let Some(i) = self.pending.iter().position(|(p, _)| *p == change.path) {
+            let (_, op) = self.pending.remove(i);
+            render::write_file_op_header(&mut self.out, &op, false)?;
+        }
+        match self.origins.get(&change.path) {
+            Some(origin) => render::write_unified_diff_between(
+                &mut self.out,
+                origin.as_deref(),
+                &change.path,
+                &change.before,
+                &change.after,
+            ),
+            None => render::write_unified_diff(
+                &mut self.out,
+                &change.path,
+                &change.before,
+                &change.after,
+            ),
+        }
     }
 
     fn finish(&mut self, _report: &RunReport) -> io::Result<()> {
-        // No summary: this output is meant to be piped to `patch`.
+        // Moves and creates with no content change.
+        for (_, op) in std::mem::take(&mut self.pending) {
+            render::write_file_op_header(&mut self.out, &op, true)?;
+        }
+        // No summary: this output is meant to be piped to `git apply`.
         self.out.flush()
     }
 }

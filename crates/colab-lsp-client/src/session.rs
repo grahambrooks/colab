@@ -39,7 +39,16 @@ pub struct Session {
 
 impl Session {
     /// Spawn the server in `root` and complete `initialize` / `initialized`.
-    pub fn start(program: &str, args: &[String], root: &Path, timeout: Duration) -> Result<Self> {
+    ///
+    /// `file_operations` says whether the caller can make create / rename /
+    /// delete operations; it decides what the client advertises.
+    pub fn start(
+        program: &str,
+        args: &[String],
+        root: &Path,
+        timeout: Duration,
+        file_operations: bool,
+    ) -> Result<Self> {
         let transport = Transport::spawn(program, args, root).map_err(|e| {
             Error::Config(format!(
                 "could not start language server `{program}`: {e}. Is it installed and on PATH? (pass --lsp to choose another)"
@@ -57,6 +66,11 @@ impl Session {
             root_uri: path_to_uri(root),
         };
         let root_uri = session.root_uri.clone();
+        let resource_operations = if file_operations {
+            json!(["create", "rename", "delete"])
+        } else {
+            json!([])
+        };
         let result = session
             .request(
                 "initialize",
@@ -70,7 +84,8 @@ impl Session {
                         "general": {"positionEncodings": ["utf-8", "utf-16"]},
                         "window": {"workDoneProgress": true},
                         "workspace": {
-                            "workspaceEdit": {"documentChanges": true, "resourceOperations": []},
+                            "workspaceEdit": {"documentChanges": true, "resourceOperations": resource_operations},
+                            "fileOperations": {"willRename": file_operations},
                             "workspaceFolders": true,
                             "configuration": true
                         },

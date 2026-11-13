@@ -274,6 +274,26 @@ installed (`--lsp` to choose one) and the project root it expects
 take seconds, not milliseconds: use `<lang>::symbol` when the name is
 unique, `colab rename` when it is not.
 
+## Moving files — never `mv` by hand
+
+To move or rename a file, use `colab mv` rather than `mv` / `git mv` plus
+hand-fixed imports. It runs `git mv` and asks the language server which
+references must follow (`mod util;`, `import ./util`, Java packages):
+
+```sh
+colab mv src/util.rs src/helpers.rs --format diff                 # what moves, what follows
+colab mv src/util.rs src/helpers.rs --write --verify 'cargo check -q'
+git status --short   # R = the move (staged), M = reference edits (unstaged)
+```
+
+File operations happen only in a git work tree, and only when the
+touched paths have no uncommitted changes (commit first, or
+`--allow-dirty`). A `colab rename` that renames a file too (a Java class)
+follows the same rules. If the report warns that a moved file changed so
+much that git may lose its history, re-run with `--commit-moves`: the
+move is committed on its own and `git log --follow` keeps working.
+`--backup DIR` + `colab undo --from DIR` reverses moves as well as edits.
+
 ## Applying safely
 
 ```sh

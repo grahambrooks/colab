@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
+use crate::fileops::FileOp;
 use crate::report::RunReport;
 use crate::walker::FileChange;
 
@@ -166,6 +167,8 @@ impl ChangeCollector {
             ),
         );
 
+        file_ops_json(report, obj);
+
         if !report.skipped.is_empty() {
             obj.insert(
                 "skipped".to_string(),
@@ -201,9 +204,11 @@ impl ChangeCollector {
     }
 }
 
-/// The aggregate counters. Present at every detail level.
+/// The aggregate counters. Present at every detail level. `moved`,
+/// `created`, and `deleted` appear only when a run has file operations,
+/// so ordinary codemod output keeps its shape.
 pub fn summary_json(report: &RunReport) -> Value {
-    json!({
+    let mut summary = json!({
         "visited": report.files_visited,
         "scanned": report.files_scanned,
         "changed": report.files_changed,
@@ -211,7 +216,99 @@ pub fn summary_json(report: &RunReport) -> Value {
         "bytes_before": report.bytes_before,
         "bytes_after": report.bytes_after,
         "elapsed_ms": report.elapsed.as_millis() as u64,
-    })
+    });
+    if !report.file_ops.is_empty() {
+        let count =
+            |want: fn(&FileOp) -> bool| report.file_ops.iter().filter(|op| want(op)).count();
+        summary["moved"] = json!(count(|op| matches!(op, FileOp::Move { .. })));
+        summary["created"] = json!(count(|op| matches!(op, FileOp::Create { .. })));
+        summary["deleted"] = json!(count(|op| matches!(op, FileOp::Delete { .. })));
+    }
+    summary
+}
+
+/// `moved: [{from, to}]`, `created: [path]`, `deleted: [path]`, each only
+/// when non-empty.
+fn file_ops_json(report: &RunReport, obj: &mut serde_json::Map<String, Value>) {
+    let mut moved = Vec::new();
+    let mut created = Vec::new();
+    let mut deleted = Vec::new();
+    for op in &report.file_ops {
+        match op {
+            FileOp::Move { from, to } => {
+                moved.push(json!({"from": display_path(from), "to": display_path(to)}))
+            }
+            FileOp::Create { path } => created.push(json!(display_path(path))),
+            FileOp::Delete { path, .. } => deleted.push(json!(display_path(path))),
+        }
+    }
+    for (key, list) in [("moved", moved), ("created", created), ("deleted", deleted)] {
+        if !list.is_empty() {
+            obj.insert(key.to_string(), Value::Array(list));
+        }
+    }
+}
+
+/// The git-style header announcing a file operation in `--format diff`
+/// output, so the stream stays `git apply` input: renames carry
+/// `rename from` / `rename to`, creates and deletes their file mode.
+/// `pure` marks a move with no content change (`similarity index 100%`),
+/// which `git apply` needs to accept a rename with no hunks.
+pub fn write_file_op_header<W: Write>(out: &mut W, op: &FileOp, pure: bool) -> io::Result<()> {
+    match op {
+        FileOp::Move { from, to } => {
+            writeln!(out, "diff --git a/{} b/{}", from.display(), to.display())?;
+            if pure {
+                writeln!(out, "similarity index 100%")?;
+            }
+            writeln!(
+                out,
+                "rename from {}\nrename to {}",
+                from.display(),
+                to.display()
+            )
+        }
+        FileOp::Create { path } => writeln!(
+            out,
+            "diff --git a/{p} b/{p}\nnew file mode 100644",
+            p = path.display()
+        ),
+        FileOp::Delete { path, before } => {
+            writeln!(
+                out,
+                "diff --git a/{p} b/{p}\ndeleted file mode 100644",
+                p = path.display()
+            )?;
+            if before.is_empty() {
+                return Ok(());
+            }
+            let diff = similar::TextDiff::from_lines(before.as_str(), "");
+            write!(
+                out,
+                "{}",
+                diff.unified_diff()
+                    .header(&format!("a/{}", path.display()), "/dev/null")
+            )
+        }
+    }
+}
+
+/// A unified diff whose old and new sides have different paths — a file
+/// that was moved and edited. A created file's old side is `/dev/null`.
+pub fn write_unified_diff_between<W: Write>(
+    out: &mut W,
+    from: Option<&Path>,
+    to: &Path,
+    before: &str,
+    after: &str,
+) -> io::Result<()> {
+    let header_a = match from {
+        Some(from) => format!("a/{}", from.display()),
+        None => "/dev/null".to_string(),
+    };
+    let header_b = format!("b/{}", to.display());
+    let diff = similar::TextDiff::from_lines(before, after);
+    write!(out, "{}", diff.unified_diff().header(&header_a, &header_b))
 }
 
 /// Per-rule match counts. `files: 0` marks a dead rule.
@@ -245,21 +342,19 @@ pub fn rules_json(report: &RunReport) -> Value {
 /// and a warning that disagrees with the data beside it is worse than no
 /// number at all.
 pub fn advisories(report: &RunReport) -> Vec<String> {
-    let mut out: Vec<String> = report
-        .dead_rules()
-        .map(|r| {
-            let mut line = format!("matched no files: {}", r.rule);
-            if !r.near_misses.is_empty() {
-                let seen: Vec<String> = r
-                    .near_misses
-                    .iter()
-                    .map(|m| format!("`{}` ({} file(s))", m.value, m.files))
-                    .collect();
-                line.push_str(&format!("; nearest seen: {}", seen.join(", ")));
-            }
-            line
-        })
-        .collect();
+    let mut out: Vec<String> = report.warnings.clone();
+    out.extend(report.dead_rules().map(|r| {
+        let mut line = format!("matched no files: {}", r.rule);
+        if !r.near_misses.is_empty() {
+            let seen: Vec<String> = r
+                .near_misses
+                .iter()
+                .map(|m| format!("`{}` ({} file(s))", m.value, m.files))
+                .collect();
+            line.push_str(&format!("; nearest seen: {}", seen.join(", ")));
+        }
+        line
+    }));
     if let Some(reason) = explain_no_changes(report) {
         out.push(reason);
     }
@@ -272,7 +367,7 @@ pub fn advisories(report: &RunReport) -> Vec<String> {
 /// This is the counterpart to the three-counter split: it turns an
 /// otherwise ambiguous empty result into a specific next step.
 pub fn explain_no_changes(report: &RunReport) -> Option<String> {
-    if report.files_changed > 0 {
+    if report.files_changed > 0 || !report.file_ops.is_empty() {
         return None;
     }
     if report.files_visited == 0 {

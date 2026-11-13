@@ -77,6 +77,12 @@ pub struct RunReport {
     /// that matched nothing can be explained afterwards without a second
     /// walk (see [`crate::near_miss::probe`]).
     pub scanned_sample: Vec<PathBuf>,
+    /// File operations the run made (or would make), in order — moves,
+    /// creates, deletes. Empty for ordinary codemods.
+    pub file_ops: Vec<crate::fileops::FileOp>,
+    /// Run-specific warnings beyond the generic advisories, e.g. a moved
+    /// file whose history git may not follow.
+    pub warnings: Vec<String>,
 }
 
 /// How many scanned paths a [`RunReport`] remembers for near-miss probing.

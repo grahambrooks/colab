@@ -8,9 +8,14 @@
 //! - reports a `$/progress` "indexing" run that ends ~300 ms later,
 //! - fails the *first* `textDocument/rename` with `ContentModified`.
 //!
+//! It also answers `workspace/willRenameFiles` by renaming whole-word
+//! occurrences of the moved file's stem (think `mod old;`) in every file
+//! with the same extension.
+//!
 //! `FAKE_LSP_MODE` changes behaviour: `no-rename` (no renameProvider),
-//! `file-op` (answers with a file rename operation), `slow` (indexing
-//! never finishes).
+//! `file-op` (a rename also renames the symbol's file to `<new>.<ext>`,
+//! like a Java class), `no-will-rename` (no willRenameFiles support),
+//! `slow` (indexing never finishes).
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -101,6 +106,34 @@ fn occurrences(text: &str, name: &str) -> Vec<usize> {
         .collect()
 }
 
+/// Edits renaming whole-word `name` to `new_name` in every file of the
+/// root with extension `ext`, keyed by URI.
+fn rename_everywhere(
+    root: &Path,
+    ext: Option<&std::ffi::OsStr>,
+    name: &str,
+    new_name: &str,
+) -> serde_json::Map<String, Value> {
+    let mut changes = serde_json::Map::new();
+    let mut files: Vec<PathBuf> = std::fs::read_dir(root)
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension() == ext)
+        .collect();
+    files.sort();
+    for file in files {
+        let content = std::fs::read_to_string(&file).unwrap();
+        let edits: Vec<Value> = occurrences(&content, name)
+            .into_iter()
+            .map(|i| json!({"range": {"start": position(&content, i), "end": position(&content, i + name.len())}, "newText": new_name}))
+            .collect();
+        if !edits.is_empty() {
+            changes.insert(format!("file://{}", file.display()), Value::Array(edits));
+        }
+    }
+    changes
+}
+
 fn main() {
     let mode = std::env::var("FAKE_LSP_MODE").unwrap_or_default();
     let stdin = std::io::stdin();
@@ -128,9 +161,14 @@ fn main() {
                 } else {
                     json!({"prepareProvider": true})
                 };
+                let mut capabilities =
+                    json!({"renameProvider": rename, "positionEncoding": "utf-16"});
+                if mode != "no-will-rename" {
+                    capabilities["workspace"] = json!({"fileOperations": {"willRename": {"filters": [{"pattern": {"glob": "**/*"}}]}}});
+                }
                 send(
                     &mut out,
-                    json!({"jsonrpc": "2.0", "id": id, "result": {"capabilities": {"renameProvider": rename, "positionEncoding": "utf-16"}}}),
+                    json!({"jsonrpc": "2.0", "id": id, "result": {"capabilities": capabilities}}),
                 );
             }
             ("initialized", None) => {
@@ -192,13 +230,6 @@ fn main() {
                     );
                     continue;
                 }
-                if mode == "file-op" {
-                    send(
-                        &mut out,
-                        json!({"jsonrpc": "2.0", "id": id, "result": {"documentChanges": [{"kind": "rename", "oldUri": "file:///a", "newUri": "file:///b"}]}}),
-                    );
-                    continue;
-                }
                 let uri = params
                     .pointer("/textDocument/uri")
                     .and_then(Value::as_str)
@@ -213,22 +244,44 @@ fn main() {
                 let name = &text[s..e];
                 let new_name = params["newName"].as_str().unwrap();
                 let ext = Path::new(&uri_path(uri)).extension().map(|e| e.to_owned());
-                let mut changes = serde_json::Map::new();
-                let mut files: Vec<PathBuf> = std::fs::read_dir(&root)
-                    .unwrap()
-                    .filter_map(|e| e.ok().map(|e| e.path()))
-                    .filter(|p| p.extension().map(|e| e.to_owned()) == ext)
-                    .collect();
-                files.sort();
-                for file in files {
-                    let content = std::fs::read_to_string(&file).unwrap();
-                    let edits: Vec<Value> = occurrences(&content, name)
+                let changes = rename_everywhere(&root, ext.as_deref(), name, new_name);
+                if mode == "file-op" {
+                    // documentChanges: the text edits, then the file itself.
+                    let mut document_changes: Vec<Value> = changes
                         .into_iter()
-                        .map(|i| json!({"range": {"start": position(&content, i), "end": position(&content, i + name.len())}, "newText": new_name}))
+                        .map(|(uri, edits)| json!({"textDocument": {"uri": uri, "version": null}, "edits": edits}))
                         .collect();
-                    if !edits.is_empty() {
-                        changes.insert(format!("file://{}", file.display()), Value::Array(edits));
-                    }
+                    let file = uri_path(uri);
+                    let moved = file.with_file_name(format!(
+                        "{}.{}",
+                        new_name,
+                        file.extension().unwrap().to_string_lossy()
+                    ));
+                    document_changes.push(json!({"kind": "rename", "oldUri": uri, "newUri": format!("file://{}", moved.display())}));
+                    send(
+                        &mut out,
+                        json!({"jsonrpc": "2.0", "id": id, "result": {"documentChanges": document_changes}}),
+                    );
+                    continue;
+                }
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": {"changes": changes}}),
+                );
+            }
+            ("workspace/willRenameFiles", Some(id)) => {
+                let mut changes = serde_json::Map::new();
+                for file in params["files"].as_array().unwrap() {
+                    let old = uri_path(file["oldUri"].as_str().unwrap());
+                    let new = uri_path(file["newUri"].as_str().unwrap());
+                    let stem = |p: &Path| p.file_stem().unwrap().to_string_lossy().into_owned();
+                    let ext = old.extension().map(|e| e.to_owned());
+                    changes.extend(rename_everywhere(
+                        &root,
+                        ext.as_deref(),
+                        &stem(&old),
+                        &stem(&new),
+                    ));
                 }
                 send(
                     &mut out,

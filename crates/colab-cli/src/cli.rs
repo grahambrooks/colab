@@ -92,6 +92,9 @@ enum Commands {
     /// Scope-aware rename, delegated to the language's own server
     /// (rust-analyzer, gopls, clangd, …) and reported like a codemod.
     Rename(RenameArgs),
+    /// Move a file or directory with `git mv`, letting the language server
+    /// update what refers to it.
+    Mv(MvArgs),
     /// Print the syntax tree of a snippet or a pattern, to see why a
     /// pattern does or does not match.
     Ast(AstArgs),
@@ -104,7 +107,8 @@ enum Commands {
     /// Manage discoverable codemod packs.
     Pack(PackArgs),
     /// Restore files from a `--backup <dir>` produced by a prior
-    /// `colab refactor` run.
+    /// `colab refactor`, `rename`, or `mv` run, undoing its file
+    /// operations (through git) first.
     Undo(UndoArgs),
 }
 
@@ -328,6 +332,18 @@ struct RenameArgs {
     #[arg(short = 'C', long = "change-dir", default_value = ".")]
     change_dir: PathBuf,
 
+    /// Seconds to allow for start-up, indexing, and the rename.
+    #[arg(long, value_name = "SECS", default_value_t = 120)]
+    timeout: u64,
+
+    #[command(flatten)]
+    apply: ApplyFlags,
+}
+
+/// Output and write flags shared by the commands that apply a language
+/// server's answer (`rename`, `mv`).
+#[derive(clap::Args, Debug)]
+struct ApplyFlags {
     /// Output format, as for `refactor`.
     #[arg(long, value_enum, default_value_t = Format::Human)]
     format: Format,
@@ -344,23 +360,67 @@ struct RenameArgs {
     #[arg(long, conflicts_with_all = ["write", "dry_run"])]
     check: bool,
 
-    /// Save each file's pre-rename contents under this directory (see
-    /// `colab undo`).
+    /// Save each file's pre-change contents (and the file operations
+    /// made) under this directory; `colab undo --from DIR` reverses both.
     #[arg(long, value_name = "DIR", conflicts_with_all = ["dry_run", "check"])]
     backup: Option<PathBuf>,
 
-    /// After writing, run this shell command; on failure restore every
-    /// file and exit 1. Implies `--write`.
+    /// After writing, run this shell command; on failure undo every file
+    /// operation and edit, and exit 1. Implies `--write`.
     #[arg(long, value_name = "CMD", conflicts_with_all = ["dry_run", "check"])]
     verify: Option<String>,
 
-    /// Seconds to allow for start-up, indexing, and the rename.
-    #[arg(long, value_name = "SECS", default_value_t = 120)]
-    timeout: u64,
+    /// Make file operations even if a path they touch has uncommitted
+    /// changes. Without it such a run is refused, so undoing colab can
+    /// never discard work of yours.
+    #[arg(long = "allow-dirty")]
+    allow_dirty: bool,
+
+    /// Commit the file operations on their own (`colab: move a -> b`)
+    /// before writing any edit, so git pairs each moved file with its old
+    /// path and `git log --follow` keeps working. Only those paths are
+    /// committed; anything else you have staged stays staged.
+    #[arg(long = "commit-moves")]
+    commit_moves: bool,
 
     /// `summary`, `counts`, or `diff`, as for `refactor`.
     #[arg(long, value_name = "LEVEL", value_parser = parse_detail)]
     detail: Option<Detail>,
+}
+
+/// `colab mv FROM TO`.
+#[derive(Parser, Debug)]
+struct MvArgs {
+    /// The file or directory to move.
+    from: PathBuf,
+
+    /// Where it goes. An existing directory means "into it", as for `mv`.
+    to: PathBuf,
+
+    /// Language-server command that updates what refers to the moved file
+    /// (`workspace/willRenameFiles`). Defaults by the file's extension.
+    #[arg(long, value_name = "CMD", conflicts_with = "no_lsp")]
+    lsp: Option<String>,
+
+    /// Move with git only; update no references.
+    #[arg(long = "no-lsp")]
+    no_lsp: bool,
+
+    /// Project root to start the server in (default: nearest project
+    /// marker above FROM).
+    #[arg(long, value_name = "DIR")]
+    root: Option<PathBuf>,
+
+    /// Change to this working directory first.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    change_dir: PathBuf,
+
+    /// Seconds to allow for start-up, indexing, and the server's answer.
+    #[arg(long, value_name = "SECS", default_value_t = 120)]
+    timeout: u64,
+
+    #[command(flatten)]
+    apply: ApplyFlags,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -526,6 +586,7 @@ pub async fn run() -> Result<i32> {
         }
         Some(Commands::Find(args)) => run_find(args),
         Some(Commands::Rename(args)) => run_rename(args),
+        Some(Commands::Mv(args)) => run_mv(args),
         Some(Commands::Ast(args)) => run_ast(args),
         Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
         Some(Commands::ListRules(args)) => {
@@ -1074,8 +1135,13 @@ fn run_undo(from: &Path) -> Result<i32> {
             from.display()
         )));
     }
+    // File operations first, so contents land back at original paths.
+    let ops = crate::apply::undo_manifest(from)?;
     let mut count = 0u64;
     walk_undo(from, from, &mut count)?;
+    if ops > 0 {
+        info!("Undid {} file operation(s) through git", ops);
+    }
     info!("Restored {} file(s) from {}", count, from.display());
     Ok(0)
 }
@@ -1087,6 +1153,8 @@ fn walk_undo(root: &Path, current: &Path, count: &mut u64) -> Result<()> {
         let path = entry.path();
         if path.is_dir() {
             walk_undo(root, &path, count)?;
+        } else if current == root && entry.file_name() == crate::apply::MANIFEST {
+            continue;
         } else if path.is_file() {
             let rel = path.strip_prefix(root).map_err(|_| {
                 Error::Config(format!(
@@ -1314,6 +1382,9 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
         None => project_root(&file).unwrap_or_else(|| cwd.clone()),
     };
 
+    // File operations (a class renamed with its file) only where git can
+    // make and undo them; elsewhere the server is told not to send any.
+    let file_operations = crate::git::Repo::discover(&root).is_some();
     info!("Renaming via `{}` in {}", server.display(), root.display());
     let started = Instant::now();
     let outcome = colab_lsp_client::rename(
@@ -1325,6 +1396,7 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
             new_name: args.to.clone(),
             timeout: std::time::Duration::from_secs(args.timeout),
             settle: std::time::Duration::from_millis(500),
+            file_operations,
         },
     )?;
 
@@ -1334,68 +1406,190 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
         args.to,
         server.program
     );
-    let exec_mode = if args.verify.is_some() {
+    run_change_set(
+        &label,
+        outcome.changes,
+        Vec::new(),
+        &args.apply,
+        &cwd,
+        started,
+    )
+}
+
+/// `colab mv`: ask the server what the move needs, then make it with git.
+fn run_mv(args: MvArgs) -> Result<i32> {
+    use colab_core::fileops::{ChangeSet, FileOp};
+    use colab_lsp_client::{MoveRequest, ServerCommand};
+
+    change_working_dir(&args.change_dir)?;
+    let cwd = std::env::current_dir().map_err(io_to_error)?;
+    let from = fs::canonicalize(cwd.join(&args.from)).map_err(|e| Error::io_at(&args.from, e))?;
+    let mut to = cwd.join(&args.to);
+    if to.is_dir() {
+        let name = from
+            .file_name()
+            .ok_or_else(|| Error::Config(format!("cannot move {}", from.display())))?;
+        to = to.join(name);
+    }
+    // Resolve `to` through its parent, so it compares equal to the
+    // canonical paths a server sends back.
+    let to = match to.parent().and_then(|p| fs::canonicalize(p).ok()) {
+        Some(parent) => parent.join(to.file_name().unwrap_or_default()),
+        None => to,
+    };
+    if to.exists() {
+        return Err(Error::Config(format!(
+            "{} already exists; colab does not overwrite files",
+            to.display()
+        )));
+    }
+    let root = match &args.root {
+        Some(root) => fs::canonicalize(root).map_err(|e| Error::io_at(root, e))?,
+        None => project_root(&from).unwrap_or_else(|| cwd.clone()),
+    };
+
+    let server = if args.no_lsp {
+        None
+    } else {
+        match &args.lsp {
+            Some(command) => Some(ServerCommand::parse(command)?),
+            None => ServerCommand::default_for(&from),
+        }
+    };
+    let started = Instant::now();
+    let mut warnings = Vec::new();
+    let (changes, label) = match &server {
+        Some(server) => {
+            info!("Moving via `{}` in {}", server.display(), root.display());
+            let outcome = colab_lsp_client::will_rename(
+                server,
+                &MoveRequest {
+                    root,
+                    from: from.clone(),
+                    to: to.clone(),
+                    timeout: std::time::Duration::from_secs(args.timeout),
+                    settle: std::time::Duration::from_millis(500),
+                },
+            )?;
+            if !outcome.references_updated {
+                warnings.push(format!(
+                    "`{}` does not update references when a file moves (no workspace.fileOperations.willRename); only the file was moved",
+                    server.program
+                ));
+            }
+            (outcome.changes, format!("move via {}", server.program))
+        }
+        None => {
+            if !args.no_lsp {
+                warnings.push(format!(
+                    "no default language server for {}; only the file was moved (pass --lsp '<command>' to update references)",
+                    from.display()
+                ));
+            }
+            let set = ChangeSet {
+                ops: vec![FileOp::Move { from, to }],
+                edits: Vec::new(),
+            };
+            (set, "move via git".to_string())
+        }
+    };
+    run_change_set(&label, changes, warnings, &args.apply, &cwd, started)
+}
+
+/// Report, and in write mode apply, a language server's answer: file
+/// operations through git first, then edits — with `--check`,
+/// `--backup`, and `--verify` behaving as for `refactor`.
+fn run_change_set(
+    label: &str,
+    set: colab_core::fileops::ChangeSet,
+    mut warnings: Vec<String>,
+    flags: &ApplyFlags,
+    cwd: &Path,
+    started: Instant,
+) -> Result<i32> {
+    let exec_mode = if flags.verify.is_some() {
         ExecMode::Write
     } else {
         resolve_exec_mode(
-            args.write,
-            args.dry_run,
-            args.check,
-            args.format,
+            flags.write,
+            flags.dry_run,
+            flags.check,
+            flags.format,
             io::stdout().is_terminal(),
         )
     };
-    let options = RenderOptions {
-        detail: args.detail.unwrap_or_else(|| args.format.default_detail()),
+    let options = crate::apply::ApplyOptions {
+        allow_dirty: flags.allow_dirty,
+        commit_moves: flags.commit_moves,
+        backup: flags.backup.clone(),
+    };
+    let prepared = crate::apply::prepare(&set, &options)?;
+    warnings.extend(prepared.warnings.iter().cloned());
+
+    let render_options = RenderOptions {
+        detail: flags
+            .detail
+            .unwrap_or_else(|| flags.format.default_detail()),
         max_files: render::DEFAULT_MAX_FILES,
         max_diff_bytes: render::DEFAULT_MAX_DIFF_BYTES,
     };
-    let mut reporter = format::make_reporter(args.format, exec_mode, options);
+    let mut reporter = format::make_reporter(flags.format, exec_mode, render_options);
     let mut report = RunReport::with_rules([label]);
-    report.files_visited = outcome.changes.len() as u64;
+    // Report paths relative to where the user is, like `refactor`.
+    let relative = |p: &Path| p.strip_prefix(cwd).unwrap_or(p).to_path_buf();
+    report.files_visited = set.edits.len() as u64;
+    report.file_ops = set.ops.iter().map(|op| op.map_paths(relative)).collect();
+    report.warnings = warnings;
+    for op in &report.file_ops {
+        reporter.file_op(op).map_err(io_to_error)?;
+    }
 
-    let mut written: Vec<FileChange> = Vec::new();
-    for mut change in outcome.changes {
-        // Report paths relative to where the user is, like `refactor`.
-        if let Ok(relative) = change.path.strip_prefix(&cwd) {
-            change.path = relative.to_path_buf();
-        }
+    let applied = if matches!(exec_mode, ExecMode::Write) {
+        Some(crate::apply::apply(
+            &set,
+            &prepared,
+            &options,
+            |path, content| match &flags.backup {
+                Some(dir) => write_backup_snapshot(dir, path, content),
+                None => Ok(()),
+            },
+        )?)
+    } else {
+        None
+    };
+    for change in &set.edits {
+        let mut change = change.clone();
+        change.path = relative(&change.path);
         report.record(&change);
-        if matches!(exec_mode, ExecMode::Write) {
-            if let Some(dir) = &args.backup {
-                write_backup_snapshot(dir, &change.path, &change.before)?;
-            }
-            fs::write(&change.path, &change.after).map_err(|e| Error::io_at(&change.path, e))?;
-            written.push(change.clone());
-        }
         reporter
             .report(&change)
             .map_err(|e| Error::io_at(&change.path, e))?;
     }
+    if report.rules[0].files_matched == 0 && !set.ops.is_empty() {
+        // A pure move did something although it edited no file.
+        report.rules[0].files_matched = set.ops.len() as u64;
+    }
 
-    if let Some(cmd) = &args.verify {
+    if let (Some(cmd), Some(applied)) = (&flags.verify, &applied) {
         info!("Verifying with `{cmd}`");
         if !run_verify(cmd)? {
-            for change in &written {
-                fs::write(&change.path, &change.before)
-                    .map_err(|e| Error::io_at(&change.path, e))?;
-            }
+            crate::apply::revert(&set, &prepared, applied)?;
             return Err(Error::Config(format!(
-                "the rename failed `--verify` (`{cmd}`); restored {} file(s)",
-                written.len()
+                "`{label}` failed `--verify` (`{cmd}`); undid {} file operation(s) and restored {} file(s)",
+                applied.done.len(),
+                set.edits.len()
             )));
         }
     }
 
     report.elapsed = started.elapsed();
     reporter.finish(&report).map_err(io_to_error)?;
-    Ok(
-        if matches!(exec_mode, ExecMode::Check) && report.files_changed > 0 {
-            10
-        } else {
-            0
-        },
-    )
+    let pending = report.files_changed > 0 || !report.file_ops.is_empty();
+    Ok(if matches!(exec_mode, ExecMode::Check) && pending {
+        10
+    } else {
+        0
+    })
 }
 
 fn run_ast(args: AstArgs) -> Result<i32> {
