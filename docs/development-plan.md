@@ -82,8 +82,10 @@ everything that follows.
   exit codes, `schema`/`explain`/`list-*`, MCP server, LSP
   diagnostics + completion, inline `-e` rules, `colab.test_rule`,
   near-miss diagnostics, `--help-json` (M17); structural patterns,
-  `colab find`, `colab ast` (M18). ⏳ remaining: LSP hover / code
-  actions / client mode (M19), agent install + guardrails (M20) — see "Agent of choice" below.
+  `colab find`, `colab ast` (M18); LSP hover / code actions /
+  client-mode rename (M19). ⏳ next: git-aware file operations and
+  delegated refactorings (M24–M25), then agent install + guardrails
+  (M20) — see "Next steps: closing the IntelliJ gap" below.
 - **Goal 4 — operational concerns.** ✅ Test corpus + idempotency
   check, CI (build/test/clippy/audit). ⏳ remaining: property tests
   (`proptest`) for the parser and edit-application; `criterion`
@@ -706,6 +708,10 @@ Ranked by leverage per unit of work:
 | 8 | M23 Agent eval suite | Anthropic "evaluate your tools" |
 | 9 | M16, M15 (above) — M15 largely superseded by M19 | — |
 
+M17–M19 have shipped. The order after M19 is set by the IntelliJ
+comparison in "Next steps: closing the IntelliJ gap" below: **M24 → M25 → M20 → M26 → M27/M22**,
+then M14, M21, M23.
+
 ### ✅ M17 — Agent ergonomics
 - **Inline rules.** `colab refactor -e '<match …>'` (repeatable,
   `--rule`) and `--script -`; `explain` too. Parse errors are re-anchored
@@ -809,6 +815,187 @@ Ranked by leverage per unit of work:
 - Signed multi-platform release pipeline (Goal 4).
 - Dynamic plugin loading (`libloading` / WASM) — only if external
   contributors want to ship out-of-tree backends.
+
+---
+
+## Next steps: closing the IntelliJ gap (M24–M27)
+
+M17–M19 are broad, scriptable mechanical changes, which IntelliJ does not
+do. Measured against IntelliJ's refactoring menu, though, colab has
+rename and nothing else:
+
+| IntelliJ | colab today | Closed by |
+| -------- | ----------- | --------- |
+| Extract method / variable / constant / parameter, Inline, Change Signature, Pull Up / Push Down, Introduce Parameter Object | — | M25 (delegated code actions) |
+| Move class / file / package, rename class *and* its file | refused: `colab rename` rejects file operations | M24 + M25 |
+| Find Usages, Safe Delete | syntactic `colab find` only | M25 |
+| Call / type hierarchy | none | unscheduled (`callHierarchy` / `typeHierarchy` on the M25 client) |
+| Optimize imports + reformat after every refactoring | hand-written `ensure` / `delete` rules | M25 `--tidy`, M26 |
+| SSR constraints (count, regex, type, within) | none | M26 |
+| Conflicts dialog before applying | after the fact only (`--verify`) | M27 |
+| `//noinspection` suppression | none | M20 |
+| Rename in comments, strings, non-code files | none (the server skips them) | M22 |
+
+colab still computes nothing semantic. Each gap is closed either by
+asking the language's own server, as M19 does for rename, or with a
+syntactic check that cannot be wrong, only incomplete. The non-goals
+below stand.
+
+Order: M24 → M25 → M20 → M26 → M27 (with M22), then M14, M21, M22, M23.
+
+### M24 — Git-aware file operations (next)
+
+Agents work in a git repo or worktree, where a mistake is recoverable.
+So a file operation is made through git rather than refused, and it
+never loses history.
+
+- **Precondition.** File operations need the run's root inside a git
+  work tree: `git rev-parse --is-inside-work-tree`, which is also true in
+  a linked worktree. Every git command runs with `-C <root>`. Outside
+  git, file operations stay refused, with an error that says why. There
+  is no plain-filesystem fallback: it would lose history, and undo with
+  it.
+- **Clean paths.** Every path an operation touches (both ends of a move,
+  and every file whose content changes) must have no uncommitted
+  changes, or the run refuses up front and names them. That keeps
+  recovery (`git restore`, `git reset`, `colab undo`) from ever throwing
+  away the user's own edits. `--allow-dirty` overrides it.
+- **Moves and renames.** `git mv <old> <new>`, after creating the
+  destination's parent directories. The index records the move at once.
+  An untracked file has no history to keep; it is renamed on disk and
+  the report says so.
+- **History survives content edits.** Git does not store renames. It
+  infers them by content similarity (50% by default), so a file that is
+  moved *and* heavily rewritten in the same commit shows up as a delete
+  plus an add, and `git log --follow` and `blame` stop at the move.
+  - colab applies the move first, then the content edits.
+  - `--commit-moves` commits the pure moves on their own
+    (`colab: move a -> b`) before the edits. `--commit-per-rule` implies
+    it.
+  - Without it, the report warns for each moved file whose similarity
+    would drop below the threshold, and recommends `--commit-moves`.
+- **Creates and deletes.** A created file is written and then staged
+  with `git add`. A deleted tracked file is removed with `git rm`, and
+  its content is kept in the backup snapshot.
+- **Reporting.** `FileChange` gains an operation: edit, move
+  `{from, to}`, create or delete. `colab_core::render` emits `moved`,
+  `created` and `deleted` beside `changed`, and `--check` counts them as
+  pending (exit 10). `--format diff` uses git's `rename from` /
+  `rename to` headers. There is still one serializer.
+- **Undo.** The `--backup` snapshot records the operation list.
+  `colab undo` replays the inverses through git (`git mv` back,
+  `git rm --cached` on created files) and then restores contents.
+  `--verify` reverts the same way.
+- **Users.** `colab rename` accepts a server's `RenameFile`, `CreateFile`
+  and `DeleteFile` resource operations, which jdtls and kotlin-language-
+  server use to rename a class together with its file. The new
+  `colab mv <from> <to>` asks the server for the import and reference
+  updates (`workspace/willRenameFiles`: rust-analyzer, the TypeScript
+  server, jdtls), then makes the move as above. A server that offers no
+  `willRenameFiles` still gets the git move, with a warning that
+  references were not updated.
+- **Invariant change.** "Semantic edits are delegated, never computed"
+  stays. "Anything it cannot report and revert as text is refused"
+  becomes "anything it cannot report and revert *through git* is
+  refused".
+
+### M25 — Delegated code actions, references, and `--tidy`
+
+M19's client already starts the server, waits out indexing, and turns a
+`WorkspaceEdit` into `FileChange`s. A code action is the same pipeline
+with a different request.
+
+- **`colab action --at FILE:LINE:COL[-LINE:COL]`**
+  - `--list` shows the server's actions there: kind, title, and whether
+    each is resolvable.
+  - `--kind refactor.extract.function` (or `--title <substring>`) picks
+    exactly one; an ambiguous or missing choice is an error that lists
+    the candidates.
+  - The pick is resolved with `codeAction/resolve` and run through the
+    usual report / diff / `--check` / `--backup` / `--verify`.
+  - Some actions (gopls, rust-analyzer) return a `command` rather than an
+    edit. colab runs `workspace/executeCommand` and takes the server's
+    `workspace/applyEdit` request as the result, accepted in this mode
+    only and never written behind the report's back.
+- **`colab references --at … | --symbol NAME --in FILE`**: locations in
+  the `find` shape (shared renderer), so an agent can see a change's
+  reach before making it. **`colab safe-delete`** deletes a declaration
+  (its range from `textDocument/documentSymbol`) only when nothing
+  outside it refers to it, and otherwise lists the references.
+- **`--tidy`** on `refactor`, `rename` and `action`: after the edit, run
+  the server's `source.organizeImports` code action and
+  `textDocument/formatting` on the changed files. A per-language command
+  configured in `colab.toml` (`gofmt -w`, `rustfmt`, `prettier --write`)
+  takes precedence when set. Tidy edits are reported as their own rule
+  (`tidy via <server>`), so attribution stays honest.
+- **MCP.** `colab.references` and `colab.action` are registered by the
+  binary into the MCP server through an injected tool provider, the same
+  composition-root pattern as `colab_backends::registry()`, so
+  `colab-mcp` still depends on neither tree-sitter nor
+  `colab-lsp-client`. That also unblocks the `colab.rename` tool deferred
+  in M19.
+- **Server coverage.**
+  - rust-analyzer, gopls, jdtls and the TypeScript server offer the
+    extract / inline / move / change-signature families.
+  - pyright, clangd and sourcekit-lsp offer few code actions; for Python
+    the docs should recommend a rope-backed server (pylsp-rope).
+  - `docs/features.md` gets a per-server capability table, and the CI
+    fake server gains code-action, `executeCommand` and
+    `willRenameFiles` modes.
+
+### M26 — Pattern constraints and import-aware templates
+
+- **Constraints**, an optional `where` clause after the pattern:
+
+  ```
+  match go::pattern 'errors.Wrap($E, $M)'
+      where $M matches /^"/, not inside 'func Test$_($$$) { $$$ }'
+      { replace 'fmt.Errorf($M+": %w", $E)' }
+  ```
+
+  The forms are `$X matches /re/`, `$X is <node kind>`, `inside` /
+  `not inside` / `has '<pattern>'`, and `$$$X count <n>..<m>`. This is a
+  grammar change (LALRPOP plus `docs/dsl.md`). Evaluation lives in
+  `colab_rewrite::pattern`, on ast-grep-core's matcher combinators, never
+  in a backend. A prefilter stays sound because constraints only narrow a
+  match. Type constraints (via the server's hover) wait for demand.
+- **Templates declare their imports.**
+  `replace '…' requires import "fmt"` lowers to the pattern rule plus an
+  `ensure` that runs only on files the pattern changed. That needs a
+  "fires after rule N" composite `Operation`, kept within the walker's
+  existing per-file sequencing. The counterpart,
+  `drops import "github.com/pkg/errors" when unused`, needs an optional
+  per-backend `import_is_used(source, path)`; backends without it reject
+  the clause rather than guess.
+
+### M27 — Pre-apply conflict checks (ships with M22)
+
+Syntactic warnings, raised before writing:
+
+- **`symbol` rename:** the new name already occurs as an identifier in
+  the file, so the rename would merge two names.
+- **Pattern templates:** the template introduces a qualifier
+  (`fmt.`, `os.path.`) the file does not import, and no `requires import`
+  covers it. This needs a per-backend `imported_names(source)`.
+- **`--verify-lsp`:** compare the server's diagnostics
+  (`textDocument/diagnostic`) on the changed files before and after the
+  edit, and revert when errors were added. It is a cheaper first check
+  than a full build, and `--verify <CMD>` remains for the full one.
+
+Added to existing milestones:
+
+- **M20:** `// colab:ignore <rule-or-script-name>`, on the line or the
+  line above, skips that site for find, refactor and check. Rules gain an
+  optional `message` and `severity`, so a rule enforced by the post-edit
+  hook reads as an inspection rather than a bare diff.
+- **M22:** `colab.rename_symbol` combines the server's rename with
+  text-occurrence matches in comments, strings and the config backends
+  (`toml` / `json` / `markdown`). The text matches are returned as a
+  separate, opt-in change set, like IntelliJ's "search in comments and
+  strings".
+- **M23:** add IntelliJ-shaped tasks ("extract this function", "move
+  this type to its own file, history intact") so the gap closing is
+  measured, not assumed.
 
 ---
 
