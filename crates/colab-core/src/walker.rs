@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use globset::GlobBuilder;
 use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
-use log::{debug, info};
+use log::debug;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 
@@ -287,7 +287,7 @@ where
             if change.before == change.after {
                 debug!("No changes for {}", change.path.display());
             }
-            info!("Processing {}", change.path.display());
+            debug!("Processing {}", change.path.display());
             visit(change)?;
         }
     }
@@ -351,7 +351,7 @@ where
     T: CodeTransformer,
     F: FnMut(FileChange) -> Result<()>,
 {
-    info!("Processing {}", path.display());
+    debug!("Processing {}", path.display());
     let before = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
     let outcome = transformer.apply_at(path, &before);
     if before == outcome.output {

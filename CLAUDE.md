@@ -96,6 +96,22 @@ so the result is the same, at the cost of one extra parse.
 
 `crates/colab-dsl/build.rs` runs `lalrpop::process_root()` (editing `src/codemod.lalrpop` requires a rebuild — generated `codemod.rs` lives in `OUT_DIR`). `crates/colab-cli/build.rs` shells out to `git rev-parse --short HEAD` to embed a version suffix, so builds must happen inside a git checkout.
 
+## Dogfooding — develop colab with colab
+
+Follow [`docs/dogfooding.md`](docs/dogfooding.md). In short:
+
+- Pin a binary with `scripts/dogfood.sh` and run `.dogfood/colab`, never
+  `cargo run`, so a broken working tree cannot break the tool.
+- For a mechanical change across several sites, use colab:
+  `rust::pattern` via `refactor` / `find`, or `rename` / `mv` /
+  `references` / `safe-delete` / `action` through rust-analyzer. Use
+  `Edit` only for one-off edits.
+- Before writing, preview with `find` or `--format diff`. Apply with
+  `--write --verify 'cargo check -q --workspace'`.
+- Log every case where colab could not express the change, or needed its
+  output hand-fixed, in [`docs/dogfood-log.md`](docs/dogfood-log.md). Fix a
+  small one in the same commit. Name the colab command in the commit body.
+
 ## Architecture
 
 A codemod runs through a four-stage pipeline; see [`docs/architecture.md`](docs/architecture.md) for the diagram and module map.

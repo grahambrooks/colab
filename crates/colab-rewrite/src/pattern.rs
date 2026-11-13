@@ -476,9 +476,35 @@ impl Rewriter<'_, '_> {
         Edit::new(
             edit.position,
             edit.position + edit.deleted_length,
-            String::from_utf8_lossy(&edit.inserted_text).into_owned(),
+            strip_blank_line_indent(&String::from_utf8_lossy(&edit.inserted_text)),
         )
     }
+}
+
+/// ast-grep indents every line of a multi-line template to the match's
+/// column, blank ones included, which leaves trailing whitespace. Empty
+/// those lines again.
+fn strip_blank_line_indent(text: &str) -> String {
+    if !text.contains('\n') {
+        return text.to_string();
+    }
+    let lines: Vec<&str> = text.split('\n').collect();
+    let last = lines.len() - 1;
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            // The first line follows the match's own prefix and the last
+            // precedes the rest of its line; only lines in between are
+            // whole lines.
+            if i != 0 && i != last && line.trim().is_empty() {
+                ""
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// `template` with every `$$$NAME` written as `$NAME`, and the names it
@@ -852,6 +878,15 @@ mod tests {
     }
 
     const GO_SRC: &str = "package main\n\nfunc main() {\n\tif err := f(); err != nil {\n\t\treturn errors.Wrap(err, \"f failed\")\n\t}\n\tlog.Println(\"a\", 1)\n}\n";
+
+    #[test]
+    fn a_multi_line_template_leaves_no_trailing_whitespace() {
+        // ast-grep re-indents a template's later lines to the match's
+        // column (spaces only; tab-indented Go is left flush-left).
+        let p = StructuralPattern::compile(&python(), "print($$$A)").unwrap();
+        let out = p.rewrite("def f():\n    print(1)\n", "print($$$A)\n\nprint(2)");
+        assert_eq!(out, "def f():\n    print(1)\n\n    print(2)\n");
+    }
 
     #[test]
     fn expand_rewrites_only_metavariables() {

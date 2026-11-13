@@ -57,5 +57,8 @@ fn initialize_logging() {
             )
         })
         .filter(None, LevelFilter::Info)
+        // `RUST_LOG=warn` quiets a run; `RUST_LOG=debug` adds a line per
+        // file processed.
+        .parse_env("RUST_LOG")
         .init();
 }

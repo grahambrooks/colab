@@ -9,6 +9,11 @@ This is for changing colab itself, not for running a codemod (that is
 `colab-codemod`). It covers the two shapes an extension takes: a new
 namespace on an existing backend, and a whole new language.
 
+Make the edits themselves with colab where they are mechanical. An
+extension usually touches the same spot in all 12 backends: use
+`.dogfood/colab` with a scoped `rust::pattern`, and log any friction in
+`docs/dogfood-log.md`. See `docs/dogfooding.md`.
+
 ## Architecture in one paragraph
 
 `colab-dsl` parses a script into an AST and lowers each `match` block
