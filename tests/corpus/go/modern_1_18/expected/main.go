@@ -16,6 +16,8 @@ func load(path string) (any, error) {
 	}
 	all, _ := io.ReadAll(strings.NewReader(string(b)))
 	dir, _ := os.MkdirTemp("", "x")
+	tmp, _ := os.CreateTemp(dir, "y")
+	_ = tmp.Close()
 	_ = os.WriteFile(dir+"/out", all, 0o644)
 	var sink interface {
 		Close() error

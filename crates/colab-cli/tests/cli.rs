@@ -3422,3 +3422,35 @@ fn a_rule_that_changed_some_files_says_which_it_skipped() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn script_builtin_runs_a_pack_built_into_colab() {
+    let root = workspace_temp("builtin-pack");
+    write(&root.join("a.go"), "package p\n\nvar x interface{}\n");
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "refactor",
+            "--script",
+            "builtin:go/1.18-modern",
+            "--format",
+            "diff",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("+var x any"));
+    let typo = colab()
+        .current_dir(&root)
+        .args(["refactor", "--script", "builtin:go/1.18-modren", "."])
+        .output()
+        .unwrap();
+    assert_eq!(typo.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&typo.stderr).contains("did you mean `go/1.18-modern`"));
+    fs::remove_dir_all(&root).ok();
+}

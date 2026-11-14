@@ -1,5 +1,5 @@
 import typing
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple, Type, Union
 
 
 def group(rows: list[tuple[str, int]]) -> dict[str, list[int]]:
@@ -17,3 +17,7 @@ def find(names: list[str], want: str | None) -> int | None:
 
 def pair() -> dict[str, int] | None:
     return None
+
+
+def kinds(seen: set[str], frozen: frozenset[int], cls: type[Exception]) -> dict[str, int | None]:
+    return {name: (len(frozen) if cls is ValueError else None) for name in seen}

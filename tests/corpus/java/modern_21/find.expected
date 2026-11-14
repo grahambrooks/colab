@@ -9,15 +9,21 @@ Boxes.java:18:9: [8] List<Integer> sizes = new ArrayList<Integer>(words.size());
     $C = ArrayList
     $T = List<Integer>
     $V = sizes
-Boxes.java:27:25: [0] new Integer(41)
+Boxes.java:28:25: [0] new Integer(41)
     $X = 41
-Boxes.java:28:20: [1] new Long(7L)
+Boxes.java:29:20: [1] new Long(7L)
     $X = 7L
-Boxes.java:29:24: [4] new Double("0.5")
+Boxes.java:30:24: [4] new Double("0.5")
     $X = "0.5"
-Boxes.java:30:24: [6] new Boolean(true)
+Boxes.java:31:24: [6] new Boolean(true)
     $X = true
-Boxes.java:31:29: [7] new Character('x')
+Boxes.java:32:29: [7] new Character('x')
     $X = 'x'
-Boxes.java:34:23: [0] new Integer(w.length())
+Boxes.java:33:23: [2] new Short((short) 3)
+    $X = (short) 3
+Boxes.java:34:21: [3] new Byte((byte) 4)
+    $X = (byte) 4
+Boxes.java:35:22: [5] new Float(0.5f)
+    $X = 0.5f
+Boxes.java:39:23: [0] new Integer(w.length())
     $X = w.length()

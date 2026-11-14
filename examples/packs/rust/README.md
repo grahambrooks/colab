@@ -16,7 +16,7 @@ colab refactor --script examples/packs/rust/edition-2021-to-2024.codemod --write
 ```
 
 On the sample in `tests/corpus/rust/edition_2024/`, `cargo check` as
-edition 2024 reports 7 errors before the pack and none after.
+edition 2024 stops at 8 errors before the pack (the `gen` parse errors hide the `set_var` ones) and builds after it; every rule fires on the sample.
 
 ## What it does not cover
 

@@ -3,6 +3,6 @@
 1 go::pattern 'ioutil.WriteFile($P, $D, $M)' -> 'os.WriteFile($P, $D, $M)' drops import "io/ioutil" when unused requires import "os"
 1 go::pattern 'ioutil.ReadAll($R)' -> 'io.ReadAll($R)' drops import "io/ioutil" when unused requires import "io"
 1 go::pattern 'ioutil.TempDir($D, $P)' -> 'os.MkdirTemp($D, $P)' drops import "io/ioutil" when unused requires import "os"
-0 go::pattern 'ioutil.TempFile($D, $P)' -> 'os.CreateTemp($D, $P)' drops import "io/ioutil" when unused requires import "os"
+1 go::pattern 'ioutil.TempFile($D, $P)' -> 'os.CreateTemp($D, $P)' drops import "io/ioutil" when unused requires import "os"
 1 go::pattern 'ioutil.NopCloser($R)' -> 'io.NopCloser($R)' drops import "io/ioutil" when unused requires import "io"
 1 go::pattern 'ioutil.Discard' -> 'io.Discard' drops import "io/ioutil" when unused requires import "io"

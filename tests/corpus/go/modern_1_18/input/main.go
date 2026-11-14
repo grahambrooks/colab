@@ -15,6 +15,8 @@ func load(path string) (interface{}, error) {
 	}
 	all, _ := ioutil.ReadAll(strings.NewReader(string(b)))
 	dir, _ := ioutil.TempDir("", "x")
+	tmp, _ := ioutil.TempFile(dir, "y")
+	_ = tmp.Close()
 	_ = ioutil.WriteFile(dir+"/out", all, 0o644)
 	var sink interface {
 		Close() error

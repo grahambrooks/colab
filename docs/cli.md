@@ -34,7 +34,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |
-| `--script <path>` | one of `--script` / `-e` | The `.codemod` file to execute. `-` reads the script from stdin (not combinable with `--stdin`). |
+| `--script <path>` | one of `--script` / `-e` | The `.codemod` file to execute. `builtin:<pack>` runs a pack built into colab (`colab pack list`). `-` reads the script from stdin (not combinable with `--stdin`). |
 | `-e`, `--rule <rule>` | one of `--script` / `-e` | An inline rule — one or more `match …` blocks, or an `include` — so no script file is needed. Repeatable; rules run in the order given, under the script name `inline`. A single value that is a whole `refactor "…" { … }` script is used as-is. `include` resolves against the working directory. |
 | `-C`, `--change-dir <dir>` | `.` | Change to this directory first: `paths`, `include` and the `colab.toml` lookup (for `[formatters]`) are relative to it. |
 | `--format <FORMAT>` | `human` | Output format: `human`, `json`, `ndjson`, `diff`, `sarif` or `github`. `human` is coloured log lines plus a summary. `json` emits one JSON document for the whole run. `ndjson` streams one object per *changed* file then a summary. `diff` emits a unified diff per changed file. `sarif` and `github` report each changed block for CI (SARIF 2.1.0, or GitHub Actions annotations); see [shapes](#--format-shapes). |
@@ -807,9 +807,11 @@ Output (sorted by path; a built-in pack's path is `builtin:<name>`):
 }
 ```
 
-Combine a file pack with `colab refactor --script`:
+Run a pack with `colab refactor --script`: a built-in one by the path
+`pack list` prints, a file pack by its file:
 
 ```sh
+colab refactor --script builtin:go/1.18-modern --format diff .
 PACK=$(colab pack list | jq -r '.packs[] | select(.name == "javax-to-jakarta") | .path')
 colab refactor --script "$PACK" --check .
 ```

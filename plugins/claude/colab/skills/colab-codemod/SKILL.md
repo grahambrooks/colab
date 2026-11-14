@@ -461,10 +461,10 @@ a pipe it previews, like `refactor`.) Prefer it to running the packs one
 by one, and add a new lint rule to a pack it lists rather than to a
 loose script. `colab pack list` names the built-in packs
 (`go/1.18-modern`, `java/8-to-21`, `js/esm`, `python/3.12-typing`,
-`rust/edition-2021-to-2024`). They run only through `colab.toml`
-(`[[packs]] pack = "…"`) and `colab fix` — there is no `--script
-builtin:…`; read the pack's README (`examples/packs/`) for what it leaves
-alone.
+`rust/edition-2021-to-2024`). Run one once with `colab refactor --script
+builtin:go/1.18-modern …`, or keep it applied by naming it in
+`colab.toml` (`[[packs]] pack = "…"`) for `colab fix`; read the pack's
+README (`examples/packs/`) for what it leaves alone.
 
 ```toml
 [run]

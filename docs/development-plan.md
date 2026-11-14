@@ -88,7 +88,7 @@ Clear the [follow-ups](#follow-ups-from-shipped-milestones) in waves, each
 item made with colab where colab can make it, each wave its own commits.
 An item leaves the follow-ups table when it ships.
 
-**Wave A — what dogfooding tripped over** (small, correctness first):
+**Wave A — what dogfooding tripped over** (small, correctness first) — ✅ all seven shipped 2026-11-14:
 
 1. `--bisect` checks the starting tree first, and says so when it
    already fails (today it blames a rule for a broken tree).

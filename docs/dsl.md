@@ -181,8 +181,9 @@ Cycle detection is path-canonical: a → b → a yields a clear
 directory; `--script -` and `-e` resolve against the working directory
 (after `-C`); MCP resolves against its root. Only the library's
 `colab_dsl::compile`, which has no base path, rejects `include`.
-`include` takes a path, not a built-in pack name: built-in packs are
-named in `colab.toml` (`pack = "go/1.18-modern"`) and run by `colab fix`.
+`include` takes a path, not a built-in pack name: run a built-in pack
+with `--script builtin:go/1.18-modern`, or name it in `colab.toml`
+(`pack = "go/1.18-modern"`) for `colab fix`.
 
 ## Structural patterns: `<lang>::pattern`
 

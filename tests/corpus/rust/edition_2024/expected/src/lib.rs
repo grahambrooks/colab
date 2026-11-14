@@ -16,9 +16,15 @@ pub extern "C" fn exported() -> i32 {
 #[unsafe(export_name = "renamed")]
 pub fn named() {}
 
+#[unsafe(link_section = "__DATA,__colab")]
+#[used]
+pub static MARKER: u32 = 1;
+
 pub fn configure(r#gen: u32) {
     unsafe { env::set_var("MODE", "fast") };
+    unsafe { std::env::set_var("LEVEL", "2") };
     unsafe { std::env::remove_var("OLD") };
+    unsafe { env::remove_var("STALE") };
     unsafe {
         std::env::set_var("SAFE", "already");
     }

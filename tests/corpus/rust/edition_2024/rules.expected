@@ -1,9 +1,9 @@
 1 rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ -> 'unsafe $X'
 1 rust::pattern '#[no_mangle]' -> '#[unsafe(no_mangle)]'
 1 rust::pattern '#[export_name = $N]' -> '#[unsafe(export_name = $N)]'
-0 rust::pattern '#[link_section = $N]' -> '#[unsafe(link_section = $N)]'
-0 rust::pattern 'std::env::set_var($K, $V)' where not inside 'unsafe { $$$ }' -> 'unsafe { std::env::set_var($K, $V) }'
+1 rust::pattern '#[link_section = $N]' -> '#[unsafe(link_section = $N)]'
+1 rust::pattern 'std::env::set_var($K, $V)' where not inside 'unsafe { $$$ }' -> 'unsafe { std::env::set_var($K, $V) }'
 1 rust::pattern 'env::set_var($K, $V)' where not inside 'unsafe { $$$ }' -> 'unsafe { env::set_var($K, $V) }'
 1 rust::pattern 'std::env::remove_var($K)' where not inside 'unsafe { $$$ }' -> 'unsafe { std::env::remove_var($K) }'
-0 rust::pattern 'env::remove_var($K)' where not inside 'unsafe { $$$ }' -> 'unsafe { env::remove_var($K) }'
+1 rust::pattern 'env::remove_var($K)' where not inside 'unsafe { $$$ }' -> 'unsafe { env::remove_var($K) }'
 1 rust::symbol "gen" -> "r#gen"

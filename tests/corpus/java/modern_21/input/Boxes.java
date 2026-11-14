@@ -24,12 +24,17 @@ public class Boxes {
             }
         };
         copy.sort(byLength);
+        int sum0;
         Integer boxed = new Integer(41);
         Long big = new Long(7L);
         Double ratio = new Double("0.5");
         Boolean flag = new Boolean(true);
         Character initial = new Character('x');
-        int sum = boxed + big.intValue() + (flag ? 1 : 0) + initial + (int) (ratio * 2);
+        Short small = new Short((short) 3);
+        Byte tiny = new Byte((byte) 4);
+        Float half = new Float(0.5f);
+        sum0 = small + tiny + (int) (half * 2);
+        int sum = sum0 + boxed + big.intValue() + (flag ? 1 : 0) + initial + (int) (ratio * 2);
         for (String w : copy) {
             sizes.add(new Integer(w.length()));
             sum += w.length();

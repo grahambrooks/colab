@@ -656,7 +656,8 @@ struct ExplainArgs {
 #[derive(clap::Args, Debug)]
 #[group(required = true, multiple = false)]
 struct ScriptArgs {
-    /// Path to the codemod script. `-` reads the script from stdin.
+    /// Path to the codemod script. `-` reads the script from stdin;
+    /// `builtin:<pack>` runs a pack built into colab (`colab pack list`).
     #[arg(long = "script", value_name = "PATH")]
     script_path: Option<PathBuf>,
 
@@ -681,6 +682,17 @@ impl ScriptArgs {
                 let mut text = String::new();
                 io::stdin().read_to_string(&mut text).map_err(io_to_error)?;
                 Ok((text, cwd.join("<stdin>")))
+            }
+            // `builtin:go/1.18-modern`: a pack compiled into colab, as
+            // `colab pack list` names it. Its includes, if it had any,
+            // would resolve against the working directory.
+            Some(path) if path.to_string_lossy().starts_with("builtin:") => {
+                let name = path.to_string_lossy();
+                let pack = crate::packs::builtin(&name["builtin:".len()..])?;
+                Ok((
+                    pack.script.to_string(),
+                    cwd.join(format!("<builtin {}>", pack.name)),
+                ))
             }
             Some(path) => {
                 let text = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;

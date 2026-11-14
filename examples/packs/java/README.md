@@ -14,7 +14,7 @@ colab refactor --script examples/packs/java/8-to-21.codemod --write --bisect 'mv
 ```
 
 On the sample in `tests/corpus/java/modern_21/`, `javac -Xlint:all`
-reports 7 deprecation warnings before the pack and none after.
+reports 9 deprecation warnings before the pack (one per boxing constructor it rewrites) and none after.
 
 ## What it does not cover
 
