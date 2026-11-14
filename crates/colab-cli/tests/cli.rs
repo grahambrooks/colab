@@ -3111,3 +3111,54 @@ fn pack_list_names_the_builtin_packs() {
         "{v}"
     );
 }
+
+#[test]
+fn ci_formats_annotate_each_block_with_the_rule_that_changed_it() {
+    let root = workspace_temp("ci-formats");
+    write(
+        &root.join("app.py"),
+        "def f(a: Optional[str]) -> None:\n    pass\n\n\ndef g() -> List[int]:\n    return []\n",
+    );
+    let rules = [
+        "-e",
+        "match python::pattern 'Optional[$T]' { replace '$T | None' message \"PEP 604\" severity info }",
+        "-e",
+        "match python::pattern 'List[$$$A]' { replace 'list[$$$A]' }",
+    ];
+    let run = |format: &str| {
+        colab()
+            .current_dir(&root)
+            .args(["refactor", "--check", "--format", format])
+            .args(rules)
+            .arg(".")
+            .output()
+            .unwrap()
+    };
+    let out = run("github");
+    assert_eq!(out.status.code(), Some(10));
+    let text = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(
+        lines[0].starts_with("::notice file=app.py,line=1,endLine=1,"),
+        "{text}"
+    );
+    assert!(
+        lines[0].contains("::PEP 604. Replace with:%0Adef f(a: str | None) -> None:"),
+        "{text}"
+    );
+    assert!(
+        lines[1].starts_with("::error file=app.py,line=5,endLine=5,"),
+        "{text}"
+    );
+
+    let out = run("sarif");
+    assert_eq!(out.status.code(), Some(10));
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let results = v["runs"][0]["results"].as_array().unwrap();
+    let ids: Vec<(&str, &str)> = results
+        .iter()
+        .map(|r| (r["ruleId"].as_str().unwrap(), r["level"].as_str().unwrap()))
+        .collect();
+    assert_eq!(ids, [("colab/rule-1", "note"), ("colab/rule-2", "error")]);
+    fs::remove_dir_all(&root).ok();
+}

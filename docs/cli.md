@@ -13,7 +13,7 @@ Run a codemod script against one or more paths.
 
 ```
 colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
-                                [--format human|json|ndjson|diff]
+                                [--format human|json|ndjson|diff|sarif|github]
                                 [--stdin --path <hint>]
                                 [-C|--change-dir <dir>]
                                 [--include <glob>]... [--exclude <glob>]...
@@ -57,6 +57,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--max-diff-bytes <N>` | `2000` | At `--detail diff`, the maximum size of any single rendered diff. |
 | `--summary-only` | — | Alias for `--detail summary`. |
 | `paths...` | `.` | Files or directories to walk recursively. Multiple roots are walked in order. |
+| `--format <FORMAT>` |  | Output format. `human` is coloured log lines plus a summary. `json` emits one JSON document for the whole run. `ndjson` streams one object per *changed* file then a summary. `diff` emits a unified diff per changed file. `sarif` and `github` report each changed block for CI (SARIF 2.1.0, or GitHub Actions annotations); see [shapes](#--format-shapes). |
 
 **Default execution mode** is resolved from `--format` and TTY state:
 
@@ -108,9 +109,35 @@ format. They are counted in the summary and nothing more.
    import (
    	"fmt"
   -	"some.module"
-  +	"new.module"
+    +	"new.module"
    )
   ```
+- **`sarif`** — one [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
+  document: each rule is a `tool.driver.rules` entry (`colab/rule-N`,
+  with its `message` and `severity`), each changed block a result at the
+  lines of the file as it was, with the replacement as its `fixes`;
+  conflicts are `error` results, and run warnings (a rule that matched
+  nothing) are `toolExecutionNotifications`. For code scanning:
+  ```yaml
+  - run: colab fix --check --format sarif > colab.sarif || true
+  - uses: github/codeql-action/upload-sarif@v3
+    with: { sarif_file: colab.sarif }
+  ```
+- **`github`** — GitHub Actions workflow commands, which show as
+  annotations on the pull request: one per changed block, then a summary
+  line:
+  ```
+  ::warning file=pkg/main.go,line=3,endLine=3,title=colab%3A go%3A%3Aimport "a" -> "b"::a is gone, use b. Replace with:%0Aimport "b"
+  colab: 38 file(s) scanned, 3 would change
+  ```
+
+  Both formats credit each block to the rules whose own change touches
+  it (each rule that fired is applied alone to the original file to find
+  out), so its level is that rule's severity (`error` / `warning` /
+  `notice`, SARIF `note`) and its text the rule's `message`, or the rule.
+  A block no rule claims on its own (one rule rewriting another's
+  output) is credited to every rule that changed the file. With
+  `--check` the exit code is still 10 for pending changes.
 
 #### Reading the result
 

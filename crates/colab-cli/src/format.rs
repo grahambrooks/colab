@@ -35,6 +35,12 @@ pub enum Format {
     Ndjson,
     /// Unified diff per changed file, suitable for `patch` or review UIs.
     Diff,
+    /// SARIF 2.1.0: one result per changed block, with its fix, for code
+    /// scanning (`github/codeql-action/upload-sarif`) and review tools.
+    Sarif,
+    /// GitHub Actions workflow commands: one `::warning file=…,line=…::`
+    /// annotation per changed block, shown on the pull request.
+    Github,
 }
 
 /// What `refactor` should do with its results.
@@ -93,6 +99,11 @@ pub fn make_reporter(format: Format, mode: ExecMode, options: RenderOptions) -> 
         Format::Json => Box::new(JsonReporter::new(options)),
         Format::Ndjson => Box::new(NdjsonReporter::new(options)),
         Format::Diff => Box::new(DiffReporter::new()),
+        Format::Sarif => Box::new(crate::ci_format::SarifReporter::new(
+            mode,
+            crate::cli::VERSION,
+        )),
+        Format::Github => Box::new(crate::ci_format::GithubReporter::new(mode)),
     }
 }
 

@@ -82,6 +82,22 @@ colab server           # LSP: diagnostics + completion for .codemod files
 colab mcp              # MCP server: preview / apply / schema / list-* / lint_script tools
 ```
 
+## Install
+
+```sh
+brew tap grahambrooks/colab https://github.com/grahambrooks/colab
+brew install colab                          # Homebrew, macOS and Linux
+cargo install --git https://github.com/grahambrooks/colab colab-cli
+```
+
+Prebuilt archives for macOS and Linux are on the
+[releases page](https://github.com/grahambrooks/colab/releases). Each
+release is also packaged for npm and PyPI as `colab-codemod`
+(`npx colab-codemod …`, `uvx colab-codemod …`; `colab` is taken), with
+static Linux binaries that run on any distribution; those registries are
+published to once publishing is switched on (see
+[`packaging/`](packaging/README.md)).
+
 ## Quick start
 
 ```sh
@@ -139,6 +155,8 @@ colab refactor --script s.codemod --format human .   # default on TTY: write + l
 colab refactor --script s.codemod --format diff .    # unified diff to stdout
 colab refactor --script s.codemod --format json .    # one JSON doc: counters + per-rule counts
 colab refactor --script s.codemod --check .          # exit 10 if changes pending
+colab fix --check --format github                    # CI: annotations on the pull request
+colab fix --check --format sarif > colab.sarif       # CI: code scanning (SARIF 2.1.0)
 cat foo.go | colab refactor --script s.codemod --stdin --path foo.go
 ```
 

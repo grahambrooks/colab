@@ -7,6 +7,7 @@
 //! line.
 
 mod apply;
+mod ci_format;
 mod cli;
 mod config;
 mod discover;

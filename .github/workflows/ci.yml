@@ -57,6 +57,13 @@ jobs:
       # otherwise override whatever was installed and the job would test nothing.
       - run: cargo +${{ steps.floor.outputs.version }} check --workspace --all-targets --all-features --locked
 
+  packaging:
+    name: npm / PyPI packaging (packaging/build.py)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 -m unittest discover -s packaging -v
+
   audit:
     name: cargo-audit
     runs-on: ubuntu-latest

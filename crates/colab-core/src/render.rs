@@ -681,6 +681,86 @@ pub fn write_find_human<W: Write>(out: &mut W, report: &crate::find::FindReport)
     Ok(())
 }
 
+/// One place a run changes a file, for the CI formats (`sarif`, `github`):
+/// a block of lines in the file as it was, and what replaces it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Finding {
+    /// 1-based first line of the original file the change touches.
+    pub start_line: usize,
+    /// 1-based last line it replaces; `start_line - 1` for a pure
+    /// insertion before `start_line`.
+    pub end_line: usize,
+    /// The lines that replace them (empty for a deletion).
+    pub replacement: String,
+    /// The rules that changed this file (indices into `RunReport::rules`).
+    pub rules: Vec<usize>,
+    /// The most severe of those rules' severities.
+    pub severity: crate::report::Severity,
+}
+
+/// `true` when two line ranges share a line; an empty range (an
+/// insertion) counts as touching the lines on both sides of it.
+fn touches(a: &std::ops::Range<usize>, b: &std::ops::Range<usize>) -> bool {
+    let closed = |r: &std::ops::Range<usize>| {
+        if r.is_empty() {
+            (r.start.saturating_sub(1), r.start)
+        } else {
+            (r.start, r.end - 1)
+        }
+    };
+    let (a0, a1) = closed(a);
+    let (b0, b1) = closed(b);
+    a0 <= b1 && b0 <= a1
+}
+
+/// Each changed block of `change`, in file order, with no context lines.
+/// A block is credited to the rules whose own change touches it
+/// (`report.spans`, from [`crate::report::attribute`]); without spans,
+/// or when no rule claims it, to every rule that changed the file.
+pub fn findings(change: &FileChange, report: &RunReport) -> Vec<Finding> {
+    if !change.changed() {
+        return Vec::new();
+    }
+    let severity = |rules: &[usize]| {
+        rules
+            .iter()
+            .filter_map(|&i| report.rules.get(i))
+            .map(|r| r.severity)
+            .max()
+            .unwrap_or_default()
+    };
+    let spans = report.spans.get(&change.path);
+    let diff = similar::TextDiff::from_lines(&change.before, &change.after);
+    let new: Vec<&str> = change.after.split_inclusive('\n').collect();
+    let mut out = Vec::new();
+    for group in diff.grouped_ops(0) {
+        let (Some(first), Some(last)) = (group.first(), group.last()) else {
+            continue;
+        };
+        let old = first.old_range().start..last.old_range().end;
+        let added = first.new_range().start..last.new_range().end;
+        let mut rules: Vec<usize> = spans
+            .into_iter()
+            .flatten()
+            .filter(|s| touches(&s.lines, &old))
+            .map(|s| s.rule)
+            .collect();
+        rules.sort_unstable();
+        rules.dedup();
+        if rules.is_empty() {
+            rules = change.rules_fired.clone();
+        }
+        out.push(Finding {
+            start_line: old.start + 1,
+            end_line: old.end,
+            replacement: new.get(added).map(|l| l.concat()).unwrap_or_default(),
+            severity: severity(&rules),
+            rules,
+        });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -780,6 +860,26 @@ mod tests {
         let json = collector.to_json(&report);
         assert_eq!(json["skipped"][0]["path"], "bin.py");
         assert_eq!(json["summary"]["skipped"], 1);
+    }
+
+    #[test]
+    fn findings_are_the_changed_blocks_in_original_lines() {
+        let mut report = RunReport::with_rules(["a", "b"]);
+        report.rules[1].severity = crate::report::Severity::Info;
+        let change = FileChange {
+            path: "f.go".into(),
+            before: "one\ntwo\nthree\nfour\n".into(),
+            after: "one\nTWO\nthree\nfour\nfive\n".into(),
+            rules_fired: vec![1],
+            conflicts: Vec::new(),
+        };
+        let found = findings(&change, &report);
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!((found[0].start_line, found[0].end_line), (2, 2));
+        assert_eq!(found[0].replacement, "TWO\n");
+        // An insertion after the last line: an empty range before line 5.
+        assert_eq!((found[1].start_line, found[1].end_line), (5, 4));
+        assert_eq!(found[1].severity, crate::report::Severity::Info);
     }
 
     #[test]

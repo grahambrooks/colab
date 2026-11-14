@@ -24,7 +24,7 @@ use crate::discover;
 use crate::format::{self, ExecMode, Format};
 use crate::language_server;
 
-static VERSION: &str = concat!(
+pub(crate) static VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     ".",
     include_str!(concat!(env!("OUT_DIR"), "/version.txt"))
@@ -1129,6 +1129,7 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
         report.record(change);
     }
     lsp_check(args, &pending, &mut report)?;
+    attribute_lines(args.format, refactoring, &pending, &mut report);
     let blocked = matches!(exec_mode, ExecMode::Write) && refuse_conflicts(args, &mut report);
     if blocked {
         reporter.refused();
@@ -1148,6 +1149,19 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
     } else {
         0
     })
+}
+
+/// For the CI formats, which annotate each changed block, record which
+/// rule changed which lines (one extra apply per rule per changed file).
+fn attribute_lines(
+    format: Format,
+    refactoring: &codemod::Refactoring,
+    changes: &[FileChange],
+    report: &mut RunReport,
+) {
+    if matches!(format, Format::Sarif | Format::Github) {
+        colab_core::report::attribute(&refactoring.rules, changes, report);
+    }
 }
 
 /// Exit code for a `--write` run that found conflicts and wrote nothing.
@@ -1425,6 +1439,7 @@ fn run_refactor_bisect(
             report.record(change);
         }
         lsp_check(args, &pending, &mut report)?;
+        attribute_lines(args.format, refactoring, &pending, &mut report);
         if refuse_conflicts(args, &mut report) {
             reporter.refused();
             report_all(reporter.as_mut(), &pending)?;
@@ -1665,7 +1680,13 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
             out.write_all(change.after.as_bytes())
                 .map_err(io_to_error)?;
         }
-        Format::Json | Format::Ndjson | Format::Diff => {
+        Format::Json | Format::Ndjson | Format::Diff | Format::Sarif | Format::Github => {
+            attribute_lines(
+                args.format,
+                &refactoring,
+                std::slice::from_ref(&change),
+                &mut report,
+            );
             let mut reporter =
                 format::make_reporter(args.format, ExecMode::DryRun, args.render_options());
             reporter

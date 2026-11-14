@@ -414,6 +414,12 @@ every other format, and any non-TTY stdout, defaults to `--dry-run`.
 `--check` overrides both. So a script run from an agent or a pipe never
 writes unless you pass `--write`.
 
+In a GitHub workflow, `--format github` turns each pending change into
+an annotation on the pull request, at its lines, with the rule's
+`message` and `severity`; `--format sarif` writes SARIF 2.1.0 for code
+scanning (`github/codeql-action/upload-sarif`), each finding carrying its
+fix. The exit code is unchanged.
+
 ### Repo packs: `colab.toml` and `colab fix`
 
 If the repository has a `colab.toml`, its conventions are already

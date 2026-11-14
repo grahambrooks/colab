@@ -143,6 +143,50 @@ pub struct RunReport {
     pub warnings: Vec<String>,
     /// Conflicts the rules found in their own changes, in file order.
     pub conflicts: Vec<Conflict>,
+    /// Which lines of each changed file each rule touched, when a CI
+    /// format asked for it (see [`attribute`]). Empty otherwise, and
+    /// [`crate::render::findings`] then credits every rule that changed
+    /// the file.
+    pub spans: std::collections::BTreeMap<PathBuf, Vec<RuleSpan>>,
+}
+
+/// Lines of the original file one rule changes (0-based, end exclusive;
+/// empty for a pure insertion before `lines.start`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleSpan {
+    pub rule: usize,
+    pub lines: std::ops::Range<usize>,
+}
+
+/// Record, for each changed file, the lines each rule that fired touches,
+/// by applying that rule alone to the file as it was. A rule that only
+/// changes what an earlier rule wrote touches nothing on its own; the
+/// blocks nobody claims are then credited to every rule that fired.
+/// Costs one apply per rule per changed file, so only the CI formats ask.
+pub fn attribute(
+    rules: &[Box<dyn crate::Operation>],
+    changes: &[crate::walker::FileChange],
+    report: &mut RunReport,
+) {
+    for change in changes.iter().filter(|c| c.changed()) {
+        let mut spans = Vec::new();
+        for &index in &change.rules_fired {
+            let Some(rule) = rules.get(index) else {
+                continue;
+            };
+            let alone = rule.apply(&change.before);
+            let diff = similar::TextDiff::from_lines(change.before.as_str(), alone.as_str());
+            for group in diff.grouped_ops(0) {
+                if let (Some(first), Some(last)) = (group.first(), group.last()) {
+                    spans.push(RuleSpan {
+                        rule: index,
+                        lines: first.old_range().start..last.old_range().end,
+                    });
+                }
+            }
+        }
+        report.spans.insert(change.path.clone(), spans);
+    }
 }
 
 /// How many scanned paths a [`RunReport`] remembers for near-miss probing.
