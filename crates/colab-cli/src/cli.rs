@@ -67,6 +67,7 @@ Exit codes:
    4   I/O error.
   10   --check found changes that would be made.
   11   --write found conflicts and wrote nothing (see --allow-conflicts).
+  12   colab test: a pack's case failed.
 "#
 )]
 struct Args {
@@ -138,6 +139,9 @@ enum Commands {
     ListRules(ListRulesArgs),
     /// Manage discoverable codemod packs.
     Pack(PackArgs),
+    /// Check a repository's packs against the cases beside them
+    /// (`<pack>.tests/<case>/{input,expected}/`); exit 12 if one fails.
+    Test(crate::pack_test::TestArgs),
     /// Restore files from a `--backup <dir>` produced by a prior
     /// `colab refactor`, `rename`, or `mv` run, undoing its file
     /// operations (through git) first.
@@ -1025,6 +1029,7 @@ pub async fn run() -> Result<i32> {
         Some(Commands::Fix(fix_args)) => run_fix(fix_args),
         Some(Commands::MvSection(args)) => run_mv_section(args),
         Some(Commands::Review(review_args)) => crate::review::run(review_args),
+        Some(Commands::Test(args)) => crate::pack_test::run(args, &default_backends()),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);
             language_server::run(default_backends()).await;

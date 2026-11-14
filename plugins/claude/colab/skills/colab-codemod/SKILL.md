@@ -490,6 +490,14 @@ go = "gofmt"
 pack = "go/1.18-modern"
 ```
 
+### Testing a repo pack
+
+Before a pack gates CI, give it cases: `<pack>.tests/<case>/input/`
+and, when the pack should change them, `expected/`. `colab test --bless`
+writes `expected/`; review it, then `colab test` (exit 12 on a failure)
+checks the output, a second run, and conflicts, and names any rule no
+case exercises.
+
 ### Findings and suppressions
 
 Give a lint rule a `message` and `severity` after its action, so CI

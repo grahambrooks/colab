@@ -380,6 +380,40 @@ path = ".colab/packs/house-style.codemod"
   last four as for `refactor`. `fix` takes no `--script`, `-e` or paths:
   the packs and `[run] paths` come from `colab.toml`.
 
+### colab test
+
+Check a repository's packs against cases kept beside them, the way
+colab's corpus harness checks its own:
+
+```text
+.colab/packs/hygiene.codemod
+.colab/packs/hygiene.tests/
+    removes-a-dbg/input/crates/x/src/lib.rs
+    removes-a-dbg/expected/crates/x/src/lib.rs     # what the pack makes of it
+    keeps-tests-and-other-trees/input/…            # no expected/: must not change
+```
+
+```sh
+colab test                       # colab.toml's `path` packs, and .colab/packs/
+colab test .colab/packs/hygiene.codemod
+colab test --bless               # write each case's expected/ (also COLAB_BLESS=1)
+colab test --format json         # {packs: [{pack, cases, untested_rules}], passed, failed}
+```
+
+- A case runs the pack over its `input/` files in memory, at their paths
+  relative to `input/`, so `in "<glob>"` scopes apply as in the repository.
+- It passes when every file comes out as in `expected/`. A file that
+  `expected/` lacks must come out unchanged, and a case with no
+  `expected/` must change nothing: that is how a case says what the pack
+  leaves alone.
+- A second run over the output must change nothing (the pack is
+  idempotent), and no rule may report a conflict.
+- A rule that fires in no case is reported as untested, a warning.
+- `--bless` rewrites `expected/` from the pack's output (removing it for
+  a case that changes nothing); review the diff before committing it.
+  Failures of the pack itself (a second run, a conflict) still fail.
+- Exit 0 when every case passes, 12 when one fails.
+
 ### colab review
 
 Review a large run by rule, from its log:
@@ -1111,6 +1145,7 @@ The same table is in `colab --help`:
 | 4 | I/O error (with the offending path in the log line). |
 | 10 | `--check` found changes a rule above `severity info` would make. |
 | 11 | `--write` found [conflicts](#conflicts) and wrote nothing (`--allow-conflicts` overrides). |
+| 12 | `colab test`: a case of a pack failed (its output, a second run, or a conflict). |
 
 Code 2 is what `clap` itself uses for argument-parsing errors, which
 overlaps with the script parse code by design — both are "the input

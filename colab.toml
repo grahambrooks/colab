@@ -1,0 +1,7 @@
+# colab's own packs: `colab fix --check` gates CI, `colab test` checks the
+# packs against the cases beside them.
+[run]
+paths = ["crates"]
+
+[[packs]]
+path = ".colab/packs/hygiene.codemod"

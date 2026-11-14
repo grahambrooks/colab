@@ -89,7 +89,7 @@ fn user_packs_dir() -> Option<PathBuf> {
 /// Walk up from the current directory looking for the nearest
 /// `.git` (a directory or a file — the latter is a worktree's
 /// gitfile). The pack directory lives at `<repo>/.colab/packs/`.
-fn repo_packs_dir() -> Option<PathBuf> {
+pub(crate) fn repo_packs_dir() -> Option<PathBuf> {
     let mut current = std::env::current_dir().ok()?;
     loop {
         if current.join(".git").exists() {

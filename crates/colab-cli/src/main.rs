@@ -17,6 +17,7 @@ mod help_json;
 mod language_server;
 mod lsp_commands;
 mod markdown;
+mod pack_test;
 mod packs;
 mod review;
 

@@ -1,0 +1,13 @@
+// colab's own conventions, checked in CI by `colab fix --check` and
+// tested by `colab test` against the cases in hygiene.tests/.
+refactor "colab-hygiene" {
+    pattern tests = 'mod tests { $$$B }'
+
+    // A `dbg!` statement does not ship in library code. One inside a
+    // larger expression is left (deleting it would break the code): `find`
+    // still lists it.
+    match rust::pattern 'dbg!($$$A)' in "crates/*/src/**" where not inside tests {
+        delete
+        message "a `dbg!` left in library code"
+    }
+}

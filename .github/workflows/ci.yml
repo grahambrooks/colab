@@ -33,6 +33,9 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       # Unit, integration and doc tests.
       - run: cargo test --workspace --all-features --locked
+      # colab's own packs (colab.toml): their cases, then the tree itself.
+      - run: cargo run -q -p colab-cli --locked -- test
+      - run: cargo run -q -p colab-cli --locked -- fix --check
 
   msrv:
     name: msrv — rust-version is the toolchain we build with

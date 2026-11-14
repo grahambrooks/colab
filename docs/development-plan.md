@@ -100,7 +100,7 @@ Wave D of the M29 follow-up sweep: decide before building.
 
 What a team needs to gate a repository on its packs.
 
-- **`colab test`** for a repository's own packs: before / after fixtures
+- **`colab test`** (shipped: `<pack>.tests/<case>/{input,expected}/`, `--bless`, exit 12; colab's own `.colab/packs/hygiene.codemod` is tested and gated in CI) for a repository's own packs: before / after fixtures
   next to the pack, valid / invalid cases, blessable snapshots
   (`COLAB_BLESS=1`), the idempotency re-run included. The machinery is the
   corpus harness and MCP `colab.test_rule`. ast-grep `test`, Grit, LibCST.

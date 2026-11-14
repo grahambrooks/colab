@@ -26,6 +26,7 @@ cargo run -p colab-cli -- find -e '<match …>' [paths...]         # read-only: 
 cargo run -p colab-cli -- fix [--check|--write]                  # run the packs colab.toml declares, with its [run] settings
 cargo run -p colab-cli -- fix --check --format github            # CI annotations (--format sarif: SARIF 2.1.0 for code scanning)
 cargo run -p colab-cli -- pack list                              # built-in packs (examples/packs/) + .colab/packs/
+cargo run -p colab-cli -- test [--bless]                         # each pack's <pack>.tests/<case>/{input,expected}/ (exit 12 on a failure)
 cargo run -p colab-cli -- refactor --script <s> --split-pr .     # one git branch per rule (HEAD + that rule; --stacked chains them), tree untouched
 cargo run -p colab-cli -- review run.ndjson [--rule N]           # a `--format ndjson --detail diff` log, by rule, paged
 cargo run -p colab-cli -- ast --lang go --pattern '<code>'       # a pattern's (or --stdin snippet's) syntax tree
@@ -62,6 +63,7 @@ Exit codes from `colab refactor` (also documented in `--help`):
 | 4    | I/O error. |
 | 10   | `--check` found changes that would be made. |
 | 11   | `--write` found conflicts and wrote nothing (`--allow-conflicts` overrides). |
+| 12 | `colab test` found a pack case that fails. |
 
 Defaults: `--format human` on a TTY implies `--write`; everything else (`json` / `ndjson` / `diff` / `sarif` / `github`, or non-TTY stdout) defaults to `--dry-run`. `--check` overrides both.
 
