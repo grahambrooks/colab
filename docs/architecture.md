@@ -28,7 +28,9 @@ crates/
                       # Depends only on colab-core; never on a backend.
   colab-rewrite/      # Tree-sitter rewriting primitives shared by all
                       # backends (apply_edits, line_span, delete_lines,
-                      # visit_all, rename_nodes_by_text, rename_conflict)
+                      # visit_all, rename_nodes_by_text, rename_conflict),
+                      # `calls` (replace_call for the backends whose calls
+                      # have `function` / `arguments` fields)
                       # and `pattern`, the structural matcher behind
                       # every <lang>::pattern (wraps ast-grep-core; also
                       # evaluates `where`; build_rule_where). Depends on

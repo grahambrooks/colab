@@ -14,8 +14,7 @@
 use std::fmt;
 use std::path::Path;
 
-use colab_core::{Operation, render_call_template};
-use tree_sitter::Node;
+use colab_core::Operation;
 
 #[derive(Debug)]
 pub struct CallReplace {
@@ -58,55 +57,10 @@ impl Operation for CallReplace {
 }
 
 pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
-        return source_code.to_string();
-    };
-
-    let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        collect(node, source_code, function, template, &mut edits)
-    });
-
-    colab_rewrite::apply_edits(
-        source_code,
-        edits
-            .into_iter()
-            .map(|(start, end, text)| colab_rewrite::Edit::new(start, end, text))
-            .collect(),
-    )
-}
-
-fn collect(
-    node: Node<'_>,
-    source: &str,
-    function: &str,
-    template: &str,
-    edits: &mut Vec<(usize, usize, String)>,
-) {
-    if node.kind() == "call"
-        && let Some(func_node) = node.child_by_field_name("function")
-        && let Ok(func_text) = func_node.utf8_text(source.as_bytes())
-        && func_text == function
-        && let Some(args) = node.child_by_field_name("arguments")
-    {
-        let arg_strs = collect_args(args, source);
-        let arg_refs: Vec<&str> = arg_strs.iter().map(|s| s.as_str()).collect();
-        let rendered = render_call_template(template, function, &arg_refs);
-        edits.push((node.start_byte(), node.end_byte(), rendered));
+    match crate::parse(source_code) {
+        Some(tree) => colab_rewrite::calls::rewrite(&tree, source_code, "call", function, template),
+        None => source_code.to_string(),
     }
-}
-
-fn collect_args<'a>(arg_list: Node<'a>, source: &'a str) -> Vec<String> {
-    let mut out = Vec::new();
-    for i in 0..arg_list.named_child_count() {
-        let Some(child) = arg_list.named_child(i as u32) else {
-            break;
-        };
-        if let Ok(text) = child.utf8_text(source.as_bytes()) {
-            out.push(text.to_string());
-        }
-    }
-    out
 }
 
 #[cfg(test)]

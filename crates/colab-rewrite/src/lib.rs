@@ -17,6 +17,7 @@
 //! `colab-core` is what stops `colab-dsl` and `colab-mcp`, neither of
 //! which parses anything, from inheriting a grammar engine.
 
+pub mod calls;
 pub mod pattern;
 pub mod scope;
 

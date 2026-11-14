@@ -444,15 +444,17 @@ impl StructuralPattern {
         Ok(self)
     }
 
-    /// Whether `template`, as code with its metavariables in place, holds
-    /// a match of this pattern (in the wrapper the pattern compiled in).
+    /// Whether rewriting `template` — as code, its metavariables in place,
+    /// in the wrapper the pattern compiled in — with `template` changes it
+    /// again: the rule would not settle on its own output. A template that
+    /// matches but rewrites to itself (fixed text) settles, and is fine.
     pub fn rematches(&self, template: &str) -> bool {
         let expanded = expand(template, self.lang.expando);
         let source = match &self.context {
             Some(context) => context.replacen(PATTERN_SLOT, &expanded, 1),
             None => expanded,
         };
-        !self.find(&source).is_empty()
+        !self.find(&source).is_empty() && self.rewrite(&source, template) != source
     }
 
     /// The `where` constraints, as written.
