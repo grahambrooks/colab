@@ -250,6 +250,19 @@ pub trait LanguageBackend: Send + Sync {
         None
     }
 
+    /// A rule that reaches into Markdown code fences by itself, for a
+    /// backend with no fence language of its own: `markdown::text … in
+    /// fences` (`also: false`) or `and fences` (`also: true`). `None`: the
+    /// module cannot, and the clause is rejected.
+    fn build_rule_in_fences(
+        &self,
+        _module: &str,
+        _spec: RuleSpec,
+        _also: bool,
+    ) -> Option<Result<Box<dyn Operation>>> {
+        None
+    }
+
     /// The operation behind `drops import "<target>" when unused`: delete
     /// the import, but only when nothing in the file still uses it. A
     /// backend that cannot tell whether an import is used keeps this

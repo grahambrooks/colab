@@ -566,6 +566,10 @@ match rust::use "old_crate::Thing" in "docs/**" in fences { replace "new_crate::
 - Each of `in "<glob>"`, `in fences` and `and fences` may appear once;
   the two fence clauses exclude each other.
 - Import clauses (`requires import`, `drops import`) apply to the rule's own files, not to fences: a snippet in the docs seldom shows its imports.
+- `markdown::text` takes the clauses too, as text rather than code: `in
+  fences` changes the phrase only inside the section's code fences (of
+  any language), `and fences` in its prose and its fences. Without them
+  fences are skipped. No other Markdown module reads fences.
 
 ### Comments and strings: `and prose`
 

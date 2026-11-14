@@ -676,6 +676,9 @@ match markdown::text "Status[(draft)]" in "docs/**" { delete }
 
 - For edits smaller than a section, row or item: a phrase in the
   section's own text (before its first subsection), outside code fences.
+  Add `in fences` to change it only inside the section's fences (a line
+  of a shell example), or `and fences` for prose and fences alike:
+  `match markdown::text "Output formats[--check .]" in fences { replace "--check --format github ." }`.
 - Matched word for word, with any run of whitespace in the target
   matching any run in the file, so a phrase the file wraps across lines
   still matches. Every occurrence changes.

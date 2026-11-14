@@ -285,6 +285,34 @@ impl LanguageBackend for MarkdownBackend {
         Vec::new()
     }
 
+    /// `markdown::text … in fences` / `and fences`: the phrase inside the
+    /// section's code fences too. No other module edits code.
+    fn build_rule_in_fences(
+        &self,
+        module: &str,
+        spec: RuleSpec,
+        also: bool,
+    ) -> Option<Result<Box<dyn Operation>>> {
+        if module != "text" {
+            return None;
+        }
+        let fences = if also {
+            text::Fences::Also
+        } else {
+            text::Fences::Only
+        };
+        Some(match spec {
+            RuleSpec::Replace {
+                target,
+                replacement,
+            } => text::TextEdit::replace(&target, &replacement)
+                .map(|op| Box::new(op.with_fences(fences)) as Box<dyn Operation>),
+            RuleSpec::Delete { target } => text::TextEdit::delete(&target)
+                .map(|op| Box::new(op.with_fences(fences)) as Box<dyn Operation>),
+            other => Err(self.unsupported(module, &other)),
+        })
+    }
+
     fn fence_locator(&self) -> Option<colab_core::FenceLocator> {
         Some(fences)
     }

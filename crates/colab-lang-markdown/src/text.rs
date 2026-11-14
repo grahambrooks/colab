@@ -24,6 +24,7 @@ enum Mode {
 /// One `markdown::text` rule.
 #[derive(Debug)]
 pub struct TextEdit {
+    fences: Fences,
     /// The address in the form near misses compare (`outline::near_target`).
     near: String,
     target: String,
@@ -54,6 +55,7 @@ impl TextEdit {
             )));
         }
         Ok(Self {
+            fences: Fences::Skip,
             near: outline::near_target(&section),
             target: target.trim().to_string(),
             section,
@@ -108,7 +110,14 @@ impl TextEdit {
             .occurrences(&source[own.clone()])
             .into_iter()
             .map(|r| own.start + r.start..own.start + r.end)
-            .filter(|r| !fences.iter().any(|f| f.start <= r.start && r.end <= f.end))
+            .filter(|r| {
+                let fenced = fences.iter().any(|f| f.start <= r.start && r.end <= f.end);
+                match self.fences {
+                    Fences::Skip => !fenced,
+                    Fences::Only => fenced,
+                    Fences::Also => true,
+                }
+            })
             .collect();
         // A replacement that contains the phrase (`[a]` → `[a] [b]`) would
         // match again on the next run: an occurrence already standing where
@@ -148,10 +157,37 @@ impl TextEdit {
 
 impl fmt::Display for TextEdit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fences = match self.fences {
+            Fences::Skip => "",
+            Fences::Only => " in fences",
+            Fences::Also => " and fences",
+        };
         match &self.mode {
-            Mode::Replace(to) => write!(f, "markdown::text \"{}\" -> \"{to}\"", self.target),
-            Mode::Delete => write!(f, "markdown::text \"{}\" -> delete", self.target),
+            Mode::Replace(to) => {
+                write!(f, "markdown::text \"{}\"{fences} -> \"{to}\"", self.target)
+            }
+            Mode::Delete => write!(f, "markdown::text \"{}\"{fences} -> delete", self.target),
         }
+    }
+}
+
+/// Whether a `text` rule reads the section's code fences.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Fences {
+    /// Prose only: fences are code (the default).
+    #[default]
+    Skip,
+    /// Only inside fences (`in fences`).
+    Only,
+    /// Prose and fences (`and fences`).
+    Also,
+}
+
+impl TextEdit {
+    /// The same rule, reading code fences as `fences` says.
+    pub fn with_fences(mut self, fences: Fences) -> Self {
+        self.fences = fences;
+        self
     }
 }
 
@@ -194,6 +230,26 @@ mod tests {
     use super::*;
 
     const DOC: &str = "## Order\n\n**M28 → M23 → M20**, then M14. M28 has\nshipped.\n\n```sh\nM28 has shipped.\n```\n\n### Detail\n\nM28 has shipped.\n";
+
+    #[test]
+    fn in_fences_and_and_fences_choose_where_the_phrase_counts() {
+        // DOC's `Order` section has the phrase in prose and in an sh fence.
+        let only = TextEdit::replace("Order[M28 has shipped.]", "M28 is done.")
+            .unwrap()
+            .with_fences(Fences::Only);
+        let out = only.apply(DOC);
+        assert!(out.contains("```sh\nM28 is done.\n```"), "{out}");
+        assert!(out.contains("M28 has\nshipped."), "prose left: {out}");
+        assert!(only.to_string().contains(" in fences -> "), "{only}");
+        let both = TextEdit::replace("Order[M28 has shipped.]", "M28 is done.")
+            .unwrap()
+            .with_fences(Fences::Also);
+        let out = both.apply(DOC);
+        assert!(
+            !out[..out.find("### Detail").unwrap()].contains("has shipped"),
+            "{out}"
+        );
+    }
 
     #[test]
     fn a_missing_section_is_a_near_miss_target() {

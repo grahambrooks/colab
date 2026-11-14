@@ -339,6 +339,19 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
             Ok(operation)
         }
     };
+    // A module that edits fences itself (Markdown `text`) takes the clause
+    // as one rule, not a fenced twin.
+    if let Some(mode) = fences
+        && backend.fence_names().is_empty()
+        && let Some(operation) =
+            backend.build_rule_in_fences(&namespace.module, spec.clone(), mode == Fences::Also)
+    {
+        let operation = operation?;
+        return match scope {
+            Some(pattern) => Ok(vec![Box::new(ScopedOperation::new(operation, &pattern)?)]),
+            None => Ok(vec![operation]),
+        };
+    }
     let mut operations = Vec::new();
     if fences != Some(Fences::Only) {
         let mut operation = build(true)?;
@@ -368,8 +381,13 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
     if fences.is_some() {
         let names = backend.fence_names();
         if names.is_empty() {
+            let hint = if namespace.lang == "markdown" {
+                "; of the Markdown modules only `markdown::text` reads code fences"
+            } else {
+                ""
+            };
             return Err(Error::UnsupportedOperation(format!(
-                "`{}` rules cannot run in Markdown code fences",
+                "`{}` rules cannot run in Markdown code fences{hint}",
                 namespace.lang
             )));
         }
@@ -913,6 +931,22 @@ import (
         assert_eq!(only.rules.len(), 1);
         assert!(only.rules[0].is_file_relevant(Path::new("docs/x.md")));
         assert!(!only.rules[0].is_file_relevant(Path::new("README.md")));
+        // `markdown::text` reads fences itself: one rule, no fenced twin.
+        let text = compile(
+            r#"refactor "r" { match markdown::text "A[x y]" and fences in "docs/**" { replace "z" } }"#,
+            &backends,
+        )
+        .unwrap();
+        assert_eq!(text.rules.len(), 1);
+        assert!(
+            text.rules[0].to_string().contains("and fences"),
+            "{}",
+            text.rules[0]
+        );
+        assert!(
+            !text.rules[0].is_file_relevant(Path::new("README.md")),
+            "scope kept"
+        );
         let none = compile(
             r#"refactor "r" { match markdown::section "A" in fences { delete } }"#,
             &backends,
