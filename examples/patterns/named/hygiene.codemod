@@ -1,0 +1,18 @@
+// Named patterns keep a pack's constraints from repeating. `goroutine`
+// and `test_func` come from shared.codemod; `cleanup` is this file's own.
+refactor "test-hygiene" {
+    include "shared.codemod"
+    pattern cleanup = 't.Cleanup(func() { $$$B })'
+
+    // t.Fatal from a goroutine stops only that goroutine (staticcheck SA2002).
+    match go::pattern '$T.Fatal($$$A)' where inside goroutine, inside test_func {
+        replace '$T.Error($$$A)'
+    }
+    // Trace logs in tests go, except in a goroutine or a cleanup, where
+    // they are the only sign the code ran.
+    match go::pattern 'log.Println($$$A)'
+        where inside test_func, not any(inside goroutine, inside cleanup)
+    {
+        delete
+    }
+}

@@ -130,6 +130,11 @@ fn explain_command(cmd: &ast::Command) -> Value {
                 "kind": "include",
                 "path": path,
             }),
+            ast::Item::Pattern { name, text, .. } => json!({
+                "kind": "pattern",
+                "name": name,
+                "pattern": text,
+            }),
         })
         .collect();
     json!({ "name": cmd.refactor_name, "items": items })

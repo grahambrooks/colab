@@ -23,6 +23,12 @@ pub struct Command {
 pub enum Item {
     Match(Match),
     Include(String),
+    /// `pattern <name> = '<code>'`: a pattern constraints refer to by name.
+    Pattern {
+        name: String,
+        text: String,
+        span: Span,
+    },
 }
 
 /// One `match <namespace> "<target>" [in "<glob>"] [where …] { <action> <import clause>* }`

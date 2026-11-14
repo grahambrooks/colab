@@ -26,6 +26,7 @@ Whitespace is insignificant outside string literals.
 ```ebnf
 program     = "refactor" string "{" item* "}"
 item        = match | "include" string
+            | "pattern" identifier "=" string   -- a pattern constraints name
 match       = "match" namespace string location* [ where ] "{" let* action clause* "}"
 location    = "in" string                -- path scope, at most once
             | "in" "fences"              -- only inside Markdown code fences
@@ -36,15 +37,16 @@ constraint  = [ "not" ] test
 test        = metavar "matches" ( regex | string )
             | metavar "is" ( identifier | string )
             | metavar "count" range
-            | "inside" string [ stop ]  -- without a stop, the only test on symbol / call: a code scope
-            | "has" string [ stop ]
-            | "follows" string [ stop ]
-            | "precedes" string [ stop ]
+            | "inside" pattern [ stop ]  -- without a stop, the only test on symbol / call: a code scope
+            | "has" pattern [ stop ]
+            | "follows" pattern [ stop ]
+            | "precedes" pattern [ stop ]
             | "any" "(" constraint ( "," constraint )* ")"
             | "all" "(" constraint ( "," constraint )* ")"
             | "nth" [ "-" ] number
             | "field" identifier
-stop        = "directly" | "until" string
+stop        = "directly" | "until" pattern
+pattern     = string | identifier            -- code, or the name of a `pattern` item
 range       = number | number ".." number | number ".." | ".." number
 let         = "let" metavar "=" metavar ( "|" step )+   -- before the action; pattern only
 step        = identifier [ "(" [ arg ( "," arg )* ] ")" ]
@@ -342,6 +344,38 @@ match go::pattern 'errors.Wrap($E, $M)'
   being filled with nothing.
 - Constraints only remove matches, so the prefilter stays sound, and
   `colab find` lists exactly what `refactor` would change.
+
+### Named patterns: `pattern`
+
+A pack that checks `inside 'func $F(t *testing.T) { $$$B }'` in five
+rules says it five times. Name it once, at the top level of the script,
+and use the name wherever a constraint takes a pattern:
+
+```
+refactor "test-hygiene" {
+    include "shared.codemod"    // defines `goroutine`
+    pattern test_func = 'func $F(t *testing.T) { $$$B }'
+
+    match go::pattern '$T.Fatal($$$A)' where inside goroutine, inside test_func {
+        replace '$T.Error($$$A)'
+    }
+    match go::pattern 'log.Println($$$A)' where inside test_func, not inside goroutine { delete }
+}
+```
+
+- `pattern <name> = '<code>'` is an item, beside `match` and `include`.
+  The name stands for the code after `inside`, `has`, `follows`,
+  `precedes` and `until`, in `any` / `all` groups too.
+- Names are script-wide: a definition may come after its use, and an
+  included file's definitions are the including script's. A name defined
+  twice, or used and never defined, fails the script, the latter with a
+  "did you mean". The editor checks one file at a time, so in a file with
+  an `include` it takes a name it does not define to come from there.
+- The code is compiled for each rule's language, so one name can serve a
+  Go rule and, if it is valid there, a rule in another language.
+- A named pattern's metavariables are its own, as in any nested pattern.
+- `colab explain` lists the definitions; a rule's description shows the
+  code the name stands for.
 
 ### Derived values: `let`
 
@@ -823,7 +857,7 @@ refactor "javax-to-jakarta" {
 
 The grammar keywords are:
 
-`refactor`, `match`, `in`, `include`, `replace`, `delete`, `ensure`,
+`refactor`, `match`, `in`, `include`, `pattern`, `replace`, `delete`, `ensure`,
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
 `count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `requires`, `import`, `drops`, `when`,

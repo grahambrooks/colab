@@ -192,7 +192,8 @@ match js::pattern 'console.log($$$ARGS)' { delete }
   The forms are `$X matches /re/`, `$X is <node-kind>`, `$$$X count 1..3`,
   `follows '…'` / `precedes '…'` (siblings), `nth 1` / `nth -1`,
   `field function`, `any(…)` / `all(…)`, `inside '…'` / `has '…'` (each
-  of the four relations may end `directly` or `until '…'`),
+  of the four relations may end `directly` or `until '…'`; name a
+  repeated one with `pattern test_func = '…'` and write `inside test_func`),
   each optionally preceded by `not`. Only
   `pattern` takes them.
 - **Derive part of a name with `let`.** A metavariable is a whole node,

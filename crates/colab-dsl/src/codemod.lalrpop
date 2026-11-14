@@ -29,6 +29,8 @@ pub Program: Command = {
 pub Item: Item = {
     <m: Match> => Item::Match(m),
     "include" <s: StringLiteral> => Item::Include(s),
+    // `pattern helper = '…'`: a pattern `where` clauses name.
+    <start: @L> "pattern" <name: Identifier> "=" <text: StringLiteral> <end: @R> => Item::Pattern { name, text, span: Span { start, end } },
 };
 
 // The optional `in "<glob>"` clause restricts the rule to matching
@@ -76,12 +78,12 @@ Test: Test = {
     <var: Metavar> "is" <kind: Identifier> => Test::Is { var, kind },
     <var: Metavar> "is" <kind: StringLiteral> => Test::Is { var, kind },
     <var: Metavar> "count" <range: CountRange> => Test::Count { var, min: range.0, max: range.1 },
-    "inside" <pattern: StringLiteral> => Test::Inside(pattern),
-    "has" <pattern: StringLiteral> => Test::Has(pattern),
-    "inside" <pattern: StringLiteral> <stop: StopClause> => Test::Related { relation: Relation::Inside, pattern, stop },
-    "has" <pattern: StringLiteral> <stop: StopClause> => Test::Related { relation: Relation::Has, pattern, stop },
-    "follows" <pattern: StringLiteral> <stop: StopClause?> => Test::Related { relation: Relation::Follows, pattern, stop: stop.unwrap_or(Stop::Anywhere) },
-    "precedes" <pattern: StringLiteral> <stop: StopClause?> => Test::Related { relation: Relation::Precedes, pattern, stop: stop.unwrap_or(Stop::Anywhere) },
+    "inside" <pattern: PatternArg> => Test::Inside(pattern),
+    "has" <pattern: PatternArg> => Test::Has(pattern),
+    "inside" <pattern: PatternArg> <stop: StopClause> => Test::Related { relation: Relation::Inside, pattern, stop },
+    "has" <pattern: PatternArg> <stop: StopClause> => Test::Related { relation: Relation::Has, pattern, stop },
+    "follows" <pattern: PatternArg> <stop: StopClause?> => Test::Related { relation: Relation::Follows, pattern, stop: stop.unwrap_or(Stop::Anywhere) },
+    "precedes" <pattern: PatternArg> <stop: StopClause?> => Test::Related { relation: Relation::Precedes, pattern, stop: stop.unwrap_or(Stop::Anywhere) },
     "any" "(" <all: Constraints> ")" => Test::Any(all),
     "all" "(" <all: Constraints> ")" => Test::All(all),
     "nth" <n: Number> => Test::Nth(i64::try_from(n).unwrap_or(i64::MAX)),
@@ -92,7 +94,13 @@ Test: Test = {
 // How far `inside` / `has` / `follows` / `precedes` look.
 StopClause: Stop = {
     "directly" => Stop::Directly,
-    "until" <pattern: StringLiteral> => Stop::Until(pattern),
+    "until" <pattern: PatternArg> => Stop::Until(pattern),
+};
+
+// A pattern in quotes, or the name of one defined with `pattern`.
+PatternArg: String = {
+    <StringLiteral>,
+    <name: Identifier> => colab_core::constraint::named_pattern(&name),
 };
 
 Constraints: Vec<Constraint> = {
@@ -218,6 +226,7 @@ pub Identifier: String = {
     "all" => "all".to_string(),
     "nth" => "nth".to_string(),
     "field" => "field".to_string(),
+    "pattern" => "pattern".to_string(),
 };
 
 // Three spellings, none with escapes. A double-quoted string cannot

@@ -1,0 +1,5 @@
+// Patterns a team's packs share: `include` brings them in with the rules.
+refactor "test-shapes" {
+    pattern goroutine = 'go func($$$P) { $$$B }($$$A)'
+    pattern test_func = 'func $F(t *testing.T) { $$$B }'
+}

@@ -1,0 +1,5 @@
+worker_test.go:9:2: [1] log.Println("start")
+    $A = "start"
+worker_test.go:18:4: [0] t.Fatal(err)
+    $A = err
+    $T = t

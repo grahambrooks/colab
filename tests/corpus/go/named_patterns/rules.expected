@@ -1,0 +1,2 @@
+1 go::pattern '$T.Fatal($$$A)' where inside 'go func($$$P) { $$$B }($$$A)', inside 'func $F(t *testing.T) { $$$B }' -> '$T.Error($$$A)'
+1 go::pattern 'log.Println($$$A)' where inside 'func $F(t *testing.T) { $$$B }', not any(inside 'go func($$$P) { $$$B }($$$A)', inside 't.Cleanup(func() { $$$B })') -> delete

@@ -117,7 +117,7 @@ types.
   argument, list element or key also removes its comma or blank line, as
   ast-grep's `expandStart` / `expandEnd` do. Today a deletion inside a
   list is refused or leaves a dangling comma.
-- **Named sub-patterns** shared across rules and `where` clauses
+- **Named sub-patterns** (shipped: `pattern <name> = '…'`, script-wide and shared through `include`, usable after `inside` / `has` / `follows` / `precedes` / `until`) shared across rules and `where` clauses
   (`pattern helper = '…'`, referenced as `inside helper`), so large packs
   stop repeating constraints. ast-grep `utils`, Grit `pattern`.
 - **Rewriters on sub-captures**: apply rules to each element of a `$$$`

@@ -100,6 +100,51 @@ pub enum Test {
     },
 }
 
+/// The pattern text a constraint holds for a reference to a named pattern
+/// (`inside helper`, after `pattern helper = '…'`), until the compiler
+/// replaces it with the definition. A control character marks it, so no
+/// pattern written in quotes is mistaken for one.
+pub fn named_pattern(name: &str) -> String {
+    format!("{NAMED}{name}")
+}
+
+/// The name, when `pattern` is an unresolved [`named_pattern`] reference.
+pub fn pattern_name(pattern: &str) -> Option<&str> {
+    pattern.strip_prefix(NAMED)
+}
+
+const NAMED: char = '\u{1}';
+
+/// A pattern as written in a constraint: `'…'`, or a bare name.
+struct Shown<'a>(&'a str);
+
+impl fmt::Display for Shown<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match pattern_name(self.0) {
+            Some(name) => f.write_str(name),
+            None => write!(f, "'{}'", self.0),
+        }
+    }
+}
+
+impl Test {
+    /// Every pattern text this test holds, nested groups included, for
+    /// the compiler to resolve named references in place.
+    pub fn patterns_mut(&mut self) -> Vec<&mut String> {
+        match self {
+            Test::Inside(p) | Test::Has(p) => vec![p],
+            Test::Related { pattern, stop, .. } => match stop {
+                Stop::Until(until) => vec![pattern, until],
+                _ => vec![pattern],
+            },
+            Test::Any(all) | Test::All(all) => {
+                all.iter_mut().flat_map(|c| c.test.patterns_mut()).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+}
+
 /// Where a [`Test::Related`] pattern is looked for, relative to the match.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Relation {
@@ -323,18 +368,18 @@ impl fmt::Display for Constraint {
                 Some(max) => write!(f, "{var} count {min}..{max}"),
                 None => write!(f, "{var} count {min}.."),
             },
-            Test::Inside(pattern) => write!(f, "inside '{pattern}'"),
-            Test::Has(pattern) => write!(f, "has '{pattern}'"),
+            Test::Inside(pattern) => write!(f, "inside {}", Shown(pattern)),
+            Test::Has(pattern) => write!(f, "has {}", Shown(pattern)),
             Test::Related {
                 relation,
                 pattern,
                 stop,
             } => {
-                write!(f, "{} '{pattern}'", relation.keyword())?;
+                write!(f, "{} {}", relation.keyword(), Shown(pattern))?;
                 match stop {
                     Stop::Anywhere => Ok(()),
                     Stop::Directly => f.write_str(" directly"),
-                    Stop::Until(until) => write!(f, " until '{until}'"),
+                    Stop::Until(until) => write!(f, " until {}", Shown(until)),
                 }
             }
             Test::Any(all) | Test::All(all) => {

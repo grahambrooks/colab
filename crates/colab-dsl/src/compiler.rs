@@ -157,7 +157,12 @@ fn compile_inner(
         seen.insert(canonical);
     }
 
-    let matches = expand_includes(command.items, base_path, &mut seen)?;
+    let mut defs = Vec::new();
+    let mut matches = expand_includes(command.items, base_path, &mut seen, &mut defs)?;
+    let defs = named_patterns(defs)?;
+    for m in &mut matches {
+        resolve_names(m, &defs, None)?;
+    }
 
     let mut rules: Vec<Box<dyn Operation>> = Vec::with_capacity(matches.len());
     let mut notes = Vec::with_capacity(matches.len());
@@ -210,18 +215,36 @@ pub struct RuleCheck {
 /// error, which is right for running a script and wrong for editing one.
 pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
     let command = parse(text)?;
+    // Patterns this file defines. One from an include is unknown here:
+    // when the file has includes, an unknown name stands for any node, so
+    // the rule is still checked, and [`compile`] reports a name that is
+    // really missing.
+    let includes = command
+        .items
+        .iter()
+        .any(|item| matches!(item, Item::Include(_)));
+    let defs: Vec<(String, String)> = command
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Pattern { name, text, .. } => Some((name.clone(), text.clone())),
+            _ => None,
+        })
+        .collect();
+    let defs = named_patterns(defs)?;
     Ok(command
         .items
         .into_iter()
         .filter_map(|item| match item {
             Item::Match(m) => Some(m),
-            Item::Include(_) => None,
+            Item::Include(_) | Item::Pattern { .. } => None,
         })
-        .map(|m| {
+        .map(|mut m| {
             let span = m.span;
             let namespace = format!("{}::{}", m.namespace.lang, m.namespace.module);
             let action = m.action.keyword();
-            let lowered = lower_match(m, backends);
+            let lowered = resolve_names(&mut m, &defs, includes.then_some("$_"))
+                .and_then(|()| lower_match(m, backends));
             let advice = lowered.as_ref().map(|(_, a)| a.clone()).unwrap_or_default();
             let outcome = lowered.map(|(ops, _)| ops.iter().map(|op| op.to_string()).collect());
             RuleCheck {
@@ -241,11 +264,13 @@ fn expand_includes(
     items: Vec<Item>,
     base_path: Option<&Path>,
     seen: &mut HashSet<PathBuf>,
+    defs: &mut Vec<(String, String)>,
 ) -> Result<Vec<Match>> {
     let mut out = Vec::new();
     for item in items {
         match item {
             Item::Match(m) => out.push(m),
+            Item::Pattern { name, text, .. } => defs.push((name, text)),
             Item::Include(rel) => {
                 let resolved = resolve_include_path(&rel, base_path)?;
                 let canonical = resolved
@@ -259,12 +284,69 @@ fn expand_includes(
                 }
                 let text = fs::read_to_string(&resolved).map_err(|e| Error::io_at(&resolved, e))?;
                 let inner = parse(&text)?;
-                let nested = expand_includes(inner.items, Some(&resolved), seen)?;
+                let nested = expand_includes(inner.items, Some(&resolved), seen, defs)?;
                 out.extend(nested);
             }
         }
     }
     Ok(out)
+}
+
+/// The script's named patterns (its includes' too), each name once.
+fn named_patterns(
+    defs: Vec<(String, String)>,
+) -> Result<std::collections::HashMap<String, String>> {
+    let mut out = std::collections::HashMap::new();
+    for (name, text) in defs {
+        if out.contains_key(&name) {
+            return Err(Error::Config(format!(
+                "`pattern {name}` is defined twice; give each pattern its own name"
+            )));
+        }
+        out.insert(name, text);
+    }
+    Ok(out)
+}
+
+/// Replace each `inside <name>` (and every other named reference) in
+/// `m`'s constraints with the named pattern's text, or with `unknown` for
+/// a name `defs` lacks, when given.
+fn resolve_names(
+    m: &mut Match,
+    defs: &std::collections::HashMap<String, String>,
+    unknown: Option<&str>,
+) -> Result<()> {
+    for constraint in &mut m.constraints {
+        for pattern in constraint.test.patterns_mut() {
+            let Some(name) = colab_core::constraint::pattern_name(pattern) else {
+                continue;
+            };
+            let Some(text) = defs.get(name).map(String::as_str).or(unknown) else {
+                let mut known: Vec<&str> = defs.keys().map(String::as_str).collect();
+                known.sort_unstable();
+                let hint = suggest::closest(name, known.iter().copied())
+                    .map(|k| format!(" (did you mean `{k}`?)"))
+                    .unwrap_or_default();
+                let defined = if known.is_empty() {
+                    "the script defines none; add `pattern <name> = '<code>'`".to_string()
+                } else {
+                    format!(
+                        "the script defines {}",
+                        known
+                            .iter()
+                            .map(|k| format!("`{k}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                };
+                return Err(Error::UnsupportedOperation(format!(
+                    "no pattern named `{name}`{hint}; {defined}"
+                )));
+            };
+            *pattern = text.to_string();
+        }
+    }
+    Ok(())
 }
 
 fn resolve_include_path(relative: &str, base_path: Option<&Path>) -> Result<PathBuf> {
@@ -1170,6 +1252,79 @@ import (
         // The keywords stay usable where an identifier goes.
         let m = one_match(r#"match go::pattern '$X' where $X is field { delete }"#);
         assert_eq!(m.constraints[0].to_string(), "$X is field");
+    }
+
+    #[test]
+    fn named_patterns_resolve_wherever_a_constraint_takes_one() {
+        let script = r#"refactor "t" {
+            match go::pattern 'use($X)' where inside loop until closure, not any(follows loop directly) { delete }
+            pattern loop = 'for $$$H { $$$B }'
+            pattern closure = 'func() { $$$B }'
+        }"#;
+        let parsed = parse(script).unwrap();
+        let crate::ast::Item::Match(m) = &parsed.items[0] else {
+            panic!("a match first");
+        };
+        // Unresolved, a reference shows as the bare name.
+        let shown: Vec<String> = m.constraints.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            shown,
+            [
+                "inside loop until closure",
+                "not any(follows loop directly)"
+            ]
+        );
+        // Defined after its use, and resolved to the text.
+        let refactoring = compile(script, &registry()).unwrap();
+        assert_eq!(
+            refactoring.rules[0].to_string(),
+            "go::pattern 'use($X)' where inside 'for $$$H { $$$B }' until 'func() { $$$B }', not any(follows 'for $$$H { $$$B }' directly) -> delete"
+        );
+        let src = "package p\nfunc f() {\n\tfor _, x := range xs {\n\t\tuse(x)\n\t\tgo func() { use(x) }()\n\t}\n}\n";
+        assert_eq!(
+            refactoring.rules[0].apply(src),
+            "package p\nfunc f() {\n\tfor _, x := range xs {\n\t\tgo func() { use(x) }()\n\t}\n}\n"
+        );
+        // `check` resolves the file's own names too.
+        let checks = check(script, &registry()).unwrap();
+        assert!(checks[0].outcome.is_ok(), "{:?}", checks[0].outcome);
+    }
+
+    #[test]
+    fn an_unknown_or_repeated_pattern_name_fails_the_script() {
+        let err = |script: &str| compile(script, &registry()).err().unwrap().to_string();
+        let e = err(
+            r#"refactor "t" { pattern loop = 'for { $$$ }' match go::pattern 'f()' where inside lop { delete } }"#,
+        );
+        assert!(
+            e.contains("no pattern named `lop` (did you mean `loop`?)"),
+            "{e}"
+        );
+        let e = err(r#"refactor "t" { match go::pattern 'f()' where has x { delete } }"#);
+        assert!(e.contains("defines none"), "{e}");
+        let e = err(r#"refactor "t" { pattern a = 'x()' pattern a = 'y()' }"#);
+        assert!(e.contains("defined twice"), "{e}");
+        // The per-rule check places a bad name on its rule.
+        let checks = check(
+            r#"refactor "t" { match go::pattern 'f()' where inside nope { delete } }"#,
+            &registry(),
+        )
+        .unwrap();
+        assert!(
+            checks[0]
+                .outcome
+                .as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("nope")
+        );
+        // With an include, it may be defined there: the rule is checked.
+        let checks = check(
+            r#"refactor "t" { include "shared.codemod" match go::pattern 'f()' where inside shared { delete } }"#,
+            &registry(),
+        )
+        .unwrap();
+        assert!(checks[0].outcome.is_ok(), "{:?}", checks[0].outcome);
     }
 
     #[test]

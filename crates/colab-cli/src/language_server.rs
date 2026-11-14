@@ -707,6 +707,9 @@ impl Backend {
             "include" => {
                 "**`include \"<path>\"`** — splice another script's rules in here, resolved relative to this file."
             }
+            "pattern" => {
+                "**`pattern <name> = '<code>'`** — a pattern `where` clauses name: `inside <name>`, `has`, `follows`, `precedes`, `until`. Script-wide, shared through `include`."
+            }
             "let" => {
                 "**`let $NEW = $FROM | step | …`** — before a `<lang>::pattern` rule's `replace`: a value derived from a binding, for the template. Steps: `lower`, `upper`, `capitalize`, `snake`, `kebab`, `camel`, `pascal`, `upper_snake`, `strip_prefix(\"…\")`, `strip_suffix(\"…\")`, `replace(/re/, \"with\")`, `substring(start, end)`."
             }
