@@ -37,6 +37,17 @@ jobs:
       - run: cargo run -q -p colab-cli --locked -- test
       - run: cargo run -q -p colab-cli --locked -- fix --check
 
+  windows:
+    name: windows — the release builds there
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p colab-cli --locked
+      # The engine end to end: colab's own pack against its cases.
+      - run: cargo run -q -p colab-cli --locked -- test
+
   msrv:
     name: msrv — rust-version is the toolchain we build with
     runs-on: ubuntu-latest

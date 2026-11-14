@@ -21,6 +21,9 @@
 
 pub mod actions;
 #[cfg(unix)]
+// Kept servers talk over Unix sockets; elsewhere each command starts its
+// own server, as with `COLAB_KEEP_SERVER=0`.
+#[cfg(unix)]
 pub mod daemon;
 pub mod diagnostics;
 pub mod edit;

@@ -218,11 +218,12 @@ fn tidy_rule(index: usize, by: &str) -> colab_core::RuleStat {
 /// replaced by the file's quoted path), or why it failed.
 fn run_formatter(command: &str, path: &Path, source: &str) -> std::result::Result<String, String> {
     use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
+    #[cfg(windows)]
+    let quoted = format!("\"{}\"", path.display());
+    #[cfg(not(windows))]
     let quoted = format!("'{}'", path.display().to_string().replace('\'', r"'\''"));
-    let mut child = Command::new("sh")
-        .arg("-c")
-        .arg(command.replace("{path}", &quoted))
+    let mut child = crate::cli::shell(&command.replace("{path}", &quoted))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! Kept servers (the default; forced on here with `COLAB_KEEP_SERVER=1`):
 //! commands in a row share one server through
 //! `colab lsp-daemon`, and each still sees the files as they are on disk.

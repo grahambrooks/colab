@@ -172,6 +172,19 @@ struct LspDaemonArgs {
     server: Vec<String>,
 }
 
+#[cfg(not(unix))]
+fn run_lsp_daemon(args: LspDaemonArgs) -> Result<i32> {
+    if args.stop {
+        println!("stopped 0 kept language server(s)");
+        return Ok(0);
+    }
+    Err(Error::UnsupportedOperation(
+        "kept language servers use Unix sockets; on this platform each command starts its own"
+            .into(),
+    ))
+}
+
+#[cfg(unix)]
 fn run_lsp_daemon(args: LspDaemonArgs) -> Result<i32> {
     if args.stop {
         let root = args
@@ -2018,11 +2031,27 @@ fn run_refactor_per_rule(
     Ok(0)
 }
 
+/// `command` run by the platform's shell: `sh -c`, or `cmd /C` on Windows.
+pub(crate) fn shell(command: &str) -> std::process::Command {
+    #[cfg(windows)]
+    let mut shell = {
+        let mut c = std::process::Command::new("cmd");
+        c.arg("/C");
+        c
+    };
+    #[cfg(not(windows))]
+    let mut shell = {
+        let mut c = std::process::Command::new("sh");
+        c.arg("-c");
+        c
+    };
+    shell.arg(command);
+    shell
+}
+
 /// Run a `--verify` shell command. Returns `true` on success.
 fn run_verify(cmd: &str) -> Result<bool> {
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
+    let status = shell(cmd)
         .status()
         .map_err(|e| Error::Config(format!("could not spawn `{}`: {}", cmd, e)))?;
     Ok(status.success())
