@@ -226,6 +226,23 @@ impl Repo {
         Ok(self.run(&["rev-parse", "HEAD"], &[])?.trim().to_string())
     }
 
+    /// Check `reference` out, detached, into a new worktree at `dir`.
+    pub fn add_worktree(&self, dir: &Path, reference: &str) -> Result<()> {
+        let dir = dir.to_string_lossy();
+        self.run(
+            &["worktree", "add", "--detach", "--quiet", &dir, reference],
+            &[],
+        )
+        .map(|_| ())
+    }
+
+    /// Remove the worktree at `dir`, made by [`add_worktree`](Self::add_worktree).
+    pub fn remove_worktree(&self, dir: &Path) -> Result<()> {
+        let dir = dir.to_string_lossy();
+        self.run(&["worktree", "remove", "--force", &dir], &[])
+            .map(|_| ())
+    }
+
     /// Undo the last commit, keeping its changes staged.
     pub fn uncommit(&self) -> Result<()> {
         self.run(&["reset", "-q", "--soft", "HEAD~1"], &[])

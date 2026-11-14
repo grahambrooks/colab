@@ -289,6 +289,12 @@ struct RefactorArgs {
     #[arg(long, conflicts_with = "changed_since")]
     staged: bool,
 
+    /// Report only findings that are new since this git ref: the script
+    /// also runs over the tree as it was there, and what it would change
+    /// there too is left out. Never writes.
+    #[arg(long, value_name = "REF", conflicts_with = "write")]
+    baseline: Option<String>,
+
     /// Worker thread count. Defaults to `num_cpus`. Falls back to
     /// the `COLAB_JOBS` env var when unset. Set to 1 to force
     /// sequential processing.
@@ -693,6 +699,10 @@ struct FixArgs {
     /// Write even when a rule reports a conflict (see `refactor`).
     #[arg(long = "allow-conflicts")]
     allow_conflicts: bool,
+
+    /// Report only findings new since this git ref (see `refactor`).
+    #[arg(long, value_name = "REF", conflicts_with = "write")]
+    baseline: Option<String>,
 
     /// Skip the Markdown link check (see `refactor`).
     #[arg(long = "no-link-check")]
@@ -1187,6 +1197,33 @@ where
 /// Drive a single transformer through the chosen file source
 /// (`--changed-since` / `--staged` / tree walk). Pulled out so
 /// the per-rule loop can reuse the same source-selection logic.
+/// Walk `targets` with `args`' include / exclude / ignore settings.
+fn walk_targets<T, F>(
+    transformer: &T,
+    args: &RefactorArgs,
+    targets: &[PathBuf],
+    visit: &mut F,
+) -> Result<WalkOutcome>
+where
+    T: CodeTransformer + Sync,
+    F: FnMut(FileChange) -> Result<()> + ?Sized,
+{
+    let opts = WalkOptions {
+        include: args.include.clone(),
+        exclude: args.exclude.clone(),
+        respect_gitignore: !args.no_ignore,
+        follow_symlinks: false,
+        jobs: resolve_jobs(args.jobs),
+    };
+    let mut outcome = WalkOutcome::default();
+    for target in targets {
+        let one = walker::walk_with(transformer, target, &opts, &mut |c| visit(c))?;
+        outcome.files_visited += one.files_visited;
+        outcome.skipped.extend(one.skipped);
+    }
+    Ok(outcome)
+}
+
 fn run_transformer<T, F>(
     transformer: &T,
     args: &RefactorArgs,
@@ -1204,20 +1241,7 @@ where
         let files = git_staged()?;
         run_against_paths(transformer, &files, visit)
     } else {
-        let opts = WalkOptions {
-            include: args.include.clone(),
-            exclude: args.exclude.clone(),
-            respect_gitignore: !args.no_ignore,
-            follow_symlinks: false,
-            jobs: resolve_jobs(args.jobs),
-        };
-        let mut outcome = WalkOutcome::default();
-        for target in targets {
-            let one = walker::walk_with(transformer, target, &opts, visit)?;
-            outcome.files_visited += one.files_visited;
-            outcome.skipped.extend(one.skipped);
-        }
-        Ok(outcome)
+        walk_targets(transformer, args, targets, visit)
     }
 }
 
@@ -1404,6 +1428,9 @@ fn run_fix(args: FixArgs) -> Result<i32> {
     if args.no_link_check {
         argv.push("--no-link-check".into());
     }
+    if let Some(reference) = &args.baseline {
+        argv.extend(["--baseline".into(), reference.clone()]);
+    }
     argv.push("--".into());
     argv.extend(config.paths.iter().map(|p| p.display().to_string()));
     let refactor = RefactorArgs::try_parse_from(&argv)
@@ -1460,9 +1487,23 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
         args.format,
         stdout_is_tty,
     );
+    if args.baseline.is_some() && matches!(exec_mode, ExecMode::Write) {
+        return Err(Error::Config(
+            "--baseline reports findings new since a ref and never writes; drop --write, or --baseline".into(),
+        ));
+    }
     let mut reporter = format::make_reporter(args.format, exec_mode, args.render_options());
     let started = Instant::now();
     let mut report = refactoring.report();
+    let rules_only = refactoring.report();
+    let mut baseline = match &args.baseline {
+        Some(reference) => Some(crate::baseline::Baseline::collect(
+            reference,
+            &rules_only,
+            |visit| walk_targets(refactoring, args, &targets, visit).map(|_| ()),
+        )?),
+        None => None,
+    };
 
     // Writes wait until the walk is over, so a conflict in any file can
     // stop all of them.
@@ -1470,6 +1511,10 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
     // Changed files are recorded after `--tidy`, so the report counts what
     // would be written.
     let mut visit = |change: FileChange| -> Result<()> {
+        let change = match baseline.as_mut() {
+            Some(baseline) => baseline.filter(change, &rules_only),
+            None => change,
+        };
         if change.changed() {
             pending.push(change);
             return Ok(());
@@ -1483,6 +1528,14 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
 
     let outcome = run_transformer(refactoring, args, &targets, &mut visit)?;
     report.record_walk(outcome);
+    if let Some(baseline) = &baseline
+        && baseline.dropped > 0
+    {
+        report.warnings.push(format!(
+            "{} finding(s) left out: they are already at {} (--baseline)",
+            baseline.dropped, baseline.reference
+        ));
+    }
     if let Some(command) = &args.tidy {
         let command = Some(command.as_str()).filter(|c| !c.is_empty());
         crate::lsp_commands::tidy_pending(command, &formatters()?, &mut pending, &mut report)?;

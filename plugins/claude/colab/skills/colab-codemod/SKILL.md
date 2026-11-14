@@ -468,7 +468,7 @@ fix. The exit code is unchanged.
 
 If the repository has a `colab.toml`, its conventions are already
 written down: `colab fix --check` reports what its packs would change
-(exit 10), and `colab fix --write` applies them, with `[run] check`
+(exit 10; `--baseline origin/main` counts only findings new since main, to adopt a rule on old code), and `colab fix --write` applies them, with `[run] check`
 bisected and reverted on failure and the `[formatters]` / `tidy`
 settings. (A bare `colab fix` writes only on a terminal; from an agent or
 a pipe it previews, like `refactor`.) Prefer it to running the packs one

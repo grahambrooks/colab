@@ -3695,3 +3695,58 @@ fn mv_section_refuses_to_break_a_link_it_cannot_repoint() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn baseline_reports_only_findings_new_since_the_ref() {
+    let root = split_workspace("baseline");
+    let rule = r#"match go::call "log.Old" { replace_call "log.New($args)" }"#;
+    let check = |root: &std::path::Path| {
+        colab()
+            .current_dir(root)
+            .args([
+                "refactor",
+                "-e",
+                rule,
+                "--baseline",
+                "HEAD",
+                "--check",
+                "--format",
+                "json",
+                ".",
+            ])
+            .output()
+            .unwrap()
+    };
+    // Both calls were there at HEAD: nothing is new.
+    let clean = check(&root);
+    assert_eq!(
+        clean.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&clean.stderr)
+    );
+    // A new call, and the old ones moved down a line.
+    write(
+        &root.join("b.go"),
+        "package p\n\n// moved\nfunc G() { log.Old(2) }\n\nfunc H() { log.Old(3) }\n",
+    );
+    let out = check(&root);
+    assert_eq!(out.status.code(), Some(10));
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let changed = doc["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1, "{doc}");
+    assert_eq!(changed[0], "./b.go");
+    assert!(
+        doc["warnings"].to_string().contains("already at HEAD"),
+        "{doc}"
+    );
+    // No worktree is left behind.
+    assert_eq!(git(&root, &["worktree", "list"]).lines().count(), 1);
+    let refused = colab()
+        .current_dir(&root)
+        .args(["refactor", "-e", rule, "--baseline", "HEAD", "--write", "."])
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    fs::remove_dir_all(&root).ok();
+}

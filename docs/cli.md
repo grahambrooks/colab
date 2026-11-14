@@ -47,6 +47,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--exclude <glob>` | — | Blacklist files via gitignore-syntax glob. Repeatable. Applied after `--include`. |
 | `--no-ignore` | — | Don't honour `.gitignore`, `.git/info/exclude`, or hidden-file rules. By default the walker behaves like `git ls-files`. |
 | `--changed-since <ref>` | — | Only files changed since the given git ref (`git diff --name-only --diff-filter=ACMRT <ref>`). Skips tree walking entirely. CI-friendly. |
+| `--baseline <ref>` | — | Report only findings new since the ref: the script also runs over the tree as it was there, and its findings there are left out (see [Findings new since a ref](#findings-new-since-a-ref---baseline)). Never writes; `fix` takes it too. |
 | `--staged` | — | Only files in the git index (`git diff --name-only --cached`). Mutually exclusive with `--changed-since`. |
 | `--jobs <N>` | `num_cpus` | Worker thread count for parallel file processing. Falls back to the `COLAB_JOBS` env var when unset. Set to `1` for sequential. |
 | `--verify <CMD>` | — | Run `<CMD>` (a shell command) after each rule's edits. Non-zero exit reverts that rule's changes and aborts the run with exit 1. Implies `--write`. Every rule must pass on its own; for rules that only compile together (a new parameter and its callers), use `--bisect`. |
@@ -296,6 +297,31 @@ to decide which rules are relevant — no file is opened on disk), and
 emits the rewritten source to stdout. Combine with `--format json`
 or `--format diff` to emit a structured event instead of the
 rewritten source.
+
+#### Findings new since a ref: --baseline
+
+A convention adopted on old code fails every check until the old code
+is fixed. `--baseline` enforces it on what changes from now on:
+
+```sh
+colab fix --check --baseline origin/main --format github
+colab refactor --script no-log.codemod --check --baseline v2.0 src
+```
+
+- The script runs twice: over a detached worktree at the ref (made under
+  the system temp directory, removed afterwards), from the directory that
+  is the working directory now, and over the tree as it is.
+- A finding is a changed block: its file, the rules credited with it, the
+  lines it replaces and the lines it puts there. Line numbers are not
+  part of it, so a finding that only moved is still the ref's. Two equal
+  findings at the ref excuse two now, not more.
+- Each file keeps only its new findings, and its new text is rebuilt from
+  them, so the diff, JSON, SARIF and GitHub output show only those, and
+  `--check` exits 10 only for them. How many were left out is a warning.
+- `--changed-since` narrows which files run; `--baseline` narrows the
+  findings in them. They combine.
+- With `--write` it is an error: writing a file that kept only its new
+  findings would undo nothing and fix half the file.
 
 #### Splitting a run into pull requests
 

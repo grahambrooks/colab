@@ -104,7 +104,7 @@ What a team needs to gate a repository on its packs.
   next to the pack, valid / invalid cases, blessable snapshots
   (`COLAB_BLESS=1`), the idempotency re-run included. The machinery is the
   corpus harness and MCP `colab.test_rule`. ast-grep `test`, Grit, LibCST.
-- **Findings new since a baseline**: `--baseline <ref>` reports only rule
+- **Findings new since a baseline** (shipped for `refactor` and `fix`): `--baseline <ref>` reports only rule
   hits not present at the ref, so a convention can be enforced on legacy
   code without noise (`--changed-since` narrows files, not findings).
   Semgrep `ci` diff-aware scans.
