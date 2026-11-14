@@ -81,7 +81,16 @@ struct Backend {
     /// The client resolves code-action edits lazily (`resolveSupport`
     /// lists `edit`). Without it the edit is computed up front.
     lazy_edits: AtomicBool,
+    /// The client shows server-initiated progress
+    /// (`window.workDoneProgress`), used while a workspace edit walks.
+    progress: AtomicBool,
 }
+
+/// A progress report per this many files walked.
+const PROGRESS_EVERY: usize = 25;
+
+/// Distinct tokens for concurrent workspace edits.
+static PROGRESS_TOKENS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// The path of the `include "<path>"` (any quoting the DSL takes) whose
 /// keyword or string holds `offset`, if any.
@@ -146,6 +155,7 @@ impl Backend {
             backends,
             roots: AsyncMutex::new(Vec::new()),
             lazy_edits: AtomicBool::new(false),
+            progress: AtomicBool::new(false),
         }
     }
 
@@ -251,6 +261,13 @@ impl LanguageServer for Backend {
             .and_then(|c| c.resolve_support)
             .is_some_and(|r| r.properties.iter().any(|p| p == "edit"));
         self.lazy_edits.store(lazy, Ordering::Relaxed);
+        let progress = params
+            .capabilities
+            .window
+            .as_ref()
+            .and_then(|w| w.work_done_progress)
+            .unwrap_or(false);
+        self.progress.store(progress, Ordering::Relaxed);
 
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
@@ -531,11 +548,26 @@ impl Backend {
         {
             roots.push(parent.to_path_buf());
         }
-        // The walk is blocking, CPU-bound work on a runtime worker.
+        let progress = self.begin_progress(&refactoring.name).await;
+        // The walk is blocking, CPU-bound work on a runtime worker; progress
+        // reports go out from it through the runtime handle.
+        let handle = tokio::runtime::Handle::current();
+        let mut seen = 0usize;
+        let mut changing = 0usize;
         let changes = tokio::task::block_in_place(|| {
             let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
             for root in &roots {
                 walker::walk_with(&refactoring, root, &WalkOptions::default(), &mut |change| {
+                    seen += 1;
+                    changing += usize::from(change.changed());
+                    if let Some(token) = &progress
+                        && seen.is_multiple_of(PROGRESS_EVERY)
+                    {
+                        handle.block_on(self.report_progress(
+                            token,
+                            format!("{seen} file(s) scanned, {changing} to change"),
+                        ));
+                    }
                     if change.changed()
                         && let Ok(url) = Url::from_file_path(&change.path)
                     {
@@ -552,11 +584,74 @@ impl Backend {
                 })?;
             }
             Ok::<_, Error>(changes)
-        })?;
+        });
+        if let Some(token) = progress {
+            let message = match &changes {
+                Ok(c) => format!("{} file(s) to change, of {seen} scanned", c.len()),
+                Err(e) => format!("failed: {e}"),
+            };
+            self.end_progress(token, message).await;
+        }
         Ok(WorkspaceEdit {
-            changes: Some(changes),
+            changes: Some(changes?),
             ..Default::default()
         })
+    }
+
+    /// Start a progress report for a workspace edit, if the client shows
+    /// server-initiated progress; `None` otherwise (or if it declines).
+    async fn begin_progress(&self, script: &str) -> Option<NumberOrString> {
+        if !self.progress.load(Ordering::Relaxed) {
+            return None;
+        }
+        let n = PROGRESS_TOKENS.fetch_add(1, Ordering::Relaxed);
+        let token = NumberOrString::String(format!("colab-apply-{n}"));
+        self.client
+            .send_request::<request::WorkDoneProgressCreate>(WorkDoneProgressCreateParams {
+                token: token.clone(),
+            })
+            .await
+            .ok()?;
+        self.client
+            .send_notification::<notification::Progress>(ProgressParams {
+                token: token.clone(),
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(
+                    WorkDoneProgressBegin {
+                        title: format!("colab: `{script}`"),
+                        cancellable: Some(false),
+                        message: Some("scanning the workspace".into()),
+                        percentage: None,
+                    },
+                )),
+            })
+            .await;
+        Some(token)
+    }
+
+    async fn report_progress(&self, token: &NumberOrString, message: String) {
+        self.client
+            .send_notification::<notification::Progress>(ProgressParams {
+                token: token.clone(),
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::Report(
+                    WorkDoneProgressReport {
+                        cancellable: Some(false),
+                        message: Some(message),
+                        percentage: None,
+                    },
+                )),
+            })
+            .await;
+    }
+
+    async fn end_progress(&self, token: NumberOrString, message: String) {
+        self.client
+            .send_notification::<notification::Progress>(ProgressParams {
+                token,
+                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
+                    message: Some(message),
+                })),
+            })
+            .await;
     }
 
     /// Markdown for the token at byte `offset`, if colab knows it.
@@ -1133,6 +1228,92 @@ mod tests {
         assert_eq!(word_at(text, 8), Some("go::import"));
         assert_eq!(word_at(text, 0), Some("match"));
         assert_eq!(word_at(text, 5), Some("match"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_long_workspace_edit_reports_progress() {
+        use futures::{SinkExt, StreamExt};
+        let root = std::env::temp_dir().join(format!("colab-lsp-progress-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        for i in 0..(PROGRESS_EVERY + 5) {
+            std::fs::write(root.join(format!("f{i}.go")), "package p\n\nimport \"a\"\n").unwrap();
+        }
+        let (service, socket) = LspService::new(|client| Backend::new(client, registry()));
+        // The client: answer every request, keep what the server sends.
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let log = seen.clone();
+        let (mut requests, mut responses) = socket.split();
+        tokio::spawn(async move {
+            while let Some(request) = requests.next().await {
+                let kind = request
+                    .params()
+                    .and_then(|p| p.pointer("/value/kind"))
+                    .and_then(|k| k.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                log.lock()
+                    .unwrap()
+                    .push(format!("{} {kind}", request.method()));
+                if let Some(id) = request.id().cloned() {
+                    let _ = responses
+                        .send(tower_lsp::jsonrpc::Response::from_ok(
+                            id,
+                            serde_json::Value::Null,
+                        ))
+                        .await;
+                }
+            }
+        });
+        // A real handshake: the client sends nothing to the server's
+        // client until the session is initialized.
+        let mut service = service;
+        let initialize = tower_lsp::jsonrpc::Request::build("initialize")
+            .params(serde_json::json!({
+                "capabilities": {"window": {"workDoneProgress": true}},
+                "rootUri": Url::from_file_path(&root).unwrap(),
+            }))
+            .id(1)
+            .finish();
+        tower::ServiceExt::ready(&mut service).await.unwrap();
+        tower::Service::call(&mut service, initialize)
+            .await
+            .unwrap();
+        let initialized = tower_lsp::jsonrpc::Request::build("initialized")
+            .params(serde_json::json!({}))
+            .finish();
+        tower::Service::call(&mut service, initialized)
+            .await
+            .unwrap();
+        let backend = service.inner();
+        assert!(
+            backend.progress.load(Ordering::Relaxed),
+            "read from initialize"
+        );
+        let uri = Url::from_file_path(root.join("fix.codemod")).unwrap();
+        let text = "refactor \"x\" { match go::import \"a\" { replace \"b\" } }\n";
+        let edit = backend.workspace_edit(&uri, text, None).await.unwrap();
+        assert_eq!(edit.changes.unwrap().len(), PROGRESS_EVERY + 5);
+        // The client task may still be reading the last notification.
+        let progress = || -> Vec<String> {
+            seen.lock()
+                .unwrap()
+                .iter()
+                .filter(|m| m.contains("rogress"))
+                .cloned()
+                .collect()
+        };
+        for _ in 0..100 {
+            if progress().last().is_some_and(|m| m.ends_with("end")) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let seen = progress();
+        assert_eq!(seen[0], "window/workDoneProgress/create ", "{seen:?}");
+        assert_eq!(seen[1], "$/progress begin", "{seen:?}");
+        assert!(seen.contains(&"$/progress report".to_string()), "{seen:?}");
+        assert_eq!(seen.last().unwrap(), "$/progress end", "{seen:?}");
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[tokio::test(flavor = "multi_thread")]

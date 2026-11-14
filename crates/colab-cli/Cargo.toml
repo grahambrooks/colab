@@ -32,6 +32,8 @@ similar = { workspace = true }
 toml_edit = { workspace = true }
 
 [dev-dependencies]
+futures = "0.3"
+tower = "0.4"
 assert_cmd = "2.0"
 criterion = { version = "0.8", default-features = false }
 

@@ -880,7 +880,9 @@ Start the colab Language Server on stdio, for editing `.codemod` files:
   whole-file edit per changed file under the workspace roots), so the
   editor shows its usual refactor preview before anything is written.
   The edit is computed on `codeAction/resolve`; clients without lazy
-  resolution get it up front.
+  resolution get it up front. While it walks the workspace, a client
+  that shows server-initiated progress (`window.workDoneProgress`) sees
+  `colab: <script>` with the files scanned so far, every 25 files.
 - **Go to definition** on an `include "<path>"` opens that script,
   resolved as the compiler resolves it (against the including file's
   directory); nothing happens when the file does not exist.
