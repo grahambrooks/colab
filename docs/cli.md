@@ -714,6 +714,9 @@ MCP-aware host) can call them directly:
 | `colab.rename` | position as above, `to`, `write?`, `tidy?`, `detail?`, `lsp?`, `root?`, `cwd?` | Scope-aware rename via the server; the `colab.preview` report plus `written`. |
 | `colab.action` | `at` (position or `FILE:L:C-L:C` selection), `list?`, `kind?`, `title?`, `write?`, `tidy?`, … | With `list: true`, `{actions: [{title, kind, preferred, disabled?}]}`; otherwise runs the one matching action and returns the report. |
 | `colab.rename_symbol` | as `colab.rename`, plus `include_text?` | The server's rename, plus the old name's text occurrences the server leaves alone: comments and string contents in source files, and anywhere in config/docs files (TOML, JSON, YAML, Markdown, text) in the git work tree. Listed under `text: {files, lines, included, sample[]}`; changed as a second rule only with `include_text: true`. |
+| `colab.outline` | `paths[]`, `depth?`, `cwd?` | Each Markdown file's headings: `address`, `anchor`, `level`, `line` / `end_line`, and counts of tables, lists and fences. Read-only. |
+| `colab.section` | `path`, `section`, `body?`, `cwd?` | One section's `text`, by heading path or `#anchor`. Read-only. |
+| `colab.edit_markdown` | `module` (section, row, item, link, frontmatter, block), `action`, `target`, `value?`, `paths[]`, `write?`, … | No DSL needed: one `markdown::` rule, quoted as the value needs (raw strings included). Returns the preview / apply report with the `script`, and conflicts for any link it would break. |
 
 The four language-server tools are served by the `colab` binary: `colab-mcp` stays free of
 the language-server client, and the binary registers them through
@@ -805,6 +808,28 @@ $ colab section docs/development-plan.md "Order of work" --body
   `.gitignore`.
 - MCP: `colab.outline {paths, depth?, cwd?}` and
   `colab.section {path, section, body?, cwd?}`, both read-only.
+
+### `colab links`
+
+```
+colab links <files or dirs>... [--format human|json]
+```
+
+Lists the broken links in Markdown files: a relative link whose file does
+not exist, or whose `#anchor` matches no heading (GitHub's anchor rules)
+and no HTML `id` / `name` in its target. Links with a scheme
+(`https:`, `mailto:`) and absolute paths are not checked. Exits 10 when it
+finds any, so it can gate CI.
+
+```
+$ colab links docs README.md
+docs/dsl.md:18: ./cli.md#explain — no section `#explain` in `docs/cli.md`
+```
+
+`colab refactor` runs the same check on the files it would change, and on
+every other Markdown file under its paths, before writing: a link the run
+would break is a conflict ([Conflicts](#conflicts)). `--no-link-check`
+turns that off.
 
 ## Exit codes
 

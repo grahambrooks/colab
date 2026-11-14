@@ -3,8 +3,8 @@
 A capability matrix of every namespace and action `colab` supports
 today, plus the per-backend caveats that decide whether a script is
 right for your codebase. The same data is queryable at runtime via
-[`colab schema`](./cli.md#schema), [`colab list-languages`](./cli.md#list-languages),
-and [`colab list-rules <lang>`](./cli.md#list-rules) — this page is
+[`colab schema`](./cli.md#colab-schema), [`colab list-languages`](./cli.md#colab-list-languages),
+and [`colab list-rules <lang>`](./cli.md#colab-list-rules-lang) — this page is
 just the readable form.
 
 ## At a glance
@@ -72,6 +72,9 @@ just the readable form.
 | `markdown::frontmatter` |  | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
 | `markdown::block`   |    | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
 | `toml::key`         |    | ✅ |    |    | ✅ | ✅ | `.toml` |
+| `markdown::row` |  | ✅ |  |  | ✅ | ✅ | `.md`, `.markdown` |
+| `markdown::item` | ✅ | ✅ | ✅ |  |  |  | `.md`, `.markdown` |
+| `markdown::link` | ✅ | ✅ |  |  |  |  | `.md`, `.markdown` |
 
 **Config-file backends.** `json`, `markdown` and `toml` edit data files
 rather than source, so they do not share the source floor below. Their
@@ -80,7 +83,7 @@ modules take an address — a JSON Pointer, a dotted TOML path with
 key, or a managed-block name — and the `set` / `insert` / `delete` actions
 (`markdown::section` also renames a heading with `replace`). `set` and `insert` create what is
 missing, so scope them with `in "<glob>"` or run them on named files. See
-[Config-file backends](#config-file-backends) below.
+[Config-file backends](#config-file-backends-colab-lang-json-colab-lang-markdown-colab-lang-toml) below.
 
 **The capability floor.** Every source backend provides an import-equivalent
 (`replace`/`delete`/`ensure`), a `symbol` rename, a `call` rewrite, and a
@@ -650,3 +653,76 @@ match markdown::block "myspec" in "AGENTS.md" { set '## myspec
 - `set` makes the content exactly the value, with leading and trailing blank
   lines dropped. A missing block is appended at the end of the file, after a
   blank line. `delete` removes the markers too.
+
+### `markdown::row` — a table row
+
+```
+match markdown::row "Entries^[Date=2026-11-14, Task=Fix links]" in "docs/log.md" { insert r#"Command=`colab links`
+Outcome=Done"# }
+match markdown::row "Order of work[Rank=4]" { set "Why now=After the gate." }
+match markdown::row "Risks@2[Risk=Old]" { delete }
+```
+
+- The target is a section address, then a selector in brackets. Rows
+  match when every `Col=value` pair matches the cell in that column,
+  compared as a reader sees them (no backticks or emphasis). `@N` picks
+  the section's Nth table; only tables in the section's own text (before
+  its first subsection) count.
+- The value is a whole `| a | b |` row, or `Col=value` lines. `set`
+  changes only the named cells of the one matching row (more than one is
+  an error), and adds the row when none matches; `insert` adds it only
+  when none matches. A new row's unnamed cells are empty, apart from the
+  selector's.
+- New rows go at the end, or with `^` at the top, for newest-first
+  tables. Several `^` inserts in one script each go above the previous.
+- Cells get one space either side, and are padded to the column when
+  every line of the table is aligned. `|` in a value is escaped.
+  Other rows are never touched.
+
+### `markdown::item` — a list item
+
+```
+match markdown::item "Unscheduled[Call and type hierarchy]" { delete }
+match markdown::item "Follow-ups[Raw strings]" { replace "Raw strings (done)" }
+match markdown::item "Conventions[Run `make check` before committing]" in "AGENTS.md" { ensure }
+```
+
+- An item is named by the start of its text, as a reader sees it; `@N`
+  picks the section's Nth list. Only top-level items of a list in the
+  section's own text are addressed; nested lists go with their item.
+- `ensure` adds `- <text>` (continuing the list's marker, `-`, `*` or the
+  next number) when no item starts with the text, and starts a list when
+  the section has none. `delete` removes the item with its nested lines.
+  `replace` changes the item's text and keeps its marker and nested list.
+- A prefix that matches two items changes nothing, and says so.
+- Deleting from a numbered list does not renumber the items after it, since that would touch lines the rule did not name; Markdown renders them in order anyway. `ensure` continues from the last number.
+
+### `markdown::link` — link destinations
+
+```
+match markdown::link "guide.md" { replace "manual.md" }
+match markdown::link "guide.md#usage" { replace "guide.md#how-to-use" }
+match markdown::link "#old" in "docs/plan.md" { replace "#new" }
+match markdown::link "draft.md" { delete }
+```
+
+| Target | Matches | `replace` rewrites |
+| ------ | ------- | ------------------ |
+| `#old` | the same-file anchor `#old` | the whole destination |
+| `guide.md` | `guide.md`, `../docs/guide.md`, `guide.md#x` (whole trailing path segments) | that path suffix, keeping any prefix and anchor |
+| `guide.md#old` | the path as above, with exactly that anchor | the suffix and the anchor |
+
+- Inline links, images and reference definitions are links, including
+  in table cells and headings; code spans and fences are not.
+- Destinations are matched as written, relative to their own file, so a
+  target names the trailing segments the files share. Narrow with `in`
+  when two files of the same name exist.
+- `delete` unwraps an inline link to its text, and removes an image or
+  a reference definition's line.
+- **Links are checked by every run.** When a run changes a Markdown file,
+  every Markdown file under its paths is checked as it is and as the run
+  would leave it, and each link the run would break (a missing file, or
+  an anchor no heading has) is a [conflict](./cli.md#conflicts) of that
+  file. So renaming a heading names every file linking to it, and a
+  `markdown::link` rule in the same script clears them. `--no-link-check`
+  skips it; `colab links` lists the links already broken.

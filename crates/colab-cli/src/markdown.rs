@@ -203,6 +203,146 @@ pub fn run_section(args: SectionArgs) -> Result<i32> {
 }
 
 // ---------------------------------------------------------------------------
+// Links
+// ---------------------------------------------------------------------------
+
+#[derive(Parser, Debug)]
+pub struct LinksArgs {
+    /// Markdown files, or directories to search for them.
+    #[arg(required = true)]
+    paths: Vec<PathBuf>,
+
+    /// `human` (`path:line: dest — reason`) or `json`.
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    format: Format,
+}
+
+/// The files as they are on disk, with `overlay` (path → new text) laid
+/// over them: the tree as a run would leave it.
+struct View<'a> {
+    overlay: std::collections::HashMap<PathBuf, &'a str>,
+}
+
+impl colab_lang_markdown::check::Files for View<'_> {
+    fn read(&self, path: &Path) -> Option<String> {
+        let key = colab_lang_markdown::check::normalise(path);
+        match self.overlay.get(&key) {
+            Some(text) => Some(text.to_string()),
+            None => fs::read_to_string(path).ok(),
+        }
+    }
+
+    fn exists(&self, path: &Path) -> bool {
+        self.overlay
+            .contains_key(&colab_lang_markdown::check::normalise(path))
+            || path.exists()
+    }
+}
+
+fn broken_json(path: &Path, broken: &[colab_lang_markdown::check::Broken]) -> Vec<Value> {
+    broken
+        .iter()
+        .map(|b| json!({"path": shown(path), "line": b.line, "dest": b.dest, "reason": b.reason}))
+        .collect()
+}
+
+/// Every broken link in the Markdown files under `paths`.
+fn all_broken(paths: &[PathBuf]) -> Result<Vec<Value>> {
+    let view = View {
+        overlay: Default::default(),
+    };
+    let mut out = Vec::new();
+    for (path, text) in markdown_files(paths)? {
+        let broken = colab_lang_markdown::check::broken_links(&path, &text, &view);
+        out.extend(broken_json(&path, &broken));
+    }
+    Ok(out)
+}
+
+/// `colab links`: exit 10 when any link is broken.
+pub fn run_links(args: LinksArgs) -> Result<i32> {
+    let broken = all_broken(&args.paths)?;
+    match args.format {
+        Format::Json => println!("{}", json!({ "broken": broken })),
+        _ => {
+            for b in &broken {
+                println!(
+                    "{}:{}: {} — {}",
+                    b["path"].as_str().unwrap_or_default(),
+                    b["line"],
+                    b["dest"].as_str().unwrap_or_default(),
+                    b["reason"].as_str().unwrap_or_default()
+                );
+            }
+            if broken.is_empty() {
+                println!("no broken links");
+            }
+        }
+    }
+    Ok(if broken.is_empty() { 0 } else { 10 })
+}
+
+/// The run-level link check: when a run changes any Markdown file, every
+/// Markdown file under `roots` is checked as it is and as the run would
+/// leave it, and each link the run would break becomes a conflict of
+/// that file. A renamed heading thereby reports every file, anywhere
+/// under the roots, that links to its old anchor.
+pub fn check_links(
+    changes: &[colab_core::FileChange],
+    roots: &[PathBuf],
+    report: &mut colab_core::RunReport,
+) -> Result<()> {
+    use colab_lang_markdown::check::{Broken, broken_links, normalise};
+    let md = |p: &Path| {
+        matches!(
+            p.extension().and_then(|e| e.to_str()),
+            Some("md" | "markdown")
+        )
+    };
+    if !changes.iter().any(|c| c.changed() && md(&c.path)) {
+        return Ok(());
+    }
+    let overlay: std::collections::HashMap<PathBuf, &str> = changes
+        .iter()
+        .filter(|c| c.changed())
+        .map(|c| (normalise(&c.path), c.after.as_str()))
+        .collect();
+    let now = View {
+        overlay: Default::default(),
+    };
+    let after = View {
+        overlay: overlay.clone(),
+    };
+    let key = |b: &Broken| (b.dest.clone(), b.reason.clone());
+    for (path, before_text) in markdown_files(roots)? {
+        let after_text = overlay
+            .get(&normalise(&path))
+            .copied()
+            .unwrap_or(&before_text);
+        let mut before: Vec<(String, String)> = broken_links(&path, &before_text, &now)
+            .iter()
+            .map(key)
+            .collect();
+        for b in broken_links(&path, after_text, &after) {
+            match before.iter().position(|k| *k == key(&b)) {
+                Some(i) => {
+                    before.swap_remove(i);
+                }
+                None => report.conflicts.push(colab_core::Conflict {
+                    path: path.strip_prefix("./").unwrap_or(&path).to_path_buf(),
+                    rule: None,
+                    message: format!(
+                        "this run would break the link `{}` on line {}: {}",
+                        b.dest, b.line, b.reason
+                    ),
+                }),
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // MCP
 // ---------------------------------------------------------------------------
 

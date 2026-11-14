@@ -15,7 +15,7 @@ refactor "name" {
 ```
 
 `colab` parses, validates, and lowers the script before touching any
-source files. Use [`colab explain --script foo.codemod`](./cli.md#explain)
+source files. Use [`colab explain --script foo.codemod`](./cli.md#colab-explain---script-path---e-rule)
 to inspect the parsed IR; use `--format diff` (or `--check`) to preview
 edits before writing.
 
@@ -144,7 +144,7 @@ match json::key "/enabledPlugins/code-intelligence@gb-agent-skills" in ".claude/
 Because `set` and `insert` act where the target is missing, an unscoped
 rule would add it to every file of that type. Scope it with `in "<glob>"`
 or run it on named files. The address syntax of each backend is in
-[features.md](./features.md#config-file-backends).
+[features.md](./features.md#config-file-backends-colab-lang-json-colab-lang-markdown-colab-lang-toml).
 
 > **Idempotency caveat.** `replace_call` is idempotent only if the
 > template *renames the function*. Templates that keep the function

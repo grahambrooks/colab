@@ -138,11 +138,18 @@ An edit that overlaps a parse error is refused.
 
 #### Status
 
-Phase 1 shipped: `tree-sitter-md`, `colab outline` / `colab section` and
-their MCP tools, `markdown::section` (`set` / `insert` / `delete` /
-`replace`), `markdown::frontmatter`, and `colab ast --lang markdown`.
-Dogfooding it on this repo's docs needed raw strings, `r#"…"#`, which
-also shipped. Next: phase 2 (`row`, `item`, `link`, link checks).
+Phases 1 and 2 have shipped.
+
+- Phase 1: `tree-sitter-md`, `colab outline` / `colab section` and their
+  MCP tools, `markdown::section`, `markdown::frontmatter`, `colab ast
+  --lang markdown`, and DSL raw strings (`r#"…"#`, and a two-hash form).
+- Phase 2: `markdown::row`, `markdown::item` and `markdown::link`; the
+  run-level link check (a run that would break a link is refused, so a
+  heading rename names every file linking to it); `colab links`; and MCP
+  `colab.edit_markdown`. Dogfooding it found and fixed 10 broken links in
+  this repo's docs.
+
+Next: phase 3, code fences as source.
 
 ### M20 — Agent install & guardrails
 - `colab agent install` detects Claude Code / Cursor / Codex and wires
@@ -288,6 +295,9 @@ whichever milestone touches the same code.
 | Re-indent a template's later lines in tab-indented source (Go) | dogfood |
 | Suggest `--bisect` when `--verify` fails on rule 1 | dogfood |
 | Let `field: $X` match Rust's shorthand field `field`; a struct-field context for nested patterns | dogfood |
+| insert before a sibling | M28 (dogfood: placing a heading above existing content) |
+| Share parsed anchors across files in the link check | M28 |
+| Wrap a new list item or table cell to the file's line width | M28 |
 
 ## Unscheduled
 

@@ -2,8 +2,13 @@
 //!
 //! - `markdown::section "Parent > Child"` (or `"#anchor"`): a heading and
 //!   everything under it, subsections included. See [`outline`].
+//! - `markdown::row "Section[Col=value]"`, `markdown::item
+//!   "Section[text]"`: a table row or list item in a section's own text.
+//! - `markdown::link "<destination>"`: link destinations.
 //! - `markdown::frontmatter "<key>"`: a top-level key of the YAML front
 //!   matter.
+//! - [`check`]: broken links, for the run-level check that keeps a run
+//!   from breaking any.
 //! - `markdown::block "<name>"`: a managed block, below.
 //!
 //! A managed block is the text between two HTML-comment marker lines, which
@@ -19,9 +24,13 @@
 //! markers belongs to the file's author and is never touched.
 
 pub mod block;
+pub mod check;
 pub mod frontmatter;
+pub mod link;
+pub mod list;
 pub mod outline;
 pub mod section;
+pub mod table;
 
 use std::cell::RefCell;
 
@@ -33,6 +42,38 @@ thread_local! {
             .expect("the built-in markdown grammar loads");
         parser
     });
+    static INLINE: RefCell<tree_sitter::Parser> = RefCell::new({
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_md::INLINE_LANGUAGE.into())
+            .expect("the built-in markdown inline grammar loads");
+        parser
+    });
+}
+
+/// Every node of `tree` that `keep` accepts, in document order, borrowed
+/// for as long as the tree (unlike `colab_rewrite::visit_all`'s callback).
+pub(crate) fn nodes<'t>(
+    tree: &'t tree_sitter::Tree,
+    mut keep: impl FnMut(tree_sitter::Node<'t>) -> bool,
+) -> Vec<tree_sitter::Node<'t>> {
+    let mut out = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if keep(node) {
+            out.push(node);
+        }
+        let mut cursor = node.walk();
+        let children: Vec<_> = node.children(&mut cursor).collect();
+        stack.extend(children.into_iter().rev());
+    }
+    out
+}
+
+/// Parse one inline span (a paragraph's or a heading's text) with the
+/// inline grammar: links, images, code spans.
+pub(crate) fn parse_inline(text: &str) -> Option<tree_sitter::Tree> {
+    INLINE.with(|p| p.borrow_mut().parse(text, None))
 }
 
 /// `.md` and `.markdown` files.
@@ -74,6 +115,56 @@ const CAPABILITIES: &[Capability] = &[
             ActionCapability {
                 name: "replace",
                 description: "Give the heading this text, keeping its level. Links in the file to the old anchor are reported as conflicts.",
+            },
+        ],
+    },
+    Capability {
+        module: "row",
+        description: "A row of a pipe table in a section's own text (before its first subsection): `\"Log[Date=2026-11-14]\"` selects by cell values, compared as a reader sees them; `@2` picks the second table; `^` inserts at the top. The value is a whole `| a | b |` row or `Col=value` lines naming some cells.",
+        actions: &[
+            ActionCapability {
+                name: "set",
+                description: "Change the one matching row (only the named cells, given `Col=value` lines), or add it when none matches.",
+            },
+            ActionCapability {
+                name: "insert",
+                description: "Add the row when none matches the selector.",
+            },
+            ActionCapability {
+                name: "delete",
+                description: "Remove every matching row.",
+            },
+        ],
+    },
+    Capability {
+        module: "item",
+        description: "A top-level item of a list in a section's own text, named by the start of its text: `\"Notes[Raw strings]\"`; `@2` picks the second list.",
+        actions: &[
+            ActionCapability {
+                name: "ensure",
+                description: "Add `- <text>` in the list's marker style when no item starts with it (creating the list if the section has none).",
+            },
+            ActionCapability {
+                name: "delete",
+                description: "Remove the item, nested lines included.",
+            },
+            ActionCapability {
+                name: "replace",
+                description: "Give the item this text, keeping its marker and nested list.",
+            },
+        ],
+    },
+    Capability {
+        module: "link",
+        description: "Link destinations (inline links, images, reference definitions; not code): `#anchor` matches a same-file anchor, `guide.md` the path's trailing segments (keeping any anchor), `guide.md#usage` that path with that anchor.",
+        actions: &[
+            ActionCapability {
+                name: "replace",
+                description: "Rewrite the matched part of each destination.",
+            },
+            ActionCapability {
+                name: "delete",
+                description: "Unwrap an inline link to its text; remove an image or a reference definition.",
             },
         ],
     },
@@ -175,6 +266,30 @@ impl LanguageBackend for MarkdownBackend {
                 &target,
                 &replacement,
             )?)),
+            ("row", RuleSpec::Set { target, value }) => {
+                Ok(Box::new(table::RowEdit::set(&target, &value)?))
+            }
+            ("row", RuleSpec::Insert { target, value }) => {
+                Ok(Box::new(table::RowEdit::insert(&target, &value)?))
+            }
+            ("row", RuleSpec::Delete { target }) => Ok(Box::new(table::RowEdit::delete(&target)?)),
+            ("item", RuleSpec::Ensure { target }) => Ok(Box::new(list::ItemEdit::ensure(&target)?)),
+            ("item", RuleSpec::Delete { target }) => Ok(Box::new(list::ItemEdit::delete(&target)?)),
+            (
+                "item",
+                RuleSpec::Replace {
+                    target,
+                    replacement,
+                },
+            ) => Ok(Box::new(list::ItemEdit::replace(&target, &replacement)?)),
+            (
+                "link",
+                RuleSpec::Replace {
+                    target,
+                    replacement,
+                },
+            ) => Ok(Box::new(link::LinkEdit::replace(&target, &replacement)?)),
+            ("link", RuleSpec::Delete { target }) => Ok(Box::new(link::LinkEdit::delete(&target)?)),
             ("frontmatter", RuleSpec::Set { target, value }) => Ok(Box::new(
                 frontmatter::FrontmatterEdit::set(&target, &value)?,
             )),

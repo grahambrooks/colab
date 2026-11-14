@@ -47,6 +47,41 @@ impl Heading {
     }
 }
 
+/// Where `section`'s own text ends: at its first subsection, or at its
+/// end. Tables and lists are looked up here, so a row or item rule never
+/// reaches into a subsection.
+pub fn own_end(headings: &[Heading], section: &Heading) -> usize {
+    headings
+        .iter()
+        .find(|h| h.start > section.start && h.start < section.end)
+        .map_or(section.end, |h| h.start)
+}
+
+/// A `row` or `item` target split into its section address and the part
+/// in brackets: `"Log@2^[Date=x]"` → (`"Log"`, `Some(2)`, `true`,
+/// `"Date=x"`). `@N` picks the Nth table or list (1-based) of the
+/// section's own text; `^` asks an insert for the top.
+pub fn split_target(target: &str) -> Option<(String, Option<usize>, bool, String)> {
+    let target = target.trim();
+    let open = target.find('[')?;
+    let inner = target[open + 1..].strip_suffix(']')?.to_string();
+    let mut head = target[..open].trim_end();
+    let top = head.ends_with('^');
+    if top {
+        head = head[..head.len() - 1].trim_end();
+    }
+    let (address, nth) = match head.rsplit_once('@') {
+        Some((a, n)) if n.trim().chars().all(|c| c.is_ascii_digit()) && !n.trim().is_empty() => {
+            (a.trim_end(), n.trim().parse().ok())
+        }
+        _ => (head, None),
+    };
+    if address.is_empty() {
+        return None;
+    }
+    Some((address.to_string(), nth, top, inner))
+}
+
 /// Every heading in `source`, in order. Empty if it does not parse.
 pub fn headings(source: &str) -> Vec<Heading> {
     let Some(tree) = crate::parse(source) else {
@@ -335,6 +370,25 @@ mod tests {
             err.contains("(line 12)") && err.contains("(line 29)"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn targets_split_into_section_index_position_and_selector() {
+        assert_eq!(
+            split_target("Log > Entries@2^[Date=x, Task=y]"),
+            Some((
+                "Log > Entries".into(),
+                Some(2),
+                true,
+                "Date=x, Task=y".into()
+            ))
+        );
+        assert_eq!(
+            split_target("Notes[Raw strings]"),
+            Some(("Notes".into(), None, false, "Raw strings".into()))
+        );
+        assert_eq!(split_target("No brackets"), None);
+        assert_eq!(split_target("[x]"), None);
     }
 
     #[test]

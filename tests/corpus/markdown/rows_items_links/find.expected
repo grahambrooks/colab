@@ -1,0 +1,9 @@
+docs/notes.md:3:1: [6] See the [guide](../docs/guide.md#usage) and [the log](#old).
+docs/notes.md:3:1: [7] See the [guide](../docs/guide.md#usage) and [the log](#old).
+docs/notes.md:10:1: [0] 
+docs/notes.md:11:1: [1] | 2026-11-12 | Raw strings | open |
+docs/notes.md:12:1: [2] | 2026-11-11 | Old idea | wontfix |
+docs/notes.md:22:1: [3] 1. Build
+docs/notes.md:23:1: [5] 2. Legacy step\n   - with detail
+docs/notes.md:26:1: [4] 
+docs/notes.md:27:1: [6] [guide]: guide.md

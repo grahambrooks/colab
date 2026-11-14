@@ -519,6 +519,10 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
             let script = workflows::config_key_script(args)?;
             run_generated(script, args, backends)
         }
+        "colab.edit_markdown" => {
+            let script = workflows::markdown_script(args)?;
+            run_generated(script, args, backends)
+        }
         other => Err(ToolError::protocol(format!(
             "unknown tool `{}`; {}",
             other,
@@ -546,7 +550,8 @@ fn run_generated(
     Ok(value)
 }
 
-const TOOL_NAMES: [&str; 11] = [
+const TOOL_NAMES: [&str; 12] = [
+    "colab.edit_markdown",
     "colab.move_import",
     "colab.set_config_key",
     "colab.find",

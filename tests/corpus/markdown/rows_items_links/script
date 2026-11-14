@@ -1,0 +1,19 @@
+// Table rows, list items and links, each idempotent.
+// - Rows are selected by cell value, compared as a reader sees them;
+//   `^` inserts at the top of a newest-first table; `set` changes only
+//   the named cells; the subsection's table is never reached.
+// - Items are named by the start of their text; `ensure` continues the
+//   numbering.
+// - `guide.md` matches by trailing path segments and keeps anchors;
+//   `#old` is a same-file anchor; a link in a code span is not a link.
+refactor "rows-items-links" {
+    match markdown::row "Log^[Date=2026-11-14]" in "docs/notes.md" { insert r#"Task=Add "rows"
+Outcome=done"# }
+    match markdown::row "Log[Date=2026-11-12]" in "docs/notes.md" { set "Outcome=Fixed in `abc123`" }
+    match markdown::row "Log[Outcome=wontfix]" in "docs/notes.md" { delete }
+    match markdown::item "Steps[Build]" in "docs/notes.md" { replace "Build with `cargo build`" }
+    match markdown::item "Steps[Publish]" in "docs/notes.md" { ensure }
+    match markdown::item "Steps[Legacy]" in "docs/notes.md" { delete }
+    match markdown::link "guide.md" { replace "manual.md" }
+    match markdown::link "#old" in "docs/notes.md" { replace "#log" }
+}

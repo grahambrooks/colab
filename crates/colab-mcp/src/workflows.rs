@@ -11,16 +11,21 @@ use serde_json::Value;
 use crate::{ToolError, arg_str, suggest};
 
 /// `s` as a DSL string. DSL strings have no escapes, so a value is quoted
-/// with whichever quote it does not contain.
+/// with whichever quote it does not contain, or as a raw string
+/// (`r#"…"#`, `r##"…"##`) when it holds both.
 pub(crate) fn dsl_string(s: &str, what: &str) -> Result<String, ToolError> {
     if !s.contains('"') {
         Ok(format!("\"{s}\""))
     } else if !s.contains('\'') {
         Ok(format!("'{s}'"))
+    } else if !s.contains("\"#") {
+        Ok(format!("r#\"{s}\"#"))
+    } else if !s.contains("\"##") && !s.ends_with("\"#") {
+        Ok(format!("r##\"{s}\"##"))
     } else {
         Err(ToolError::protocol(format!(
-            "`{what}` contains both `'` and `\"`, which no DSL string can hold; \
-             use colab.preview with a script that captures the value instead"
+            "`{what}` holds both quote characters and `\"##`, which no DSL string can hold; \
+             use colab.preview with a script instead"
         )))
     }
 }
@@ -111,6 +116,41 @@ pub(crate) fn config_key_script(args: &Value) -> Result<String, ToolError> {
     ))
 }
 
+/// `match markdown::<module> "<target>" { <action> [<value>] }`: any one
+/// Markdown rule, with the value quoted as it needs.
+pub(crate) fn markdown_script(args: &Value) -> Result<String, ToolError> {
+    let module = arg_str(args, "module")?;
+    let action = arg_str(args, "action")?;
+    let allowed: &[&str] = match module.as_str() {
+        "section" => &["set", "insert", "delete", "replace"],
+        "row" | "frontmatter" | "block" => &["set", "insert", "delete"],
+        "item" => &["ensure", "delete", "replace"],
+        "link" => &["replace", "delete"],
+        other => {
+            return Err(ToolError::protocol(format!(
+                "`module` is one of section, row, item, link, frontmatter, block; not `{other}`"
+            )));
+        }
+    };
+    if !allowed.contains(&action.as_str()) {
+        return Err(ToolError::protocol(format!(
+            "markdown::{module} takes {}; not `{action}`",
+            allowed.join(", ")
+        )));
+    }
+    let target = dsl_string(&arg_str(args, "target")?, "target")?;
+    let body = match action.as_str() {
+        "delete" | "ensure" => action.clone(),
+        _ => format!(
+            "{action} {}",
+            dsl_string(&arg_str(args, "value")?, "value")?
+        ),
+    };
+    Ok(format!(
+        "refactor \"edit_markdown\" {{\n    match markdown::{module} {target} {{ {body} }}\n}}\n"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,7 +160,32 @@ mod tests {
     fn values_are_quoted_with_the_quote_they_lack() {
         assert_eq!(dsl_string("a/b", "x").unwrap(), "\"a/b\"");
         assert_eq!(dsl_string("\"1.2\"", "x").unwrap(), "'\"1.2\"'");
-        assert!(dsl_string("it's \"x\"", "x").is_err());
+        assert_eq!(
+            dsl_string("it's \"x\" ok", "x").unwrap(),
+            "r#\"it's \"x\" ok\"#"
+        );
+        assert_eq!(
+            dsl_string("'a' \"#b\" c", "x").unwrap(),
+            "r##\"'a' \"#b\" c\"##"
+        );
+        assert!(dsl_string("'a' \"##b\" c", "x").is_err());
+    }
+
+    #[test]
+    fn markdown_scripts_check_the_action_and_quote_the_value() {
+        let row = json!({"module": "row", "action": "insert", "target": "Log^[Date=2026-11-14]", "value": "Task=a 'b' \"c\""});
+        assert_eq!(
+            markdown_script(&row).unwrap(),
+            "refactor \"edit_markdown\" {\n    match markdown::row \"Log^[Date=2026-11-14]\" { insert r#\"Task=a 'b' \"c\"\"# }\n}\n"
+        );
+        let item = json!({"module": "item", "action": "ensure", "target": "Notes[x]"});
+        assert!(markdown_script(&item).unwrap().contains("{ ensure }"));
+        assert!(
+            markdown_script(
+                &json!({"module": "link", "action": "set", "target": "a", "value": "b"})
+            )
+            .is_err()
+        );
     }
 
     #[test]

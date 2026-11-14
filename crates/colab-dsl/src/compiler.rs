@@ -27,9 +27,35 @@ lalrpop_mod!(grammar, "/codemod.rs");
 
 /// Parse `text` into a raw AST without applying any semantic checks.
 pub fn parse(text: &str) -> Result<Command> {
-    grammar::ProgramParser::new()
-        .parse(text)
-        .map_err(|e| Error::Parse(parse_detail(text, e)))
+    grammar::ProgramParser::new().parse(text).map_err(|e| {
+        let mut detail = parse_detail(text, e);
+        if let Some(hint) = raw_string_hint(text, &detail) {
+            detail.message.push_str(&hint);
+        }
+        Error::Parse(detail)
+    })
+}
+
+/// When a parse error follows an `r#"` string that closed at an earlier
+/// `"#`, the likely cause: the string's text contains `"#` (an anchor in
+/// quotes, a raw string shown in documentation). Say where it closed.
+fn raw_string_hint(source: &str, detail: &ParseDetail) -> Option<String> {
+    let offset = detail.offset.min(source.len());
+    let open = source[..offset].rfind("r#\"")?;
+    if source[..open].ends_with('#') || source[open..].starts_with("r##") {
+        return None;
+    }
+    let close = open + 3 + source[open + 3..].find("\"#")?;
+    if close >= offset {
+        return None;
+    }
+    let line = source[..close].matches('\n').count() + 1;
+    let column = close - source[..close].rfind('\n').map_or(0, |i| i + 1) + 1;
+    Some(format!(
+        "; the raw string opened on line {} closed at the `\"#` on line {line}, column {column}. \
+         If its text contains `\"#`, write it as r##\"…\"##",
+        source[..open].matches('\n').count() + 1
+    ))
 }
 
 /// Convert a LALRPOP error into a [`ParseDetail`].
@@ -708,6 +734,18 @@ import (
             Some(Item::Match(m)) => m,
             other => panic!("expected a match, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_raw_string_closed_early_says_where() {
+        let script =
+            "refactor \"r\" {\n  match toml::key \"a\" { set r#\"see \"#anchor\" here\"# }\n}\n";
+        let err = crate::parse(script).unwrap_err().to_string();
+        assert!(
+            err.contains("closed at the `\"#` on line 2, column 36"),
+            "{err}"
+        );
+        assert!(err.contains("r##"), "{err}");
     }
 
     #[test]

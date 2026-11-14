@@ -2820,3 +2820,71 @@ fn outline_and_section_read_markdown_by_structure() {
     assert!(text(1)["text"].as_str().unwrap().starts_with("## Order\n"));
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn a_run_that_would_break_a_link_elsewhere_writes_nothing() {
+    let root = workspace_temp("md-link-check");
+    let guide = "# Guide\n\n## Usage\n\nText.\n";
+    write(&root.join("docs/guide.md"), guide);
+    write(
+        &root.join("README.md"),
+        "# Home\n\nRead [usage](docs/guide.md#usage).\n",
+    );
+    let rename = r#"match markdown::section "Usage" in "docs/guide.md" { replace "How to use" }"#;
+
+    let out = colab()
+        .current_dir(&root)
+        .args(["refactor", "--write", "--format", "json", "-e", rename, "."])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(11),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["conflicts"][0]["path"], "README.md", "{v}");
+    assert!(
+        v["conflicts"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("`docs/guide.md#usage` on line 3")
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("docs/guide.md")).unwrap(),
+        guide
+    );
+
+    // Fixing the link in the same run clears it.
+    let fix = r#"match markdown::link "guide.md#usage" { replace "guide.md#how-to-use" }"#;
+    let status = colab()
+        .current_dir(&root)
+        .args(["refactor", "--write", "-e", rename, "-e", fix, "."])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert!(
+        fs::read_to_string(root.join("README.md"))
+            .unwrap()
+            .contains("#how-to-use")
+    );
+
+    // `colab links` agrees, and exits 10 on a broken one.
+    let ok = colab()
+        .current_dir(&root)
+        .args(["links", "."])
+        .output()
+        .unwrap();
+    assert_eq!(ok.status.code(), Some(0));
+    write(&root.join("extra.md"), "[x](gone.md)\n");
+    let bad = colab()
+        .current_dir(&root)
+        .args(["links", ".", "--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(bad.status.code(), Some(10));
+    let v: Value = serde_json::from_slice(&bad.stdout).unwrap();
+    assert_eq!(v["broken"][0]["dest"], "gone.md");
+    fs::remove_dir_all(&root).ok();
+}

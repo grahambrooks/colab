@@ -295,28 +295,6 @@ impl Operation for SectionEdit {
             Ok(_) => None,
         }
     }
-
-    /// Renaming a heading changes its anchor; links in the same file to
-    /// the old anchor would break.
-    fn conflicts(&self, before: &str, _after: &str) -> Vec<String> {
-        let Mode::Rename(to) = &self.mode else {
-            return Vec::new();
-        };
-        let headings = outline::headings(before);
-        let Ok(section) = outline::resolve(&headings, &self.address) else {
-            return Vec::new();
-        };
-        let old = format!("](#{})", section.slug);
-        let new_slug = outline::slug(&outline::plain_text(to));
-        let count = before.matches(&old).count();
-        if count == 0 || new_slug == section.slug {
-            return Vec::new();
-        }
-        vec![format!(
-            "{count} link(s) in this file point at `#{}`, which the rename makes `#{new_slug}`; add `match markdown::link \"#{}\" {{ replace \"#{new_slug}\" }}` once links are supported, or edit them",
-            section.slug, section.slug
-        )]
-    }
 }
 
 #[cfg(test)]
@@ -373,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn rename_keeps_the_level_and_reports_links_to_the_old_anchor() {
+    fn rename_keeps_the_level() {
         let doc = format!("{DOC}\nSee [order](#order).\n");
         let op = SectionEdit::rename("Order", "Order of work").unwrap();
         let out = op.apply(&doc);
@@ -383,8 +361,6 @@ mod tests {
             out,
             "idempotent: the new heading no longer matches"
         );
-        let conflicts = op.conflicts(&doc, &out);
-        assert!(conflicts[0].contains("`#order`") && conflicts[0].contains("`#order-of-work`"));
     }
 
     #[test]

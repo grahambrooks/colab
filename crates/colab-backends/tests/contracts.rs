@@ -54,10 +54,20 @@ fn sentinel_rules(
             for action in capability.actions {
                 // A JSON Pointer must start with `/`; the sentinel is still a
                 // substring, so the prefilter checks below are unaffected.
-                let target = if lang == "json" {
-                    format!("/{SENTINEL}")
+                // A Markdown row or item names its section and a selector;
+                // the sentinel stays the only literal in it.
+                let target = match (lang, capability.module) {
+                    ("json", _) => format!("/{SENTINEL}"),
+                    ("markdown", "row") => format!("{SENTINEL}[{SENTINEL}={SENTINEL}]"),
+                    ("markdown", "item") => format!("{SENTINEL}[{SENTINEL}]"),
+                    _ => SENTINEL.to_string(),
+                };
+                // A row's value names a cell; `1` is a valid value in every
+                // config syntax.
+                let value = if (lang, capability.module) == ("markdown", "row") {
+                    format!("{SENTINEL}=1")
                 } else {
-                    SENTINEL.to_string()
+                    "1".to_string()
                 };
                 let spec = match action.name {
                     "replace" => RuleSpec::Replace {
@@ -77,11 +87,11 @@ fn sentinel_rules(
                     // `1` is a valid value in every config syntax.
                     "set" => RuleSpec::Set {
                         target: target.clone(),
-                        value: "1".to_string(),
+                        value: value.clone(),
                     },
                     "insert" => RuleSpec::Insert {
                         target: target.clone(),
-                        value: "1".to_string(),
+                        value: value.clone(),
                     },
                     other => panic!("unhandled action `{other}` — add it to this test"),
                 };

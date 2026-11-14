@@ -111,6 +111,9 @@ enum Commands {
     Outline(crate::markdown::OutlineArgs),
     /// Print one Markdown section, by heading path or anchor.
     Section(crate::markdown::SectionArgs),
+    /// List broken links in Markdown files (missing files or anchors);
+    /// exit 10 when there are any.
+    Links(crate::markdown::LinksArgs),
     /// Parse a script and print its IR as JSON without running it.
     Explain(ExplainArgs),
     /// List every language backend the binary knows about.
@@ -261,6 +264,12 @@ struct RefactorArgs {
     /// any writes nothing and exits 11; every format lists them.
     #[arg(long = "allow-conflicts")]
     allow_conflicts: bool,
+
+    /// Skip the link check. Without it, a run that changes Markdown files
+    /// checks every Markdown file under the paths, and each link the run
+    /// would break (a renamed heading, a moved file) is a conflict.
+    #[arg(long = "no-link-check")]
+    no_link_check: bool,
 
     /// How much detail to report: `summary` (aggregate counters only),
     /// `counts` (adds per-rule match counts and changed paths), or
@@ -641,6 +650,7 @@ pub async fn run() -> Result<i32> {
         Some(Commands::Ast(args)) => run_ast(args),
         Some(Commands::Outline(args)) => crate::markdown::run_outline(args),
         Some(Commands::Section(args)) => crate::markdown::run_section(args),
+        Some(Commands::Links(args)) => crate::markdown::run_links(args),
         Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
         Some(Commands::ListRules(args)) => {
             let value = discover::list_rules(&default_backends(), &args.lang)?;
@@ -906,8 +916,17 @@ fn refuse_conflicts(args: &RefactorArgs, report: &mut RunReport) -> bool {
     true
 }
 
-/// `--verify-lsp`, when given: add the server's new errors as conflicts.
+/// The checks that run on a whole run's changes before anything is
+/// written: Markdown links, then `--verify-lsp`.
 fn lsp_check(args: &RefactorArgs, pending: &[FileChange], report: &mut RunReport) -> Result<()> {
+    if !args.no_link_check {
+        let roots = if args.paths.is_empty() {
+            vec![PathBuf::from(".")]
+        } else {
+            args.paths.clone()
+        };
+        crate::markdown::check_links(pending, &roots, report)?;
+    }
     match args.verify_lsp.as_deref() {
         None => Ok(()),
         Some(command) => crate::lsp_commands::verify_lsp(

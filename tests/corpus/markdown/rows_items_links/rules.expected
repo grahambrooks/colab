@@ -1,0 +1,8 @@
+1 markdown::row "Log^[Date=2026-11-14]" -> insert in "docs/notes.md"
+1 markdown::row "Log[Date=2026-11-12]" -> set in "docs/notes.md"
+1 markdown::row "Log[Outcome=wontfix]" -> delete in "docs/notes.md"
+1 markdown::item "Steps[Build]" -> "Build with `cargo build`" in "docs/notes.md"
+1 markdown::item "Steps[Publish]" -> ensure in "docs/notes.md"
+1 markdown::item "Steps[Legacy]" -> delete in "docs/notes.md"
+1 markdown::link "guide.md" -> "manual.md"
+1 markdown::link "#old" -> "#log" in "docs/notes.md"

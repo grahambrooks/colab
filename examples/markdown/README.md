@@ -27,3 +27,16 @@ colab refactor --script examples/markdown/sections.codemod --format diff example
 | `markdown::section "#deprecated" { delete }` | Address by anchor. |
 | `markdown::section "Old name" { replace "New name" }` | Rename a heading; in-file links to the old anchor become conflicts. |
 | `markdown::frontmatter "updated" { set '…' }`, `"draft" { delete }` | Front-matter keys, compared by meaning. |
+
+## Rows, items and links
+
+```sh
+# Rows by cell value (`^`: top), items by their text, links by destination.
+colab refactor --script examples/markdown/rows.codemod --format diff examples/markdown
+
+# Broken links (exit 10 when there are any).
+colab links examples/markdown docs
+
+# A heading rename that another file links to is refused (exit 11),
+# naming the link; a markdown::link rule in the same run clears it.
+```

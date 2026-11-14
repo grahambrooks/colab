@@ -6,9 +6,9 @@ applies them deterministically to a filesystem tree. This document
 describes the workspace layout, the runtime data flow, and the steps
 to add a new backend, namespace, or action.
 
-For language-level information see [`docs/dsl.md`](docs/dsl.md);
-for runtime CLI behaviour see [`docs/cli.md`](docs/cli.md); for the
-capability matrix see [`docs/features.md`](docs/features.md).
+For language-level information see [`docs/dsl.md`](dsl.md);
+for runtime CLI behaviour see [`docs/cli.md`](cli.md); for the
+capability matrix see [`docs/features.md`](features.md).
 
 ## Workspace layout
 

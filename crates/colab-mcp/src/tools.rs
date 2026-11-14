@@ -251,6 +251,22 @@ pub fn list() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "colab.edit_markdown",
+            "description": "Edit Markdown by structure, with no DSL: a section by heading path (`Parent > Child`) or `#anchor`; a table row (`Log[Date=2026-11-14]`, `^` before `[` inserts at the top; value a `| … |` row or `Col=value` lines); a list item (`Notes[item text prefix]`); a link destination (`guide.md#usage`); a front-matter key; a managed block. Values may hold any quotes. Previews unless `write` is true; the response includes the generated `script` and `conflicts`, including links the edit would break anywhere under `paths`. Use colab.outline first to find addresses.",
+            "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": workflow_properties(json!({
+                    "module": {"type": "string", "enum": ["section", "row", "item", "link", "frontmatter", "block"]},
+                    "action": {"type": "string", "enum": ["set", "insert", "delete", "replace", "ensure"], "description": "section: set/insert/delete/replace (rename the heading). row, frontmatter, block: set/insert/delete. item: ensure/delete/replace. link: replace/delete."},
+                    "target": {"type": "string", "description": "The address, as in the matching markdown:: module."},
+                    "value": {"type": "string", "description": "The new text, for set / insert / replace."}
+                })),
+                "required": ["module", "action", "target", "paths"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "colab.apply",
             "description": "Apply a script to one or more paths and write the changes to disk. Run colab.preview first and check the per-rule counts. If any rule reports a conflict (a rename onto a name the file already uses, a rewrite introducing an unimported qualifier), nothing is written and `applied` is false, unless `allow_conflicts` is true.",
             "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false },
