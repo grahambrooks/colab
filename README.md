@@ -178,7 +178,8 @@ for the workspace layout and an extension walk-through.
 - [`docs/architecture.md`](docs/architecture.md) — workspace layout
   and how to extend.
 - [`docs/development-plan.md`](docs/development-plan.md) — roadmap
-  and non-goals.
+  and non-goals; [`docs/completed-milestones.md`](docs/completed-milestones.md)
+  — what has shipped.
 
 ### Agent skills
 

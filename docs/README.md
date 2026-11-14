@@ -9,7 +9,8 @@ high-level overview, start at the project [`README.md`](../README.md).
 | [`features.md`](features.md)                        | What every backend can do. Capability matrix, per-namespace caveats, file-extension routing, explicit non-goals. |
 | [`cli.md`](cli.md)                                  | Subcommands, flags, exit codes, `--format` shapes, `--stdin` pipeline, environment variables. |
 | [`architecture.md`](architecture.md)                | Workspace layout, runtime data flow, extension steps for new backends and actions. |
-| [`development-plan.md`](development-plan.md)        | Roadmap and milestones. Captures non-goals and risks. |
+| [`development-plan.md`](development-plan.md)        | What is planned: the order of work, open milestones, follow-ups, non-goals and risks. |
+| [`completed-milestones.md`](completed-milestones.md) | What has shipped, milestone by milestone, with what changed from the plan and what was deferred. |
 
 The same capability data is also available at runtime:
 
