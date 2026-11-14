@@ -3363,3 +3363,30 @@ fn review_groups_a_recorded_run_by_rule() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn bisect_says_when_the_starting_tree_already_fails() {
+    let root = workspace_temp("bisect-start");
+    write(&root.join("a.go"), "package p\n\nimport \"a\"\n");
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "refactor",
+            "-e",
+            r#"match go::import "a" { replace "b" }"#,
+            "--bisect",
+            "false",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("starting tree already fails"), "{err}");
+    assert!(!err.contains("breaks"), "no rule is blamed: {err}");
+    assert_eq!(
+        fs::read_to_string(root.join("a.go")).unwrap(),
+        "package p\n\nimport \"a\"\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}

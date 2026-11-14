@@ -1623,6 +1623,15 @@ fn run_refactor_bisect(
         return Ok(0);
     }
 
+    // A tree that already fails would have one of the rules blamed for it.
+    info!("Checking the starting tree with `{}`", verify_cmd);
+    if !run_verify(verify_cmd)? {
+        return Err(Error::Config(format!(
+            "the starting tree already fails `{verify_cmd}`, before any rule ran; fix it \
+             (or choose a check that passes now) and rerun. Nothing was changed"
+        )));
+    }
+
     let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
     let mut report = refactoring.report();

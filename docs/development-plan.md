@@ -163,7 +163,6 @@ whichever milestone touches the same code.
 | Type constraints in `where` (via the server's hover) | M26 |
 | Compile-time warning when a template re-matches its own pattern | M18 |
 | LSP `WorkDoneProgress` for long previews / applies | M13.5 |
-| `--bisect`: check the starting tree first, and say so when it already fails | M20 (dogfood) |
 | Go-to-definition for `include` in `.codemod` files | M19 |
 | Remote pack registry and publishing | M11 |
 | Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |
