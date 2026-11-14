@@ -142,6 +142,18 @@ impl Operation for KeyEdit {
     // `set` and `insert` act when the target is absent, and a TOML key can
     // be spelled several ways (bare, quoted, dotted), so no literal is a
     // safe necessary condition.
+
+    fn why_unchanged(&self, source: &str) -> Option<String> {
+        if source.parse::<DocumentMut>().is_err() {
+            return Some("the file does not parse as TOML, so it is left alone".into());
+        }
+        (!matches!(self.mode, Mode::Delete) && self.apply(source) == source).then(|| {
+            format!(
+                "{} (or a `[field=value]` selector matched no array element)",
+                colab_core::ALREADY
+            )
+        })
+    }
 }
 
 /// Applies `mode` at `path` below `table`; true when something changed.

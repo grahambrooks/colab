@@ -20,6 +20,7 @@ cargo run -p colab-cli -- refactor --script <s> --format json    # one JSON doc:
 cargo run -p colab-cli -- refactor --script <s> --detail diff     # add capped unified diffs to that document
 cargo run -p colab-cli -- refactor --script <s> --format diff    # unified diff to stdout
 cargo run -p colab-cli -- refactor --script <s> --stdin --path <hint>  # stdin → transformed source on stdout
+cargo run -p colab-cli -- refactor --script <s> --tidy --write .     # then organize imports + format the changed files via their LSP
 cargo run -p colab-cli -- find -e '<match …>' [paths...]         # read-only: where each rule matches (path:line:col)
 cargo run -p colab-cli -- ast --lang go --pattern '<code>'       # a pattern's (or --stdin snippet's) syntax tree
 cargo run -p colab-cli -- outline docs/ --depth 2                # Markdown heading outline: addresses, anchors, line spans
@@ -91,7 +92,7 @@ target is an address, and the `set` / `insert` / `delete` actions (see
 | Crate | Namespace | Module | Address | Files |
 | ----- | --------- | ------ | ------- | ----- |
 | `colab-lang-json`     | `json`     | `key`   | JSON Pointer (`/a/b`) | `.json` |
-| `colab-lang-markdown` | `markdown` | `section`, `row`, `item`, `link`, `frontmatter`, `block` | heading path `"Parent > Child"` or `"#anchor"`; `"Section[Col=value]"` (row); `"Section[item text]"` (item); a link destination; a front-matter key; a managed-block name | `.md`, `.markdown` |
+| `colab-lang-markdown` | `markdown` | `section`, `row`, `item`, `text`, `link`, `frontmatter`, `block` | heading path `"Parent > Child"` or `"#anchor"` (`"New < Sibling"` to place a new one); `"Section[Col=value]"` (row; `< [Col=value]` before a row); `"Section[item text]"` (item); `"Section[phrase]"` (text); a link destination; a front-matter key; a managed-block name | `.md`, `.markdown` |
 | `colab-lang-toml`     | `toml`     | `key`   | dotted path, `name[field=value]` selects an array element | `.toml` |
 
 `.h` is claimed by both `c` and `cpp` — the extension cannot distinguish

@@ -518,12 +518,38 @@ impl Rewriter<'_, '_> {
                 .insert_transformation(&var, &name, text.into_bytes());
         }
         let edit = nm.make_edit(self.pattern, self.fix);
+        let text = String::from_utf8_lossy(&edit.inserted_text);
+        let text = indent_with_tabs(source, edit.position, &text);
         Edit::new(
             edit.position,
             edit.position + edit.deleted_length,
-            strip_blank_line_indent(&String::from_utf8_lossy(&edit.inserted_text)),
+            strip_blank_line_indent(&text),
         )
     }
+}
+
+/// ast-grep re-indents a multi-line template's later lines to the
+/// match's column with spaces, and not at all when the line is indented
+/// with tabs. In that case give each later non-empty line the matched
+/// line's own indentation, tabs and all.
+fn indent_with_tabs(source: &str, at: usize, text: &str) -> String {
+    let line_start = source[..at].rfind('\n').map_or(0, |i| i + 1);
+    let indent: String = source[line_start..at]
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect();
+    if !indent.contains('\t') || !text.contains('\n') {
+        return text.to_string();
+    }
+    let mut lines = text.split_inclusive('\n');
+    let mut out = lines.next().unwrap_or_default().to_string();
+    for line in lines {
+        if !line.trim().is_empty() {
+            out.push_str(&indent);
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 /// ast-grep indents every line of a multi-line template to the match's
@@ -1432,6 +1458,22 @@ mod tests {
         let nested = c(false, Test::Inside("func (".into()));
         let err = constrained("errors.Wrap($E, $M)", &[nested]).unwrap_err();
         assert!(err.starts_with("`inside 'func ('`"), "{err}");
+    }
+
+    #[test]
+    fn a_multi_line_template_follows_tab_indentation() {
+        let go = PatternLanguage {
+            grammar: tree_sitter_go::LANGUAGE.into(),
+            expando: 'µ',
+            contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
+        };
+        let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();
+        let src = "package p\n\nfunc f() {\n\tif x {\n\t\tlog.Print(a)\n\t}\n}\n";
+        let out = p.rewrite(src, "if debug {\n\tlog.Print($A)\n}");
+        assert_eq!(
+            out,
+            "package p\n\nfunc f() {\n\tif x {\n\t\tif debug {\n\t\t\tlog.Print(a)\n\t\t}\n\t}\n}\n"
+        );
     }
 
     #[test]

@@ -45,6 +45,8 @@ pub struct RowEdit {
     nth: usize,
     top: bool,
     selector: Vec<(String, String)>,
+    /// `"Log[…] < [Date=x]"`: a new row goes just before this row.
+    before: Option<Vec<(String, String)>>,
     /// The longest selector value, which must appear in a file whose row
     /// this rule finds.
     literal: Option<String>,
@@ -83,7 +85,20 @@ impl RowEdit {
         mode: impl FnOnce(Option<Value>) -> Mode,
     ) -> Result<Self> {
         let bad = |why: &str| Error::Config(format!("markdown::row \"{target}\": {why}"));
-        let (section, nth, top, inner) = outline::split_target(target).ok_or_else(|| {
+        let (main, before) = match target.split_once("] < [") {
+            Some((row, sibling)) => (
+                format!("{row}]"),
+                Some(sibling.trim_end_matches(']').to_string()),
+            ),
+            None => (target.to_string(), None),
+        };
+        let before = before.map(|b| pairs(&b)).transpose().map_err(|e| bad(&e))?;
+        if before.as_ref().is_some_and(|b| b.is_empty()) {
+            return Err(bad(
+                "`< [ ]` needs the selector of the row to insert before",
+            ));
+        }
+        let (section, nth, top, inner) = outline::split_target(&main).ok_or_else(|| {
             bad("give the section and a cell selector, e.g. \"Log[Date=2026-11-14]\"")
         })?;
         let selector = pairs(&inner).map_err(|e| bad(&e))?;
@@ -113,6 +128,7 @@ impl RowEdit {
             nth: nth.unwrap_or(1),
             top,
             selector,
+            before,
             literal,
             mode: mode(value),
         })
@@ -208,8 +224,32 @@ impl RowEdit {
             }
             Ok(cells)
         };
-        let add = |cells: Vec<String>| {
-            let at = if self.top { table.top } else { table.end };
+        let place = match &self.before {
+            None => Ok(if self.top { table.top } else { table.end }),
+            Some(sibling) => {
+                let mut want = Vec::new();
+                for (name, value) in sibling {
+                    want.push((column(name)?, plain_text(value)));
+                }
+                let rows: Vec<&(Vec<String>, Range<usize>)> = table
+                    .rows
+                    .iter()
+                    .filter(|(cells, _)| {
+                        want.iter()
+                            .all(|(i, v)| cells.get(*i).map(|c| plain_text(c)) == Some(v.clone()))
+                    })
+                    .collect();
+                match rows.as_slice() {
+                    [one] => Ok(one.1.start),
+                    found => Err(format!(
+                        "the row to insert before matches {} rows; it must match one",
+                        found.len()
+                    )),
+                }
+            }
+        };
+        let add = |cells: Vec<String>| -> std::result::Result<String, String> {
+            let at = place.clone()?;
             let line = render(&cells, table.widths.as_deref());
             let mut out = String::with_capacity(source.len() + line.len() + 1);
             out.push_str(&source[..at]);
@@ -219,7 +259,7 @@ impl RowEdit {
             out.push_str(&line);
             out.push('\n');
             out.push_str(&source[at..]);
-            out
+            Ok(out)
         };
 
         Ok(match (&self.mode, matches.as_slice()) {
@@ -231,7 +271,10 @@ impl RowEdit {
                 }
                 Some(out)
             }
-            (Mode::Set(v) | Mode::Insert(v), []) => Some(add(row_for(v, None)?)),
+            // A `set` that changes a selector column renames the row; once
+            // done, the row matching the new values is the same row.
+            (Mode::Set(Value::Cells(named)), []) if self.renamed(named, &table, &column)? => None,
+            (Mode::Set(v) | Mode::Insert(v), []) => Some(add(row_for(v, None)?)?),
             (Mode::Set(v), [i]) => {
                 let (current, range) = &table.rows[*i];
                 let cells = row_for(v, Some(current))?;
@@ -259,6 +302,33 @@ impl RowEdit {
                 ));
             }
         })
+    }
+}
+
+impl RowEdit {
+    /// `true` when `named` changes a selector column and a row already
+    /// matches the selector with those new values: the rename is done.
+    fn renamed(
+        &self,
+        named: &[(String, String)],
+        table: &Table,
+        column: &dyn Fn(&str) -> std::result::Result<usize, String>,
+    ) -> std::result::Result<bool, String> {
+        let mut changes_selector = false;
+        let mut want: Vec<(usize, String)> = Vec::new();
+        for (name, value) in &self.selector {
+            let new = named
+                .iter()
+                .find(|(n, _)| plain_text(n) == plain_text(name))
+                .map(|(_, v)| v);
+            changes_selector |= new.is_some();
+            want.push((column(name)?, plain_text(new.unwrap_or(value))));
+        }
+        Ok(changes_selector
+            && table.rows.iter().any(|(cells, _)| {
+                want.iter()
+                    .all(|(i, v)| cells.get(*i).map(|c| plain_text(c)) == Some(v.clone()))
+            }))
     }
 }
 
@@ -552,6 +622,27 @@ mod tests {
             pairs[1],
             ("Task".into(), "docs (5 scripts, 30 rules)".into())
         );
+    }
+
+    #[test]
+    fn a_set_that_renames_its_selector_is_idempotent() {
+        let op = RowEdit::set("Log[Task=a]", "Task=a, renamed").unwrap();
+        let out = op.apply(LOG);
+        assert!(out.contains("| 2026-11-13 | a, renamed | open |"), "{out}");
+        assert_eq!(op.apply(&out), out, "the renamed row is not added again");
+    }
+
+    #[test]
+    fn insert_before_a_row() {
+        let op = RowEdit::insert("Log[Date=2026-11-12.5] < [Date=2026-11-12]", "Task=mid").unwrap();
+        let out = op.apply(LOG);
+        assert!(
+            out.contains("| open |\n| 2026-11-12.5 | mid |  |\n| 2026-11-12 |"),
+            "{out}"
+        );
+        assert_eq!(op.apply(&out), out);
+        let none = RowEdit::insert("Log[Date=x] < [Date=nope]", "Task=y").unwrap();
+        assert!(none.why_unchanged(LOG).unwrap().contains("matches 0 rows"));
     }
 
     #[test]

@@ -92,8 +92,7 @@ Choose the check flag by how the rules relate:
   that rule at the first failure. Use it only when every rule stands on
   its own. On a coordinated change it always fails at the first rule.
 
-`colab undo` reverts the last run. Run `cargo fmt` afterwards, because
-`--tidy` does not cover `refactor` yet.
+`colab undo` reverts the last run. Add `--tidy` to have rust-analyzer organize imports and format the changed files before the write; no `cargo fmt` step is needed.
 
 For the language-server commands, preview first: they are dry runs unless
 you pass `--write`.
@@ -109,12 +108,7 @@ colab rename --at … --to build_operation --write --tidy --verify 'cargo check 
 - **Write templates flush-left, in their final multi-line shape.** colab
   re-indents every line after the first to the column of the match. A
   template written on one line comes out on one line.
-- **Lifetimes.** DSL strings have no escapes, so a single-quoted pattern
-  cannot contain `'static`. Capture the type instead, and reuse the
-  capture in the template: `-> $RET` binds `&'static str`, and
-  `Option<$RET>` writes `Option<&'static str>`.
-- **A template needing both `'` and `"`** cannot be written today. Find a
-  capture that carries one of them, or fall back to `Edit` and log it.
+- **Quotes and lifetimes.** DSL strings have no escapes. A pattern or template that holds both `'` and `"`, such as `&'static str` beside a string literal, goes in a raw string: `r#"fn f() -> &'static str { "x" }"#`. If the text itself contains `"#`, use two hashes.
 - **`$$$B` for a body.** `{ $$$B }` matches a block of any length.
   `$_` matches one node you do not need to bind.
 - **When a pattern matches nothing**, check its tree first:

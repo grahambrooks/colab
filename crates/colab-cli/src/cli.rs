@@ -265,6 +265,15 @@ struct RefactorArgs {
     #[arg(long = "allow-conflicts")]
     allow_conflicts: bool,
 
+    /// After the rules, have each changed file's language server organize
+    /// its imports and format it, before anything is written. Reported as
+    /// its own rule (`tidy via <server>`) after the script's. The server
+    /// is chosen by extension; `--tidy='<command>'` names one.
+    #[arg(long, value_name = "CMD", num_args = 0..=1, require_equals = true,
+          default_missing_value = "",
+          conflicts_with_all = ["verify", "commit_per_rule", "bisect"])]
+    tidy: Option<String>,
+
     /// Skip the link check. Without it, a run that changes Markdown files
     /// checks every Markdown file under the paths, and each link the run
     /// would break (a renamed heading, a moved file) is a conflict.
@@ -864,12 +873,14 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     // Writes wait until the walk is over, so a conflict in any file can
     // stop all of them.
     let mut pending: Vec<FileChange> = Vec::new();
+    // Changed files are recorded after `--tidy`, so the report counts what
+    // would be written.
     let mut visit = |change: FileChange| -> Result<()> {
-        report.record(&change);
         if change.changed() {
             pending.push(change);
             return Ok(());
         }
+        report.record(&change);
         reporter
             .report(&change)
             .map_err(|e| Error::io_at(&change.path, e))?;
@@ -878,6 +889,13 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     let outcome = run_transformer(&refactoring, &args, &targets, &mut visit)?;
     report.record_walk(outcome);
+    if let Some(command) = &args.tidy {
+        let command = Some(command.as_str()).filter(|c| !c.is_empty());
+        crate::lsp_commands::tidy_pending(command, &mut pending, &mut report)?;
+    }
+    for change in &pending {
+        report.record(change);
+    }
     lsp_check(&args, &pending, &mut report)?;
     let blocked = matches!(exec_mode, ExecMode::Write) && refuse_conflicts(&args, &mut report);
     if blocked {
@@ -1051,8 +1069,16 @@ fn run_refactor_per_rule(
                 for (path, before) in &backups {
                     fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
                 }
+                // Rule 1 failing alone is the signature of rules that only
+                // build together, which `--verify` cannot check.
+                let hint = if idx == 0 && refactoring.rules.len() > 1 {
+                    "; `--verify` checks after each rule, so if the rules only build together \
+                     (a new parameter and its callers), use `--bisect`, which checks once after all"
+                } else {
+                    ""
+                };
                 return Err(Error::Config(format!(
-                    "rule `{}` failed `--verify` (`{}`); reverted {} file(s)",
+                    "rule `{}` failed `--verify` (`{}`); reverted {} file(s){hint}",
                     rule_label,
                     cmd,
                     backups.len()

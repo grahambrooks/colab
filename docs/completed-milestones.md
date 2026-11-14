@@ -336,7 +336,7 @@ table shows where each gap stands now:
 | Move class / file / package, rename class *and* its file | `colab mv` + file operations in `colab rename`, through git (M24) | ✅ M24; more via M25 code actions |
 | Find Usages, Safe Delete | `colab references`, `colab safe-delete` (M25) | ✅ M25 |
 | Call / type hierarchy | none | unscheduled (`callHierarchy` / `typeHierarchy` on the M25 client) |
-| Optimize imports + reformat after every refactoring | `--tidy` on rename / mv / action / safe-delete (M25); not yet on `refactor` | ✅ M25 (partly), M26 |
+| Optimize imports + reformat after every refactoring | `--tidy` on rename / mv / action / safe-delete (M25) and on `refactor` (dogfood follow-ups, 2026-11-14) | ✅ M25, follow-ups |
 | SSR constraints (count, regex, type, within) | `where` on `<lang>::pattern`: `matches`, `is`, `count`, `inside`, `has`, `not` (M26); type constraints not yet | ✅ M26 |
 | Conflicts dialog before applying | conflicts reported before writing; `--write` refuses (exit 11) (M27) | ✅ M27 |
 | `//noinspection` suppression | none | M20 |

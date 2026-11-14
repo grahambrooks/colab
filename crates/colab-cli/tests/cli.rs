@@ -2888,3 +2888,61 @@ fn a_run_that_would_break_a_link_elsewhere_writes_nothing() {
     assert_eq!(v["broken"][0]["dest"], "gone.md");
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn verify_failing_on_rule_one_suggests_bisect() {
+    let root = workspace_temp("verify-bisect-hint");
+    let target = root.join("main.go");
+    write(&target, "package main\n\nimport \"a\"\nimport \"b\"\n");
+    let out = colab()
+        .args(["refactor", "--verify", "false"])
+        .args(["-e", r#"match go::import "a" { replace "x" }"#])
+        .args(["-e", r#"match go::import "b" { replace "y" }"#])
+        .arg(target.to_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("use `--bisect`"));
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn refactor_tidy_runs_the_server_after_the_rules_as_its_own_rule() {
+    let root = workspace_temp("refactor-tidy");
+    write(
+        &root.join("a.rs"),
+        "use zeta;\nuse alpha;\nfn old() {}   \n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args(["refactor", "--write", "--format", "json"])
+        .arg(format!("--tidy={}", fake_lsp()))
+        .args([
+            "-e",
+            r#"match rust::symbol "old" { replace "new" }"#,
+            "a.rs",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["rules"][0]["files"], 1, "{v}");
+    assert!(
+        v["rules"][1]["rule"]
+            .as_str()
+            .unwrap()
+            .starts_with("tidy via"),
+        "{v}"
+    );
+    assert_eq!(v["rules"][1]["files"], 1, "{v}");
+    // Renamed, imports sorted, trailing whitespace gone.
+    assert_eq!(
+        fs::read_to_string(root.join("a.rs")).unwrap(),
+        "use alpha;\nuse zeta;\nfn new() {}\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}

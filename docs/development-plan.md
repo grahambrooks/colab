@@ -30,9 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**Dogfood follow-ups → M23 (eval, the stable gate) → M20 (install into
-Claude)**, then M14, M21, M16, M15 and M10.6. M28 (Markdown by
-structure) has shipped.
+**M23 (eval, the stable gate) → M20 (install into Claude)**, then M14, M21, M16, M15 and M10.6. M28 (Markdown by structure) and the dogfood follow-ups have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -42,12 +40,11 @@ what it lets that dogfooding cover.
 
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
-| 1 | Dogfood follow-ups | The friction already logged (tab re-indent, shorthand fields, `--tidy` on `refactor`, item wrapping) is what a Claude user would hit first. Raw strings and insert-before have shipped. |
-| 2 | M23 Agent eval suite | Turns the dogfood token figures into a repeatable, CI-run measurement: the evidence the stable gate needs. |
-| 3 | M20 Agent install & guardrails | Only after the gate. `// colab:ignore` and rule `message` / `severity` can land earlier; they do not install anything. |
-| 4 | M14 `colab.toml` + `colab fix` | Repo-declared migrations; M20's post-edit hook and M25's per-language formatters build on it. |
-| 5 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
-| 6 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
+| 1 | M23 Agent eval suite | Turns the dogfood token figures into a repeatable, CI-run measurement: the evidence the stable gate needs. |
+| 2 | M20 Agent install & guardrails | Only after the gate. `// colab:ignore` and rule `message` / `severity` can land earlier; they do not install anything. |
+| 3 | M14 `colab.toml` + `colab fix` | Repo-declared migrations; M20's post-edit hook and M25's per-language formatters build on it. |
+| 4 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
+| 5 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
 
 ## Stable gate before M20
 
@@ -201,7 +198,6 @@ whichever milestone touches the same code.
 
 | Item | From |
 | ---- | ---- |
-| `--tidy` on `refactor` (organize imports + format the changed files, as its own rule) | M25 |
 | A `colab.mv` MCP tool | M25 |
 | Qualifier conflict checks (`imported_names`) for the ten source backends other than Go and Python | M27 |
 | Attribute a `--verify-lsp` error to the rule that caused it | M27 |
@@ -210,16 +206,7 @@ whichever milestone touches the same code.
 | LSP `WorkDoneProgress` for long previews / applies | M13.5 |
 | Go-to-definition for `include` in `.codemod` files | M19 |
 | Remote pack registry and publishing | M11 |
-| Report a satisfied `set` / `insert` as already done, not "matched no files", in `toml::key`, `json::key` and `markdown::block` (done for `markdown::section` / `frontmatter`) | dogfood |
-| Re-indent a template's later lines in tab-indented source (Go) | dogfood |
-| Suggest `--bisect` when `--verify` fails on rule 1 | dogfood |
-| Let `field: $X` match Rust's shorthand field `field`; a struct-field context for nested patterns | dogfood |
-| Share parsed anchors across files in the link check | M28 |
-| Wrap a new list item or table cell to the file's line width | M28 |
-| `$$$` in a Rust struct field list | M28 (dogfood) |
-| A row position (before a row) and moving a section between files | M28 (dogfood) |
-| A paragraph-level edit, or `replace` on text within a section | M28 (dogfood) |
-| LSP completion for `in fences` / `and fences` (completion is only offered inside the braces) | M28 |
+| Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |
 
 ## Unscheduled
 

@@ -114,7 +114,12 @@ impl ItemEdit {
                     if !out.ends_with('\n') {
                         out.push('\n');
                     }
-                    out.push_str(&format!("{indent}{marker}{}\n", self.text));
+                    let width = wrap_width(source, &items);
+                    let hang = format!("{indent}{}", " ".repeat(marker.chars().count()));
+                    out.push_str(&format!(
+                        "{indent}{marker}{}\n",
+                        wrap(&self.text, width, indent.len() + marker.len(), &hang)
+                    ));
                     out.push_str(&source[at..]);
                     out
                 }
@@ -142,6 +147,64 @@ impl ItemEdit {
             }),
         })
     }
+}
+
+/// The width to wrap a new item at: when any existing item of the list
+/// spans more than one line, the longest line in the list; otherwise
+/// `None`, and the item stays on one line, like its neighbours.
+fn wrap_width(source: &str, items: &[Item]) -> Option<usize> {
+    // An item's own text across lines, not a nested list under it.
+    let wrapped = items
+        .iter()
+        .any(|i| source[i.text.clone()].trim_end().contains('\n'));
+    wrapped.then(|| {
+        items
+            .iter()
+            .flat_map(|i| source[i.span.clone()].lines())
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(72)
+    })
+}
+
+/// `text` broken into lines of at most `width` characters (the first
+/// already holding `first` characters of marker), later lines starting
+/// with `hang`. Backtick spans are never broken.
+fn wrap(text: &str, width: Option<usize>, first: usize, hang: &str) -> String {
+    let Some(width) = width else {
+        return text.to_string();
+    };
+    // Words, with a backtick span kept as one.
+    let mut words: Vec<String> = Vec::new();
+    let mut in_code = false;
+    for word in text.split(' ') {
+        match words.last_mut() {
+            Some(last) if in_code => {
+                last.push(' ');
+                last.push_str(word);
+            }
+            _ => words.push(word.to_string()),
+        }
+        if word.matches('`').count() % 2 == 1 {
+            in_code = !in_code;
+        }
+    }
+    let mut out = String::new();
+    let mut line_len = first;
+    for word in words.into_iter().filter(|w| !w.is_empty()) {
+        let len = word.chars().count();
+        if line_len > first.min(line_len) && line_len + 1 + len > width && !out.is_empty() {
+            out.push('\n');
+            out.push_str(hang);
+            line_len = hang.chars().count();
+        } else if !out.is_empty() {
+            out.push(' ');
+            line_len += 1;
+        }
+        out.push_str(&word);
+        line_len += len;
+    }
+    out
 }
 
 /// The marker a new item after one with `marker` gets: the same bullet,
@@ -279,6 +342,26 @@ mod tests {
             .unwrap()
             .apply("## A\n\nText.\n\n## B\n");
         assert_eq!(empty, "## A\n\nText.\n\n- x\n\n## B\n");
+    }
+
+    #[test]
+    fn ensure_wraps_like_the_lists_wrapped_items() {
+        let doc = "## W\n\n- short\n- a longer item that wraps onto a\n  second line here\n";
+        let op =
+            ItemEdit::ensure("W[a new item with `code that stays whole` and enough words to wrap]")
+                .unwrap();
+        let out = op.apply(doc);
+        let added = out.split("here\n").nth(1).unwrap();
+        assert!(added.lines().count() > 1, "{out}");
+        assert!(added.lines().all(|l| l.chars().count() <= 34), "{out}");
+        assert!(added.contains("`code that stays whole`"), "{out}");
+        assert_eq!(op.apply(&out), out);
+        // Unwrapped neighbours: one line.
+        let flat = ItemEdit::ensure("Notes[a long item that would otherwise wrap past seventy-two columns if wrapping applied]").unwrap();
+        let out = flat.apply(DOC);
+        assert!(out.contains(
+            "- a long item that would otherwise wrap past seventy-two columns if wrapping applied\n"
+        ));
     }
 
     #[test]

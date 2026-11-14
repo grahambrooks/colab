@@ -609,6 +609,24 @@ impl Backend {
             return action_completions();
         }
 
+        // After `match <ns> "<target>" ` → the clauses that come before
+        // the braces: where the rule applies, and `where`.
+        if let Some(after_match) = trimmed.strip_prefix("match ")
+            && target_closed(after_match)
+        {
+            return CLAUSES
+                .iter()
+                .map(|(name, snippet, detail)| CompletionItem {
+                    label: (*name).into(),
+                    kind: Some(CompletionItemKind::KEYWORD),
+                    insert_text: Some((*snippet).into()),
+                    insert_text_format: Some(InsertTextFormat::SNIPPET),
+                    detail: Some((*detail).into()),
+                    ..Default::default()
+                })
+                .collect();
+        }
+
         // After `match ` but no `{` yet → namespace / module.
         if let Some(after_match) = trimmed.strip_prefix("match ") {
             return self.namespace_or_module_completions(after_match.trim_start());
@@ -675,6 +693,47 @@ impl Backend {
             })
             .collect()
     }
+}
+
+/// The clauses between a rule's target and its braces.
+const CLAUSES: &[(&str, &str, &str)] = &[
+    ("in \"<glob>\"", "in \"$0\"", "only files matching the glob"),
+    (
+        "in fences",
+        "in fences",
+        "only inside Markdown code fences of this language",
+    ),
+    (
+        "and fences",
+        "and fences",
+        "this language's files and its Markdown code fences",
+    ),
+    (
+        "where",
+        "where $0",
+        "constraints on a pattern's metavariables",
+    ),
+];
+
+/// `true` when `after_match` (the text after `match `) has a namespace,
+/// a whole target string, and a space after it: the cursor is where the
+/// clauses go.
+fn target_closed(after_match: &str) -> bool {
+    let Some((_namespace, rest)) = after_match.split_once(char::is_whitespace) else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let close = if let Some(raw) = rest.strip_prefix("r##\"") {
+        raw.find("\"##").map(|i| 4 + i + 3)
+    } else if let Some(raw) = rest.strip_prefix("r#\"") {
+        raw.find("\"#").map(|i| 3 + i + 2)
+    } else {
+        rest.chars()
+            .next()
+            .filter(|q| *q == '"' || *q == '\'')
+            .and_then(|q| rest[1..].find(q).map(|i| i + 2))
+    };
+    close.is_some_and(|end| rest[end..].starts_with(char::is_whitespace))
 }
 
 /// Import clauses, offered alongside the actions: they follow one inside
@@ -812,6 +871,30 @@ mod tests {
         let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"import"));
         assert!(labels.contains(&"symbol"));
+    }
+
+    #[tokio::test]
+    async fn completions_after_the_target_offer_the_clauses() {
+        let (service, _) = LspService::new(|client| Backend::new(client, registry()));
+        let backend = service.inner();
+        let labels = |prefix: &str| -> Vec<String> {
+            backend
+                .completions_for(prefix)
+                .into_iter()
+                .map(|i| i.label)
+                .collect()
+        };
+        let after = labels("    match go::pattern 'errors.Wrap($E, $M)' ");
+        assert!(after.contains(&"in fences".to_string()), "{after:?}");
+        assert!(after.contains(&"and fences".to_string()));
+        assert!(after.contains(&"where".to_string()));
+        assert!(
+            labels("    match go::import \"a/b")
+                .iter()
+                .all(|l| l != "in fences"),
+            "still in the string"
+        );
+        assert!(labels("    match go::import r#\"a\"# ").contains(&"in fences".to_string()));
     }
 
     #[tokio::test]

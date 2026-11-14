@@ -90,9 +90,43 @@ enum Found {
     Malformed,
 }
 
+impl BlockEdit {
+    /// How many begin and end marker lines `source` has for this block.
+    fn markers(&self, source: &str) -> (usize, usize) {
+        let begin = self.begin();
+        let end = self.end();
+        let begins = source
+            .lines()
+            .filter(|l| {
+                let l = l.trim();
+                l.starts_with(&begin)
+                    && l.ends_with("-->")
+                    && l[begin.len()..]
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_whitespace() || c == '-')
+            })
+            .count();
+        let ends = source.lines().filter(|l| l.trim() == end).count();
+        (begins, ends)
+    }
+}
+
 impl Operation for BlockEdit {
     fn is_file_relevant(&self, path: &Path) -> bool {
         crate::is_markdown(path)
+    }
+
+    fn why_unchanged(&self, source: &str) -> Option<String> {
+        let (begins, ends) = self.markers(source);
+        if begins > 1 || ends > 1 || begins != ends {
+            return Some(format!(
+                "the `{}` markers are repeated or unbalanced ({begins} begin, {ends} end), so the block is left alone",
+                self.name
+            ));
+        }
+        (!matches!(self.mode, Mode::Delete) && self.apply(source) == source)
+            .then(|| colab_core::ALREADY.into())
     }
 
     fn apply(&self, source_code: &str) -> String {

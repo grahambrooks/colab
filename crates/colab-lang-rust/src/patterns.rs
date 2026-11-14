@@ -22,7 +22,15 @@ pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_rust::LANGUAGE.into(),
         expando: 'µ',
-        contexts: &["@@PATTERN@@;", "fn f() {\n@@PATTERN@@\n}\n"],
+        // The last two let a struct field (`pub conflicts: $T`) and a
+        // struct-literal field (`conflicts: $C`) be patterns, e.g. in
+        // `where not has '…'`.
+        contexts: &[
+            "@@PATTERN@@;",
+            "fn f() {\n@@PATTERN@@\n}\n",
+            "struct _S {\n@@PATTERN@@\n}\n",
+            "fn f() {\n_S {\n@@PATTERN@@\n};\n}\n",
+        ],
     }
 }
 
@@ -98,6 +106,25 @@ impl Operation for PatternOp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn struct_and_literal_fields_are_patterns() {
+        let decl = PatternOp::compile("pub conflicts: $T", PatternAction::Delete, &[]).unwrap();
+        let src = "struct A {\n    pub path: String,\n    pub conflicts: Vec<u8>,\n}\n";
+        assert_eq!(decl.apply(src), "struct A {\n    pub path: String,\n}\n");
+        // A literal field, as a `where not has` constraint would use it.
+        let lit = PatternOp::compile(
+            "FileChange { $$$F }",
+            PatternAction::Replace("FileChange { $$$F conflicts: Vec::new() }".into()),
+            &[colab_core::Constraint {
+                negated: true,
+                test: colab_core::Test::Has("conflicts: $C".into()),
+            }],
+        )
+        .unwrap();
+        let done = "fn f() { let c = FileChange { path: p, conflicts: x }; }\n";
+        assert_eq!(lit.apply(done), done, "already has the field");
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

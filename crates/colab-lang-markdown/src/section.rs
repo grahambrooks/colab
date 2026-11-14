@@ -22,7 +22,7 @@ enum Mode {
 }
 
 /// Why a satisfied `set` / `insert` changed nothing: not a dead rule.
-pub(crate) const ALREADY: &str = "already as the rule asks";
+pub(crate) const ALREADY: &str = colab_core::ALREADY;
 
 /// One `markdown::section` rule.
 #[derive(Debug)]

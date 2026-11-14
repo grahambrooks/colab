@@ -70,6 +70,7 @@ just the readable form.
 | `json::key`         |    | ✅ |    |    | ✅ | ✅ | `.json` |
 | `markdown::section` | ✅ | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
 | `markdown::frontmatter` |  | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
+| `markdown::text` | ✅ | ✅ |  |  |  |  | `.md`, `.markdown` |
 | `markdown::block`   |    | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
 | `toml::key`         |    | ✅ |    |    | ✅ | ✅ | `.toml` |
 | `markdown::row` |  | ✅ |  |  | ✅ | ✅ | `.md`, `.markdown` |
@@ -114,6 +115,7 @@ which stop a `--write` before it writes. Per-language notes:
 - **JavaScript** patterns are parsed with the JavaScript grammar, so they
   cannot contain TypeScript-only syntax (type annotations), though they
   match inside `.ts` files.
+- **Rust** patterns may be struct fields (`pub conflicts: $T`) and struct-literal fields (`conflicts: $C`), so they work in `where has` / `not has`. Two shapes still do not match: `field: $X` never matches the shorthand `field` (a different node; write a second rule), and `$$$` cannot stand for a struct's field list (spell the fields out).
 
 Two deliberate gaps:
 
@@ -616,12 +618,7 @@ match markdown::section "Unscheduled" { delete }
 - An address that matches two headings changes nothing, and the report's
   `unchanged` reason lists them with their lines. A dead rule's near misses
   are the file's heading paths.
-- `set` replaces everything under the heading and keeps one blank line
-  after it; it is a no-op when the body is already that text, ignoring
-  trailing spaces and surrounding blank lines. On a missing section, `set`
-  and `insert` add it at the end of its parent (the path minus its last
-  segment), one level below; a single-segment path is added at the end of
-  the file, under a lone `#` title if there is one.
+- `set` replaces everything under the heading and keeps one blank line after it; it is a no-op when the body is already that text, ignoring trailing spaces and surrounding blank lines. On a missing section, `set` and `insert` add it at the end of its parent (the path minus its last segment), one level below, or, given `"New < Sibling"`, just before that sibling at its level; a single-segment path is added at the end of the file, under a lone `#` title if there is one.
 - `replace` renames the heading in place, keeping its level. Links in the
   same file to the old anchor become [conflicts](./cli.md#conflicts), so
   `--write` stops until they are fixed.
@@ -646,6 +643,20 @@ match markdown::frontmatter "tags" { set '
 - `set` and `insert` add a missing key before the closing `---`, and a
   missing front matter at the top of the file. Nested keys are not
   addressed yet.
+
+### `markdown::text` — a phrase in a section
+
+```
+match markdown::text "Order of work[M28 has shipped.]" { replace "M28 shipped on 2026-11-14." }
+match markdown::text "Status[(draft)]" in "docs/**" { delete }
+```
+
+- For edits smaller than a section, row or item: a phrase in the
+  section's own text (before its first subsection), outside code fences.
+- Matched word for word, with any run of whitespace in the target
+  matching any run in the file, so a phrase the file wraps across lines
+  still matches. Every occurrence changes.
+- `delete` removes the phrase and one space beside it.
 
 ### `markdown::block` — managed block
 
@@ -680,8 +691,7 @@ match markdown::row "Risks@2[Risk=Old]" { delete }
   an error), and adds the row when none matches; `insert` adds it only
   when none matches. A new row's unnamed cells are empty, apart from the
   selector's.
-- New rows go at the end, or with `^` at the top, for newest-first
-  tables. Several `^` inserts in one script each go above the previous.
+- New rows go at the end, at the top with `^`, or before a given row with `< [Col=value]`, as in `"Log[Date=2026-11-14] < [Date=2026-11-12]"`. Several `^` inserts in one script each go above the previous.
 - Cells get one space either side, and are padded to the column when
   every line of the table is aligned. `|` in a value is escaped.
   Other rows are never touched.
@@ -697,10 +707,7 @@ match markdown::item "Conventions[Run `make check` before committing]" in "AGENT
 - An item is named by the start of its text, as a reader sees it; `@N`
   picks the section's Nth list. Only top-level items of a list in the
   section's own text are addressed; nested lists go with their item.
-- `ensure` adds `- <text>` (continuing the list's marker, `-`, `*` or the
-  next number) when no item starts with the text, and starts a list when
-  the section has none. `delete` removes the item with its nested lines.
-  `replace` changes the item's text and keeps its marker and nested list.
+- `ensure` adds `- <text>` (continuing the list's marker, `-`, `*` or the next number) when no item starts with the text, and starts a list when the section has none. When the list's items wrap, a new one is wrapped to the list's width (backtick spans are never broken); otherwise it stays on one line, like its neighbours. `delete` removes the item with its nested lines. `replace` changes the item's text and keeps its marker and nested list.
 - A prefix that matches two items changes nothing, and says so.
 - Deleting from a numbered list does not renumber the items after it, since that would touch lines the rule did not name; Markdown renders them in order anyway. `ensure` continues from the last number.
 

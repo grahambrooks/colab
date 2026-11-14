@@ -31,6 +31,7 @@ pub mod list;
 pub mod outline;
 pub mod section;
 pub mod table;
+pub mod text;
 
 use std::cell::RefCell;
 
@@ -215,6 +216,20 @@ const CAPABILITIES: &[Capability] = &[
         ],
     },
     Capability {
+        module: "text",
+        description: "A phrase in a section's own text (not in code fences): `\"Section[the old words]\"`, matched word for word with any whitespace between, so a phrase wrapped across lines matches. Every occurrence changes.",
+        actions: &[
+            ActionCapability {
+                name: "replace",
+                description: "Replace each occurrence with this text.",
+            },
+            ActionCapability {
+                name: "delete",
+                description: "Remove each occurrence, and one space beside it.",
+            },
+        ],
+    },
+    Capability {
         module: "frontmatter",
         description: "A top-level key of the YAML front matter (`---` block at the top). The value is YAML, compared by meaning (quotes and spacing ignored); a multi-line value (a list) starts with a newline.",
         actions: &[
@@ -345,6 +360,14 @@ impl LanguageBackend for MarkdownBackend {
                 },
             ) => Ok(Box::new(link::LinkEdit::replace(&target, &replacement)?)),
             ("link", RuleSpec::Delete { target }) => Ok(Box::new(link::LinkEdit::delete(&target)?)),
+            (
+                "text",
+                RuleSpec::Replace {
+                    target,
+                    replacement,
+                },
+            ) => Ok(Box::new(text::TextEdit::replace(&target, &replacement)?)),
+            ("text", RuleSpec::Delete { target }) => Ok(Box::new(text::TextEdit::delete(&target)?)),
             ("frontmatter", RuleSpec::Set { target, value }) => Ok(Box::new(
                 frontmatter::FrontmatterEdit::set(&target, &value)?,
             )),

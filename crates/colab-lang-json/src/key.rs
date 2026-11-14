@@ -97,6 +97,18 @@ impl Operation for MemberEdit {
 
     // `set` and `insert` act when the member is absent, and a key may be
     // written with escapes, so no literal is a safe necessary condition.
+
+    fn why_unchanged(&self, source: &str) -> Option<String> {
+        if crate::parse(source).is_none_or(|t| t.root_node().has_error()) {
+            return Some("the file does not parse as JSON, so it is left alone".into());
+        }
+        (!matches!(self.mode, Mode::Delete) && self.edit(source).is_none()).then(|| {
+            format!(
+                "{} (or its path runs through an array element that does not exist)",
+                colab_core::ALREADY
+            )
+        })
+    }
 }
 
 impl MemberEdit {

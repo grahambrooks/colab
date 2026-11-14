@@ -84,6 +84,11 @@ pub fn links(source: &str) -> Vec<Link> {
             continue;
         }
         let text = &source[node.byte_range()];
+        // Every link and image starts with `[` or `![`; most paragraphs
+        // have none, and an inline parse costs more than the scan.
+        if !text.contains('[') {
+            continue;
+        }
         let Some(inline) = crate::parse_inline(text) else {
             continue;
         };

@@ -28,12 +28,28 @@ pub struct Broken {
     pub reason: String,
 }
 
+/// Parsed anchors by file, shared by every [`broken_links_cached`] call
+/// over one view of the files, so each target is parsed once per run.
+#[derive(Default)]
+pub struct AnchorCache(std::collections::HashMap<PathBuf, Option<Anchors>>);
+
 /// Every broken link in `source`, the text of `path`.
 pub fn broken_links(path: &Path, source: &str, files: &dyn Files) -> Vec<Broken> {
+    broken_links_cached(path, source, files, &mut AnchorCache::default())
+}
+
+/// [`broken_links`], parsing each target's anchors at most once across
+/// calls that share `cache` (and so must share one view of the files).
+pub fn broken_links_cached(
+    path: &Path,
+    source: &str,
+    files: &dyn Files,
+    cache: &mut AnchorCache,
+) -> Vec<Broken> {
     let dir = path.parent().unwrap_or(Path::new(""));
     let mut out = Vec::new();
-    // Each target is parsed once, however many links point into it.
-    let mut anchors: std::collections::HashMap<PathBuf, Option<Anchors>> = Default::default();
+    let anchors = &mut cache.0;
+    let mut own: Option<Option<Anchors>> = None;
     for link in links(source) {
         let dest = link.dest.trim_start_matches('<').trim_end_matches('>');
         if dest.is_empty() || has_scheme(dest) || dest.starts_with('/') {
@@ -62,14 +78,15 @@ pub fn broken_links(path: &Path, source: &str, files: &dyn Files) -> Vec<Broken>
         if !crate::is_markdown(&target) {
             continue;
         }
-        let anchors = anchors.entry(target.clone()).or_insert_with(|| {
-            let text = if file.is_empty() {
-                Some(source.to_string())
-            } else {
-                files.read(&target)
-            };
-            text.map(|t| Anchors::of(&t))
-        });
+        // The file's own anchors come from `source`, which may differ from
+        // what `files` holds for it: parsed once per call, not cached.
+        let anchors = if file.is_empty() {
+            &*own.get_or_insert_with(|| Some(Anchors::of(source)))
+        } else {
+            &*anchors
+                .entry(target.clone())
+                .or_insert_with(|| files.read(&target).map(|t| Anchors::of(&t)))
+        };
         let Some(anchors) = anchors else { continue };
         if !anchors.has(anchor) {
             out.push(Broken {
@@ -88,7 +105,7 @@ pub fn broken_links(path: &Path, source: &str, files: &dyn Files) -> Vec<Broken>
 
 /// What a file's anchors are: its heading slugs, and its text for HTML
 /// `id` / `name` attributes.
-struct Anchors {
+pub struct Anchors {
     slugs: std::collections::HashSet<String>,
     lower: String,
 }

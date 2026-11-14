@@ -94,6 +94,10 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     }
 }
 
+/// What [`Operation::why_unchanged`] says for a satisfied `set` / `insert`
+/// / `ensure`: the rule is not dead, its target is already in place.
+pub const ALREADY: &str = "already as the rule asks";
+
 /// The rejection for a `where` clause on a module that takes none.
 pub fn where_unsupported(lang: &str, module: &str) -> crate::Error {
     crate::Error::UnsupportedOperation(format!(

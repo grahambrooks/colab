@@ -251,9 +251,11 @@ fn all_broken(paths: &[PathBuf]) -> Result<Vec<Value>> {
     let view = View {
         overlay: Default::default(),
     };
+    let mut cache = colab_lang_markdown::check::AnchorCache::default();
     let mut out = Vec::new();
     for (path, text) in markdown_files(paths)? {
-        let broken = colab_lang_markdown::check::broken_links(&path, &text, &view);
+        let broken =
+            colab_lang_markdown::check::broken_links_cached(&path, &text, &view, &mut cache);
         out.extend(broken_json(&path, &broken));
     }
     Ok(out)
@@ -292,7 +294,7 @@ pub fn check_links(
     roots: &[PathBuf],
     report: &mut colab_core::RunReport,
 ) -> Result<()> {
-    use colab_lang_markdown::check::{Broken, broken_links, normalise};
+    use colab_lang_markdown::check::{AnchorCache, Broken, broken_links_cached, normalise};
     let md = |p: &Path| {
         matches!(
             p.extension().and_then(|e| e.to_str()),
@@ -314,16 +316,18 @@ pub fn check_links(
         overlay: overlay.clone(),
     };
     let key = |b: &Broken| (b.dest.clone(), b.reason.clone());
+    let (mut now_cache, mut after_cache) = (AnchorCache::default(), AnchorCache::default());
     for (path, before_text) in markdown_files(roots)? {
         let after_text = overlay
             .get(&normalise(&path))
             .copied()
             .unwrap_or(&before_text);
-        let mut before: Vec<(String, String)> = broken_links(&path, &before_text, &now)
-            .iter()
-            .map(key)
-            .collect();
-        for b in broken_links(&path, after_text, &after) {
+        let mut before: Vec<(String, String)> =
+            broken_links_cached(&path, &before_text, &now, &mut now_cache)
+                .iter()
+                .map(key)
+                .collect();
+        for b in broken_links_cached(&path, after_text, &after, &mut after_cache) {
             match before.iter().position(|k| *k == key(&b)) {
                 Some(i) => {
                     before.swap_remove(i);

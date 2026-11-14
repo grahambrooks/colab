@@ -189,6 +189,80 @@ pub fn tidy_change_set(tidy: &Tidy<'_>, set: &mut ChangeSet, rule: usize) -> Res
         .collect())
 }
 
+/// `refactor --tidy`: tidy each changed file through its language server,
+/// grouped by server and project root, in memory. Each server becomes a
+/// rule after the script's, so the report shows what tidying changed.
+/// A file with no default server is left as the rules made it, with a
+/// warning.
+pub fn tidy_pending(
+    command: Option<&str>,
+    changes: &mut [colab_core::FileChange],
+    report: &mut colab_core::RunReport,
+) -> Result<()> {
+    use std::collections::BTreeMap;
+    let cwd = std::env::current_dir().map_err(io_to_error)?;
+    // (server, root) -> indices into `changes`.
+    let mut groups: BTreeMap<(String, PathBuf), (ServerCommand, Vec<usize>)> = BTreeMap::new();
+    for (i, change) in changes.iter().enumerate() {
+        let chosen = match command {
+            Some(command) => Some(ServerCommand::parse(command)?),
+            None => ServerCommand::default_for(&change.path),
+        };
+        let Some(server) = chosen else {
+            report.warnings.push(format!(
+                "--tidy: no default language server for {}; left as the rules made it",
+                change.path.display()
+            ));
+            continue;
+        };
+        let path = fs::canonicalize(&change.path).map_err(|e| Error::io_at(&change.path, e))?;
+        let root = root_for(None, &path, &cwd)?;
+        groups
+            .entry((server.display(), root))
+            .or_insert_with(|| (server, Vec::new()))
+            .1
+            .push(i);
+    }
+    let mut rules: BTreeMap<String, usize> = BTreeMap::new();
+    for ((name, root), (server, indices)) in groups {
+        let rule = *rules.entry(name.clone()).or_insert_with(|| {
+            let index = report.rules.len();
+            report.rules.push(colab_core::RuleStat {
+                index,
+                rule: format!("tidy via {}", server.program),
+                files_matched: 0,
+                near_misses: Vec::new(),
+                unchanged: None,
+            });
+            index
+        });
+        let mut set = ChangeSet {
+            ops: Vec::new(),
+            edits: indices
+                .iter()
+                .map(|&i| {
+                    let mut edit = changes[i].clone();
+                    edit.path = fs::canonicalize(&edit.path).unwrap_or(edit.path);
+                    edit
+                })
+                .collect(),
+        };
+        let tidy = Tidy {
+            server: &server,
+            root: &root,
+            timeout: 120,
+        };
+        report
+            .warnings
+            .extend(tidy_change_set(&tidy, &mut set, rule)?);
+        for (&i, edit) in indices.iter().zip(set.edits) {
+            changes[i].after = edit.after;
+            changes[i].rules_fired = edit.rules_fired;
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // colab action
 // ---------------------------------------------------------------------------

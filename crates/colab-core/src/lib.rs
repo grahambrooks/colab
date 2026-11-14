@@ -22,8 +22,8 @@ pub mod transformer;
 pub mod walker;
 
 pub use backend::{
-    ActionCapability, AstInput, BackendRegistry, Capability, LanguageBackend, Operation, RuleSpec,
-    SyntaxTree,
+    ALREADY, ActionCapability, AstInput, BackendRegistry, Capability, LanguageBackend, Operation,
+    RuleSpec, SyntaxTree,
 };
 pub use constraint::{Constraint, Test, Var};
 pub use error::{Error, ParseDetail, Result};
