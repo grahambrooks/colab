@@ -148,6 +148,20 @@ pub struct RunReport {
     /// [`crate::render::findings`] then credits every rule that changed
     /// the file.
     pub spans: std::collections::BTreeMap<PathBuf, Vec<RuleSpan>>,
+    /// The branches `refactor --split-pr` made, one per rule that changed
+    /// something on its own.
+    pub branches: Vec<Branch>,
+}
+
+/// One branch made by `refactor --split-pr`: the base commit plus one
+/// rule's changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Branch {
+    /// Zero-based index of the rule, as in [`RuleStat::index`].
+    pub rule: usize,
+    pub name: String,
+    pub commit: String,
+    pub files: usize,
 }
 
 /// Lines of the original file one rule changes (0-based, end exclusive;

@@ -18,6 +18,7 @@ mod language_server;
 mod lsp_commands;
 mod markdown;
 mod packs;
+mod review;
 
 use std::io::Write;
 use std::process::ExitCode;

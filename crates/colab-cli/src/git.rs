@@ -107,6 +107,121 @@ impl Repo {
         self.head()
     }
 
+    /// Run git with `GIT_INDEX_FILE` set to `index`, feeding `stdin`.
+    fn run_in(&self, index: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut command = Command::new("git");
+        command
+            .arg("-C")
+            .arg(&self.top)
+            .args(args)
+            .env("GIT_INDEX_FILE", index)
+            .stdin(if stdin.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let io = |e| Error::Io {
+            path: None,
+            source: e,
+        };
+        let mut child = command.spawn().map_err(io)?;
+        if let (Some(data), Some(mut pipe)) = (stdin, child.stdin.take()) {
+            pipe.write_all(data).map_err(io)?;
+        }
+        let out = child.wait_with_output().map_err(io)?;
+        if !out.status.success() {
+            return Err(Error::Config(format!(
+                "`git {}` failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+
+    /// Whether the branch `name` exists.
+    pub fn has_branch(&self, name: &str) -> bool {
+        self.run(
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{name}"),
+            ],
+            &[],
+        )
+        .is_ok()
+    }
+
+    /// Whether `name` is a valid branch name.
+    pub fn valid_branch_name(&self, name: &str) -> bool {
+        self.run(&["check-ref-format", "--branch", name], &[])
+            .is_ok()
+    }
+
+    /// A commit on `base` whose tree is `base`'s with each `(path, content)`
+    /// replaced, made through a private index: the work tree, the real
+    /// index and the current branch are untouched. Paths are relative to
+    /// the top level; each keeps its mode in `base`. Returns the commit id.
+    pub fn commit_on(&self, base: &str, files: &[(String, &str)], message: &str) -> Result<String> {
+        let index = std::env::temp_dir().join(format!(
+            "colab-split-{}-{}.index",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        ));
+        let result = (|| {
+            self.run_in(&index, &["read-tree", base], None)?;
+            for (path, content) in files {
+                let mode = self
+                    .run_in(&index, &["ls-files", "-s", "--", path], None)?
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("100644")
+                    .to_string();
+                let blob = self.run_in(
+                    &index,
+                    &["hash-object", "-w", "--stdin"],
+                    Some(content.as_bytes()),
+                )?;
+                self.run_in(
+                    &index,
+                    &[
+                        "update-index",
+                        "--add",
+                        "--cacheinfo",
+                        &format!("{mode},{blob},{path}"),
+                    ],
+                    None,
+                )?;
+            }
+            let tree = self.run_in(&index, &["write-tree"], None)?;
+            self.run_in(
+                &index,
+                &["commit-tree", &tree, "-p", base, "-m", message],
+                None,
+            )
+        })();
+        let _ = std::fs::remove_file(&index);
+        result
+    }
+
+    /// Point a new branch `name` at `commit`; fails if it already exists
+    /// (the empty old value makes `update-ref` create-only).
+    pub fn create_branch(&self, name: &str, commit: &str) -> Result<()> {
+        self.run(
+            &["update-ref", &format!("refs/heads/{name}"), commit, ""],
+            &[],
+        )
+        .map(drop)
+    }
+
     pub fn head(&self) -> Result<String> {
         Ok(self.run(&["rev-parse", "HEAD"], &[])?.trim().to_string())
     }

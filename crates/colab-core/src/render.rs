@@ -156,6 +156,9 @@ impl ChangeCollector {
         if let Some(conflicts) = conflicts_json(report) {
             obj.insert("conflicts".to_string(), conflicts);
         }
+        if let Some(branches) = branches_json(report) {
+            obj.insert("branches".to_string(), branches);
+        }
 
         if self.options.detail == Detail::Summary {
             return root;
@@ -207,6 +210,19 @@ impl ChangeCollector {
 
         root
     }
+}
+
+/// The branches `--split-pr` made, if any: `[{rule, branch, commit, files}]`.
+pub fn branches_json(report: &RunReport) -> Option<Value> {
+    (!report.branches.is_empty()).then(|| {
+        Value::Array(
+            report
+                .branches
+                .iter()
+                .map(|b| json!({"rule": b.rule, "branch": b.name, "commit": b.commit, "files": b.files}))
+                .collect(),
+        )
+    })
 }
 
 /// The aggregate counters. Present at every detail level. `moved`,

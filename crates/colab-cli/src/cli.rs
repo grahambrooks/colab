@@ -96,6 +96,9 @@ enum Commands {
     Schema,
     /// Search: report where each rule matches, without changing anything.
     Find(FindArgs),
+    /// Review a large run by rule, from its `--format ndjson --detail diff`
+    /// log: counts, most-edited files, and pages of each rule's diffs.
+    Review(crate::review::ReviewArgs),
     /// Scope-aware rename, delegated to the language's own server
     /// (rust-analyzer, gopls, clangd, …) and reported like a codemod.
     Rename(RenameArgs),
@@ -337,6 +340,17 @@ struct RefactorArgs {
           default_missing_value = "",
           conflicts_with_all = ["verify", "commit_per_rule"])]
     tidy: Option<String>,
+
+    /// Make one git branch per rule instead of writing: each is `HEAD`
+    /// plus that rule's changes alone, named `<PREFIX>/<NN>-<rule>`
+    /// (default prefix `colab/<script>`), ready for one pull request per
+    /// rule. The work tree, the index and the current branch are left
+    /// alone; the files the rules change must have no uncommitted changes.
+    #[arg(long = "split-pr", value_name = "PREFIX", num_args = 0..=1,
+          require_equals = true, default_missing_value = "",
+          conflicts_with_all = ["write", "dry_run", "check", "verify", "commit_per_rule",
+                                "bisect", "tidy", "backup", "stdin"])]
+    split_pr: Option<String>,
 
     /// Skip the link check. Without it, a run that changes Markdown files
     /// checks every Markdown file under the paths, and each link the run
@@ -739,6 +753,7 @@ pub async fn run() -> Result<i32> {
     match args.command {
         Some(Commands::Refactor(refactor_args)) => run_refactor(refactor_args),
         Some(Commands::Fix(fix_args)) => run_fix(fix_args),
+        Some(Commands::Review(review_args)) => crate::review::run(review_args),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);
             language_server::run(default_backends()).await;
@@ -1085,6 +1100,10 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
         args.paths.clone()
     };
 
+    if let Some(prefix) = &args.split_pr {
+        return run_split(refactoring, args, &targets, prefix);
+    }
+
     // `--verify` and `--commit-per-rule` need per-rule visibility
     // so failures can be attributed to (and reverted at) one rule.
     if args.verify.is_some() || args.commit_per_rule {
@@ -1156,6 +1175,197 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
     } else {
         0
     })
+}
+
+/// A branch-name segment from free text: lowercase words joined by `-`.
+fn slug(text: &str, max: usize) -> String {
+    let mut out = String::new();
+    for word in text
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
+        if !out.is_empty() {
+            if out.len() + 1 + word.len() > max {
+                break;
+            }
+            out.push('-');
+        }
+        out.push_str(&word.to_ascii_lowercase());
+    }
+    out.truncate(max);
+    if out.is_empty() { "rule".into() } else { out }
+}
+
+/// `refactor --split-pr`: each rule applied alone to the files as they are
+/// (which must match `HEAD`), committed on its own branch from `HEAD`
+/// through git plumbing. Everything is checked before any branch is made:
+/// the names, uncommitted or untracked files, and conflicts.
+fn run_split(
+    refactoring: &codemod::Refactoring,
+    args: &RefactorArgs,
+    targets: &[PathBuf],
+    prefix: &str,
+) -> Result<i32> {
+    use std::collections::BTreeSet;
+    let cwd = std::env::current_dir().map_err(io_to_error)?;
+    let repo = crate::git::Repo::discover(&cwd).ok_or_else(|| {
+        Error::Config("--split-pr makes git branches, so it needs a git work tree".into())
+    })?;
+    let base = repo.head().map_err(|_| {
+        Error::Config("--split-pr branches from HEAD, and this repository has no commits".into())
+    })?;
+    let prefix = match prefix.trim_matches('/') {
+        "" => format!("colab/{}", slug(&refactoring.name, 40)),
+        given => given.to_string(),
+    };
+    let mut reporter = format::make_reporter(args.format, ExecMode::DryRun, args.render_options());
+    let started = Instant::now();
+    let mut report = refactoring.report();
+
+    let mut scanned = BTreeSet::new();
+    let mut changed_paths = BTreeSet::new();
+    let mut per_rule: Vec<Vec<FileChange>> = Vec::new();
+    // Bytes the branches add (or remove) between them.
+    let mut delta: i64 = 0;
+    for (index, rule) in refactoring.rules.iter().enumerate() {
+        let single =
+            codemod::SingleRule::new(rule.as_ref()).in_script(refactoring.script_of(index));
+        let mut changes = Vec::new();
+        let mut visit = |mut change: FileChange| -> Result<()> {
+            change.rules_fired = change.rules_fired.iter().map(|_| index).collect();
+            for conflict in &mut change.conflicts {
+                conflict.rule = index;
+            }
+            if scanned.insert(change.path.clone()) {
+                report.files_scanned += 1;
+                report.bytes_before += change.before.len() as u64;
+            }
+            if change.changed() {
+                changed_paths.insert(change.path.clone());
+                delta += change.after.len() as i64 - change.before.len() as i64;
+                changes.push(change);
+            }
+            Ok(())
+        };
+        let outcome = run_transformer(&single, args, targets, &mut visit)?;
+        if index == 0 {
+            report.record_walk(outcome);
+        }
+        report.rules[index].files_matched = changes.len() as u64;
+        for change in &changes {
+            report.conflicts.extend(change.conflicts.iter().map(|c| {
+                colab_core::report::Conflict {
+                    path: change.path.clone(),
+                    rule: Some(index),
+                    message: c.message.clone(),
+                }
+            }));
+        }
+        per_rule.push(changes);
+    }
+    report.bytes_after = (report.bytes_before as i64 + delta).max(0) as u64;
+    report.files_changed = changed_paths.len() as u64;
+
+    // The checks, before any branch exists.
+    let mut problems = Vec::new();
+    let names: Vec<String> = refactoring
+        .rules
+        .iter()
+        .enumerate()
+        .map(|(i, rule)| format!("{prefix}/{:02}-{}", i + 1, slug(&rule.to_string(), 40)))
+        .collect();
+    for (i, changes) in per_rule.iter().enumerate() {
+        if changes.is_empty() {
+            continue;
+        }
+        if !repo.valid_branch_name(&names[i]) {
+            problems.push(format!(
+                "`{}` is not a valid branch name; pass --split-pr=<prefix>",
+                names[i]
+            ));
+        } else if repo.has_branch(&names[i]) {
+            problems.push(format!(
+                "branch `{}` already exists; delete it or pass --split-pr=<prefix>",
+                names[i]
+            ));
+        }
+    }
+    let paths: Vec<PathBuf> = changed_paths
+        .iter()
+        .map(|p| fs::canonicalize(p).unwrap_or_else(|_| p.clone()))
+        .collect();
+    for line in repo.dirty(&paths)? {
+        problems.push(format!("uncommitted changes: `{line}`; commit or stash them, so each branch is HEAD plus one rule"));
+    }
+    for path in &paths {
+        if !repo.is_tracked(path) {
+            problems.push(format!(
+                "`{}` is not tracked by git, so it is not in HEAD",
+                path.display()
+            ));
+        }
+    }
+    let blocked = !report.conflicts.is_empty() && !args.allow_conflicts;
+    if blocked {
+        report.warnings.push(format!(
+            "made no branches: {} conflict(s) found; fix the rules or rerun with --allow-conflicts",
+            report.conflicts.len()
+        ));
+    }
+    if !problems.is_empty() {
+        return Err(Error::Config(format!(
+            "--split-pr made no branches: {}",
+            problems.join("; ")
+        )));
+    }
+
+    if !blocked {
+        let short = &base[..base.len().min(10)];
+        for (i, changes) in per_rule.iter().enumerate() {
+            // A rule that changes nothing on its own gets no branch; the
+            // report lists it as a rule that matched nothing.
+            if changes.is_empty() {
+                continue;
+            }
+            let label = refactoring.rules[i].to_string();
+            let files: Vec<(String, &str)> = changes
+                .iter()
+                .map(|c| {
+                    let abs = fs::canonicalize(&c.path).unwrap_or_else(|_| c.path.clone());
+                    let rel = abs.strip_prefix(repo.top()).unwrap_or(&abs);
+                    (rel.to_string_lossy().replace('\\', "/"), c.after.as_str())
+                })
+                .collect();
+            let message = format!(
+                "colab: {label}\n\nRule {} of {} in `{}`, applied alone to {short} by `colab refactor --split-pr`.",
+                i + 1,
+                refactoring.rules.len(),
+                refactoring.script_of(i)
+            );
+            let commit = repo.commit_on(&base, &files, &message)?;
+            repo.create_branch(&names[i], &commit)?;
+            report.branches.push(colab_core::report::Branch {
+                rule: i,
+                name: names[i].clone(),
+                commit,
+                files: changes.len(),
+            });
+        }
+    }
+
+    // Each file once, as the rules found it.
+    let mut shown = BTreeSet::new();
+    for change in per_rule.iter().flatten() {
+        if shown.insert(change.path.clone()) {
+            reporter
+                .report(change)
+                .map_err(|e| Error::io_at(&change.path, e))?;
+        }
+    }
+    colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
+    report.elapsed = started.elapsed();
+    reporter.finish(&report).map_err(io_to_error)?;
+    Ok(if blocked { CONFLICT_EXIT } else { 0 })
 }
 
 /// For the CI formats, which annotate each changed block, record which

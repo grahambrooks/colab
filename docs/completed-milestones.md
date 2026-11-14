@@ -10,6 +10,7 @@ work, including every deferral listed here, is in
 | [M1–M8](#foundation-m1m8) | Workspace, multi-rule scripts, agent-facing CLI, MCP, five backends |
 | [M9–M13.5](#operating-at-scale-m9m135) | Targeting, parallelism, includes, verify / bisect / undo, progress |
 | [M14](#repo-config-m14) | `colab.toml`, `colab fix`, built-in packs for Go, Java, JS and Python, per-extension formatters |
+| [M16](#review-m16) | `colab review` of a recorded run by rule; `refactor --split-pr`, one branch per rule |
 | [M17–M19, M22](#agent-of-choice-m17m19-m22) | Inline rules, near misses, structural patterns, LSP both ways, workflow MCP tools |
 | [M21](#distribution-and-ci-formats-m21) | `--format sarif` / `github` for CI annotations and code scanning |
 | [M24–M27](#closing-the-intellij-gap-m24m27) | Git-aware file operations, code actions, `where` constraints, conflict checks |
@@ -218,6 +219,30 @@ two-week increments.
   preview/apply requests, the same shape applies.
 
 ---
+
+## Review (M16)
+
+### ✅ M16 — Diff review aggregation
+
+- `colab review <run.ndjson>` reads a run's `--format ndjson --detail
+  diff` log and groups it by rule: files, lines added and removed, the
+  most-edited files and a histogram of lines per file; `--rule N
+  [--page P --per-page K]` pages through one rule's diffs, and `--format
+  json` is one document. Not interactive, so an agent reads it the same
+  way. A file several rules changed is flagged as shared, since its diff
+  is the run's whole change to it.
+- `refactor --split-pr[=PREFIX]` makes one branch per rule, `HEAD` plus
+  that rule alone, through git plumbing (a private index, `commit-tree`,
+  a create-only `update-ref`): the work tree, index and current branch
+  are untouched. Branch names, uncommitted or untracked files and
+  conflicts are all checked before any branch is made. The branches are
+  in the report (`branches` in JSON).
+- **Found while dogfooding, and fixed:** a pattern rewrite that changes
+  only whitespace (an identity template over a call whose `$$$` arguments
+  span lines) reflowed the code and counted as a change; such edits are
+  no longer made, and the rule says why it changed nothing.
+- Not done: per-hunk attribution in the ndjson log, and a stacked
+  `--split-pr` for rules that build on each other (both follow-ups).
 
 ## Agent of choice (M17–M19, M22)
 

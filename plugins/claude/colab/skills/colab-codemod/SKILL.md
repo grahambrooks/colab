@@ -390,6 +390,13 @@ colab refactor --script fix.codemod --verify-lsp --write .
 colab refactor --script fix.codemod --tidy --bisect 'cargo check' --write .
 ```
 
+**A run too big to review as one diff:** record it with `--format ndjson
+--detail diff > run.ndjson` and read `colab review run.ndjson` (by rule:
+files, lines, most edited; `--rule N` pages its diffs), or split it with
+`--split-pr`: one git branch per rule, `HEAD` plus that rule alone, for
+one pull request each. The work tree is left alone; the changed files
+must have no uncommitted changes.
+
 Whatever you use, **run the project's own build or tests afterwards** —
 colab guarantees the edit was syntactic, not that the result compiles.
 

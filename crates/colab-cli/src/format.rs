@@ -195,6 +195,16 @@ impl Reporter for HumanReporter {
         for op in &report.file_ops {
             writeln!(self.out, "  {}", op)?;
         }
+        for branch in &report.branches {
+            writeln!(
+                self.out,
+                "  branch {} ({}): rule {}, {} file(s)",
+                branch.name,
+                &branch.commit[..branch.commit.len().min(10)],
+                branch.rule + 1,
+                branch.files
+            )?;
+        }
         for skipped in &report.skipped {
             writeln!(
                 self.out,
@@ -316,6 +326,9 @@ impl Reporter for NdjsonReporter {
         });
         if let Some(conflicts) = render::conflicts_json(report) {
             value["conflicts"] = conflicts;
+        }
+        if let Some(branches) = render::branches_json(report) {
+            value["branches"] = branches;
         }
         let advisories = render::advisories(report);
         if !advisories.is_empty()

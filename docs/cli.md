@@ -1,7 +1,7 @@
 # CLI Reference
 
 The `colab` binary ships its operations as subcommands: `refactor`,
-`fix`, `find`, `rename`, `mv`, `action`, `references`, `safe-delete`,
+`fix`, `review`, `find`, `rename`, `mv`, `action`, `references`, `safe-delete`,
 `ast`, `outline`, `section`, `links`, `explain`, `schema`,
 `list-languages`, `list-rules`, `pack`, `undo`, `server`, `mcp` and
 `lsp-daemon`. Output goes to stdout (one stream
@@ -26,7 +26,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
                                 [--jobs <N>]
                                 [--verify <CMD>] [--commit-per-rule]
                                 [--bisect <CMD>] [--verify-lsp[=<CMD>]]
-                                [--allow-conflicts] [--backup <DIR>]
+                                [--allow-conflicts] [--backup <DIR>] [--split-pr[=<PREFIX>]]
                                 [--detail summary|counts|diff] [--summary-only]
                                 [--max-files <N>] [--max-diff-bytes <N>]
                                 [paths...]
@@ -56,6 +56,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--allow-conflicts` | — | Write even when the run found conflicts. Without it, a `--write` run that finds any writes nothing and exits 11. |
 | `--tidy[=<CMD>]` | — | After the rules, tidy each changed file in memory, before the conflict checks and the write: through the `[formatters]` command `colab.toml` gives its extension, or else its language server (organize imports, then format). Reported as its own rule, `tidy via <server or command>`. `=<CMD>` names one server for every file. Whole files are formatted, not only the changed lines. Not with `--verify` or `--commit-per-rule`; with `--bisect`, the full set is tidied once before the check. See [`--tidy`](#--tidy). |
 | `--backup <DIR>` | — | Before any rule writes a file, save the pre-modification contents under `<DIR>`, mirroring each file's absolute path. Pair with `colab undo --from <DIR>` to roll back. |
+| `--split-pr[=<PREFIX>]` | — | Make one git branch per rule instead of writing: `HEAD` plus that rule alone, named `<PREFIX>/<NN>-<rule>` (default `colab/<script>`). Leaves the work tree alone. See [Splitting a run into pull requests](#splitting-a-run-into-pull-requests). |
 | `--no-link-check` | — | Skip the Markdown link check; without it, each link the run would break is a conflict (see [`colab links`](#colab-links)). |
 | `--detail <level>` | `counts` (`diff` for `--format diff`) | How much to report. `summary`: aggregate counters only. `counts`: adds per-rule match counts and changed paths. `diff`: adds capped unified diffs. |
 | `--max-files <N>` | `20` | At `--detail diff`, the maximum number of per-file diffs to render. The residue is reported under `truncated`. |
@@ -275,6 +276,39 @@ emits the rewritten source to stdout. Combine with `--format json`
 or `--format diff` to emit a structured event instead of the
 rewritten source.
 
+#### Splitting a run into pull requests
+
+`--split-pr[=PREFIX]` makes one git branch per rule instead of writing.
+Each branch is `HEAD` plus that rule's changes alone, committed as
+`colab: <rule>`, and named `<PREFIX>/<NN>-<rule>`; the default prefix is
+`colab/<script name>`:
+
+```sh
+colab refactor --script migrate.codemod --split-pr .
+#   branch colab/migrate/01-go-import-old-log-new-log (e301afa50c): rule 1, 1 file(s)
+#   branch colab/migrate/02-go-call-log-old-replace-call-log-new (cec17e8b2b): rule 2, 2 file(s)
+git push origin 'colab/migrate/*'          # then one pull request per branch
+git format-patch main..colab/migrate/01-…  # or a patch series
+```
+
+- The branches are made with git plumbing (a private index,
+  `commit-tree`, a create-only `update-ref`): the work tree, the index
+  and the current branch are not touched, and an existing branch is never
+  overwritten.
+- Everything is checked before any branch is made. The run stops, making
+  none, if a branch name exists, if a file a rule would change has
+  uncommitted changes or is untracked (so each branch really is `HEAD`
+  plus one rule), or, unless `--allow-conflicts`, if a rule reports a
+  [conflict](#conflicts) (exit 11).
+- Rules are applied independently, each to `HEAD`'s files. A rule that
+  changes nothing on its own (it rewrites what an earlier rule wrote)
+  gets no branch and is reported as matching nothing; merge those
+  branches in order, or run the script whole.
+- Not with `--write`, `--dry-run`, `--check`, `--verify`,
+  `--commit-per-rule` (which commits each rule on the current branch),
+  `--bisect`, `--tidy`, `--backup` or `--stdin`. The report lists the
+  branches (`branches` in JSON: `rule`, `branch`, `commit`, `files`).
+
 ### colab fix
 
 Run the packs a repository declares in `colab.toml`, as one run:
@@ -322,6 +356,41 @@ path = ".colab/packs/house-style.codemod"
   `--format`, `--detail`, `--allow-conflicts` and `--no-link-check`, the
   last four as for `refactor`. `fix` takes no `--script`, `-e` or paths:
   the packs and `[run] paths` come from `colab.toml`.
+
+### colab review
+
+Review a large run by rule, from its log:
+
+```sh
+colab refactor --script big.codemod --format ndjson --detail diff . > run.ndjson
+colab review run.ndjson                       # by rule: files, lines, most edited, spread
+colab review run.ndjson --rule 2              # page through rule 2's diffs (10 a page)
+colab review run.ndjson --rule 2 --page 3 --per-page 20
+colab review run.ndjson --format json         # one document
+```
+
+```
+61 file(s) changed by 2 rule(s), +199 -215 lines
+rule 1: 61 file(s), +199 -215 lines — rust::pattern 'crate::parse($S)' -> 'crate::parse_source($S)'
+  24 of them also changed by other rules: their lines count for each
+  most edited: crates/colab-lang-c/src/calls.rs (+7 -9), crates/colab-lang-cpp/src/calls.rs (+7 -9)
+  lines changed per file: 1-2: 17 · 3-5: 9 · 6-20: 35
+next: colab review run.ndjson --rule 1   # page through its diffs
+```
+
+- The log is `refactor`'s (or `fix`'s) `--format ndjson --detail diff`
+  output, a file or `-` for stdin. Without `--detail diff` there are no
+  line counts or pages, and the review says so.
+- Rules are numbered from 1, as in the human output; JSON's `i` is from 0.
+  A rule that changed nothing is listed as such.
+- A file's diff is the run's whole change to it, so in a file several
+  rules changed (`shared` in JSON) the lines count for each of them.
+- Flags: `--rule N`, `--page P` (with `--rule`), `--per-page K`
+  (default 10), `--top N` most-edited files per rule (default 5),
+  `--format human|json`.
+
+To review and merge a run rule by rule, split it into branches with
+[`refactor --split-pr`](#splitting-a-run-into-pull-requests).
 
 ### `colab find`
 

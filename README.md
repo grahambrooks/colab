@@ -192,6 +192,9 @@ alone. See [`docs/cli.md`](docs/cli.md#colab-fix).
   scope-aware refactorings delegated to the language's own server
   (rust-analyzer, gopls, …), reported and applied like a codemod; file
   moves go through `git mv`. The server is kept running between commands.
+- `colab review` and `refactor --split-pr` — a run too big to review as
+  one diff, sliced by rule: counts and pages of each rule's diffs, or one
+  git branch (and pull request) per rule.
 - `colab outline` / `section` / `links` — read Markdown by structure, and
   find broken links.
 - `colab undo --from <dir>` — restore a run made with `--backup <dir>`.

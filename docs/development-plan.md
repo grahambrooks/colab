@@ -21,7 +21,7 @@ millions of lines — when you want to:
 
 ## Where things stand (2026-11-14)
 
-M1–M13.5 (but M10.6), M14, M17–M19, M21, M22–M28 and M20's non-installing parts have shipped
+M1–M13.5 (but M10.6), M14, M16, M17–M19, M21, M22–M28 and M20's non-installing parts have shipped
 ([details](completed-milestones.md)). colab has 12 source backends and
 3 config backends, structural patterns with `where` constraints, delegated
 rename, move, code actions, references and safe delete through the
@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M16, M15 and M10.6**, while the stable gate is earned; then **M20's install step**, once the gate passes. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`) and M21 (CI formats) have shipped.
+**M15 and M10.6**, while the stable gate is earned; then **M20's install step**, once the gate passes. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats) and M16 (`colab review`, `--split-pr`) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -40,7 +40,7 @@ what it lets that dogfooding cover.
 
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
-| 1 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
+| 1 | M15, M10.6 | Scoped rename (largely superseded by M19); parse-once batching. |
 | 2 | M20 install step | Blocked until the gate's criterion 2 holds for two milestones; its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped 2026-11-14. |
 
 ## Stable gate before M20
@@ -66,7 +66,7 @@ these hold:
 | Criterion | Status |
 | --------- | ------ |
 | 1. Coverage | Met for code at many sites, renames, Markdown sections, rows, items and links; config keys only in the eval task, not yet on this repo. |
-| 2. No silent failures | **Not met.** The follow-ups found a row `set` that re-added its row on the next run; M23 found fenced rules adding imports to doc snippets; M14 found patterns matching a node with children they never mention (an `else`, a third `Union` member, an anonymous class body) and a rewrite dropping them; after M21, Markdown `row` / `item` / `section` rules skipped files they matched (an unsound prefilter), and `rust::use … { ensure }` put the `use` above `//!` crate docs. All reported success; all are fixed. The next two milestones must log none. |
+| 2. No silent failures | **Not met; 1 of 2 clean milestones.** The follow-ups found a row `set` that re-added its row on the next run; M23 found fenced rules adding imports to doc snippets; M14 found patterns matching a node with children they never mention and a rewrite dropping them; after M21, Markdown `row` / `item` / `section` rules skipped files they matched, and `rust::use … { ensure }` put the `use` above `//!` crate docs. All reported success; all are fixed. M16 logged none (its finding, an identity rewrite reflowing code, changed formatting only). One more clean milestone meets it. |
 | 3. Little hand repair | Met: `--tidy` on `refactor` removed the `cargo fmt` step; one hand edit per milestone (a line inside a shell fence). |
 | 4. Measured benefit | Met: `evals/results.md`, 7 tasks correct, 69% fewer bytes than `Read` + `Edit`, budgets checked in CI. |
 
@@ -80,28 +80,6 @@ these hold:
 - MCP resources + `llms-full.txt` generated from `docs/`, including the
   per-backend caveats.
 - ✅ Shipped 2026-11-14: `colab:ignore [names]` (after code: that line; on its own line: the line below; names are script names or `<lang>::<module>`) for find, refactor and check, by putting back what a rule changed on covered lines. Rules take `message "…"` and `severity error|warning|info`; `--check` fails only above `info`.
-
-### M16 — Diff review aggregation
-- Rule attribution in `--format json` / `ndjson` has shipped (`rules[]`,
-  and `rules` on each ndjson file event). What remains:
-- `colab review <run.ndjson>` paginated, per-rule grouped review.
-- `--split-pr` emits one branch / patch series per rule, paired
-  with `--commit-per-rule` from M12.
-
-Design, from the original plan:
-
-When a single run touches 5k files, the diff is unreviewable as a
-single blob. Provide tools to slice it:
-
-- **Per-rule grouping in `--format json`.** Each event already
-  records the rule that fired; surface that for downstream
-  filtering (`jq 'select(.rule == "rust::use::tokio")'`).
-- **`colab review <run.ndjson>`** interactive mode: paginate
-  diffs, group by rule, show top-N most-edited files, distribute
-  edits per file (histogram) so reviewers can sample.
-- **`--split-pr`** writeable mode: emit one git branch (or one
-  `git format-patch` series) per rule, ready for separate PRs.
-  Pairs with `--commit-per-rule`.
 
 ### M15 — Scope-bounded symbol rename
 - `--scope <pattern>` filter on `<lang>::symbol` rename, narrowing
@@ -168,6 +146,8 @@ whichever milestone touches the same code.
 | One call rewriter in `colab_rewrite` for the seven backends whose `calls.rs` differ only in the call node's kind (C, C++, C#, Go, JS, Python, Rust); RustRover's duplicate-code inspection finds them | RustRover inspections |
 | `markdown::text` inside a code fence (a line in a README `sh` block needed a hand edit) | M21 dogfooding |
 | Linux release binaries that run on older glibc: they need 2.39, so Ubuntu 22.04 and Debian 12 cannot run them. A static `x86_64-unknown-linux-musl` build (release-kit's `EXTRA_TARGETS`) is one way; it built cleanly in M21 | M21 |
+| Per-hunk rule attribution in ndjson file events, so `colab review` counts a shared file's lines per rule (it now flags them as shared) | M16 |
+| `--split-pr` stacked mode (each rule's branch on the previous one), for rules that only apply to an earlier rule's output | M16 |
 
 ## Unscheduled
 

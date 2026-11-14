@@ -3162,3 +3162,204 @@ fn ci_formats_annotate_each_block_with_the_rule_that_changed_it() {
     assert_eq!(ids, [("colab/rule-1", "note"), ("colab/rule-2", "error")]);
     fs::remove_dir_all(&root).ok();
 }
+
+/// A committed Go repository with one import and two calls to rewrite.
+fn split_workspace(label: &str) -> PathBuf {
+    let root = workspace_temp(label);
+    write(
+        &root.join("a.go"),
+        "package p\n\nimport \"old/log\"\n\nfunc F() { log.Old(1) }\n",
+    );
+    write(&root.join("b.go"), "package p\n\nfunc G() { log.Old(2) }\n");
+    write(&root.join("notes.txt"), "notes\n");
+    git(&root, &["init", "-q", "-b", "main"]);
+    git(&root, &["add", "-A"]);
+    git(
+        &root,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "base",
+        ],
+    );
+    root
+}
+
+const SPLIT_RULES: [&str; 6] = [
+    "-e",
+    r#"match go::import "old/log" { replace "new/log" }"#,
+    "-e",
+    r#"match go::call "log.Old" { replace_call "log.New($args)" }"#,
+    "-e",
+    r#"match go::import "never/there" { delete }"#,
+];
+
+#[test]
+fn split_pr_makes_one_branch_per_rule_and_leaves_the_tree_alone() {
+    let root = split_workspace("split-pr");
+    write(&root.join("notes.txt"), "notes\nlocal edit\n");
+    let out = colab()
+        .current_dir(&root)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .args(["refactor", "--split-pr=review", "--format", "json"])
+        .args(SPLIT_RULES)
+        .arg(".")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let branches: Vec<(&str, u64)> = v["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| (b["branch"].as_str().unwrap(), b["files"].as_u64().unwrap()))
+        .collect();
+    // The dead rule gets no branch.
+    assert_eq!(
+        branches,
+        [
+            ("review/01-go-import-old-log-new-log", 1),
+            ("review/02-go-call-log-old-replace-call-log-new", 2)
+        ]
+    );
+    // Each branch is HEAD plus that rule alone.
+    let first = git(
+        &root,
+        &[
+            "diff",
+            "--name-only",
+            "main",
+            "review/01-go-import-old-log-new-log",
+        ],
+    );
+    assert_eq!(first.trim(), "a.go");
+    let second = git(
+        &root,
+        &[
+            "show",
+            "review/02-go-call-log-old-replace-call-log-new:a.go",
+        ],
+    );
+    assert!(
+        second.contains("log.New(1)") && second.contains("\"old/log\""),
+        "{second}"
+    );
+    // Nothing on disk, in the index or on main moved.
+    assert_eq!(git(&root, &["status", "--short"]).trim(), "M notes.txt");
+    assert_eq!(git(&root, &["branch", "--show-current"]).trim(), "main");
+
+    // Again: the branches exist, so nothing is made.
+    let again = colab()
+        .current_dir(&root)
+        .args(["refactor", "--split-pr=review"])
+        .args(SPLIT_RULES)
+        .arg(".")
+        .output()
+        .unwrap();
+    assert_eq!(again.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already exists"));
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn split_pr_refuses_uncommitted_changes_in_the_files_it_would_change() {
+    let root = split_workspace("split-dirty");
+    write(
+        &root.join("b.go"),
+        "package p\n\nfunc G() { log.Old(2) } // wip\n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args(["refactor", "--split-pr"])
+        .args(SPLIT_RULES)
+        .arg(".")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("uncommitted changes") && err.contains("b.go"),
+        "{err}"
+    );
+    assert!(
+        git(&root, &["branch", "--list", "colab/*"])
+            .trim()
+            .is_empty()
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn review_groups_a_recorded_run_by_rule() {
+    let root = split_workspace("review");
+    let log = colab()
+        .current_dir(&root)
+        .args(["refactor", "--format", "ndjson", "--detail", "diff"])
+        .args(SPLIT_RULES)
+        .arg(".")
+        .output()
+        .unwrap();
+    write(
+        &root.join("run.ndjson"),
+        &String::from_utf8_lossy(&log.stdout),
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "review",
+            "run.ndjson",
+            "--format",
+            "json",
+            "--rule",
+            "2",
+            "--per-page",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["files"], 2);
+    assert_eq!(v["rules"][1]["files"], 2);
+    assert_eq!(
+        v["rules"][1]["shared"], 1,
+        "a.go was changed by rules 1 and 2"
+    );
+    assert_eq!(v["rules"][2]["files"], 0);
+    assert_eq!(v["page"]["pages"], 2);
+    assert!(
+        v["page"]["files"][0]["diff"]
+            .as_str()
+            .unwrap()
+            .contains("log.New")
+    );
+
+    let human = colab()
+        .current_dir(&root)
+        .args(["review", "run.ndjson"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(
+        text.contains("rule 3: 0 file(s)")
+            && text.contains("next: colab review run.ndjson --rule 1"),
+        "{text}"
+    );
+    fs::remove_dir_all(&root).ok();
+}
