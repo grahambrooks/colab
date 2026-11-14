@@ -340,7 +340,7 @@ match go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ {
   up with `import "fmt"`.
 - The clauses belong to the rule. Its report line shows them, and when the
   rule changes nothing, they do nothing, so the rule stays idempotent.
-- **Forgetting one is caught.** In Go and Python, a template that writes a
+- **Forgetting one is caught.** In Go, Python and JavaScript/TypeScript, a template that writes a
   qualifier (`fmt.`, `pathlib.`) the file neither used before nor imports
   afterwards is a [conflict](./cli.md#conflicts): `--write` writes
   nothing and exits 11. A later rule in the same script that adds the
@@ -665,8 +665,12 @@ the CLI reference):
 
 - `match <lang>::symbol "a" { replace "b" }` where `b` already occurs in
   the file: the rename would merge two names.
-- A Go or Python `pattern` template that introduces an unimported
-  qualifier (above).
+- A Go, Python or JS `pattern` template that introduces an unimported
+  qualifier (above). Only these languages bind a qualifier by importing
+  it; in Rust an external crate needs no `use`, in Java, Kotlin, C# and
+  PHP a qualifier may be a class of the same package or namespace, and C,
+  C++, Ruby and Swift imports bind no names, so a syntactic check there
+  could only guess.
 - With `--verify-lsp`, any error the language server sees after the change
   and not before.
 

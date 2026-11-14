@@ -55,6 +55,79 @@ where
 }
 
 /// Every module specifier in `source`, unquoted, for near-miss reporting.
+/// Every name `source`'s module imports bind, which a qualified
+/// reference (`ns.fn()`) may use: an `import`'s default, namespace and
+/// named bindings (the alias, when there is one), and the names a
+/// `require(…)` call is assigned to, destructured or not.
+pub(crate) fn imported_names(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let text = |n: Node<'_>| source[n.byte_range()].to_string();
+    let mut names = Vec::new();
+    colab_rewrite::visit_all(&tree, |node| match node.kind() {
+        "import_clause" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                match child.kind() {
+                    "identifier" => names.push(text(child)),
+                    "namespace_import" => {
+                        let mut c = child.walk();
+                        names.extend(
+                            child
+                                .named_children(&mut c)
+                                .filter(|n| n.kind() == "identifier")
+                                .map(text),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        "import_specifier" => {
+            if let Some(bound) = node
+                .child_by_field_name("alias")
+                .or_else(|| node.child_by_field_name("name"))
+            {
+                names.push(text(bound));
+            }
+        }
+        "variable_declarator" => {
+            let requires = node
+                .child_by_field_name("value")
+                .filter(|v| v.kind() == "call_expression")
+                .and_then(|v| v.child_by_field_name("function"))
+                .is_some_and(|f| &source[f.byte_range()] == "require");
+            let Some(name) = node.child_by_field_name("name").filter(|_| requires) else {
+                return;
+            };
+            match name.kind() {
+                "identifier" => names.push(text(name)),
+                "object_pattern" => {
+                    let mut cursor = name.walk();
+                    for part in name.named_children(&mut cursor) {
+                        match part.kind() {
+                            "shorthand_property_identifier_pattern" => names.push(text(part)),
+                            "pair_pattern" => {
+                                if let Some(v) = part
+                                    .child_by_field_name("value")
+                                    .filter(|v| v.kind() == "identifier")
+                                {
+                                    names.push(text(v));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    });
+    names
+}
+
 pub(crate) fn specifiers(source: &str) -> Vec<String> {
     let Some(tree) = crate::parse(source) else {
         return Vec::new();
@@ -205,6 +278,12 @@ pub fn delete(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn imported_names_cover_imports_and_require() {
+        let src = "import a from 'a';\nimport * as ns from 'b';\nimport { c, d as e } from 'c';\nconst f = require('f');\nconst { g, h: k } = require('g');\nconst notImported = make();\n";
+        assert_eq!(imported_names(src), ["a", "ns", "c", "e", "f", "g", "k"]);
+    }
 
     #[test]
     fn observed_targets_lists_every_specifier() {

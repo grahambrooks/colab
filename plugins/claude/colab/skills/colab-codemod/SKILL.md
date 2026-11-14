@@ -386,8 +386,8 @@ callers), use `--bisect`.
 
 **Exit 11 means "conflicts, nothing written".** Before writing, colab
 checks each change: a `symbol` rename onto a name the file already uses,
-a Go/Python template that writes `fmt.` or `pathlib.` with nothing
-importing it, and, with `--verify-lsp`, any error the file's language
+a Go, Python or JS template that writes `fmt.`, `pathlib.` or `lodash.`
+with nothing importing it, and, with `--verify-lsp`, any error the file's language
 server reports after the change but not before. Each is listed under
 `conflicts` (`conflict:` lines in human output). Fix the rule (add
 `requires import "fmt"`, choose another name, scope with `in`), and

@@ -158,7 +158,6 @@ whichever milestone touches the same code.
 | Item | From |
 | ---- | ---- |
 | A `colab.mv` MCP tool | M25 |
-| Qualifier conflict checks (`imported_names`) for the ten source backends other than Go and Python | M27 |
 | Attribute a `--verify-lsp` error to the rule that caused it | M27 |
 | Type constraints in `where` (via the server's hover) | M26 |
 | LSP `WorkDoneProgress` for long previews / applies | M13.5 |

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use colab_core::find::Located;
 use colab_core::{AstInput, Error, Operation, Result, SyntaxTree};
-use colab_rewrite::pattern::{PatternAction, PatternLanguage, PatternRule};
+use colab_rewrite::pattern::{PatternAction, PatternLanguage, PatternRule, Qualifiers};
 
 /// `$` is a legal JavaScript identifier character, so metavariables parse
 /// as identifiers unchanged. Expressions and statements parse on their own;
@@ -39,6 +39,62 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
     })
 }
 
+/// A rewrite that introduces `x.` with no import or `require` binding `x`
+/// is a conflict (see [`Qualifiers`]). Globals need no import; a name the
+/// file already uses anywhere (a local, a parameter) counts as known.
+const QUALIFIERS: Qualifiers = Qualifiers {
+    kind: "member_expression",
+    field: "object",
+    imported: crate::imports::imported_names,
+    builtin: &[
+        "Array",
+        "Atomics",
+        "BigInt",
+        "Boolean",
+        "Buffer",
+        "DataView",
+        "Date",
+        "Error",
+        "Function",
+        "Intl",
+        "JSON",
+        "Map",
+        "Math",
+        "Number",
+        "Object",
+        "Promise",
+        "Proxy",
+        "Reflect",
+        "RegExp",
+        "Set",
+        "String",
+        "Symbol",
+        "URL",
+        "URLSearchParams",
+        "WeakMap",
+        "WeakSet",
+        "console",
+        "crypto",
+        "document",
+        "exports",
+        "fetch",
+        "global",
+        "globalThis",
+        "localStorage",
+        "location",
+        "module",
+        "navigator",
+        "performance",
+        "process",
+        "require",
+        "self",
+        "sessionStorage",
+        "super",
+        "this",
+        "window",
+    ],
+};
+
 #[derive(Debug)]
 pub struct PatternOp(pub PatternRule);
 
@@ -49,7 +105,7 @@ impl PatternOp {
         constraints: &[colab_core::Constraint],
     ) -> Result<Self> {
         PatternRule::compile(&language(), pattern, action, constraints)
-            .map(Self)
+            .map(|rule| Self(rule.with_qualifiers(QUALIFIERS)))
             .map_err(|e| Error::UnsupportedOperation(format!("js::pattern: {e}")))
     }
 }
