@@ -68,10 +68,15 @@ where
             .filter(|&&(index, _)| rules[index].is_file_relevant(path))
             .map(|&(index, target)| (index, target.is_some()))
             .collect();
+        // A file the rule changed is not one it skipped. (Read alone on the
+        // original, a rule that builds on an earlier rule's output would
+        // look as if it had.)
+        let changed_here = report.fired.get(path);
         let live_here: Vec<usize> = live
             .iter()
             .copied()
             .filter(|&index| rules[index].is_file_relevant(path))
+            .filter(|index| !changed_here.is_some_and(|f| f.contains(index)))
             .collect();
         if relevant.is_empty() && live_here.is_empty() {
             continue;
@@ -226,6 +231,21 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_file_a_live_rule_changed_is_not_probed() {
+        // A rule that builds on an earlier rule's output reads, alone on
+        // the original, as if it skipped the file it changed.
+        let rules: Vec<Box<dyn Operation>> = vec![Box::new(LineImport("a/b"))];
+        let mut report = RunReport::with_rules(rules.iter().map(|r| r.to_string()));
+        scanned(&mut report, "one.fake");
+        report.rules[0].files_matched = 1;
+        report.fired.insert("one.fake".into(), vec![0]);
+        probe(&rules, &mut report, |_| {
+            panic!("a file the rule changed is not read")
+        });
+        assert!(report.rules[0].unchanged.is_none());
     }
 
     #[test]

@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then **M10.6**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`) and M29 (the follow-up sweep) have shipped.
+**M20's install step**, now that the stable gate has passed, then **M30** (rule expressiveness), **M31** (CI fit), **M10.6**, **M32**–**M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`) and M29 (the follow-up sweep) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -41,7 +41,13 @@ what it lets that dogfooding cover.
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
 | 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
-| 2 | M10.6 | Parse-once batching: performance, for the largest repositories. |
+| 2 | M30 Rule expressiveness | The commonest reasons an agent leaves colab for `sed` (survey of 2026-11-14). |
+| 3 | M31 CI fit | Gating a repository on its packs: tests, baselines, data tables, rule selection, Windows. |
+| 4 | M10.6 | Parse-once batching: performance, for the largest repositories. |
+| 5 | M32 Type and name constraints, delegated | Same-named APIs from different libraries; research spike first. |
+| 6 | M33 Fleet: many repositories, shared packs | Migrations across repositories; packs shared as git sources. |
+| 7 | M34 Symbol-addressed edits | One-off agent edits by symbol, not exact strings. |
+| 8 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
 
 ## Stable gate before M20
 
@@ -76,7 +82,9 @@ these hold:
 - `colab agent install` detects Claude Code / Cursor / Codex and wires
   skill + MCP server (+ optional hook).
 - Post-edit hook: run `colab fix --check` (M14 packs) on files the agent
-  just wrote; feed failures back.
+  just wrote; feed failures back. First in M20: Semgrep's Claude Code
+  plugin ships the same guardrail, and it makes colab run on every edit
+  instead of when the agent remembers it.
 - MCP resources + `llms-full.txt` generated from `docs/`, including the
   per-backend caveats.
 - ✅ Shipped 2026-11-14: `colab:ignore [names]` (after code: that line; on its own line: the line below; names are script names or `<lang>::<module>`) for find, refactor and check, by putting back what a rule changed on covered lines. Rules take `message "…"` and `severity error|warning|info`; `--check` fails only above `info`.
@@ -88,11 +96,139 @@ Wave D of the M29 follow-up sweep: decide before building.
 - Static Linux release binaries (musl via release-kit's
   `EXTRA_TARGETS`): changes what every release ships, so it waits for
   a go-ahead.
-- Type constraints in `where` via the server's hover: research spike
-  first; it is the first semantic constraint.
-- A remote pack registry: proposed for Non-goals, since packs are
-  distributed with the binary and colab is not published to package
-  registries.
+
+### M30 — Rule expressiveness
+
+The most frequent reasons an agent leaves colab for `sed` or hand edits,
+from the 2026-11-14 survey (ast-grep 0.51, GritQL, Comby, codemod.com,
+LibCST, Rector, Coccinelle, rust-analyzer SSR, IntelliJ SSR). All are
+template or constraint work on the existing pattern engine; none needs
+types.
+
+- **Transforms on captured values**, used in templates: case conversion
+  (`$N | snake`, `camel`, `pascal`, `kebab`, `upper`, `lower`), regex
+  replace and substring. Convention renames (`getFoo` → `foo`) are
+  impossible today. ast-grep `transform`, Grit functions, Comby.
+- **Composition and neighbour constraints** in `where`: `any` / `all` of
+  patterns (one rule for two shapes), `follows` / `precedes`, `nth`,
+  `field` (which child a match sits in), and `stopBy` for `inside` / `has`.
+  ast-grep-core implements most of it; constraints still only narrow.
+- **Deletes and rewrites that take their separator**: removing an
+  argument, list element or key also removes its comma or blank line, as
+  ast-grep's `expandStart` / `expandEnd` do. Today a deletion inside a
+  list is refused or leaves a dangling comma.
+- **Named sub-patterns** shared across rules and `where` clauses
+  (`pattern helper = '…'`, referenced as `inside helper`), so large packs
+  stop repeating constraints. ast-grep `utils`, Grit `pattern`.
+- **Rewriters on sub-captures**: apply rules to each element of a `$$$`
+  capture or a body and join the results (`$$$ARGS | rewrite(name) |
+  join(", ")`), for per-element migrations such as every option of an
+  object literal. ast-grep `rewriters`, Grit `some`. Each rewriter must be
+  idempotent on its own output; the corpus harness checks.
+
+Done when each has a corpus case, a `dsl.md` section, and a dogfood use.
+
+### M31 — CI fit
+
+What a team needs to gate a repository on its packs.
+
+- **`colab test`** for a repository's own packs: before / after fixtures
+  next to the pack, valid / invalid cases, blessable snapshots
+  (`COLAB_BLESS=1`), the idempotency re-run included. The machinery is the
+  corpus harness and MCP `colab.test_rule`. ast-grep `test`, Grit, LibCST.
+- **Findings new since a baseline**: `--baseline <ref>` reports only rule
+  hits not present at the ref, so a convention can be enforced on legacy
+  code without noise (`--changed-since` narrows files, not findings).
+  Semgrep `ci` diff-aware scans.
+- **Data tables**: `find --table` emits one row per hit, keyed by the
+  metavariable bindings, as CSV / NDJSON, with `--group-by $X` counts —
+  "how many call sites, which shapes" before a migration. OpenRewrite
+  data tables, Moderne `query_datatable`.
+- **Rule selection from the command line**: `--rule <name|regex>`,
+  `--off <name>`, `--severity <name>=<level>`, and a `url` per rule
+  carried into SARIF and GitHub annotations. ast-grep `scan`.
+- **A Windows build** in the release archives (no package managers; see
+  the dropped npm / PyPI packaging).
+- **A Renovate preset**: `postUpgradeTasks` that runs `colab fix`, so a
+  dependency bump and the code it breaks land in one PR; packs may name
+  the dependency range they apply to.
+
+### M32 — Type and name constraints, delegated
+
+The main correctness gap against OpenRewrite, rust-analyzer SSR,
+IntelliJ, Rector and LibCST: telling apart same-named APIs from
+different libraries. Was a decision waiting from M29.
+
+- `where $X type "io.Reader"` and `where $F resolves "pkg.Func"`,
+  answered by the language server (`textDocument/hover`, `definition`,
+  `typeDefinition`) through the kept daemon, for each match the syntactic
+  pattern already found. colab still computes nothing semantic.
+- A filter only: it narrows matches, so the prefilter stays sound and
+  `find` agrees with `refactor`.
+- No server, or one still indexing at the timeout, fails the rule
+  loudly; it never silently matches everything or nothing.
+- Starts with a research spike on latency (one hover per match) and on
+  how each server spells types; batching by file first.
+
+### M33 — Fleet: many repositories, shared packs
+
+Migrations across many repositories, kept thin: each repository is an
+ordinary colab run.
+
+- **Multi-repo runs**: a manifest (`colab fleet.toml`: repositories by
+  path or git URL, the script or packs), a canary repository first, then
+  the rest; per repository `refactor` / `fix`, a branch, and `gh pr
+  create`; PR state reported as JSON. Moderne `mod run` / `mod git`,
+  Sourcegraph Batch Changes, codemod.com campaigns. No hosted
+  coordinator.
+- **A shareable pack catalog over git**: `[[packs]] git = "<url>", tag =
+  "<tag>", path = "<pack>"` in `colab.toml`, fetched into a cache,
+  version-pinned, the pack's own `colab test` fixtures run before use.
+  Replaces the remote-registry question: packs are shared as git
+  sources, never published to a hosted registry.
+
+### M34 — Symbol-addressed edits
+
+For the one-off edits an agent makes that are not codemods, cheaper and
+safer than `Edit`'s exact-string match. Serena's symbolic tools.
+
+- `colab edit --symbol <name path> --in <file>` with `--replace-body`,
+  `--insert-before`, `--insert-after`, and MCP `colab.edit_symbol`. The
+  symbol is found by `documentSymbol` from the language server when one
+  runs, else by tree-sitter declarations; an ambiguous name path is an
+  error that lists the candidates.
+- Reported, previewed and conflict-checked like any colab run.
+
+### M35 — Rules that work across files in one pass
+
+Grit's `sequential` / `multifile` and OpenRewrite's scanning recipes let
+one script reason across files: collect facts everywhere, then edit with
+them. colab's invariant is that every rule acts on one file; this keeps
+the edit half of it and relaxes the reading half — **rules edit one file
+each; a scan phase may read many**.
+
+- **Scan phases**: `scan <lang>::pattern '<pattern>' as <name>` walks
+  every file first, read-only, and collects the bindings of each match
+  into a named set (with the file each came from). Later rules use it as
+  a narrowing constraint: `where $X in <name>`, `where $X not in <name>`.
+  Example: collect every exported Go function, then rename only the call
+  sites of those, in every file.
+- **Ordered passes**: `then { … }` blocks run after the previous block
+  has finished over every file, reading its output (kept in memory, as
+  `--split-pr --stacked` does), so rule B can act on what rule A wrote in
+  another file.
+- **Creating files**: `match … { create "<path>" '<template>' }`, made
+  through the git file-operation path (`FileOp::Create`), so undo and
+  `--verify` reverse it; a file that exists is a conflict.
+- **What stays**: every edit is still made by a per-file rule, so
+  conflicts, `colab:ignore`, attribution, idempotency (the corpus re-runs
+  the whole script) and `find` agreement hold. Facts are plain data;
+  nothing resolves names across files.
+- **Design first**: the scan phase changes the walk from one pass to
+  several, and `find` / `review` / `--split-pr` must report a phased run.
+  The milestone starts with that design and a corpus of the cases above,
+  and updates the "rules act on one file each" invariant in CLAUDE.md and
+  `architecture.md` when it ships.
 
 ### M10.6 — Parse-once-per-backend batching (deferred from M10)
 - Add `Operation::lang() -> &'static str` so the composer can
@@ -139,8 +275,8 @@ whichever milestone touches the same code.
   the LSP and the CLI.
 - Conflict resolution between simultaneous edits. Rules in one script are
   ordered and sequential; there is no "merge" semantic.
-- Plugin marketplace. Premature until the workspace + capability registry
-  have shipped and stabilised.
+- Plugin marketplace, or a hosted pack registry. Packs are shared as git
+  sources (M33); backends live in the workspace.
 - Dynamic plugin loading (`libloading` / WASM). No one has asked to ship an out-of-tree backend, adding one in the workspace is cheap, and the cross-backend contract tests rely on every backend being in it. Revisit only if external contributors ask.
 
 ---

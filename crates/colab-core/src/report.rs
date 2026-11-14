@@ -151,6 +151,9 @@ pub struct RunReport {
     /// The branches `refactor --split-pr` made, one per rule that changed
     /// something on its own.
     pub branches: Vec<Branch>,
+    /// Which rules changed each file, for the files in `scanned_sample`:
+    /// the probe for skipped matches leaves a rule's own files out.
+    pub fired: std::collections::BTreeMap<PathBuf, Vec<usize>>,
 }
 
 /// One branch made by `refactor --split-pr`: the base commit plus one
@@ -238,6 +241,12 @@ impl RunReport {
         self.files_scanned += 1;
         if self.scanned_sample.len() < SCANNED_SAMPLE_LIMIT {
             self.scanned_sample.push(change.path.clone());
+            if !change.rules_fired.is_empty() {
+                self.fired
+                    .entry(change.path.clone())
+                    .or_default()
+                    .extend(change.rules_fired.iter().copied());
+            }
         }
         self.bytes_before += change.before.len() as u64;
         self.bytes_after += change.after.len() as u64;
