@@ -20,6 +20,7 @@ mod markdown;
 mod pack_test;
 mod packs;
 mod review;
+mod table;
 
 use std::io::Write;
 use std::process::ExitCode;

@@ -216,7 +216,7 @@ match js::pattern 'console.log($$$ARGS)' { delete }
   file — if `find` shows matches that `refactor` left alone, the template
   is the problem.
 
-Search before you rewrite — it is read-only and cheap:
+Search before you rewrite — it is read-only and cheap (`--table csv --group-by '$M'` counts the shapes a metavariable takes, for planning):
 
 ```sh
 colab find -e "match go::pattern 'errors.Wrap(\$E, \$M)' { delete }" .

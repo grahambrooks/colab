@@ -108,7 +108,7 @@ What a team needs to gate a repository on its packs.
   hits not present at the ref, so a convention can be enforced on legacy
   code without noise (`--changed-since` narrows files, not findings).
   Semgrep `ci` diff-aware scans.
-- **Data tables**: `find --table` emits one row per hit, keyed by the
+- **Data tables** (shipped: `find --table csv|ndjson`, `--group-by`): `find --table` emits one row per hit, keyed by the
   metavariable bindings, as CSV / NDJSON, with `--group-by $X` counts —
   "how many call sites, which shapes" before a migration. OpenRewrite
   data tables, Moderne `query_datatable`.

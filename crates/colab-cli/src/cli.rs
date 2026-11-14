@@ -720,9 +720,21 @@ struct FindArgs {
     #[arg(long, value_enum, default_value_t = FindDetailArg::Concise)]
     detail: FindDetailArg,
 
-    /// List at most this many matches; the rest are counted.
-    #[arg(long = "max-results", value_name = "N", default_value_t = colab_core::find::DEFAULT_MAX_RESULTS)]
-    max_results: usize,
+    /// List at most this many matches; the rest are counted. Default 50,
+    /// or every match with `--table`.
+    #[arg(long = "max-results", value_name = "N")]
+    max_results: Option<usize>,
+
+    /// Every match as a row: `path,line,column,rule,id`, a column per
+    /// metavariable (`$X`), and the match `text`. `csv` or `ndjson`.
+    #[arg(long, value_enum, value_name = "FORMAT")]
+    table: Option<crate::table::TableFormat>,
+
+    /// With `--table`: one row per distinct value of these columns
+    /// (`$X`, `rule`, `id`, `path`), with a `count`, most common first.
+    /// Repeatable.
+    #[arg(long = "group-by", value_name = "COLUMN", requires = "table")]
+    group_by: Vec<String>,
 
     /// Whitelist files via gitignore-syntax glob. Repeatable.
     #[arg(long = "include", value_name = "GLOB")]
@@ -2335,7 +2347,12 @@ fn run_find(args: FindArgs) -> Result<i32> {
         FindDetailArg::Concise => FindDetail::Concise,
         FindDetailArg::Detailed => FindDetail::Detailed,
     };
-    let mut report = FindReport::new(rules, args.max_results, detail);
+    let max_results = args.max_results.unwrap_or(if args.table.is_some() {
+        usize::MAX
+    } else {
+        colab_core::find::DEFAULT_MAX_RESULTS
+    });
+    let mut report = FindReport::new(rules, max_results, detail);
     refactoring.annotate(&mut report.run);
     report.script = refactoring.name.clone();
 
@@ -2360,6 +2377,26 @@ fn run_find(args: FindArgs) -> Result<i32> {
         report.run.record_walk(outcome);
     }
     colab_core::near_miss::probe_disk(rules, &mut report.run);
+
+    if let Some(format) = args.table {
+        let mut table = crate::table::hits(&report);
+        if !args.group_by.is_empty() {
+            table = crate::table::group(&table, &args.group_by)?;
+        }
+        let mut out = io::stdout().lock();
+        match format {
+            crate::table::TableFormat::Csv => crate::table::write_csv(&mut out, &table),
+            crate::table::TableFormat::Ndjson => crate::table::write_ndjson(&mut out, &table),
+        }
+        .map_err(io_to_error)?;
+        if report.truncated() > 0 {
+            log::warn!(
+                "{} more match(es) not in the table (--max-results {max_results})",
+                report.truncated()
+            );
+        }
+        return Ok(0);
+    }
 
     match args.format {
         FindFormat::Json => {

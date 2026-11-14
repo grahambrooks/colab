@@ -515,6 +515,33 @@ cmd/main.go:22:15: errors.Wrap(err, "startup")
  "rules":[{"i":0,"rule":"go::pattern 'errors.Wrap($E, $M)' -> delete","files":2,"matches":2}]}
 ```
 
+#### Data tables: --table and --group-by
+
+Before a migration, count the call sites and their shapes. `--table`
+prints every match as a row (all of them: `--max-results` caps it only
+when given), and `--group-by` counts distinct values instead:
+
+```sh
+colab find -e "match rust::pattern 'Error::\$K(format!(\$\$\$A))' { delete }" \
+    --table csv --group-by '$K' crates
+```
+
+```text
+$K,count
+Config,93
+UnsupportedOperation,41
+```
+
+- Columns: `path`, `line`, `column`, `rule` (its number), `id` (its `id`,
+  if any), one per metavariable any match binds (`$K`, `$A`, …; empty
+  where a match does not bind it), and the match `text`.
+- `--table csv` quotes a cell holding a comma, quote or line break
+  (RFC 4180); `--table ndjson` is an object per row, with `line`,
+  `column`, `rule` and `count` as numbers.
+- `--group-by <column>` repeats for a key of several columns
+  (`--group-by rule --group-by '$K'`). Rows come most common first. An
+  unknown column is an error listing the ones there are.
+
 ### `colab rename`
 
 Scope-aware rename, **delegated to the language's own server** and
