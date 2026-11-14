@@ -31,9 +31,6 @@ pub struct SectionEdit {
     /// `"New < Sibling"`: an insert goes just before `Sibling`, at its
     /// level, instead of at the end of the parent.
     before: Option<String>,
-    /// The longest word of the heading text, which survives inline markup
-    /// and so must appear in any file whose section this rule changes.
-    literal: Option<String>,
     mode: Mode,
 }
 
@@ -75,28 +72,20 @@ impl SectionEdit {
                 "markdown::section \"{address} < …\": `< Sibling` places a new section, so it goes with `set` or `insert` only"
             )));
         }
-        let literal = if let Some(slug) = address.strip_prefix('#') {
+        if let Some(slug) = address.strip_prefix('#') {
             if slug.is_empty() {
                 return Err(Error::Config(
                     "markdown::section \"#\": an anchor needs a name".into(),
                 ));
             }
-            None
-        } else {
-            let segments = outline::segments(&address);
-            let Some(last) = segments.last() else {
-                return Err(Error::Config(
-                    "markdown::section: the address names no heading".into(),
-                ));
-            };
-            last.split_whitespace()
-                .max_by_key(|w| w.len())
-                .map(str::to_string)
-        };
+        } else if outline::segments(&address).is_empty() {
+            return Err(Error::Config(
+                "markdown::section: the address names no heading".into(),
+            ));
+        }
         Ok(Self {
             address,
             before,
-            literal,
             mode,
         })
     }
@@ -276,12 +265,11 @@ impl Operation for SectionEdit {
         }
     }
 
-    /// `set` and `insert` act when the section is missing, so they have none.
+    /// None: `set` and `insert` act when the section is missing, and a
+    /// heading is matched on the text a reader sees, of which no word is
+    /// sure to appear in the file as written (`` Use `fix`, then ``).
     fn prefilter(&self) -> Option<&str> {
-        match self.mode {
-            Mode::Set(_) | Mode::Insert(_) => None,
-            _ => self.literal.as_deref(),
-        }
+        None
     }
 
     fn near_miss_target(&self) -> Option<&str> {
@@ -398,7 +386,8 @@ mod tests {
         assert_eq!(op.apply(doc), doc);
         assert!(op.why_unchanged(doc).unwrap().contains("ambiguous"));
         assert_ne!(SectionEdit::set("B > X", "new").unwrap().apply(doc), doc);
-        assert_eq!(SectionEdit::delete("X").unwrap().prefilter(), Some("X"));
+        // Headings are matched as a reader sees them: no prefilter.
+        assert_eq!(SectionEdit::delete("X").unwrap().prefilter(), None);
         // `set` on a missing section adds it.
         let added = SectionEdit::set("B > Y", "three").unwrap().apply(doc);
         assert!(added.ends_with("## X\n\ntwo\n\n## Y\n\nthree\n"), "{added}");

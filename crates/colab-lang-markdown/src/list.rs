@@ -298,16 +298,10 @@ impl Operation for ItemEdit {
         }
     }
 
-    /// `ensure` acts when the item is missing.
+    /// None: an item is named by the text a reader sees, and no word of
+    /// it is sure to appear in the file as written (see `RowEdit`).
     fn prefilter(&self) -> Option<&str> {
-        match self.mode {
-            Mode::Ensure => None,
-            _ => self
-                .text
-                .split_whitespace()
-                .max_by_key(|w| w.len())
-                .filter(|w| !w.contains(['*', '`', '[', ']'])),
-        }
+        None
     }
 
     fn why_unchanged(&self, source: &str) -> Option<String> {

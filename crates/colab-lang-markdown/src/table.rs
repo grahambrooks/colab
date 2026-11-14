@@ -49,7 +49,6 @@ pub struct RowEdit {
     before: Option<Vec<(String, String)>>,
     /// The longest selector value, which must appear in a file whose row
     /// this rule finds.
-    literal: Option<String>,
     mode: Mode,
 }
 
@@ -111,17 +110,6 @@ impl RowEdit {
                 "an empty selector `[]` needs a whole row (`| a | b |`) as the value",
             ));
         }
-        // Cells are compared as a reader sees them, so the literal is a
-        // word of that text: markup around it may differ from the file's.
-        let literal = selector
-            .iter()
-            .flat_map(|(_, v)| {
-                outline::plain_text(v)
-                    .split_whitespace()
-                    .map(str::to_string)
-                    .collect::<Vec<_>>()
-            })
-            .max_by_key(String::len);
         Ok(Self {
             target: target.trim().to_string(),
             section,
@@ -129,7 +117,6 @@ impl RowEdit {
             top,
             selector,
             before,
-            literal,
             mode: mode(value),
         })
     }
@@ -549,11 +536,11 @@ impl Operation for RowEdit {
     }
 
     /// `set` and `insert` act when the row is missing.
+    // None: cells are compared as a reader sees them, and no word of that
+    // text is sure to appear in the file (`PQ, RS` is `` `PQ`, `RS` `` there).
+    // Markdown parses cheaply.
     fn prefilter(&self) -> Option<&str> {
-        match self.mode {
-            Mode::Delete => self.literal.as_deref(),
-            _ => None,
-        }
+        None
     }
 
     fn why_unchanged(&self, source: &str) -> Option<String> {
@@ -570,6 +557,18 @@ mod tests {
     use super::*;
 
     const LOG: &str = "# Log\n\n| Date | Task | Outcome |\n| ---- | ---- | ------- |\n| 2026-11-13 | a | open |\n| 2026-11-12 | b | done |\n\n## Later\n\n| Date | X |\n| - | - |\n| 2026-11-13 | sub |\n";
+
+    #[test]
+    fn a_selector_beside_markup_still_reaches_the_file() {
+        // `PQ, RS` as a reader sees it is `` `PQ`, `RS` `` in the file: no
+        // word of the selector need appear there, so nothing may be
+        // prefiltered on it (it was, and the row was silently skipped).
+        let src = "# T\n\n| Item | N |\n| - | - |\n| `PQ`, `RS` | 4 |\n| other | 5 |\n";
+        let op = RowEdit::delete("T[Item=PQ, RS]").unwrap();
+        let out = op.apply(src);
+        assert_eq!(out, "# T\n\n| Item | N |\n| - | - |\n| other | 5 |\n");
+        assert!(op.prefilter().is_none_or(|p| src.contains(p)));
+    }
 
     #[test]
     fn set_changes_only_the_named_cells_of_one_row() {
@@ -609,9 +608,9 @@ mod tests {
         let out = op.apply(LOG);
         assert!(out.contains("|  | `raw` strings | done |"), "{out}");
         // Matched by the text a reader sees, so a delete without the
-        // backticks finds it, and the prefilter does not skip the file.
+        // backticks finds it; with no prefilter, no file is skipped.
         let delete = RowEdit::delete("Log[Task=raw strings]").unwrap();
-        assert_eq!(delete.prefilter(), Some("strings"));
+        assert_eq!(delete.prefilter(), None);
         assert!(!delete.apply(&out).contains("raw"));
     }
 
