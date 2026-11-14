@@ -21,7 +21,7 @@ millions of lines — when you want to:
 
 ## Where things stand (2026-11-13)
 
-M1–M13.5 (but M10.6), M14, M17–M19, M22–M28 and M20's non-installing parts have shipped
+M1–M13.5 (but M10.6), M14, M17–M19, M21, M22–M28 and M20's non-installing parts have shipped
 ([details](completed-milestones.md)). colab has 12 source backends and
 3 config backends, structural patterns with `where` constraints, delegated
 rename, move, code actions, references and safe delete through the
@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20 (its install step once the gate passes)**, then M21, M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite) and M14 (`colab.toml` + `colab fix`) have shipped.
+**M20 (its install step once the gate passes)**, then M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite) M14 (`colab.toml` + `colab fix`) and M21 (CI formats, npm / PyPI packages) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -41,8 +41,7 @@ what it lets that dogfooding cover.
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
 | 1 | M20 Agent install & guardrails | Its parts that install nothing (`// colab:ignore`, rule `message` / `severity`) go first; the install itself waits for the gate's second criterion. |
-| 2 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
-| 3 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
+| 2 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
 
 ## Stable gate before M20
 
@@ -82,11 +81,6 @@ these hold:
 - MCP resources + `llms-full.txt` generated from `docs/`, including the
   per-backend caveats.
 - ✅ Shipped 2026-11-14: `colab:ignore [names]` (after code: that line; on its own line: the line below; names are script names or `<lang>::<module>`) for find, refactor and check, by putting back what a rule changed on covered lines. Rules take `message "…"` and `severity error|warning|info`; `--check` fails only above `info`.
-
-### M21 — Distribution & CI formats
-- npm (`npx colab`) and PyPI (`uvx colab`) wrappers around the release
-  binaries, for sandboxes with no Rust toolchain.
-- `--format sarif` and `--format github` for `--check` annotations.
 
 ### M16 — Diff review aggregation
 - Rule attribution in `--format json` / `ndjson` has shipped (`rules[]`,
@@ -172,6 +166,9 @@ whichever milestone touches the same code.
 | `markdown::item` placement: insert a bullet before or after a given item | M14 dogfooding |
 | Report the files a rule skipped (`why_unchanged`) even when it changed others | M14 dogfooding |
 | An eval task for `colab fix` | M14 |
+| Publish `colab-codemod` to npm and PyPI: set `PUBLISH_NPM` / `PUBLISH_PYPI`, the `NPM_TOKEN` secret and PyPI trusted publishing | M21 |
+| One call rewriter in `colab_rewrite` for the seven backends whose `calls.rs` differ only in the call node's kind (C, C++, C#, Go, JS, Python, Rust); RustRover's duplicate-code inspection finds them | RustRover inspections |
+| `markdown::text` inside a code fence (a line in a README `sh` block needed a hand edit) | M21 dogfooding |
 
 ## Unscheduled
 
