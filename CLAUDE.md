@@ -46,7 +46,7 @@ cargo run -p colab-cli -- explain --script <s>                   # parsed IR as 
 cargo run -p colab-cli -- links docs/                            # broken Markdown links (exit 10 if any)
 cargo run -p colab-cli -- undo --from <dir>                      # restore a run made with --backup <dir>
 cargo run -p colab-cli -- lsp-daemon --stop                      # stop every kept language server
-cargo run -p colab-cli -- server                                 # LSP for .codemod files: diagnostics, hover, completion, code actions
+cargo run -p colab-cli -- server                                 # LSP for .codemod files: diagnostics, hover, completion, code actions, go to include
 cargo run -p colab-cli -- mcp                                    # MCP server on stdio (newline-delimited JSON-RPC)
 ```
 

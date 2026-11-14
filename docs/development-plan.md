@@ -161,7 +161,6 @@ whichever milestone touches the same code.
 | Attribute a `--verify-lsp` error to the rule that caused it | M27 |
 | Type constraints in `where` (via the server's hover) | M26 |
 | LSP `WorkDoneProgress` for long previews / applies | M13.5 |
-| Go-to-definition for `include` in `.codemod` files | M19 |
 | Remote pack registry and publishing | M11 |
 | Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |
 | An eval task for `colab fix` | M14 |

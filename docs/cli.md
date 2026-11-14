@@ -867,7 +867,8 @@ Start the colab Language Server on stdio, for editing `.codemod` files:
   module lacks, a `pattern` that is not valid code — is underlined where
   it is written, with the exit code (2 / 3) in the diagnostic `code`. A
   syntax error is reported alone, at its token; `include` problems land
-  on the first `include`.
+  on the first `include`. A rule that compiles but would rewrite its own
+  output on every run is underlined as a warning.
 - **Hover.** On `<lang>::<module>`: the module's description and every
   action it supports. On an action keyword: what it does *for that
   rule's module* — or that the module has no such action.
@@ -878,6 +879,9 @@ Start the colab Language Server on stdio, for editing `.codemod` files:
   editor shows its usual refactor preview before anything is written.
   The edit is computed on `codeAction/resolve`; clients without lazy
   resolution get it up front.
+- **Go to definition** on an `include "<path>"` opens that script,
+  resolved as the compiler resolves it (against the including file's
+  directory); nothing happens when the file does not exist.
 - **Completion** for namespaces, modules, and actions. Sourced from
   the same registry as `colab list-rules`, so anything new the
   binary advertises is offered immediately.

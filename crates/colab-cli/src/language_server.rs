@@ -83,6 +83,47 @@ struct Backend {
     lazy_edits: AtomicBool,
 }
 
+/// The path of the `include "<path>"` (any quoting the DSL takes) whose
+/// keyword or string holds `offset`, if any.
+fn include_at(text: &str, offset: usize) -> Option<String> {
+    let mut from = 0;
+    while let Some(at) = text[from..].find("include") {
+        let start = from + at;
+        from = start + "include".len();
+        // A whole word, at the start of an item.
+        if text[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == ':')
+        {
+            continue;
+        }
+        let rest = &text[from..];
+        let gap = rest.len() - rest.trim_start().len();
+        let quoted = &rest[gap..];
+        let (open, close) = if quoted.starts_with("r##\"") {
+            ("r##\"", "\"##")
+        } else if quoted.starts_with("r#\"") {
+            ("r#\"", "\"#")
+        } else if quoted.starts_with('"') {
+            ("\"", "\"")
+        } else if quoted.starts_with('\'') {
+            ("'", "'")
+        } else {
+            continue;
+        };
+        let body = &quoted[open.len()..];
+        let Some(len) = body.find(close) else {
+            continue;
+        };
+        let end = from + gap + open.len() + len + close.len();
+        if (start..=end).contains(&offset) {
+            return Some(body[..len].to_string());
+        }
+    }
+    None
+}
+
 fn diagnostic(range: Range, err: &Error) -> Diagnostic {
     Diagnostic {
         range,
@@ -226,6 +267,7 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 code_action_provider: Some(CodeActionProviderCapability::Options(
                     CodeActionOptions {
                         code_action_kinds: Some(vec![CodeActionKind::REFACTOR_REWRITE]),
@@ -294,6 +336,34 @@ impl LanguageServer for Backend {
         Ok(Some(CompletionResponse::Array(
             self.completions_for(prefix),
         )))
+    }
+
+    /// `include "<path>"` under the cursor goes to that script, resolved
+    /// as the compiler resolves it: against the including file's directory.
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> LspResult<Option<GotoDefinitionResponse>> {
+        let position = params.text_document_position_params;
+        let uri = position.text_document.uri;
+        if !is_codemod_uri(&uri) {
+            return Ok(None);
+        }
+        let docs = self.documents.lock().await;
+        let Some(text) = docs.get(&uri) else {
+            return Ok(None);
+        };
+        let offset = offset_at(text, position.position);
+        let (Some(target), Ok(here)) = (include_at(text, offset), uri.to_file_path()) else {
+            return Ok(None);
+        };
+        let path = here.parent().unwrap_or(Path::new(".")).join(target);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        Ok(Url::from_file_path(&path)
+            .ok()
+            .map(|target| GotoDefinitionResponse::Scalar(Location::new(target, Range::default()))))
     }
 
     async fn hover(&self, params: HoverParams) -> LspResult<Option<Hover>> {
@@ -835,6 +905,64 @@ mod tests {
 
     fn registry() -> BackendRegistry {
         colab_backends::registry()
+    }
+
+    #[test]
+    fn include_at_finds_the_path_under_the_cursor() {
+        let text = "refactor \"r\" {\n    include \"packs/a.codemod\"\n    match go::include \"x\" { delete }\n}\n";
+        let at = text.find("packs").unwrap();
+        assert_eq!(include_at(text, at).as_deref(), Some("packs/a.codemod"));
+        assert_eq!(
+            include_at(text, text.find("include").unwrap()).as_deref(),
+            Some("packs/a.codemod")
+        );
+        // `c::include` is a module, not the directive.
+        assert_eq!(
+            include_at(text, text.find("go::include").unwrap() + 5),
+            None
+        );
+        assert_eq!(include_at(text, text.find("match").unwrap()), None);
+        assert_eq!(
+            include_at("include r#\"b.codemod\"#", 12).as_deref(),
+            Some("b.codemod")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_include_goes_to_the_included_script() {
+        let dir = std::env::temp_dir().join(format!("colab-lsp-def-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("packs")).unwrap();
+        std::fs::write(dir.join("packs/a.codemod"), "refactor \"a\" {}\n").unwrap();
+        let main = dir.join("main.codemod");
+        let text = "refactor \"m\" {\n    include \"packs/a.codemod\"\n    include \"missing.codemod\"\n}\n";
+        std::fs::write(&main, text).unwrap();
+        let (service, _) = LspService::new(|client| Backend::new(client, registry()));
+        let backend = service.inner();
+        let uri = Url::from_file_path(&main).unwrap();
+        backend
+            .documents
+            .lock()
+            .await
+            .insert(uri.clone(), text.into());
+        let at = |line, character| GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position { line, character },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        let found = backend.goto_definition(at(1, 16)).await.unwrap();
+        let Some(GotoDefinitionResponse::Scalar(location)) = found else {
+            panic!("no definition: {found:?}");
+        };
+        assert!(
+            location.uri.path().ends_with("/packs/a.codemod"),
+            "{location:?}"
+        );
+        // A file that does not exist goes nowhere.
+        assert!(backend.goto_definition(at(2, 16)).await.unwrap().is_none());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[tokio::test]
