@@ -63,6 +63,4 @@ not installed, and listed as skipped in the results.
 - **Work the model gives `Edit` for free.** In `extract-function` the
   model assumes the agent writes the extracted function correctly by
   hand; colab has the language server compute it. On a one-site change
-  the bytes are about equal (−3%), and colab is slower (0.6×): each of its
-  three commands starts rust-analyzer afresh, 10 s in all. A long-lived
-  server session would remove most of that.
+  the bytes are about equal (−3%), and colab was slower (0.7×) while each of its three commands started rust-analyzer afresh, 10 s in all; with `COLAB_KEEP_SERVER=1` the server starts once (4.6 s), and the task is 0.9×.

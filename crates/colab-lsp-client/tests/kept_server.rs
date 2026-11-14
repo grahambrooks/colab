@@ -1,0 +1,90 @@
+//! `COLAB_KEEP_SERVER=1`: commands in a row share one server through
+//! `colab lsp-daemon`, and each still sees the files as they are on disk.
+//! Its own test binary, since it sets the variable for the process.
+
+#![cfg(unix)]
+
+use std::path::Path;
+use std::time::Duration;
+
+use colab_lsp_client::{RenameRequest, ServerCommand, rename};
+
+fn fake_server() -> ServerCommand {
+    let exe = std::env::current_exe().unwrap();
+    let dir = exe.parent().unwrap().parent().unwrap().join("examples");
+    ServerCommand {
+        program: dir
+            .join(format!("fake_lsp{}", std::env::consts::EXE_SUFFIX))
+            .to_string_lossy()
+            .into_owned(),
+        args: Vec::new(),
+    }
+}
+
+fn request(root: &Path, offset: usize, to: &str) -> RenameRequest {
+    RenameRequest {
+        root: root.to_path_buf(),
+        file: root.join("a.rs"),
+        offset,
+        new_name: to.into(),
+        timeout: Duration::from_secs(20),
+        settle: Duration::from_millis(100),
+        file_operations: false,
+    }
+}
+
+#[test]
+fn a_kept_server_serves_commands_in_a_row_from_disk() {
+    let root = std::env::temp_dir().join(format!("colab-kept-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.rs"), "fn old() {}\nfn main() { old(); }\n").unwrap();
+    std::fs::write(root.join("b.rs"), "use crate::old;\n").unwrap();
+    let root = root.canonicalize().unwrap();
+    let server = fake_server();
+
+    // The daemon this process's commands will find, run in a thread
+    // (the test binary cannot be `colab lsp-daemon`).
+    let socket = colab_lsp_client::daemon::socket_for(&server.program, &server.args, &root);
+    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&socket);
+    let (program, args, root2, socket2) = (
+        server.program.clone(),
+        server.args.clone(),
+        root.clone(),
+        socket.clone(),
+    );
+    let daemon = std::thread::spawn(move || {
+        colab_lsp_client::daemon::serve(&program, &args, &root2, &socket2, Duration::from_secs(60))
+    });
+    while !socket.exists() {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // SAFETY: this binary has one test, so nothing reads the environment
+    // concurrently.
+    unsafe { std::env::set_var("COLAB_KEEP_SERVER", "1") };
+
+    // First command: rename `old`, and write the result as colab would.
+    let first = rename(&server, &request(&root, 3, "middle")).unwrap();
+    assert_eq!(first.changes.edits.len(), 2);
+    for edit in &first.changes.edits {
+        std::fs::write(&edit.path, &edit.after).unwrap();
+    }
+    // Second command, same server: it must see `middle`, from disk, not
+    // the `old` the first command had open.
+    let second = rename(&server, &request(&root, 3, "newest")).unwrap();
+    let a = second
+        .changes
+        .edits
+        .iter()
+        .find(|e| e.path.ends_with("a.rs"))
+        .expect("a.rs renamed");
+    assert_eq!(a.before, "fn middle() {}\nfn main() { middle(); }\n");
+    assert_eq!(a.after, "fn newest() {}\nfn main() { newest(); }\n");
+    assert_eq!(second.old_name.as_deref(), Some("middle"));
+
+    colab_lsp_client::daemon::stop(&socket).unwrap();
+    daemon.join().unwrap().unwrap();
+    assert!(!socket.exists(), "the socket goes with the daemon");
+    let _ = std::fs::remove_dir_all(&root);
+}

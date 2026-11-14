@@ -1,19 +1,35 @@
 //! LSP base protocol: `Content-Length`-framed JSON-RPC over a child's
-//! stdio, with a reader thread so every wait can time out.
+//! stdio, or over a Unix socket to a `colab lsp-daemon` holding one, with
+//! a reader thread so every wait can time out.
 
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-/// A running language server.
+/// A running language server, or the daemon in front of one.
 pub struct Transport {
-    child: Child,
-    stdin: ChildStdin,
+    /// The server process, when this transport started it.
+    child: Option<Child>,
+    writer: Box<dyn Write + Send>,
     incoming: Receiver<Value>,
+}
+
+/// Read frames from `reader` on a thread, into a channel.
+fn reader_thread<R: Read + Send + 'static>(reader: R) -> Receiver<Value> {
+    let (tx, incoming) = mpsc::channel();
+    thread::spawn(move || {
+        let mut reader = BufReader::new(reader);
+        while let Some(message) = read_frame(&mut reader) {
+            if tx.send(message).is_err() {
+                break;
+            }
+        }
+    });
+    incoming
 }
 
 impl Transport {
@@ -29,26 +45,26 @@ impl Transport {
             .spawn()?;
         let stdin = child.stdin.take().expect("stdin was piped");
         let stdout = child.stdout.take().expect("stdout was piped");
-        let (tx, incoming) = mpsc::channel();
-        thread::spawn(move || {
-            let mut reader = BufReader::new(stdout);
-            while let Some(message) = read_frame(&mut reader) {
-                if tx.send(message).is_err() {
-                    break;
-                }
-            }
-        });
         Ok(Self {
-            child,
-            stdin,
-            incoming,
+            child: Some(child),
+            writer: Box::new(stdin),
+            incoming: reader_thread(stdout),
+        })
+    }
+
+    /// Talk over a connected socket (a `colab lsp-daemon`).
+    #[cfg(unix)]
+    pub fn over(stream: std::os::unix::net::UnixStream) -> std::io::Result<Self> {
+        let reader = stream.try_clone()?;
+        Ok(Self {
+            child: None,
+            writer: Box::new(stream),
+            incoming: reader_thread(reader),
         })
     }
 
     pub fn send(&mut self, message: &Value) -> std::io::Result<()> {
-        let body = message.to_string();
-        write!(self.stdin, "Content-Length: {}\r\n\r\n{}", body.len(), body)?;
-        self.stdin.flush()
+        write_frame(&mut self.writer, message)
     }
 
     /// The next message, or `None` if `deadline` passes or the server
@@ -73,25 +89,38 @@ pub enum Closed {
     Exited,
 }
 
+/// Write one framed message.
+pub(crate) fn write_frame<W: Write + ?Sized>(
+    writer: &mut W,
+    message: &Value,
+) -> std::io::Result<()> {
+    let body = message.to_string();
+    write!(writer, "Content-Length: {}\r\n\r\n{}", body.len(), body)?;
+    writer.flush()
+}
+
 impl Drop for Transport {
     fn drop(&mut self) {
+        let Some(child) = self.child.as_mut() else {
+            return;
+        };
         // `shutdown`/`exit` are sent by the session; this is the backstop
         // for a server that ignores them or a session that bailed early.
         let deadline = Instant::now() + Duration::from_millis(500);
         while Instant::now() < deadline {
-            if let Ok(Some(_)) = self.child.try_wait() {
+            if let Ok(Some(_)) = child.try_wait() {
                 return;
             }
             thread::sleep(Duration::from_millis(20));
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
 /// Read one framed message. `None` at end of stream or on a malformed
 /// frame (a server that writes junk to stdout is not one we can talk to).
-fn read_frame<R: BufRead>(reader: &mut R) -> Option<Value> {
+pub(crate) fn read_frame<R: BufRead>(reader: &mut R) -> Option<Value> {
     let mut length: Option<usize> = None;
     loop {
         let mut line = String::new();

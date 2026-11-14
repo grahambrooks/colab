@@ -372,6 +372,11 @@ fn run_task(dir: &Path, bin_dir: &Path) -> Result<Outcome, String> {
             }
         }
     }
+    // Stop any server a task kept running (`COLAB_KEEP_SERVER=1`).
+    let _ = Command::new(bin_dir.join("colab"))
+        .args(["lsp-daemon", "--stop", "--root"])
+        .arg(&work)
+        .output();
     let _ = fs::remove_dir_all(&work);
     if !wrong.is_empty() {
         return Err(format!("{name}: {}", wrong.join("; ")));

@@ -20,6 +20,8 @@
 //! must stay free of `tree-sitter`.
 
 pub mod actions;
+#[cfg(unix)]
+pub mod daemon;
 pub mod diagnostics;
 pub mod edit;
 pub mod session;

@@ -57,11 +57,7 @@ impl Session {
         timeout: Duration,
         file_operations: bool,
     ) -> Result<Self> {
-        let transport = Transport::spawn(program, args, root).map_err(|e| {
-            Error::Config(format!(
-                "could not start language server `{program}`: {e}. Is it installed and on PATH? (pass --lsp to choose another)"
-            ))
-        })?;
+        let transport = Self::transport(program, args, root, timeout)?;
         let mut session = Self {
             transport,
             name: program.to_string(),
@@ -133,6 +129,33 @@ impl Session {
         session.capabilities = result.get("capabilities").cloned().unwrap_or(Value::Null);
         session.notify("initialized", json!({}))?;
         Ok(session)
+    }
+
+    /// The server's own process, or, with `COLAB_KEEP_SERVER=1`, a
+    /// connection to the `colab lsp-daemon` that keeps one running.
+    fn transport(
+        program: &str,
+        args: &[String],
+        root: &Path,
+        timeout: Duration,
+    ) -> Result<Transport> {
+        #[cfg(unix)]
+        if crate::daemon::enabled() {
+            let exe = std::env::current_exe()
+                .map_err(|e| Error::Config(format!("cannot find colab itself: {e}")))?;
+            return crate::daemon::connect_or_start(&exe, program, args, root, timeout)
+                .and_then(Transport::over)
+                .map_err(|e| {
+                    Error::Config(format!(
+                        "could not reach a kept language server for `{program}`: {e} (unset COLAB_KEEP_SERVER to start one per command)"
+                    ))
+                });
+        }
+        Transport::spawn(program, args, root).map_err(|e| {
+            Error::Config(format!(
+                "could not start language server `{program}`: {e}. Is it installed and on PATH? (pass --lsp to choose another)"
+            ))
+        })
     }
 
     pub fn name(&self) -> &str {

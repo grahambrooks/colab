@@ -114,6 +114,9 @@ enum Commands {
     /// List broken links in Markdown files (missing files or anchors);
     /// exit 10 when there are any.
     Links(crate::markdown::LinksArgs),
+    /// Keep a language server running between commands (started for you
+    /// when `COLAB_KEEP_SERVER=1`); `--stop` stops every one.
+    LspDaemon(LspDaemonArgs),
     /// Parse a script and print its IR as JSON without running it.
     Explain(ExplainArgs),
     /// List every language backend the binary knows about.
@@ -126,6 +129,57 @@ enum Commands {
     /// `colab refactor`, `rename`, or `mv` run, undoing its file
     /// operations (through git) first.
     Undo(UndoArgs),
+}
+
+#[derive(Parser, Debug)]
+struct LspDaemonArgs {
+    /// Stop every kept server of this user, and exit.
+    #[arg(long)]
+    stop: bool,
+
+    /// The socket to listen on.
+    #[arg(long, value_name = "PATH", required_unless_present = "stop")]
+    socket: Option<PathBuf>,
+
+    /// The project root to start the server in (with `--stop`: stop only
+    /// the servers for this root).
+    #[arg(long, value_name = "DIR", required_unless_present = "stop")]
+    root: Option<PathBuf>,
+
+    /// Seconds without a client before the server is shut down.
+    #[arg(long, value_name = "SECS", default_value_t = 600)]
+    idle: u64,
+
+    /// The server command, after `--`.
+    #[arg(last = true)]
+    server: Vec<String>,
+}
+
+fn run_lsp_daemon(args: LspDaemonArgs) -> Result<i32> {
+    if args.stop {
+        let root = args
+            .root
+            .as_deref()
+            .map(|r| r.canonicalize().unwrap_or(r.to_path_buf()));
+        let n = colab_lsp_client::daemon::stop_all(root.as_deref());
+        println!("stopped {n} kept language server(s)");
+        return Ok(0);
+    }
+    let (Some(socket), Some(root)) = (args.socket, args.root) else {
+        return Err(Error::Config("--socket and --root are required".into()));
+    };
+    let Some((program, rest)) = args.server.split_first() else {
+        return Err(Error::Config("give the server command after `--`".into()));
+    };
+    colab_lsp_client::daemon::serve(
+        program,
+        rest,
+        &root,
+        &socket,
+        std::time::Duration::from_secs(args.idle),
+    )
+    .map_err(io_to_error)?;
+    Ok(0)
 }
 
 #[derive(Parser, Debug)]
@@ -660,6 +714,7 @@ pub async fn run() -> Result<i32> {
         Some(Commands::Outline(args)) => crate::markdown::run_outline(args),
         Some(Commands::Section(args)) => crate::markdown::run_section(args),
         Some(Commands::Links(args)) => crate::markdown::run_links(args),
+        Some(Commands::LspDaemon(args)) => run_lsp_daemon(args),
         Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
         Some(Commands::ListRules(args)) => {
             let value = discover::list_rules(&default_backends(), &args.lang)?;

@@ -832,6 +832,29 @@ every other Markdown file under its paths, before writing: a link the run
 would break is a conflict ([Conflicts](#conflicts)). `--no-link-check`
 turns that off.
 
+### Kept language servers
+
+Every command that asks a language server (`rename`, `mv`, `action`,
+`references`, `safe-delete`, `--tidy`, `--verify-lsp`, and the MCP tools
+built on them) starts the server and waits for it to index. With
+`COLAB_KEEP_SERVER=1` the first such command starts `colab lsp-daemon`,
+which keeps the server running for that server command and project root,
+and later commands connect to it:
+
+```sh
+export COLAB_KEEP_SERVER=1
+colab action --at src/main.rs:3:5-6:6 --list          # starts rust-analyzer: 3.5 s
+colab action --at src/main.rs:3:5-6:6 --kind refactor.extract --title function --write   # 0.6 s
+colab rename --symbol fun_name --in src/main.rs --to total_price --write                 # 0.6 s
+colab lsp-daemon --stop                                # stop them all (or --root DIR)
+```
+
+Each command still sees the files as they are on disk: when a command
+ends, the documents it opened are closed, and when the next connects the
+server is told which files changed in between. A daemon exits after ten
+minutes without a command. It is opt-in while it is dogfooded; it is
+meant to become the default.
+
 ## Exit codes
 
 The same table is in `colab --help`:
@@ -888,6 +911,7 @@ colab refactor --script s.codemod --write --verify "cargo check --quiet" --commi
 - `NO_COLOR` — when set, ANSI colour is disabled in `human` output.
 - `RUST_LOG` — standard `env_logger` filter; set to `debug` to see
   per-file "no changes" lines and tree-sitter parse hints.
+- `COLAB_KEEP_SERVER` — set to `1` to keep each language server running between commands; see [Kept language servers](#kept-language-servers).
 
 ## See also
 
