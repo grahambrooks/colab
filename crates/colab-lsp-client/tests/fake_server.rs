@@ -142,3 +142,33 @@ fn a_missing_server_says_how_to_fix_it() {
     assert!(err.to_string().contains("--lsp"), "{err}");
     std::fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn verify_lsp_reports_only_the_errors_a_change_adds() {
+    use colab_lsp_client::diagnostics::{Changed, added_errors};
+    let root = workspace("diagnose", &[]);
+    let files = [
+        Changed {
+            path: root.join("a.rs"),
+            before: "fn a() {}\nBROKEN old\n".into(),
+            // The old error moved a line down; a new one and a warning came.
+            after: "fn a() {}\n\nBROKEN old\nBROKEN new\nWARN w\n".into(),
+        },
+        Changed {
+            path: root.join("b.rs"),
+            before: "fn b() {}\n".into(),
+            after: "fn c() {}\n".into(),
+        },
+    ];
+    let added = added_errors(
+        &fake_server(),
+        &root,
+        Duration::from_secs(20),
+        Duration::from_millis(100),
+        &files,
+    )
+    .unwrap();
+    assert_eq!(added.len(), 1, "{added:?}");
+    assert_eq!(added[0].path, root.join("a.rs"));
+    assert_eq!(added[0].errors, ["line 4: broken here: BROKEN new"]);
+}

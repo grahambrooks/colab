@@ -51,6 +51,15 @@ impl Operation for SymbolRename {
             .map(|tree| colab_rewrite::field_texts(&tree, source, RENAME_KINDS, None, &[]))
             .unwrap_or_default()
     }
+
+    fn conflicts(&self, before: &str, _after: &str) -> Vec<String> {
+        crate::parse(before)
+            .and_then(|tree| {
+                colab_rewrite::rename_conflict(&tree, before, RENAME_KINDS, &self.from, &self.to)
+            })
+            .into_iter()
+            .collect()
+    }
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {

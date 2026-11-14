@@ -94,7 +94,10 @@ Use it for any shape the named modules do not cover. Every
 backend accepts [`requires import "<x>"`](./dsl.md#imports-requires-import-and-drops-import--when-unused)
 on any rule. `drops import "<x>" when unused` is Go-only: the other
 backends cannot tell whether an import is still used, so they reject the
-clause. Per-language notes:
+clause. Go and Python templates are also checked for a qualifier
+(`fmt.`, `pathlib.`) that nothing imports, and every `symbol` rename for
+a new name the file already uses; both are [conflicts](./cli.md#conflicts),
+which stop a `--write` before it writes. Per-language notes:
 
 - **Go** cannot match a bare identifier (`x`): every Go wrapper declares
   a name before the pattern, which would be selected instead, so it is

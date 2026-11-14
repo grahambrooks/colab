@@ -15,6 +15,17 @@ use std::path::Path;
 pub struct ApplyOutcome {
     pub output: String,
     pub rules_fired: Vec<usize>,
+    /// What the rules that fired found suspicious about their own change,
+    /// from [`Operation::conflicts`](crate::Operation::conflicts).
+    pub conflicts: Vec<RuleConflict>,
+}
+
+/// One rule's warning about the change it made to one file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleConflict {
+    /// Zero-based index of the rule, as in [`ApplyOutcome::rules_fired`].
+    pub rule: usize,
+    pub message: String,
 }
 
 impl ApplyOutcome {
@@ -24,6 +35,7 @@ impl ApplyOutcome {
         Self {
             output,
             rules_fired: Vec::new(),
+            conflicts: Vec::new(),
         }
     }
 }

@@ -20,6 +20,17 @@ const DETAIL_PARAM: &str = "How much to return. `summary`: counters only (cheape
      judge blast radius. `diff`: adds capped unified diffs. A rule reported with \
      `files: 0` matched nothing and is almost certainly wrong.";
 
+/// [`run_properties`] plus `allow_conflicts`, which only writing needs.
+fn apply_properties() -> Value {
+    let mut properties = run_properties();
+    properties["allow_conflicts"] = json!({
+        "type": "boolean",
+        "default": false,
+        "description": "Write even when a rule reports a conflict. Read the `conflicts` from colab.preview first."
+    });
+    properties
+}
+
 fn run_properties() -> Value {
     json!({
         "script": { "type": "string", "description": SCRIPT_PARAM },
@@ -181,11 +192,11 @@ pub fn list() -> Vec<Value> {
         }),
         json!({
             "name": "colab.apply",
-            "description": "Apply a script to one or more paths and write the changes to disk. Run colab.preview first and check the per-rule counts.",
+            "description": "Apply a script to one or more paths and write the changes to disk. Run colab.preview first and check the per-rule counts. If any rule reports a conflict (a rename onto a name the file already uses, a rewrite introducing an unimported qualifier), nothing is written and `applied` is false, unless `allow_conflicts` is true.",
             "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false },
             "inputSchema": {
                 "type": "object",
-                "properties": run_properties(),
+                "properties": apply_properties(),
                 "required": ["script", "paths"],
                 "additionalProperties": false
             }

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use colab_core::find::Located;
 use colab_core::{AstInput, Error, Operation, Result, SyntaxTree};
-use colab_rewrite::pattern::{PatternAction, PatternLanguage, PatternRule};
+use colab_rewrite::pattern::{PatternAction, PatternLanguage, PatternRule, Qualifiers};
 
 /// `$` cannot start a Go identifier, so metavariables are parsed as `µ`.
 /// The contexts are tried in order: a statement or expression inside a
@@ -41,6 +41,15 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
     })
 }
 
+/// A rewrite that introduces `X.` with no import binding `X` is a
+/// conflict (see [`Qualifiers`]).
+const QUALIFIERS: Qualifiers = Qualifiers {
+    kind: "selector_expression",
+    field: "operand",
+    imported: crate::imports::imported_names,
+    builtin: &[],
+};
+
 #[derive(Debug)]
 pub struct PatternOp(pub PatternRule);
 
@@ -51,7 +60,7 @@ impl PatternOp {
         constraints: &[colab_core::Constraint],
     ) -> Result<Self> {
         PatternRule::compile(&language(), pattern, action, constraints)
-            .map(Self)
+            .map(|rule| Self(rule.with_qualifiers(QUALIFIERS)))
             .map_err(|e| Error::UnsupportedOperation(format!("go::pattern: {e}")))
     }
 }
@@ -84,6 +93,14 @@ impl Operation for PatternOp {
                 .collect(),
         )
     }
+
+    fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
+        self.0.conflicts(before, after)
+    }
+
+    fn why_unchanged(&self, source: &str) -> Option<String> {
+        self.0.why_unchanged(source)
+    }
 }
 
 #[cfg(test)]
@@ -109,6 +126,48 @@ mod tests {
             op.to_string(),
             "go::pattern 'errors.Wrap($ERR, $MSG)' -> 'fmt.Errorf(\"%s: %w\", $MSG, $ERR)'"
         );
+    }
+
+    #[test]
+    fn a_qualifier_nothing_imports_is_a_conflict() {
+        let op = PatternOp::compile(
+            "errors.Wrap($E, $M)",
+            PatternAction::Replace("fmt.Errorf($M+\": %w\", $E)".into()),
+            &[],
+        )
+        .unwrap();
+        let before = "package p\n\nimport \"github.com/pkg/errors\"\n\nfunc f() error {\n\treturn errors.Wrap(err, \"x\")\n}\n";
+        let after = op.apply(before);
+        let conflicts = op.conflicts(before, &after);
+        assert_eq!(conflicts.len(), 1, "{conflicts:?}");
+        assert!(conflicts[0].contains("`fmt.`"));
+
+        // Imported (here by an alias-free `fmt`), or already used: no conflict.
+        let imported = after.replace(
+            "import \"github.com/pkg/errors\"",
+            "import (\n\t\"fmt\"\n\t\"github.com/pkg/errors\"\n)",
+        );
+        assert!(op.conflicts(before, &imported).is_empty());
+        let used = before.replace("return", "fmt.Println()\n\treturn");
+        assert!(op.conflicts(&used, &op.apply(&used)).is_empty());
+        // `err.Error()` qualifies by a capture already in the file.
+        let wrap = PatternOp::compile(
+            "errors.Wrap($E, $M)",
+            PatternAction::Replace("errors.New($E.Error())".into()),
+            &[],
+        )
+        .unwrap();
+        assert!(wrap.conflicts(before, &wrap.apply(before)).is_empty());
+    }
+
+    #[test]
+    fn a_template_that_does_not_parse_explains_the_dead_rule() {
+        let op =
+            PatternOp::compile("f($$$A)", PatternAction::Replace("g($$$A,,)".into()), &[]).unwrap();
+        let src = "package p\n\nfunc main() {\n\tf(1, 2)\n}\n";
+        assert_eq!(op.apply(src), src);
+        assert!(op.why_unchanged(src).unwrap().contains("would not parse"));
+        assert_eq!(op.why_unchanged("package p\n"), None);
     }
 
     #[test]

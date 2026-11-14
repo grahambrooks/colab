@@ -156,6 +156,7 @@ fn run_case(case: &Case) -> Result<(), String> {
                 before: source.clone(),
                 after: outcome.output.clone(),
                 rules_fired: outcome.rules_fired,
+                conflicts: outcome.conflicts,
             });
         }
         let first = outcome.output;
@@ -226,7 +227,8 @@ fn check_matches_compile(script_path: &Path, refactoring: &Refactoring) -> Resul
 }
 
 /// One line per rule: files changed, then the rule; a dead rule's near
-/// misses follow, indented.
+/// misses and its reason for leaving matches unchanged follow, indented.
+/// Then one line per conflict a rule reported.
 fn render_rules(report: &RunReport) -> String {
     let mut out = String::new();
     for stat in &report.rules {
@@ -237,6 +239,22 @@ fn render_rules(report: &RunReport) -> String {
                 near.value, near.files
             ));
         }
+        if let Some(why) = &stat.unchanged {
+            out.push_str(&format!(
+                "    unchanged in {} file(s): {}\n",
+                why.files, why.message
+            ));
+        }
+    }
+    for conflict in &report.conflicts {
+        out.push_str(&format!(
+            "conflict {} {}: {}\n",
+            conflict.path.display(),
+            conflict
+                .rule
+                .map_or("file".to_string(), |r| format!("rule {}", r + 1)),
+            conflict.message
+        ));
     }
     out
 }

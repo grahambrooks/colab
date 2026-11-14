@@ -69,6 +69,29 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     fn locate(&self, _source: &str) -> Option<Vec<crate::find::Located>> {
         None
     }
+
+    /// Reasons the change this rule made to one file may be wrong. Called
+    /// only when the rule changed the file, and before anything is
+    /// written, so a run can refuse to write (see `RunReport::conflicts`).
+    /// `before` is the file as this rule found it; `after` is the file as
+    /// the whole script leaves it, so a later rule that repairs the
+    /// change (adds the import it needs) clears the conflict.
+    ///
+    /// A conflict is a syntactic warning that cannot be wrong, only
+    /// incomplete: "the new name `b` already occurs in this file", not a
+    /// guess at a type error. The default finds none.
+    fn conflicts(&self, _before: &str, _after: &str) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Why this rule leaves `source` unchanged although it matches there,
+    /// e.g. a template whose output would not parse. Only called for a
+    /// rule that changed no file, on a bounded sample, so it may parse.
+    /// Without it such a rule reads as "matched no files", which sends
+    /// the reader to check the pattern rather than the template.
+    fn why_unchanged(&self, _source: &str) -> Option<String> {
+        None
+    }
 }
 
 /// The rejection for a `where` clause on a module that takes none.

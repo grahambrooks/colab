@@ -57,6 +57,15 @@ impl Operation for SymbolRename {
             .map(|tree| colab_rewrite::field_texts(&tree, source, RENAME_KINDS, None, &[]))
             .unwrap_or_default()
     }
+
+    fn conflicts(&self, before: &str, _after: &str) -> Vec<String> {
+        crate::parse(before)
+            .and_then(|tree| {
+                colab_rewrite::rename_conflict(&tree, before, RENAME_KINDS, &self.from, &self.to)
+            })
+            .into_iter()
+            .collect()
+    }
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
@@ -69,6 +78,20 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renaming_onto_a_name_already_in_the_file_is_a_conflict() {
+        let op = SymbolRename {
+            from: "load".into(),
+            to: "parse".into(),
+        };
+        let src = "package p\n\nfunc load() {}\n\nfunc parse() {}\n";
+        let conflicts = op.conflicts(src, &op.apply(src));
+        assert_eq!(conflicts.len(), 1);
+        assert!(conflicts[0].contains("(line 5)"), "{conflicts:?}");
+        let clean = "package p\n\nfunc load() {}\n";
+        assert!(op.conflicts(clean, &op.apply(clean)).is_empty());
+    }
 
     #[test]
     fn renames_function_declaration_and_calls() {

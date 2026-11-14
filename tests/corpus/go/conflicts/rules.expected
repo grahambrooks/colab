@@ -1,0 +1,6 @@
+2 go::symbol "load" -> "parse"
+2 go::pattern 'errors.Wrap($E, $M)' -> 'fmt.Errorf("%s: %w", $M, $E)'
+0 go::pattern 'log.Print($$$A)' -> 'log.Println($$$A,,)'
+    unchanged in 1 file(s): the rewritten code would not parse, so it was skipped; check the template (a `$$$` capture keeps its separators, so `$$$ARGS,` doubles a comma)
+conflict a.go rule 1: `parse` already occurs in this file (line 9), so renaming `load` to it merges two names
+conflict a.go rule 2: the rewrite uses `fmt.`, which this file does not import; add `requires import "…"` to the rule

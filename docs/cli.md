@@ -21,8 +21,8 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
                                 [--changed-since <ref> | --staged]
                                 [--jobs <N>]
                                 [--verify <CMD>] [--commit-per-rule]
-                                [--bisect <CMD>]
-                                [--backup <DIR>]
+                                [--bisect <CMD>] [--verify-lsp[=<CMD>]]
+                                [--allow-conflicts] [--backup <DIR>]
                                 [--detail summary|counts|diff] [--summary-only]
                                 [--max-files <N>] [--max-diff-bytes <N>]
                                 [paths...]
@@ -45,9 +45,11 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--changed-since <ref>` | — | Only files changed since the given git ref (`git diff --name-only --diff-filter=ACMRT <ref>`). Skips tree walking entirely. CI-friendly. |
 | `--staged` | — | Only files in the git index (`git diff --name-only --cached`). Mutually exclusive with `--changed-since`. |
 | `--jobs <N>` | `num_cpus` | Worker thread count for parallel file processing. Falls back to the `COLAB_JOBS` env var when unset. Set to `1` for sequential. |
-| `--verify <CMD>` | — | Run `<CMD>` (a shell command) after each rule's edits. Non-zero exit reverts that rule's changes and aborts the run with exit 1. Implies `--write`. |
+| `--verify <CMD>` | — | Run `<CMD>` (a shell command) after each rule's edits. Non-zero exit reverts that rule's changes and aborts the run with exit 1. Implies `--write`. Every rule must pass on its own; for rules that only compile together (a new parameter and its callers), use `--bisect`. |
 | `--commit-per-rule` | — | After each successful rule, `git add -u && git commit -m "colab: <rule>"`. Requires a git repo. Implies `--write`. |
 | `--bisect <CMD>` | — | After applying every rule, run `<CMD>`. On failure, binary-search the rule list to identify the single breaking rule, then revert the working tree to its pre-run state. Conflicts with `--verify`. |
+| `--verify-lsp[=<CMD>]` | — | Before writing, open each changed file in its language server, change it in memory, and report every error diagnostic the change adds as a conflict. The server is chosen by extension; `=<CMD>` names one (the `=` is required). Combines with `--bisect`, not with `--verify` / `--commit-per-rule`. See [Conflicts](#conflicts). |
+| `--allow-conflicts` | — | Write even when the run found conflicts. Without it, a `--write` run that finds any writes nothing and exits 11. |
 | `--backup <DIR>` | — | Before any rule writes a file, save the pre-modification contents to `<DIR>/<rel-path>`. Pair with `colab undo --from <DIR>` to roll back. |
 | `--detail <level>` | `counts` (`diff` for `--format diff`) | How much to report. `summary`: aggregate counters only. `counts`: adds per-rule match counts and changed paths. `diff`: adds capped unified diffs. |
 | `--max-files <N>` | `20` | At `--detail diff`, the maximum number of per-file diffs to render. The residue is reported under `truncated`. |
@@ -179,6 +181,53 @@ A value is "near" when it is a small edit away, contains or is contained
 by the target, or shares its last path segment. Probing only runs for dead
 rules and reads at most 500 of the scanned files, so a live run pays
 nothing for it.
+
+#### Unchanged matches
+
+A dead rule that *did* match, but left its matches alone, says why. Today
+that is a `pattern` template whose output would not parse where it lands,
+so colab skips the rewrite rather than write broken code. `find` lists the
+matches; the rule reports `unchanged`:
+
+```json
+{"i":0,"rule":"rust::pattern 'f($$$A)' -> 'g($$$A,)'","files":0,
+ "unchanged":{"reason":"the rewritten code would not parse, so it was skipped; …","files":3}}
+```
+
+The usual cause is a `$$$` capture, which keeps its separators: in a
+list with a trailing comma, `$$$ARGS,` doubles it.
+
+#### Conflicts
+
+Before anything is written, each rule checks the change it made to each
+file. A conflict is a syntactic warning that cannot be wrong, only
+incomplete:
+
+| Check | Raised when |
+| ----- | ----------- |
+| `<lang>::symbol` rename | The new name already occurs as an identifier in the file, so the rename would merge two names. |
+| `go::pattern`, `python::pattern` template | The template introduces a qualifier (`fmt.`, `pathlib.`) that the file did not use before and does not import afterwards. A `requires import`, or a later rule in the script that adds the import, clears it. Python builtins (`str.`, `dict.`) and wildcard imports never conflict. |
+| `--verify-lsp` | The file's language server reports an error after the change that it did not report before. Errors are compared by message, so code that moves does not count. |
+
+Conflicts are judged against the file as the whole script leaves it.
+They appear in every format: `conflicts` in JSON (`[{path, rule,
+message}]`, with `rule` absent for a `--verify-lsp` error), `conflict:`
+lines in human output. A `--write` run that finds any **writes nothing**
+and exits **11**; fix the rules, or pass `--allow-conflicts`. Dry runs
+and `--check` report them and exit as usual. MCP `colab.apply` does the
+same, returning `applied: false` unless `allow_conflicts` is true.
+
+```
+conflict: a.go: `parse` already occurs in this file (line 9), so renaming `load` to it merges two names (rule 1)
+conflict: a.go: the rewrite uses `fmt.`, which this file does not import; add `requires import "…"` to the rule (rule 2)
+warning: wrote nothing: 2 conflict(s) found; review them, then fix the rules or rerun with --allow-conflicts
+```
+
+`--verify-lsp` is cheaper than a build and runs before the write. It only
+sees what the server checks as you type: gopls reports type and
+resolution errors; rust-analyzer reports type mismatches and wrong
+argument counts, but an unresolved name only shows in `cargo check`. Keep
+`--verify` / `--bisect` for the full check.
 
 #### `--stdin` pipeline
 
@@ -720,6 +769,7 @@ The same table is in `colab --help`:
 | 3 | Unsupported namespace or operation. |
 | 4 | I/O error (with the offending path in the log line). |
 | 10 | `--check` found changes that would be made. |
+| 11 | `--write` found [conflicts](#conflicts) and wrote nothing (`--allow-conflicts` overrides). |
 
 Code 2 is what `clap` itself uses for argument-parsing errors, which
 overlaps with the script parse code by design — both are "the input

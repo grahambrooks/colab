@@ -148,6 +148,7 @@ mod tests {
             before: before.into(),
             after: after.into(),
             rules_fired: vec![0],
+            conflicts: Vec::new(),
         }
     }
 

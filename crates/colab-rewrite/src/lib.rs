@@ -160,6 +160,40 @@ pub fn rename_nodes_by_text(
     apply_edits(source, edits)
 }
 
+/// The conflict a [`rename_nodes_by_text`] from `from` to `to` would
+/// cause in `source`: `to` already occurs there as an identifier, so the
+/// rename would merge two names into one. `None` when it does not, or
+/// when `from` does not occur (the rename would not fire).
+pub fn rename_conflict(
+    tree: &Tree,
+    source: &str,
+    kinds: &[&str],
+    from: &str,
+    to: &str,
+) -> Option<String> {
+    let (mut has_from, mut lines) = (false, Vec::new());
+    visit_all(tree, |node| {
+        if !kinds.contains(&node.kind()) {
+            return;
+        }
+        match node.utf8_text(source.as_bytes()) {
+            Ok(text) if text == from => has_from = true,
+            Ok(text) if text == to => lines.push(node.start_position().row + 1),
+            _ => {}
+        }
+    });
+    if !has_from || lines.is_empty() {
+        return None;
+    }
+    lines.dedup();
+    let shown: Vec<String> = lines.iter().take(5).map(usize::to_string).collect();
+    let more = if lines.len() > 5 { ", …" } else { "" };
+    Some(format!(
+        "`{to}` already occurs in this file (line {}{more}), so renaming `{from}` to it merges two names",
+        shown.join(", ")
+    ))
+}
+
 /// The text of the `field` child of every node whose kind is in `kinds`,
 /// with any of `trim` stripped from both ends.
 ///

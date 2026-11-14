@@ -67,6 +67,42 @@ pub(crate) fn module_paths(source: &str) -> Vec<String> {
     out
 }
 
+/// Every name `source`'s imports bind: `os` for `import os.path`, the
+/// alias for `import json as j`, `c` for `from a import c`. A wildcard
+/// import binds names no one can list, so it is reported as `*`.
+pub(crate) fn bound_names(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return vec!["*".into()];
+    };
+    let text = |node: Node<'_>| source[node.byte_range()].to_string();
+    let mut out = Vec::new();
+    colab_rewrite::visit_all(&tree, |node| {
+        let from = match node.kind() {
+            "import_statement" => false,
+            "import_from_statement" => true,
+            _ => return,
+        };
+        let mut cursor = node.walk();
+        for child in node.children_by_field_name("name", &mut cursor) {
+            match child.kind() {
+                "aliased_import" => out.extend(child.child_by_field_name("alias").map(text)),
+                // `import a.b` binds `a`; `from m import a` binds `a`.
+                "dotted_name" if from => out.push(text(child)),
+                "dotted_name" => out.extend(child.named_child(0).map(text)),
+                _ => {}
+            }
+        }
+        if from
+            && node
+                .named_children(&mut node.walk())
+                .any(|c| c.kind() == "wildcard_import")
+        {
+            out.push("*".into());
+        }
+    });
+    out
+}
+
 fn visit_import_statement<'a, F>(node: Node<'a>, source: &'a str, visit: &mut F)
 where
     F: FnMut(Node<'a>, Node<'a>, &'a str),

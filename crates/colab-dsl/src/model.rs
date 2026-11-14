@@ -8,7 +8,7 @@
 use std::fmt;
 use std::path::Path;
 
-use colab_core::{ApplyOutcome, CodeTransformer, Operation};
+use colab_core::{ApplyOutcome, CodeTransformer, Operation, RuleConflict};
 
 /// The compiled, executable form of a codemod script.
 pub struct Refactoring {
@@ -89,6 +89,9 @@ impl CodeTransformer for Refactoring {
     fn apply_at(&self, path: &Path, source_code: &str) -> ApplyOutcome {
         let mut current = source_code.to_string();
         let mut rules_fired = Vec::new();
+        let mut conflicts = Vec::new();
+        // Each fired rule's input, for the conflict check after the loop.
+        let mut inputs: Vec<(usize, String)> = Vec::new();
 
         for (index, rule) in self.rules.iter().enumerate() {
             if !rule.is_file_relevant(path) {
@@ -102,13 +105,26 @@ impl CodeTransformer for Refactoring {
             let next = rule.apply(&current);
             if next != current {
                 rules_fired.push(index);
-                current = next;
+                inputs.push((index, std::mem::replace(&mut current, next)));
             }
+        }
+
+        // Judged against the file as the whole script leaves it, so a later
+        // rule that adds the missing import clears the conflict.
+        for (index, input) in &inputs {
+            let rule = &self.rules[*index];
+            conflicts.extend(rule.conflicts(input, &current).into_iter().map(|message| {
+                RuleConflict {
+                    rule: *index,
+                    message,
+                }
+            }));
         }
 
         ApplyOutcome {
             output: current,
             rules_fired,
+            conflicts,
         }
     }
 }
@@ -149,14 +165,21 @@ impl CodeTransformer for SingleRule<'_> {
         }
         let output = self.op.apply(source_code);
         // Index 0: the caller re-indexes this against the full script.
-        let rules_fired = if output == source_code {
-            Vec::new()
+        let (rules_fired, conflicts) = if output == source_code {
+            (Vec::new(), Vec::new())
         } else {
-            vec![0]
+            let conflicts = self
+                .op
+                .conflicts(source_code, &output)
+                .into_iter()
+                .map(|message| RuleConflict { rule: 0, message })
+                .collect();
+            (vec![0], conflicts)
         };
         ApplyOutcome {
             output,
             rules_fired,
+            conflicts,
         }
     }
 }

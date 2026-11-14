@@ -833,7 +833,7 @@ rename and nothing else:
 | Call / type hierarchy | none | unscheduled (`callHierarchy` / `typeHierarchy` on the M25 client) |
 | Optimize imports + reformat after every refactoring | `--tidy` on rename / mv / action / safe-delete (M25); not yet on `refactor` | ✅ M25 (partly), M26 |
 | SSR constraints (count, regex, type, within) | `where` on `<lang>::pattern`: `matches`, `is`, `count`, `inside`, `has`, `not` (M26); type constraints not yet | ✅ M26 |
-| Conflicts dialog before applying | after the fact only (`--verify`) | M27 |
+| Conflicts dialog before applying | conflicts reported before writing; `--write` refuses (exit 11) (M27) | ✅ M27 |
 | `//noinspection` suppression | none | M20 |
 | Rename in comments, strings, non-code files | none (the server skips them) | M22 |
 
@@ -1029,19 +1029,36 @@ Original plan:
   per-backend `import_is_used(source, path)`; backends without it reject
   the clause rather than guess.
 
-### M27 — Pre-apply conflict checks (ships with M22)
+### ✅ M27 — Pre-apply conflict checks
 
-Syntactic warnings, raised before writing:
+Syntactic warnings, raised before writing. Every write path now buffers
+its changes, and a `--write` run with any conflict writes nothing and
+exits 11 (`--allow-conflicts` overrides; MCP `colab.apply` takes
+`allow_conflicts`).
 
 - **`symbol` rename:** the new name already occurs as an identifier in
-  the file, so the rename would merge two names.
+  the file, so the rename would merge two names. One shared
+  `colab_rewrite::rename_conflict`, called by all 12 backends.
 - **Pattern templates:** the template introduces a qualifier
-  (`fmt.`, `os.path.`) the file does not import, and no `requires import`
-  covers it. This needs a per-backend `imported_names(source)`.
-- **`--verify-lsp`:** compare the server's diagnostics
-  (`textDocument/diagnostic`) on the changed files before and after the
-  edit, and revert when errors were added. It is a cheaper first check
-  than a full build, and `--verify <CMD>` remains for the full one.
+  (`fmt.`, `pathlib.`) the file did not use and does not import.
+  `colab_rewrite::pattern::Qualifiers` describes the qualified-name node
+  and the file's imported names; Go and Python provide it. Conflicts are
+  judged against the file as the whole script leaves it, so a
+  `requires import`, or a later `ensure` rule, clears them.
+- **`--verify-lsp[=CMD]`:** each changed file is opened in its server with
+  its old text and changed in memory to the new one; error diagnostics
+  (pulled when the server offers `textDocument/diagnostic`, else as
+  pushed) are compared by message. Added errors are file-level conflicts.
+  Since it runs before the write, nothing needs reverting. rust-analyzer
+  reports type and arity errors this way but not unresolved names, which
+  only `cargo check` sees.
+- **Found while dogfooding:** a `pattern` template whose output does not
+  parse was skipped silently and reported as "matched no files".
+  `Operation::why_unchanged` now explains it (`rules[].unchanged`).
+
+Not done: `imported_names` for the other ten source backends (their
+templates are not checked for qualifiers yet), and attribution of a
+`--verify-lsp` error to the rule that caused it.
 
 Added to existing milestones:
 

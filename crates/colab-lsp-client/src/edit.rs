@@ -233,6 +233,7 @@ pub fn to_change_set(
             before: e.before,
             after: e.after,
             rules_fired: vec![0],
+            conflicts: Vec::new(),
         })
         .collect();
     Ok(ChangeSet {

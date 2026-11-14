@@ -2496,3 +2496,168 @@ fn mcp_serves_the_language_server_tools() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn write_refuses_a_conflicting_rename_and_exits_11() {
+    let root = workspace_temp("conflict-refused");
+    let target = root.join("main.go");
+    let input = "package main\n\nfunc load() {}\n\nfunc parse() {}\n";
+    write(&target, input);
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--write",
+            "--format",
+            "json",
+            "-e",
+            r#"match go::symbol "load" { replace "parse" }"#,
+            target.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(11));
+    assert_eq!(
+        fs::read_to_string(&target).unwrap(),
+        input,
+        "nothing written"
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let conflict = &json["conflicts"][0];
+    assert_eq!(conflict["rule"], 0);
+    assert!(
+        conflict["message"]
+            .as_str()
+            .unwrap()
+            .contains("`parse` already occurs"),
+        "{json}"
+    );
+    assert!(
+        json["warnings"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("wrote nothing")
+    );
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--write",
+            "--allow-conflicts",
+            "-e",
+            r#"match go::symbol "load" { replace "parse" }"#,
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert!(!fs::read_to_string(&target).unwrap().contains("load"));
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn a_requires_import_clears_the_unimported_qualifier_conflict() {
+    let root = workspace_temp("conflict-qualifier");
+    let target = root.join("main.go");
+    let input = "package main\n\nfunc f() error {\n\treturn errors.Wrap(err, \"read\")\n}\n";
+    write(&target, input);
+    let rule = |clause: &str| {
+        format!(
+            r#"match go::pattern 'errors.Wrap($E, $M)' {{ replace 'fmt.Errorf($M+": %w", $E)' {clause} }}"#
+        )
+    };
+
+    let output = colab()
+        .args([
+            "refactor",
+            "--write",
+            "--format",
+            "json",
+            "-e",
+            &rule(""),
+            target.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(11));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        json["conflicts"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("`fmt.`"),
+        "{json}"
+    );
+
+    let status = colab()
+        .args([
+            "refactor",
+            "--write",
+            "-e",
+            &rule(r#"requires import "fmt""#),
+            target.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert!(fs::read_to_string(&target).unwrap().contains("\"fmt\""));
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn verify_lsp_refuses_a_change_that_adds_a_server_error() {
+    let root = workspace_temp("verify-lsp");
+    let target = root.join("a.rs");
+    let input = "fn old() {}\n\nfn main() {\n    old();\n}\n";
+    write(&target, input);
+    let run = |to: &str| {
+        colab()
+            .current_dir(&root)
+            .args(["refactor", "--write", "--format", "json"])
+            .arg(format!("--verify-lsp={}", fake_lsp()))
+            .args([
+                "-e",
+                &format!(r#"match rust::symbol "old" {{ replace "{to}" }}"#),
+                "a.rs",
+            ])
+            .output()
+            .unwrap()
+    };
+
+    // The fake server reports an error on every line containing BROKEN.
+    let output = run("BROKEN");
+    assert_eq!(
+        output.status.code(),
+        Some(11),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&target).unwrap(), input);
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let conflicts = json["conflicts"].as_array().unwrap();
+    assert_eq!(conflicts.len(), 2, "{json}");
+    assert!(
+        conflicts[0].get("rule").is_none(),
+        "a server error is the file's, not a rule's"
+    );
+    assert!(
+        conflicts[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("reports a new error at line 1")
+    );
+
+    let output = run("fresh");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(fs::read_to_string(&target).unwrap().contains("fn fresh()"));
+
+    fs::remove_dir_all(&root).ok();
+}

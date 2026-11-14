@@ -203,6 +203,7 @@ impl FindReport {
             before: String::new(),
             after: String::new(),
             rules_fired: Vec::new(),
+            conflicts: Vec::new(),
         });
         let found = locate_all(rules, path, source);
         if found.is_empty() {

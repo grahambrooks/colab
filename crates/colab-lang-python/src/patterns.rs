@@ -9,7 +9,7 @@ use std::path::Path;
 
 use colab_core::find::Located;
 use colab_core::{AstInput, Error, Operation, Result, SyntaxTree};
-use colab_rewrite::pattern::{PatternAction, PatternLanguage, PatternRule};
+use colab_rewrite::pattern::{PatternAction, PatternLanguage, PatternRule, Qualifiers};
 
 /// `$` is not a Python identifier character, so metavariables are parsed
 /// as `µ`. Expressions and statements parse on their own; the one context
@@ -38,6 +38,34 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
     })
 }
 
+/// A rewrite that introduces `X.` with no import binding `X` is a
+/// conflict (see [`Qualifiers`]).
+const QUALIFIERS: Qualifiers = Qualifiers {
+    kind: "attribute",
+    field: "object",
+    imported: crate::imports::bound_names,
+    builtin: PYTHON_BUILTINS,
+};
+
+/// Builtins used as qualifiers (`str.join`, `dict.fromkeys`) need no import.
+const PYTHON_BUILTINS: &[&str] = &[
+    "bool",
+    "bytearray",
+    "bytes",
+    "complex",
+    "dict",
+    "float",
+    "frozenset",
+    "int",
+    "list",
+    "object",
+    "range",
+    "set",
+    "str",
+    "tuple",
+    "type",
+];
+
 #[derive(Debug)]
 pub struct PatternOp(pub PatternRule);
 
@@ -48,7 +76,7 @@ impl PatternOp {
         constraints: &[colab_core::Constraint],
     ) -> Result<Self> {
         PatternRule::compile(&language(), pattern, action, constraints)
-            .map(Self)
+            .map(|rule| Self(rule.with_qualifiers(QUALIFIERS)))
             .map_err(|e| Error::UnsupportedOperation(format!("python::pattern: {e}")))
     }
 }
@@ -81,11 +109,49 @@ impl Operation for PatternOp {
                 .collect(),
         )
     }
+
+    fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
+        self.0.conflicts(before, after)
+    }
+
+    fn why_unchanged(&self, source: &str) -> Option<String> {
+        self.0.why_unchanged(source)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn python_qualifiers_count_imports_aliases_and_builtins() {
+        let op = PatternOp::compile(
+            "open($P).read()",
+            PatternAction::Replace("pathlib.Path($P).read_text()".into()),
+            &[],
+        )
+        .unwrap();
+        let before = "def f(p):\n    return open(p).read()\n";
+        let after = op.apply(before);
+        assert_eq!(op.conflicts(before, &after).len(), 1);
+        for header in [
+            "import pathlib\n",
+            "from x import pathlib\n",
+            "import y as pathlib\n",
+            "from z import *\n",
+        ] {
+            let b = format!("{header}{before}");
+            assert!(op.conflicts(&b, &op.apply(&b)).is_empty(), "{header}");
+        }
+        let builtin = PatternOp::compile(
+            "join($A)",
+            PatternAction::Replace("str.join(\"\", $A)".into()),
+            &[],
+        )
+        .unwrap();
+        let src = "x = join(parts)\n";
+        assert!(builtin.conflicts(src, &builtin.apply(src)).is_empty());
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

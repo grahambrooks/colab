@@ -20,6 +20,7 @@
 //! must stay free of `tree-sitter`.
 
 pub mod actions;
+pub mod diagnostics;
 pub mod edit;
 pub mod session;
 pub mod transport;

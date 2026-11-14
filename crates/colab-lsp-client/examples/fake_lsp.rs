@@ -20,6 +20,9 @@
 //! `documentSymbol` (one per `fn` item), and `formatting` (strips
 //! trailing whitespace).
 //!
+//! For M27 it publishes diagnostics on every open and change: an error per
+//! line containing `BROKEN`, a warning per line containing `WARN`.
+//!
 //! `FAKE_LSP_MODE` changes behaviour: `no-rename` (no renameProvider),
 //! `file-op` (a rename also renames the symbol's file to `<new>.<ext>`,
 //! like a Java class), `no-will-rename` (no willRenameFiles support),
@@ -142,6 +145,24 @@ fn rename_everywhere(
     changes
 }
 
+/// `publishDiagnostics` for `text`: one error per line containing
+/// `BROKEN`, and a warning (which `--verify-lsp` ignores) per `WARN`.
+fn publish(uri: &str, text: &str) -> Value {
+    let mut diagnostics = Vec::new();
+    for (line, content) in text.lines().enumerate() {
+        for (word, severity) in [("BROKEN", 1), ("WARN", 2)] {
+            if content.contains(word) {
+                diagnostics.push(json!({
+                    "range": {"start": {"line": line, "character": 0}, "end": {"line": line, "character": 1}},
+                    "severity": severity,
+                    "message": format!("{} here: {}", word.to_lowercase(), content.trim()),
+                }));
+            }
+        }
+    }
+    json!({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": uri, "diagnostics": diagnostics}})
+}
+
 fn main() {
     let mode = std::env::var("FAKE_LSP_MODE").unwrap_or_default();
     let stdin = std::io::stdin();
@@ -209,10 +230,10 @@ fn main() {
             }
             ("textDocument/didOpen", None) => {
                 let doc = &params["textDocument"];
-                open.insert(
-                    doc["uri"].as_str().unwrap().into(),
-                    doc["text"].as_str().unwrap().into(),
-                );
+                let uri = doc["uri"].as_str().unwrap().to_string();
+                let text = doc["text"].as_str().unwrap().to_string();
+                send(&mut out, publish(&uri, &text));
+                open.insert(uri, text);
             }
             ("textDocument/didChange", None) => {
                 let uri = params["textDocument"]["uri"].as_str().unwrap().to_string();
@@ -220,6 +241,7 @@ fn main() {
                     .as_str()
                     .unwrap()
                     .to_string();
+                send(&mut out, publish(&uri, &text));
                 open.insert(uri, text);
             }
             ("textDocument/codeAction", Some(id)) => {

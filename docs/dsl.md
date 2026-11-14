@@ -314,6 +314,11 @@ match go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ {
   up with `import "fmt"`.
 - The clauses belong to the rule. Its report line shows them, and when the
   rule changes nothing, they do nothing, so the rule stays idempotent.
+- **Forgetting one is caught.** In Go and Python, a template that writes a
+  qualifier (`fmt.`, `pathlib.`) the file neither used before nor imports
+  afterwards is a [conflict](./cli.md#conflicts): `--write` writes
+  nothing and exits 11. A later rule in the same script that adds the
+  import (`match go::import "fmt" { ensure }`) also clears it.
 
 ## Inline rules
 
@@ -468,6 +473,24 @@ The standard ways to achieve idempotency in your own scripts:
 - **`delete`** is idempotent by construction.
 - **`replace_call`** — *change the function name*, or accept that the
   rule is single-pass and apply it once.
+
+## Conflicts
+
+Some mistakes are visible in the file a rule just changed, and colab
+checks for them before writing (see [Conflicts](./cli.md#conflicts) in
+the CLI reference):
+
+- `match <lang>::symbol "a" { replace "b" }` where `b` already occurs in
+  the file: the rename would merge two names.
+- A Go or Python `pattern` template that introduces an unimported
+  qualifier (above).
+- With `--verify-lsp`, any error the language server sees after the change
+  and not before.
+
+A `--write` run with conflicts writes nothing and exits 11;
+`--allow-conflicts` writes anyway. A `pattern` rule whose template would
+not parse where it lands is skipped instead, and its report says so
+(`unchanged`).
 
 ## Worked examples
 

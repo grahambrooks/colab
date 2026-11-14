@@ -1,0 +1,10 @@
+a.go:5:1: [0] func load() error {
+a.go:6:9: [1] errors.Wrap(err, "load")
+    $E = err
+    $M = "load"
+b.go:10:1: [0] func load() error {
+b.go:11:2: [2] log.Print("x", 1)
+    $A = "x", 1
+b.go:13:9: [1] errors.Wrap(err, "load")
+    $E = err
+    $M = "load"

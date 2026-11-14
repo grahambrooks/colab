@@ -90,6 +90,14 @@ impl Operation for PatternOp {
                 .collect(),
         )
     }
+
+    fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
+        self.0.conflicts(before, after)
+    }
+
+    fn why_unchanged(&self, source: &str) -> Option<String> {
+        self.0.why_unchanged(source)
+    }
 }
 
 #[cfg(test)]

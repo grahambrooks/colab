@@ -37,6 +37,17 @@ pub struct RuleStat {
     /// For a dead rule: the values its module saw that most resemble its
     /// target, filled in by [`crate::near_miss::probe`]. Empty otherwise.
     pub near_misses: Vec<NearMiss>,
+    /// For a dead rule that did match, but left its matches alone: why,
+    /// from [`Operation::why_unchanged`](crate::Operation::why_unchanged).
+    pub unchanged: Option<Unchanged>,
+}
+
+/// A dead rule's own account of why it changed nothing where it matched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unchanged {
+    pub message: String,
+    /// How many probed files it gave this reason for.
+    pub files: u64,
 }
 
 /// A value a dead rule's module saw that resembles what it was looking
@@ -46,6 +57,20 @@ pub struct NearMiss {
     pub value: String,
     /// How many probed files contained it.
     pub files: u64,
+}
+
+/// A rule's warning about the change it made to one file, from
+/// [`Operation::conflicts`](crate::Operation::conflicts). A run that
+/// writes refuses to write anything while any are present, unless told
+/// to allow them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Conflict {
+    pub path: PathBuf,
+    /// Zero-based index of the rule, as in [`RuleStat::index`]; `None`
+    /// for a conflict found in the file as a whole, such as an error the
+    /// language server sees after the change (`--verify-lsp`).
+    pub rule: Option<usize>,
+    pub message: String,
 }
 
 /// A file the walker could not process. Recorded rather than fatal so one
@@ -83,6 +108,8 @@ pub struct RunReport {
     /// Run-specific warnings beyond the generic advisories, e.g. a moved
     /// file whose history git may not follow.
     pub warnings: Vec<String>,
+    /// Conflicts the rules found in their own changes, in file order.
+    pub conflicts: Vec<Conflict>,
 }
 
 /// How many scanned paths a [`RunReport`] remembers for near-miss probing.
@@ -106,6 +133,7 @@ impl RunReport {
                     rule: rule.into(),
                     files_matched: 0,
                     near_misses: Vec::new(),
+                    unchanged: None,
                 })
                 .collect(),
             ..Default::default()
@@ -128,6 +156,12 @@ impl RunReport {
                 stat.files_matched += 1;
             }
         }
+        self.conflicts
+            .extend(change.conflicts.iter().map(|c| Conflict {
+                path: change.path.clone(),
+                rule: Some(c.rule),
+                message: c.message.clone(),
+            }));
     }
 
     /// Fold a completed walk's outcome into the report.
@@ -166,6 +200,7 @@ mod tests {
             before: before.to_string(),
             after: after.to_string(),
             rules_fired: fired,
+            conflicts: Vec::new(),
         }
     }
 

@@ -151,6 +151,11 @@ impl ChangeCollector {
     pub fn to_json(&self, report: &RunReport) -> Value {
         let mut root = json!({ "summary": summary_json(report) });
         let obj = root.as_object_mut().expect("summary_json builds an object");
+        // Conflicts decide whether anything was written, so every detail
+        // level carries them.
+        if let Some(conflicts) = conflicts_json(report) {
+            obj.insert("conflicts".to_string(), conflicts);
+        }
 
         if self.options.detail == Detail::Summary {
             return root;
@@ -311,6 +316,43 @@ pub fn write_unified_diff_between<W: Write>(
     write!(out, "{}", diff.unified_diff().header(&header_a, &header_b))
 }
 
+/// `[{path, rule, message}]`, one per conflict, or `None` when there are
+/// none. `rule` is the 0-based index, as in [`rules_json`], and absent for
+/// a conflict no single rule caused.
+pub fn conflicts_json(report: &RunReport) -> Option<Value> {
+    if report.conflicts.is_empty() {
+        return None;
+    }
+    Some(Value::Array(
+        report
+            .conflicts
+            .iter()
+            .map(|c| {
+                let mut value = json!({"path": display_path(&c.path), "message": c.message});
+                if let Some(rule) = c.rule {
+                    value["rule"] = json!(rule);
+                }
+                value
+            })
+            .collect(),
+    ))
+}
+
+/// One line per conflict, for human output: `path: message (rule N)`,
+/// with `N` 1-based as the human format numbers rules, or `(whole file)`.
+pub fn conflict_lines(report: &RunReport) -> Vec<String> {
+    report
+        .conflicts
+        .iter()
+        .map(|c| {
+            let source = c
+                .rule
+                .map_or("whole file".to_string(), |r| format!("rule {}", r + 1));
+            format!("{}: {} ({source})", display_path(&c.path), c.message)
+        })
+        .collect()
+}
+
 /// Per-rule match counts. `files: 0` marks a dead rule.
 pub fn rules_json(report: &RunReport) -> Value {
     Value::Array(
@@ -326,6 +368,9 @@ pub fn rules_json(report: &RunReport) -> Value {
                             .map(|m| json!({"value": m.value, "files": m.files}))
                             .collect(),
                     );
+                }
+                if let Some(why) = &r.unchanged {
+                    rule["unchanged"] = json!({"reason": why.message, "files": why.files});
                 }
                 rule
             })
@@ -352,6 +397,12 @@ pub fn advisories(report: &RunReport) -> Vec<String> {
                 .map(|m| format!("`{}` ({} file(s))", m.value, m.files))
                 .collect();
             line.push_str(&format!("; nearest seen: {}", seen.join(", ")));
+        }
+        if let Some(why) = &r.unchanged {
+            line.push_str(&format!(
+                "; it matched in {} file(s) but left them unchanged: {}",
+                why.files, why.message
+            ));
         }
         line
     }));
@@ -615,6 +666,7 @@ mod tests {
             before: before.to_string(),
             after: after.to_string(),
             rules_fired: if before == after { vec![] } else { vec![0] },
+            conflicts: Vec::new(),
         }
     }
 

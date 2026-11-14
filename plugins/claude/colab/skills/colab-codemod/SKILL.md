@@ -347,7 +347,25 @@ colab refactor --script fix.codemod --commit-per-rule .
 
 On a large or unfamiliar codebase prefer `--verify` over a bare
 `--write`: it attributes a build failure to one rule instead of leaving
-you to work out which of five did it. Whatever you use, **run the
+you to work out which of five did it. `--verify` needs every rule to
+build on its own; when rules only build together (a new parameter and its
+callers), use `--bisect`.
+
+**Exit 11 means "conflicts, nothing written".** Before writing, colab
+checks each change: a `symbol` rename onto a name the file already uses,
+a Go/Python template that writes `fmt.` or `pathlib.` with nothing
+importing it, and, with `--verify-lsp`, any error the file's language
+server reports after the change but not before. Each is listed under
+`conflicts` (`conflict:` lines in human output). Fix the rule (add
+`requires import "fmt"`, choose another name, scope with `in`), and
+rerun. Pass `--allow-conflicts` only when you have read them and they are
+intended. Over MCP, `colab.apply` returns `applied: false` with the same
+`conflicts`; preview first and you will see them there.
+
+```sh
+# Cheap pre-write check by the language server (gopls, rust-analyzer, …).
+colab refactor --script fix.codemod --verify-lsp --write .
+``` Whatever you use, **run the
 project's own build or tests afterwards** — colab guarantees the edit
 was syntactic, not that the result compiles.
 
@@ -426,6 +444,8 @@ The counters separate the three ways a run comes back empty:
 | `visited: N, scanned: 0` | Files exist but none are in a language the script targets. Check the namespace. |
 | `scanned: N, changed: 0` | Files were parsed; no rule matched. The match string is wrong — see the per-rule counts. |
 | one rule at `files: 0` | That rule's match string is wrong. The others are fine. |
+| `files: 0` with `unchanged` | The pattern matched, but the template's output would not parse there, so it was skipped. Usually a `$$$` capture that already carries a trailing comma. |
+| exit 11, `conflicts` | Nothing was written; see "Applying safely". |
 | `changed` far too high | A symbol rename is catching an unrelated name. Scope it with `in`. |
 
 More diagnosis — idempotency failures, skipped files, oversized output,

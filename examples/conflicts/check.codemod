@@ -1,0 +1,7 @@
+// M27: conflicts are reported before anything is written.
+// - `load` -> `parse` merges two functions in a.go (b.go is fine).
+// - the template writes `fmt.` but a.go does not import fmt.
+refactor "conflicts" {
+    match go::symbol "load" { replace "parse" }
+    match go::pattern 'errors.Wrap($E, $M)' { replace 'fmt.Errorf("%s: %w", $M, $E)' }
+}

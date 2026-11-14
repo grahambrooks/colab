@@ -71,9 +71,38 @@ pub struct FileChange {
     /// [`CodeTransformer::apply_at`]. Empty when the transformer does not
     /// track individual rules.
     pub rules_fired: Vec<usize>,
+    /// What the rules that fired found suspicious about this change.
+    pub conflicts: Vec<crate::RuleConflict>,
 }
 
 impl FileChange {
+    /// The change one [`CodeTransformer::apply_at`] call made to `before`.
+    pub fn from_outcome(
+        path: impl Into<PathBuf>,
+        before: String,
+        outcome: crate::ApplyOutcome,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            before,
+            after: outcome.output,
+            rules_fired: outcome.rules_fired,
+            conflicts: outcome.conflicts,
+        }
+    }
+
+    /// A change with no rule attribution and no conflicts, e.g. one a
+    /// language server computed.
+    pub fn untraced(path: impl Into<PathBuf>, before: String, after: String) -> Self {
+        Self {
+            path: path.into(),
+            before,
+            after,
+            rules_fired: Vec::new(),
+            conflicts: Vec::new(),
+        }
+    }
+
     /// `true` when [`apply`](CodeTransformer::apply) produced
     /// different bytes from the original source.
     pub fn changed(&self) -> bool {
@@ -306,12 +335,11 @@ fn compute_change<T: CodeTransformer>(
         reason: e.to_string(),
     })?;
     let outcome = transformer.apply_at(path, &before);
-    Ok(FileChange {
-        path: path.to_path_buf(),
+    Ok(FileChange::from_outcome(
+        path.to_path_buf(),
         before,
-        after: outcome.output,
-        rules_fired: outcome.rules_fired,
-    })
+        outcome,
+    ))
 }
 
 /// True if `path` passes any explicit `include` and is not blocked
@@ -357,12 +385,11 @@ where
     if before == outcome.output {
         debug!("No changes for {}", path.display());
     }
-    visit(FileChange {
-        path: path.to_path_buf(),
+    visit(FileChange::from_outcome(
+        path.to_path_buf(),
         before,
-        after: outcome.output,
-        rules_fired: outcome.rules_fired,
-    })
+        outcome,
+    ))
 }
 
 /// Convenience: rewrite every relevant file in place.

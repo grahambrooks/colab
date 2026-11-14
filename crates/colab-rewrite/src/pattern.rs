@@ -829,6 +829,45 @@ pub enum PatternAction {
 pub struct PatternRule {
     pub pattern: StructuralPattern,
     pub action: PatternAction,
+    /// How this language spells a qualified name, for
+    /// [`conflicts`](PatternRule::conflicts). `None` skips that check.
+    pub qualifiers: Option<Qualifiers>,
+}
+
+/// How a language spells a qualified reference such as `fmt.Errorf`, and
+/// which qualifiers a file's imports bind. With it, a rewrite that
+/// introduces a qualifier nothing imports is reported as a conflict.
+#[derive(Clone, Copy)]
+pub struct Qualifiers {
+    /// The node kind of a qualified reference: `selector_expression` in
+    /// Go, `attribute` in Python.
+    pub kind: &'static str,
+    /// The field holding the qualifier: `operand` in Go, `object` in
+    /// Python. Only a qualifier that is a single leaf is checked.
+    pub field: &'static str,
+    /// Every name a file's imports bind, alias or conventional name. `*`
+    /// means "cannot tell" (a wildcard import), which silences the check.
+    pub imported: fn(&str) -> Vec<String>,
+    /// Qualifiers that need no import: builtins such as Python's `str`.
+    pub builtin: &'static [&'static str],
+}
+
+/// `true` when `template` spells `name.` with `name` as a whole word, so
+/// `fmt.Errorf` qualifies by `fmt` but `xfmt.F` does not.
+fn template_qualifies(template: &str, name: &str) -> bool {
+    let dotted = format!("{name}.");
+    template.match_indices(&dotted).any(|(at, _)| {
+        !template[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '$')
+    })
+}
+
+impl std::fmt::Debug for Qualifiers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Qualifiers({}.{})", self.kind, self.field)
+    }
 }
 
 impl PatternRule {
@@ -843,7 +882,89 @@ impl PatternRule {
             pattern: StructuralPattern::compile(language, text)?
                 .constrain(language, constraints)?,
             action,
+            qualifiers: None,
         })
+    }
+
+    /// Check rewrites for qualifiers nothing imports (see [`Qualifiers`]).
+    pub fn with_qualifiers(mut self, qualifiers: Qualifiers) -> Self {
+        self.qualifiers = Some(qualifiers);
+        self
+    }
+
+    /// Why [`apply`](PatternRule::apply) leaves `source` unchanged although
+    /// the pattern matches there: the rewritten file would not parse.
+    pub fn why_unchanged(&self, source: &str) -> Option<String> {
+        let PatternAction::Replace(template) = &self.action else {
+            return None;
+        };
+        let out = self.pattern.rewrite(source, template);
+        if out == source
+            || self.pattern.parses_cleanly(&out)
+            || !self.pattern.parses_cleanly(source)
+        {
+            return None;
+        }
+        Some(
+            "the rewritten code would not parse, so it was skipped; check the template \
+             (a `$$$` capture keeps its separators, so `$$$ARGS,` doubles a comma)"
+                .into(),
+        )
+    }
+
+    /// Qualifiers this rule's template introduced that the file neither
+    /// used `before` nor imports `after` (the file as the whole script
+    /// leaves it): `fmt.` in a template, with no `requires import "fmt"`
+    /// and no later rule adding it. Syntactic, so it errs towards silence:
+    /// a qualifier already present anywhere in `before`, as any leaf,
+    /// counts as known.
+    pub fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
+        let (Some(q), PatternAction::Replace(template)) = (self.qualifiers, &self.action) else {
+            return Vec::new();
+        };
+        let grammar = &self.pattern.lang.grammar;
+        let (Ok(old), Ok(new)) = (parse_clean(grammar, before), parse_clean(grammar, after)) else {
+            return Vec::new();
+        };
+        let mut known: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        crate::visit_all(&old, |node| {
+            if node.child_count() == 0 {
+                known.insert(&before[node.byte_range()]);
+            }
+        });
+        let imported = (q.imported)(after);
+        let mut introduced: Vec<String> = Vec::new();
+        crate::visit_all(&new, |node| {
+            if node.kind() != q.kind {
+                return;
+            }
+            let Some(qualifier) = node.child_by_field_name(q.field) else {
+                return;
+            };
+            if qualifier.child_count() != 0 {
+                return;
+            }
+            let name = &after[qualifier.byte_range()];
+            // Only a qualifier this rule's own template spells is its doing;
+            // `after` may hold later rules' changes too.
+            if template_qualifies(template, name)
+                && !known.contains(name)
+                && !q.builtin.contains(&name)
+                && !imported.iter().any(|i| i == "*" || i == name)
+                && !introduced.iter().any(|i| i == name)
+            {
+                introduced.push(name.to_string());
+            }
+        });
+        introduced
+            .into_iter()
+            .map(|name| {
+                format!(
+                    "the rewrite uses `{name}.`, which this file does not import; \
+                     add `requires import \"…\"` to the rule"
+                )
+            })
+            .collect()
     }
 
     /// Rewrite `source`. If it parsed cleanly and the rewrite would leave

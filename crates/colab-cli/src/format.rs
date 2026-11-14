@@ -79,6 +79,9 @@ pub trait Reporter {
         Ok(())
     }
     fn report(&mut self, change: &FileChange) -> io::Result<()>;
+    /// The run was refused (conflicts), so report the changes still to
+    /// come as "would" rather than "wrote". Only wording depends on it.
+    fn refused(&mut self) {}
     /// Emit whatever the format shows at the end of a run, then flush.
     /// Called exactly once, after the last `report`.
     fn finish(&mut self, report: &RunReport) -> io::Result<()>;
@@ -113,6 +116,10 @@ impl HumanReporter {
 }
 
 impl Reporter for HumanReporter {
+    fn refused(&mut self) {
+        self.mode = ExecMode::DryRun;
+    }
+
     fn file_op(&mut self, op: &FileOp) -> io::Result<()> {
         if self.options.detail == Detail::Summary {
             return Ok(());
@@ -181,6 +188,9 @@ impl Reporter for HumanReporter {
                 skipped.path.display(),
                 skipped.reason
             )?;
+        }
+        for conflict in render::conflict_lines(report) {
+            writeln!(self.out, "conflict: {}", conflict)?;
         }
         for advisory in render::advisories(report) {
             writeln!(self.out, "warning: {}", advisory)?;
@@ -290,6 +300,9 @@ impl Reporter for NdjsonReporter {
             "summary": render::summary_json(report),
             "rules": render::rules_json(report),
         });
+        if let Some(conflicts) = render::conflicts_json(report) {
+            value["conflicts"] = conflicts;
+        }
         let advisories = render::advisories(report);
         if !advisories.is_empty()
             && let Some(obj) = value.as_object_mut()

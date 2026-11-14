@@ -63,6 +63,7 @@ Exit codes:
    3   Unsupported namespace or operation.
    4   I/O error.
   10   --check found changes that would be made.
+  11   --write found conflicts and wrote nothing (see --allow-conflicts).
 "#
 )]
 struct Args {
@@ -214,7 +215,9 @@ struct RefactorArgs {
 
     /// Run this shell command after each rule's edits. A non-zero
     /// exit reverts that rule's changes and aborts the run.
-    /// Implies `--write`.
+    /// Implies `--write`. Every rule must pass on its own, so for rules
+    /// that only work together (a new parameter and its callers) use
+    /// `--bisect`, which checks once at the end.
     #[arg(long, value_name = "CMD", conflicts_with_all = ["dry_run", "check"])]
     verify: Option<String>,
 
@@ -236,6 +239,23 @@ struct RefactorArgs {
     /// --from <dir>` to roll back the run.
     #[arg(long, value_name = "DIR", conflicts_with_all = ["dry_run", "check"])]
     backup: Option<PathBuf>,
+
+    /// Before writing, open each changed file in its language server,
+    /// change it in memory, and treat every error diagnostic the change
+    /// adds as a conflict. Cheaper than `--verify`'s full build, and it
+    /// runs before anything is written. The server is chosen by extension
+    /// (rust-analyzer, gopls, …); `--verify-lsp='<command>'` names one.
+    #[arg(long = "verify-lsp", value_name = "CMD", num_args = 0..=1,
+          require_equals = true, default_missing_value = "",
+          conflicts_with_all = ["verify", "commit_per_rule"])]
+    verify_lsp: Option<String>,
+
+    /// Write even when a rule reports a conflict: a `symbol` rename to a
+    /// name the file already uses, or a pattern rewrite that introduces a
+    /// qualifier (`fmt.`) nothing imports. Without it, a run that finds
+    /// any writes nothing and exits 11; every format lists them.
+    #[arg(long = "allow-conflicts")]
+    allow_conflicts: bool,
 
     /// How much detail to report: `summary` (aggregate counters only),
     /// `counts` (adds per-rule match counts and changed paths), or
@@ -666,12 +686,7 @@ where
             }
         };
         let applied = transformer.apply_at(path, &before);
-        visit(FileChange {
-            path: path.clone(),
-            before,
-            after: applied.output,
-            rules_fired: applied.rules_fired,
-        })?;
+        visit(FileChange::from_outcome(path.clone(), before, applied))?;
     }
     Ok(outcome)
 }
@@ -822,14 +837,14 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     let started = Instant::now();
     let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
 
-    let backup_dir = args.backup.clone();
+    // Writes wait until the walk is over, so a conflict in any file can
+    // stop all of them.
+    let mut pending: Vec<FileChange> = Vec::new();
     let mut visit = |change: FileChange| -> Result<()> {
         report.record(&change);
-        if change.changed() && matches!(exec_mode, ExecMode::Write) {
-            if let Some(dir) = &backup_dir {
-                write_backup_snapshot(dir, &change.path, &change.before)?;
-            }
-            fs::write(&change.path, &change.after).map_err(|e| Error::io_at(&change.path, e))?;
+        if change.changed() {
+            pending.push(change);
+            return Ok(());
         }
         reporter
             .report(&change)
@@ -839,17 +854,75 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     let outcome = run_transformer(&refactoring, &args, &targets, &mut visit)?;
     report.record_walk(outcome);
+    lsp_check(&args, &pending, &mut report)?;
+    let blocked = matches!(exec_mode, ExecMode::Write) && refuse_conflicts(&args, &mut report);
+    if blocked {
+        reporter.refused();
+    } else if matches!(exec_mode, ExecMode::Write) {
+        write_changes(&pending, args.backup.as_deref())?;
+    }
+    report_all(reporter.as_mut(), &pending)?;
     colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
     report.elapsed = started.elapsed();
     reporter.finish(&report).map_err(io_to_error)?;
 
-    Ok(
-        if matches!(exec_mode, ExecMode::Check) && report.files_changed > 0 {
-            10
-        } else {
-            0
-        },
-    )
+    Ok(if blocked {
+        CONFLICT_EXIT
+    } else if matches!(exec_mode, ExecMode::Check) && report.files_changed > 0 {
+        10
+    } else {
+        0
+    })
+}
+
+/// Exit code for a `--write` run that found conflicts and wrote nothing.
+const CONFLICT_EXIT: i32 = 11;
+
+/// `true` (and a warning on the report) when the run found conflicts and
+/// `--allow-conflicts` was not given, so nothing may be written.
+fn refuse_conflicts(args: &RefactorArgs, report: &mut RunReport) -> bool {
+    if report.conflicts.is_empty() || args.allow_conflicts {
+        return false;
+    }
+    report.warnings.push(format!(
+        "wrote nothing: {} conflict(s) found; review them, then fix the rules \
+         or rerun with --allow-conflicts",
+        report.conflicts.len()
+    ));
+    true
+}
+
+/// `--verify-lsp`, when given: add the server's new errors as conflicts.
+fn lsp_check(args: &RefactorArgs, pending: &[FileChange], report: &mut RunReport) -> Result<()> {
+    match args.verify_lsp.as_deref() {
+        None => Ok(()),
+        Some(command) => crate::lsp_commands::verify_lsp(
+            Some(command).filter(|c| !c.is_empty()),
+            pending,
+            report,
+        ),
+    }
+}
+
+/// Report changes held back until the conflict check.
+fn report_all(reporter: &mut dyn format::Reporter, changes: &[FileChange]) -> Result<()> {
+    for change in changes {
+        reporter
+            .report(change)
+            .map_err(|e| Error::io_at(&change.path, e))?;
+    }
+    Ok(())
+}
+
+/// Write each change, saving its original under `backup` first.
+fn write_changes(changes: &[FileChange], backup: Option<&Path>) -> Result<()> {
+    for change in changes {
+        if let Some(dir) = backup {
+            write_backup_snapshot(dir, &change.path, &change.before)?;
+        }
+        fs::write(&change.path, &change.after).map_err(|e| Error::io_at(&change.path, e))?;
+    }
+    Ok(())
 }
 
 /// Apply each rule individually, with optional `--verify`
@@ -888,21 +961,18 @@ fn run_refactor_per_rule(
         // independent revert.
         let mut backups: std::collections::HashMap<PathBuf, String> =
             std::collections::HashMap::new();
-        let backup_dir = args.backup.clone();
+        let mut pending: Vec<FileChange> = Vec::new();
         let mut visit = |mut change: FileChange| -> Result<()> {
             // `SingleRule` always reports index 0; re-index it against
             // the full script so the report reads the same as a normal run.
             change.rules_fired = change.rules_fired.into_iter().map(|_| idx).collect();
+            for conflict in &mut change.conflicts {
+                conflict.rule = idx;
+            }
             report.record(&change);
             if change.changed() {
-                backups
-                    .entry(change.path.clone())
-                    .or_insert_with(|| change.before.clone());
-                if let Some(dir) = &backup_dir {
-                    write_backup_snapshot(dir, &change.path, &change.before)?;
-                }
-                fs::write(&change.path, &change.after)
-                    .map_err(|e| Error::io_at(&change.path, e))?;
+                pending.push(change);
+                return Ok(());
             }
             reporter
                 .report(&change)
@@ -911,6 +981,28 @@ fn run_refactor_per_rule(
         };
 
         let outcome = run_transformer(&single, args, targets, &mut visit)?;
+        if refuse_conflicts(args, &mut report) {
+            if idx > 0 {
+                report.warnings.push(format!(
+                    "rules 1–{idx} passed and were written before rule {} conflicted; \
+                     `colab undo` needs --backup",
+                    idx + 1
+                ));
+            }
+            reporter.refused();
+            report_all(reporter.as_mut(), &pending)?;
+            report.files_visited = files_visited.max(outcome.files_visited);
+            report.elapsed = started.elapsed();
+            reporter.finish(&report).map_err(io_to_error)?;
+            return Ok(CONFLICT_EXIT);
+        }
+        for change in &pending {
+            backups
+                .entry(change.path.clone())
+                .or_insert_with(|| change.before.clone());
+        }
+        write_changes(&pending, args.backup.as_deref())?;
+        report_all(reporter.as_mut(), &pending)?;
         // Each rule re-walks the same tree, so only the first pass's
         // visit count is meaningful; the rest would multiply it by the
         // rule count.
@@ -1015,19 +1107,13 @@ fn run_refactor_bisect(
     // Phase 1: full apply, recording snapshots along the way.
     let mut snapshots: std::collections::HashMap<PathBuf, String> =
         std::collections::HashMap::new();
-    let backup_dir = args.backup.clone();
     {
+        let mut pending: Vec<FileChange> = Vec::new();
         let mut visit = |change: FileChange| -> Result<()> {
             report.record(&change);
             if change.changed() {
-                snapshots
-                    .entry(change.path.clone())
-                    .or_insert_with(|| change.before.clone());
-                if let Some(dir) = &backup_dir {
-                    write_backup_snapshot(dir, &change.path, &change.before)?;
-                }
-                fs::write(&change.path, &change.after)
-                    .map_err(|e| Error::io_at(&change.path, e))?;
+                pending.push(change);
+                return Ok(());
             }
             reporter
                 .report(&change)
@@ -1036,6 +1122,19 @@ fn run_refactor_bisect(
         };
         let outcome = run_transformer(refactoring, args, targets, &mut visit)?;
         report.record_walk(outcome);
+        lsp_check(args, &pending, &mut report)?;
+        if refuse_conflicts(args, &mut report) {
+            reporter.refused();
+            report_all(reporter.as_mut(), &pending)?;
+            report.elapsed = started.elapsed();
+            reporter.finish(&report).map_err(io_to_error)?;
+            return Ok(CONFLICT_EXIT);
+        }
+        for change in &pending {
+            snapshots.insert(change.path.clone(), change.before.clone());
+        }
+        write_changes(&pending, args.backup.as_deref())?;
+        report_all(reporter.as_mut(), &pending)?;
     }
 
     // Phase 2: full-set verify.
@@ -1238,12 +1337,7 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
 
     let applied = refactoring.apply_at(&path, &source);
 
-    let change = FileChange {
-        path,
-        before: source,
-        after: applied.output,
-        rules_fired: applied.rules_fired,
-    };
+    let change = FileChange::from_outcome(path, source, applied);
 
     let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
     report.files_visited = 1;

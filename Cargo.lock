@@ -556,6 +556,7 @@ version = "2026.11.3"
 dependencies = [
  "colab-core",
  "colab-rewrite",
+ "log",
  "serde_json",
 ]
 

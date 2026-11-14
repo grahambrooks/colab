@@ -1,0 +1,8 @@
+// The same change without conflicts: a free name, and the import declared.
+refactor "fixed" {
+    match go::symbol "load" { replace "loadAll" }
+    match go::pattern 'errors.Wrap($E, $M)' {
+        replace 'fmt.Errorf("%s: %w", $M, $E)'
+        requires import "fmt"
+    }
+}

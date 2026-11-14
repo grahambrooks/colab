@@ -225,6 +225,34 @@ pub fn is_used(target: &str, source_code: &str) -> bool {
     used
 }
 
+/// Every name `source`'s imports may bind as a qualifier: each alias, and
+/// for an unaliased import every conventional name of its package (see
+/// [`package_names`]). Blank and dot imports bind no qualifier.
+pub(crate) fn imported_names(source: &str) -> Vec<String> {
+    let Some(tree) = crate::parse(source) else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    for decl in import_declarations(&tree) {
+        for spec in specs_of(decl) {
+            match spec.child_by_field_name("name") {
+                Some(alias) => {
+                    let alias = &source[alias.byte_range()];
+                    if alias != "_" && alias != "." {
+                        names.push(alias.to_string());
+                    }
+                }
+                None => names.extend(
+                    spec_path(spec, source)
+                        .map(package_names)
+                        .unwrap_or_default(),
+                ),
+            }
+        }
+    }
+    names
+}
+
 /// The names a package imported from `path` might be declared with. Go
 /// takes the name from the package clause, not the path, so these are the
 /// usual conventions: the last segment (`errors`), the one before a

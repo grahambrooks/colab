@@ -99,6 +99,14 @@ impl Operation for ScopedOperation {
     fn locate(&self, source: &str) -> Option<Vec<crate::find::Located>> {
         self.inner.locate(source)
     }
+
+    fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
+        self.inner.conflicts(before, after)
+    }
+
+    fn why_unchanged(&self, source: &str) -> Option<String> {
+        self.inner.why_unchanged(source)
+    }
 }
 
 #[cfg(test)]

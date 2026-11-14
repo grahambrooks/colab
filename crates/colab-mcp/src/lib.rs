@@ -626,12 +626,14 @@ fn run_script<P: ProgressSink>(
     let mut collector = ChangeCollector::new(options);
     let mut files_processed: u64 = 0;
 
+    let allow_conflicts = arg_bool(args, "allow_conflicts")?;
+    // Writes wait for the whole walk, so a conflict anywhere stops them all.
+    let mut pending: Vec<(PathBuf, String)> = Vec::new();
     for target in &paths {
         let outcome = walker::walk(&refactoring, target, &mut |change| {
             report.record(&change);
             if change.changed() && matches!(mode, RunMode::Apply) {
-                std::fs::write(&change.path, &change.after)
-                    .map_err(|e| colab_core::Error::io_at(&change.path, e))?;
+                pending.push((change.path.clone(), change.after.clone()));
             }
             collector.push(&change);
             files_processed += 1;
@@ -640,6 +642,19 @@ fn run_script<P: ProgressSink>(
         })
         .map_err(ToolError::from_error)?;
         report.record_walk(outcome);
+    }
+    let mut mode = mode;
+    if matches!(mode, RunMode::Apply) && !report.conflicts.is_empty() && !allow_conflicts {
+        report.warnings.push(format!(
+            "wrote nothing: {} conflict(s) found; fix the rules, or call again with allow_conflicts: true",
+            report.conflicts.len()
+        ));
+        mode = RunMode::Preview;
+    } else {
+        for (path, after) in &pending {
+            std::fs::write(path, after)
+                .map_err(|e| ToolError::from_error(colab_core::Error::io_at(path, e)))?;
+        }
     }
     colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
     report.elapsed = started.elapsed();
@@ -669,12 +684,7 @@ fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolErro
     let refactoring =
         compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
     let applied = refactoring.apply_at(&path, &source);
-    let change = FileChange {
-        path: path.clone(),
-        before: source,
-        after: applied.output,
-        rules_fired: applied.rules_fired,
-    };
+    let change = FileChange::from_outcome(path.clone(), source, applied);
 
     let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
     report.files_visited = 1;
@@ -686,6 +696,9 @@ fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolErro
     let mut out = Map::new();
     out.insert("changed".into(), json!(change.changed()));
     out.insert("rules".into(), render::rules_json(&report));
+    if let Some(conflicts) = render::conflicts_json(&report) {
+        out.insert("conflicts".into(), conflicts);
+    }
     if change.changed() {
         out.insert(
             "diff".into(),
@@ -819,6 +832,17 @@ fn arg_str(args: &Value, key: &str) -> Result<String, ToolError> {
         .and_then(|v| v.as_str())
         .map(str::to_string)
         .ok_or_else(|| ToolError::protocol(format!("missing string argument `{}`", key)))
+}
+
+fn arg_bool(args: &Value, key: &str) -> Result<bool, ToolError> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(_) => Err(ToolError::protocol(format!(
+            "argument `{}` must be a boolean",
+            key
+        ))),
+    }
 }
 
 fn arg_opt_path(args: &Value, key: &str) -> Result<Option<PathBuf>, ToolError> {
@@ -1279,6 +1303,43 @@ mod tests {
         assert!(
             warnings[0].as_str().unwrap().contains("matched no files"),
             "got: {warnings:?}"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn apply_writes_nothing_while_a_rule_reports_a_conflict() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("colab-mcp-conflict-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = "package main\n\nfunc load() {}\n\nfunc parse() {}\n";
+        fs::write(dir.join("main.go"), input).unwrap();
+        let call = |allow: bool| {
+            json!({
+                "jsonrpc":"2.0","id":12,"method":"tools/call",
+                "params":{"name":"colab.apply","arguments":{
+                    "script":"refactor \"r\" { match go::symbol \"load\" { replace \"parse\" } }",
+                    "paths":[dir.to_string_lossy()],
+                    "allow_conflicts": allow,
+                }}
+            })
+        };
+
+        let resp = handle(&call(false), &registry()).unwrap();
+        let parsed: Value =
+            serde_json::from_str(resp["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(parsed["applied"], false, "{parsed}");
+        assert_eq!(parsed["conflicts"][0]["rule"], 0, "{parsed}");
+        assert_eq!(fs::read_to_string(dir.join("main.go")).unwrap(), input);
+
+        let resp = handle(&call(true), &registry()).unwrap();
+        let parsed: Value =
+            serde_json::from_str(resp["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(parsed["applied"], true, "{parsed}");
+        assert!(
+            !fs::read_to_string(dir.join("main.go"))
+                .unwrap()
+                .contains("load")
         );
         fs::remove_dir_all(&dir).ok();
     }

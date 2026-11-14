@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::backend::Operation;
-use crate::report::{NearMiss, RunReport};
+use crate::report::{NearMiss, RunReport, Unchanged};
 use crate::suggest;
 
 /// The most files read per run while probing. Probing re-parses, so it
@@ -35,12 +35,11 @@ pub fn probe<R>(rules: &[Box<dyn Operation>], report: &mut RunReport, mut read: 
 where
     R: FnMut(&Path) -> Option<String>,
 {
-    let dead: Vec<(usize, &str)> = report
+    // Every dead rule is probed for why it left matches unchanged; those
+    // with a target are also probed for values resembling it.
+    let dead: Vec<(usize, Option<&str>)> = report
         .dead_rules()
-        .filter_map(|stat| {
-            let target = rules.get(stat.index)?.near_miss_target()?;
-            Some((stat.index, target))
-        })
+        .filter_map(|stat| Some((stat.index, rules.get(stat.index)?.near_miss_target())))
         .collect();
     if dead.is_empty() {
         return;
@@ -48,15 +47,17 @@ where
 
     // rule index -> observed value -> number of files it appeared in.
     let mut seen: BTreeMap<usize, BTreeMap<String, u64>> = BTreeMap::new();
+    // rule index -> (first reason given, files that gave one).
+    let mut unchanged: BTreeMap<usize, (String, u64)> = BTreeMap::new();
     let mut files_read = 0;
     for path in &report.scanned_sample {
         if files_read >= PROBE_FILE_LIMIT {
             break;
         }
-        let relevant: Vec<usize> = dead
+        let relevant: Vec<(usize, bool)> = dead
             .iter()
-            .map(|&(index, _)| index)
-            .filter(|&index| rules[index].is_file_relevant(path))
+            .filter(|&&(index, _)| rules[index].is_file_relevant(path))
+            .map(|&(index, target)| (index, target.is_some()))
             .collect();
         if relevant.is_empty() {
             continue;
@@ -65,7 +66,13 @@ where
             continue;
         };
         files_read += 1;
-        for index in relevant {
+        for (index, has_target) in relevant {
+            if let Some(reason) = rules[index].why_unchanged(&source) {
+                unchanged.entry(index).or_insert((reason, 0)).1 += 1;
+            }
+            if !has_target {
+                continue;
+            }
             let values: BTreeSet<String> =
                 rules[index].observed_targets(&source).into_iter().collect();
             let counts = seen.entry(index).or_default();
@@ -76,7 +83,10 @@ where
     }
 
     for (index, target) in dead {
-        let Some(counts) = seen.remove(&index) else {
+        if let Some((message, files)) = unchanged.remove(&index) {
+            report.rules[index].unchanged = Some(Unchanged { message, files });
+        }
+        let (Some(target), Some(counts)) = (target, seen.remove(&index)) else {
             continue;
         };
         report.rules[index].near_misses = rank(target, counts);
@@ -145,6 +155,7 @@ mod tests {
             before: String::new(),
             after: String::new(),
             rules_fired: Vec::new(),
+            conflicts: Vec::new(),
         });
     }
 

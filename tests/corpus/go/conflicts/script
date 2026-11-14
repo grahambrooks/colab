@@ -1,0 +1,13 @@
+// Pre-apply conflict checks. The corpus applies every rule regardless;
+// `colab refactor --write` would refuse to write this run (exit 11).
+// - rule 1 renames `load` to `parse`, which a.go already declares, so the
+//   rename merges two functions: a conflict. b.go has no `parse` and is clean.
+// - rule 2 rewrites to `fmt.Errorf` without `requires import "fmt"`; a.go
+//   does not import fmt (a conflict), b.go already does (clean).
+// - rule 3's template leaves a doubled comma, so its matches are skipped
+//   and the rule explains why it changed nothing.
+refactor "conflicts" {
+    match go::symbol "load" { replace "parse" }
+    match go::pattern 'errors.Wrap($E, $M)' { replace 'fmt.Errorf("%s: %w", $M, $E)' }
+    match go::pattern 'log.Print($$$A)' { replace 'log.Println($$$A,,)' }
+}

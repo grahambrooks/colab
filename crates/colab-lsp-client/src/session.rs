@@ -41,6 +41,8 @@ pub struct Session {
     captured: Option<Vec<Value>>,
     /// Documents opened so far, with their version.
     versions: std::collections::HashMap<String, i64>,
+    /// The latest `textDocument/publishDiagnostics` for each URI.
+    published: std::collections::HashMap<String, Vec<Value>>,
 }
 
 impl Session {
@@ -72,6 +74,7 @@ impl Session {
             root_uri: path_to_uri(root),
             captured: None,
             versions: Default::default(),
+            published: Default::default(),
         };
         let root_uri = session.root_uri.clone();
         let resource_operations = if file_operations {
@@ -157,6 +160,17 @@ impl Session {
                 )
             }
         }
+    }
+
+    /// The diagnostics the server last pushed for `path`, if it has.
+    pub fn published(&self, path: &Path) -> Option<&[Value]> {
+        self.published.get(&path_to_uri(path)).map(Vec::as_slice)
+    }
+
+    /// Forget what was pushed for `path`, so the next look waits for a
+    /// fresh publish rather than reading a stale one.
+    pub fn forget_published(&mut self, path: &Path) {
+        self.published.remove(&path_to_uri(path));
     }
 
     /// Start (or stop and collect) accepting `workspace/applyEdit`. A code
@@ -316,6 +330,16 @@ impl Session {
             }
             "experimental/serverStatus" => {
                 self.quiescent = params.get("quiescent").and_then(Value::as_bool);
+            }
+            "textDocument/publishDiagnostics" => {
+                if let Some(uri) = params.get("uri").and_then(Value::as_str) {
+                    let list = params
+                        .get("diagnostics")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    self.published.insert(uri.to_string(), list);
+                }
             }
             _ => {}
         }
