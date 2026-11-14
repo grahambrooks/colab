@@ -211,8 +211,8 @@ impl Operation for UseEnsure {
 
 /// Insert `use <target>;` at the top of `source_code` if no existing
 /// `use` declaration leads with the same path. The new line goes
-/// after any leading inner attributes (`#![...]`) so module-level
-/// pragmas stay first.
+/// after any leading inner attributes (`#![...]`) and inner doc
+/// comments (`//!`, `/*! */`), which must come before every item.
 pub fn ensure(target: &str, source_code: &str) -> String {
     let Some(tree) = crate::parse(source_code) else {
         return source_code.to_string();
@@ -226,21 +226,30 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         return source_code.to_string();
     }
 
-    // Find the byte offset right after the last leading inner
-    // attribute (`#![...]`) on the file's source order. If none,
-    // insert at byte 0.
+    // Insert after the last leading inner attribute or inner doc
+    // comment: both must precede every item. Plain comments among them
+    // (a licence header) are looked past without moving the point. With
+    // none, insert at byte 0.
     let root = tree.root_node();
     let mut insert_at = 0usize;
     for i in 0..root.named_child_count() {
         let Some(child) = root.named_child(i as u32) else {
             break;
         };
-        if child.kind() == "inner_attribute_item" {
-            insert_at = source_code[child.end_byte()..]
-                .find('\n')
-                .map(|p| child.end_byte() + p + 1)
-                .unwrap_or(child.end_byte());
-        } else {
+        let comment = matches!(child.kind(), "line_comment" | "block_comment");
+        let inner = child.kind() == "inner_attribute_item"
+            || (comment && child.child_by_field_name("inner").is_some());
+        if inner {
+            let end = child.end_byte();
+            insert_at = if source_code[..end].ends_with('\n') {
+                end
+            } else {
+                source_code[end..]
+                    .find('\n')
+                    .map(|p| end + p + 1)
+                    .unwrap_or(end)
+            };
+        } else if !comment {
             break;
         }
     }
@@ -348,6 +357,21 @@ mod tests {
         assert!(
             out.starts_with("#![allow(dead_code)]\nuse std::fmt;\n"),
             "got: {out}"
+        );
+    }
+
+    #[test]
+    fn ensure_inserts_after_inner_doc_comments() {
+        // `//!` docs must precede every item; a `use` above them is E0753.
+        let src = "//! Crate docs.\n// licence\n#![allow(dead_code)]\n\nuse std::io;\n";
+        assert_eq!(
+            ensure("std::fmt", src),
+            "//! Crate docs.\n// licence\n#![allow(dead_code)]\nuse std::fmt;\n\nuse std::io;\n"
+        );
+        let block = "/*! Docs. */\nfn main() {}\n";
+        assert_eq!(
+            ensure("std::fmt", block),
+            "/*! Docs. */\nuse std::fmt;\nfn main() {}\n"
         );
     }
 
