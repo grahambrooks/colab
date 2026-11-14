@@ -140,7 +140,10 @@ impl Session {
         timeout: Duration,
     ) -> Result<Transport> {
         // A kept server, unless that fails: then this command gets its own,
-        // as it would with `COLAB_KEEP_SERVER=0`.
+        // as it would with `COLAB_KEEP_SERVER=0`. Off Unix there are none,
+        // and the start-up timeout is only the kept server's.
+        #[cfg(not(unix))]
+        let _ = timeout;
         #[cfg(unix)]
         if crate::daemon::enabled() {
             let kept = std::env::current_exe().and_then(|exe| {

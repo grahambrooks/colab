@@ -3750,3 +3750,18 @@ fn baseline_reports_only_findings_new_since_the_ref() {
     assert!(!refused.status.success());
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn the_renovate_preset_runs_colab_fix_once_per_branch() {
+    let text = fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../renovate/colab.json"),
+    )
+    .unwrap();
+    let preset: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let tasks = &preset["postUpgradeTasks"];
+    assert_eq!(tasks["commands"], serde_json::json!(["colab fix --write"]));
+    assert_eq!(tasks["executionMode"], "branch");
+    // The command must parse as colab's own.
+    let help = colab().args(["fix", "--write", "--help"]).output().unwrap();
+    assert!(help.status.success());
+}

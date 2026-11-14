@@ -1,0 +1,8 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "After a dependency update, run the packs the repository's colab.toml declares (`colab fix --write`), so the bump and the code changes it needs land in one PR. Self-hosted Renovate must allow the command: \"allowedCommands\": [\"^colab fix --write$\"], with colab on PATH.",
+  "postUpgradeTasks": {
+    "commands": ["colab fix --write"],
+    "executionMode": "branch"
+  }
+}
