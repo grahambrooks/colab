@@ -338,4 +338,4 @@ PRs welcome. Before opening one:
 
 ## License
 
-MIT (the `license` field in [`Cargo.toml`](Cargo.toml)).
+MIT. See [`LICENSE`](LICENSE).
