@@ -41,7 +41,16 @@ where
         .dead_rules()
         .filter_map(|stat| Some((stat.index, rules.get(stat.index)?.near_miss_target())))
         .collect();
-    if dead.is_empty() {
+    // A rule that changed some files may still have left matches alone in
+    // others (a template that would not parse there, a match outside its
+    // scope); it is probed for that reason only.
+    let live: Vec<usize> = report
+        .rules
+        .iter()
+        .filter(|stat| stat.files_matched > 0 && stat.index < rules.len())
+        .map(|stat| stat.index)
+        .collect();
+    if dead.is_empty() && live.is_empty() {
         return;
     }
 
@@ -59,13 +68,35 @@ where
             .filter(|&&(index, _)| rules[index].is_file_relevant(path))
             .map(|&(index, target)| (index, target.is_some()))
             .collect();
-        if relevant.is_empty() {
+        let live_here: Vec<usize> = live
+            .iter()
+            .copied()
+            .filter(|&index| rules[index].is_file_relevant(path))
+            .collect();
+        if relevant.is_empty() && live_here.is_empty() {
             continue;
         }
         let Some(source) = read(path) else {
             continue;
         };
         files_read += 1;
+        for index in live_here {
+            let rule = &rules[index];
+            if rule
+                .prefilter()
+                .is_some_and(|literal| !source.contains(literal))
+            {
+                continue;
+            }
+            // After a write the file holds the rule's own result, so "already
+            // as the rule asks" is its success, not a skip.
+            if let Some(reason) = rule
+                .why_unchanged(&source)
+                .filter(|r| !r.starts_with(crate::ALREADY))
+            {
+                unchanged.entry(index).or_insert((reason, 0)).1 += 1;
+            }
+        }
         for (index, has_target) in relevant {
             if let Some(reason) = rules[index].why_unchanged(&source) {
                 unchanged.entry(index).or_insert((reason, 0)).1 += 1;
@@ -82,6 +113,11 @@ where
         }
     }
 
+    for index in live {
+        if let Some((message, files)) = unchanged.remove(&index) {
+            report.rules[index].unchanged = Some(Unchanged { message, files });
+        }
+    }
     for (index, target) in dead {
         if let Some((message, files)) = unchanged.remove(&index) {
             report.rules[index].unchanged = Some(Unchanged { message, files });
@@ -193,14 +229,15 @@ mod tests {
     }
 
     #[test]
-    fn live_rules_are_not_probed() {
+    fn live_rules_get_no_near_misses() {
+        // A rule that changed files is probed only for matches it left
+        // alone (`why_unchanged`), never for values resembling its target.
         let rules: Vec<Box<dyn Operation>> = vec![Box::new(LineImport("a/b"))];
         let mut report = RunReport::with_rules(rules.iter().map(|r| r.to_string()));
         scanned(&mut report, "one.fake");
         report.rules[0].files_matched = 1;
-        probe(&rules, &mut report, |_| {
-            panic!("a live rule must not be probed")
-        });
+        probe(&rules, &mut report, |_| Some("import a/b/v2\n".into()));
         assert!(report.rules[0].near_misses.is_empty());
+        assert!(report.rules[0].unchanged.is_none());
     }
 }

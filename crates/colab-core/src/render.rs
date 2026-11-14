@@ -439,6 +439,19 @@ pub fn advisories(report: &RunReport) -> Vec<String> {
         }
         line
     }));
+    out.extend(
+        report
+            .rules
+            .iter()
+            .filter(|r| r.files_matched > 0)
+            .filter_map(|r| {
+                let why = r.unchanged.as_ref()?;
+                Some(format!(
+                    "changed {} file(s) but left its matches unchanged in {} more: {} — {}",
+                    r.files_matched, why.files, why.message, r.rule
+                ))
+            }),
+    );
     if let Some(reason) = explain_no_changes(report) {
         out.push(reason);
     }

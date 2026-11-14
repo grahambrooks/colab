@@ -3390,3 +3390,35 @@ fn bisect_says_when_the_starting_tree_already_fails() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn a_rule_that_changed_some_files_says_which_it_skipped() {
+    let root = workspace_temp("partial-skip");
+    write(&root.join("a.go"), "package p\n\nfunc a() { f(1) }\n");
+    // Here `$$$A,` doubles the trailing comma, so the rewrite would not parse.
+    write(
+        &root.join("b.go"),
+        "package p\n\nfunc b() { f(\n\t1,\n\t2,\n) }\n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "refactor",
+            "--format",
+            "json",
+            "-e",
+            "match go::pattern 'f($$$A)' { replace 'g($$$A,)' }",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["rules"][0]["files"], 1, "{v}");
+    assert_eq!(v["rules"][0]["unchanged"]["files"], 1, "{v}");
+    let warning = v["warnings"][0].as_str().unwrap();
+    assert!(
+        warning.starts_with("changed 1 file(s) but left its matches unchanged in 1 more"),
+        "{warning}"
+    );
+    fs::remove_dir_all(&root).ok();
+}

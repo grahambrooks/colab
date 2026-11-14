@@ -218,7 +218,8 @@ impl Operation for Scoped {
     }
 
     fn why_unchanged(&self, source: &str) -> Option<String> {
-        if self.inner.apply(source) != source {
+        let inner = self.inner.apply(source);
+        if inner != source && self.narrow(source, &inner) == source {
             return Some(
                 "it matched only outside the scope its `where` clause allows, so nothing was changed"
                     .into(),

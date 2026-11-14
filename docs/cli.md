@@ -219,18 +219,32 @@ nothing for it.
 
 #### Unchanged matches
 
-A dead rule that *did* match, but left its matches alone, says why. Today
-that is a `pattern` template whose output would not parse where it lands,
-so colab skips the rewrite rather than write broken code. `find` lists the
-matches; the rule reports `unchanged`:
+A rule that *did* match, but left matches alone, says why — whether it
+changed nothing (a dead rule) or changed some files and skipped others.
+The reasons:
+
+- a `pattern` template whose output would not parse where it lands, so
+  colab skips the rewrite rather than write broken code;
+- a template that gives back what it matched apart from whitespace;
+- a `where inside` scope that every match fell outside.
+
+`find` lists the matches; the rule reports `unchanged`:
 
 ```json
 {"i":0,"rule":"rust::pattern 'f($$$A)' -> 'g($$$A,)'","files":0,
  "unchanged":{"reason":"the rewritten code would not parse, so it was skipped; …","files":3}}
 ```
 
+A rule that changed some files and skipped others adds a warning:
+
+```
+changed 1 file(s) but left its matches unchanged in 1 more: the rewritten code would not parse, … — go::pattern 'f($$$A)' -> 'g($$$A,)'
+```
+
 The usual cause is a `$$$` capture, which keeps its separators: in a
-list with a trailing comma, `$$$ARGS,` doubles it.
+list with a trailing comma, `$$$ARGS,` doubles it. The check reads at
+most 500 sampled files, and only those that hold the rule's prefilter
+literal.
 
 #### Conflicts
 

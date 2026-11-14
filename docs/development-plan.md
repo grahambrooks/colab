@@ -168,7 +168,6 @@ whichever milestone touches the same code.
 | Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |
 | Near misses for Markdown addresses: an address that names no section lists the nearest headings | M14 dogfooding |
 | `markdown::item` placement: insert a bullet before or after a given item | M14 dogfooding |
-| Report the files a rule skipped (`why_unchanged`) even when it changed others | M14 dogfooding |
 | An eval task for `colab fix` | M14 |
 | One call rewriter in `colab_rewrite` for the seven backends whose `calls.rs` differ only in the call node's kind (C, C++, C#, Go, JS, Python, Rust); RustRover's duplicate-code inspection finds them | RustRover inspections |
 | `markdown::text` inside a code fence (a line in a README `sh` block needed a hand edit) | M21 dogfooding |
