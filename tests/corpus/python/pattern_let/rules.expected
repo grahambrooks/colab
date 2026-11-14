@@ -1,0 +1,1 @@
+1 python::pattern '$O.$M($$$A)' where $M matches /^[a-z]+[A-Z]/ let $S = $M | snake -> '$O.$S($$$A)'

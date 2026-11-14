@@ -105,7 +105,7 @@ LibCST, Rector, Coccinelle, rust-analyzer SSR, IntelliJ SSR). All are
 template or constraint work on the existing pattern engine; none needs
 types.
 
-- **Transforms on captured values**, used in templates: case conversion
+- **Transforms on captured values** (shipped: `let $NEW = $F | step …` before a pattern's `replace`, see [`dsl.md`](dsl.md#derived-values-let); rewrites now keep the layout of the tokens they leave unchanged), used in templates: case conversion
   (`$N | snake`, `camel`, `pascal`, `kebab`, `upper`, `lower`), regex
   replace and substring. Convention renames (`getFoo` → `foo`) are
   impossible today. ast-grep `transform`, Grit functions, Comby.

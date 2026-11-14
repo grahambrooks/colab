@@ -1,0 +1,18 @@
+user.go:8:1: [0] func (u *User) GetName() string { return u.name }
+    $B = return u.name
+    $F = GetName
+    $OUT = string
+    $R = u
+    $T = *User
+user.go:10:1: [0] func (u *User) GetEmail() string {\n	return u.email\n}
+    $B = return u.email\n
+    $F = GetEmail
+    $OUT = string
+    $R = u
+    $T = *User
+user.go:18:9: [1] u.GetName()
+    $F = GetName
+    $X = u
+user.go:18:30: [1] u.GetEmail()
+    $F = GetEmail
+    $X = u

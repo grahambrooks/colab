@@ -6,7 +6,8 @@ use crate::ast::Action;
 use crate::ast::Span;
 use crate::ast::ImportClause;
 use crate::ast::{Clause, Fences, Location};
-use colab_core::{Constraint, Test, Var};
+use colab_core::{Constraint, Test, TransformArg, Var};
+use crate::ast::Let;
 use lalrpop_util::ParseError;
 
 grammar;
@@ -37,12 +38,12 @@ pub Item: Item = {
 // The optional `where` clause narrows a `<lang>::pattern` match; import
 // clauses after the action run only on the files the rule changed.
 pub Match: Match = {
-    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <constraints: Where?> "{" <action: Action> <clauses: Clause*> "}" <end: @R> =>? {
+    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <constraints: Where?> "{" <lets: Let*> <action: Action> <clauses: Clause*> "}" <end: @R> =>? {
         let (scope, fences, prose) = crate::ast::locations(locations)
             .map_err(|error| ParseError::User { error })?;
         let (imports, message, severity) = crate::ast::clauses(clauses)
             .map_err(|error| ParseError::User { error })?;
-        Ok(Match { namespace, match_string: string, scope, fences, prose, message, severity, constraints: constraints.unwrap_or_default(), action, imports, span: Span { start, end } })
+        Ok(Match { namespace, match_string: string, scope, fences, prose, message, severity, constraints: constraints.unwrap_or_default(), lets, action, imports, span: Span { start, end } })
     }
 };
 
@@ -77,6 +78,33 @@ Test: Test = {
     <var: Metavar> "count" <range: CountRange> => Test::Count { var, min: range.0, max: range.1 },
     "inside" <pattern: StringLiteral> => Test::Inside(pattern),
     "has" <pattern: StringLiteral> => Test::Has(pattern),
+};
+
+// `let $NAME = $F | strip_prefix("Get") | snake`: a value for the
+// `replace` template, derived from a binding (or an earlier `let`).
+// Step names are checked when the rule is compiled, so a misspelt one is
+// reported on its rule.
+Let: Let = {
+    "let" <var: Metavar> "=" <from: Metavar> <steps: ("|" <Step>)+> => Let { var, from, steps },
+};
+
+Step: (String, Vec<TransformArg>) = {
+    <name: Identifier> => (name, Vec::new()),
+    <name: Identifier> "(" <args: Comma<StepArg>> ")" => (name, args),
+};
+
+StepArg: TransformArg = {
+    <s: StringLiteral> => TransformArg::Text(s),
+    <r: Regex> => TransformArg::Regex(r),
+    <n: Number> => TransformArg::Int(i64::try_from(n).unwrap_or(i64::MAX)),
+    "-" <n: Number> => TransformArg::Int(-i64::try_from(n).unwrap_or(i64::MAX)),
+};
+
+Comma<T>: Vec<T> = {
+    <mut v: (<T> ",")*> <e: T?> => match e {
+        None => v,
+        Some(e) => { v.push(e); v }
+    }
 };
 
 // `count 2`, `count 1..3`, `count 1..` (no upper bound), `count ..3`.
@@ -158,6 +186,7 @@ pub Identifier: String = {
     "message" => "message".to_string(),
     "severity" => "severity".to_string(),
     "and" => "and".to_string(),
+    "let" => "let".to_string(),
 };
 
 // Three spellings, none with escapes. A double-quoted string cannot

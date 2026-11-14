@@ -707,6 +707,9 @@ impl Backend {
             "include" => {
                 "**`include \"<path>\"`** — splice another script's rules in here, resolved relative to this file."
             }
+            "let" => {
+                "**`let $NEW = $FROM | step | …`** — before a `<lang>::pattern` rule's `replace`: a value derived from a binding, for the template. Steps: `lower`, `upper`, `capitalize`, `snake`, `kebab`, `camel`, `pascal`, `upper_snake`, `strip_prefix(\"…\")`, `strip_suffix(\"…\")`, `replace(/re/, \"with\")`, `substring(start, end)`."
+            }
             _ => return None,
         };
         Some(keyword.to_string())
@@ -919,6 +922,7 @@ const IMPORT_CLAUSES: &[(&str, &str)] = &[
     ("drops import", "drops import \"$0\" when unused"),
     ("message", "message \"$0\""),
     ("severity", "severity ${1|error,warning,info|}"),
+    ("let", "let \\$${1:NAME} = \\$${2:FROM} | ${3:snake}"),
 ];
 
 fn action_completions() -> Vec<CompletionItem> {
@@ -936,7 +940,7 @@ fn action_completions() -> Vec<CompletionItem> {
         .chain(
             IMPORT_CLAUSES
                 .iter()
-                .map(|c| item("import clause (after the action)", c)),
+                .map(|c| item("clause (`let` before the action, the rest after it)", c)),
         )
         .collect()
 }

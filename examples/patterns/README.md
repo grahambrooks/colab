@@ -19,6 +19,10 @@ colab refactor --script examples/patterns/js/cleanup.codemod --format diff examp
 colab find --script examples/patterns/go-where/migrate.codemod --detail detailed examples/patterns/go-where
 colab refactor --script examples/patterns/go-where/migrate.codemod --format diff examples/patterns/go-where
 
+# M30: `let` derives a name from a capture. Getters lose their `Get`
+# (`Getaway` is left: not a getter); a many-line body keeps its layout.
+colab refactor --script examples/patterns/go-let/getters.codemod --format diff examples/patterns/go-let
+
 # Why does (or doesn't) a pattern match? Compare the trees.
 colab ast --lang go --pattern 'errors.Wrap($ERR, $MSG)'
 colab ast --lang go --stdin < examples/patterns/go/main.go
@@ -30,3 +34,4 @@ colab ast --lang go --stdin < examples/patterns/go/main.go
 | `python/` | A method-call rename, and a *structural* rewrite (`assertTrue(a == b)` → `assertEqual(a, b)`) that no fixed module expresses. |
 | `go-where/` | `where $M matches /^"/` and `not inside 'func $F(t *testing.T) { $$$ }'` narrow the matches; `requires import "fmt"` and `drops import … when unused` edit imports only in the files the rule rewrote. |
 | `js/` | `delete` removes standalone statements only: the `console.log` inside an arrow body is left (deleting it would leave `() => )`), and `colab find` still lists it. |
+| `go-let/` | `let $NAME = $F \| strip_prefix("Get")` builds a new name from a whole-identifier capture, for a method and its call sites; `where $F matches /^Get[A-Z]/` picks the getters. |

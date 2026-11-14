@@ -1,0 +1,2 @@
+1 go::pattern 'func ($R $T) $F() $OUT { $$$B }' where $F matches /^Get[A-Z]/ let $NAME = $F | strip_prefix("Get") -> 'func ($R $T) $NAME() $OUT { $$$B }'
+1 go::pattern '$X.$F()' where $F matches /^Get[A-Z]/ let $NAME = $F | strip_prefix("Get") -> '$X.$NAME()'

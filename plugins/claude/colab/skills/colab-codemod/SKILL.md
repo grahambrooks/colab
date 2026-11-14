@@ -192,6 +192,12 @@ match js::pattern 'console.log($$$ARGS)' { delete }
   The forms are `$X matches /re/`, `$X is <node-kind>`, `$$$X count 1..3`,
   `inside '…'` and `has '…'`, each optionally preceded by `not`. Only
   `pattern` takes them.
+- **Derive part of a name with `let`.** A metavariable is a whole node,
+  so `Get$N` cannot match; bind the whole name and transform it before
+  the action: `where $F matches /^Get[A-Z]/ { let $N = $F | strip_prefix("Get")
+  replace '$X.$N()' }`. Steps: `lower` `upper` `capitalize` `snake`
+  `kebab` `camel` `pascal` `upper_snake` `strip_prefix("…")`
+  `strip_suffix("…")` `replace(/re/, "s")` `substring(a, b)`.
 - **Let the rule manage imports.** After the action, add
   `requires import "fmt"` (any source language) and
   `drops import "github.com/pkg/errors" when unused` (Go only). These touch

@@ -163,6 +163,8 @@ pub struct StructuralPattern {
     checks: Vec<Check>,
     /// The constraints as written, for display.
     constraints: Vec<Constraint>,
+    /// `let` values derived from bindings for the template, in order.
+    lets: Vec<Derived>,
     /// The same pattern compiled in the language's `also` contexts.
     also: Vec<StructuralPattern>,
     /// The pattern's named structure, to refuse a match whose node has
@@ -417,6 +419,7 @@ impl StructuralPattern {
             tree,
             checks: Vec::new(),
             constraints: Vec::new(),
+            lets: Vec::new(),
             also: Vec::new(),
             shape,
         }
@@ -434,8 +437,10 @@ impl StructuralPattern {
         let bound = metavariables(&self.text);
         self.checks = constraints
             .iter()
+            .filter(|c| !c.is_let())
             .map(|c| Check::compile(language, &bound, c))
             .collect::<Result<_, _>>()?;
+        self.lets = Derived::compile_all(&bound, constraints)?;
         self.constraints = constraints.to_vec();
         self.also = std::mem::take(&mut self.also)
             .into_iter()
@@ -585,6 +590,7 @@ impl StructuralPattern {
         let rewriter = Rewriter {
             pattern: &self.pattern,
             fix: &fix,
+            lets: &self.lets,
             matches: &matches,
         };
         let edits = rewriter
@@ -672,6 +678,7 @@ fn same_but_whitespace(a: &str, b: &str) -> bool {
 struct Rewriter<'a, 't> {
     pattern: &'a Pattern,
     fix: &'a TemplateFix,
+    lets: &'a [Derived],
     /// Every match in the source, nested ones included.
     matches: &'a [NodeMatch<'t, StrDoc<TsLang>>],
 }
@@ -726,6 +733,8 @@ impl Rewriter<'_, '_> {
     fn render(&self, source: &str, i: usize) -> Edit {
         let mut nm = self.matches[i].clone();
         let vars: Vec<MetaVariable> = nm.get_env().get_matched_variables().collect();
+        // Each binding's (rewritten) text, for the `let`s derived from it.
+        let mut values: Vec<(String, MetaVariable, String)> = Vec::new();
         for var in vars {
             let (name, span) = match &var {
                 MetaVariable::Capture(name, _) => {
@@ -735,7 +744,13 @@ impl Rewriter<'_, '_> {
                 MetaVariable::MultiCapture(name) => {
                     let nodes = nm.get_env().get_multiple_matches(name);
                     let span = match (nodes.first(), nodes.last()) {
-                        (Some(first), Some(last)) => Some(first.range().start..last.range().end),
+                        // A sequence can end in a terminator that is only
+                        // whitespace (Go's newline after a statement);
+                        // the template's own text follows it instead.
+                        (Some(first), Some(last)) => {
+                            let (start, end) = (first.range().start, last.range().end);
+                            Some(start..start + source[start..end].trim_end().len())
+                        }
                         _ => None,
                     };
                     (name.clone(), span)
@@ -746,17 +761,119 @@ impl Rewriter<'_, '_> {
                 .map(|span| self.rewrite_span(source, span, i))
                 .unwrap_or_default();
             nm.get_env_mut()
-                .insert_transformation(&var, &name, text.into_bytes());
+                .insert_transformation(&var, &name, text.clone().into_bytes());
+            values.push((name, var, text));
+        }
+        for derived in self.lets {
+            let Some((_, var, text)) = values.iter().find(|(n, _, _)| *n == derived.from) else {
+                continue;
+            };
+            let (var, text) = (var.clone(), derived.apply(text));
+            nm.get_env_mut()
+                .insert_transformation(&var, &derived.var, text.clone().into_bytes());
+            values.push((derived.var.clone(), var, text));
         }
         let edit = nm.make_edit(self.pattern, self.fix);
         let text = String::from_utf8_lossy(&edit.inserted_text);
         let text = indent_with_tabs(source, edit.position, &text);
-        Edit::new(
-            edit.position,
-            edit.position + edit.deleted_length,
-            strip_blank_line_indent(&text),
-        )
+        let (start, end) = (edit.position, edit.position + edit.deleted_length);
+        let text = keep_layout(&source[start..end], &strip_blank_line_indent(&text));
+        Edit::new(start, end, text)
     }
+}
+
+/// `new` (a rendered template) with the whitespace of `old` (the text it
+/// replaces) around every token the two share.
+///
+/// A template replaces the whole match in its own layout, so
+/// `func ($R $T) $F() { $$$B }` → `func ($R $T) $NAME() { $$$B }` would
+/// put a many-line body on one line. Tokens are aligned (quoted text is
+/// one token, so a string's spaces are never mixed): an unchanged token
+/// keeps the whitespace before it in `old`, unless it follows a change or
+/// the template breaks the line there; a new one keeps the whitespace
+/// before it in `new`. A rewrite then changes what it changes and leaves
+/// the layout around it, as a layout-only rewrite is not made at all
+/// ([`same_but_whitespace`]).
+fn keep_layout(old: &str, new: &str) -> String {
+    let (a, b) = (layout_tokens(old), layout_tokens(new));
+    if a.is_empty() || b.is_empty() {
+        return new.to_string();
+    }
+    let ta: Vec<&str> = a.iter().map(|t| t.1).collect();
+    let tb: Vec<&str> = b.iter().map(|t| t.1).collect();
+    let ops = similar::capture_diff_slices(similar::Algorithm::Myers, &ta, &tb);
+    let mut out = String::with_capacity(new.len());
+    for op in ops {
+        let (o, n) = (op.old_range(), op.new_range());
+        if matches!(op.tag(), similar::DiffTag::Equal) {
+            let new_start = n.start;
+            for (k, ((old_space, token), (new_space, _))) in
+                a[o.clone()].iter().zip(&b[n]).enumerate()
+            {
+                // The template's own whitespace next to a change (so two
+                // tokens never fuse) and where it breaks the line (so a
+                // template that re-indents a block still does).
+                let next_to_change = k == 0 && (o.start != 0 || new_start != 0);
+                let space = if next_to_change || new_space.contains('\n') {
+                    new_space
+                } else {
+                    old_space
+                };
+                out.push_str(space);
+                out.push_str(token);
+            }
+        } else {
+            for (space, token) in &b[n] {
+                out.push_str(space);
+                out.push_str(token);
+            }
+        }
+    }
+    // Trailing whitespace belongs to whichever text has the last word.
+    out.push_str(&new[new.trim_end().len()..]);
+    out
+}
+
+/// `text` as `(whitespace before, token)` pairs: a quoted string, a run
+/// of identifier characters, or any other single character.
+fn layout_tokens(text: &str) -> Vec<(&str, &str)> {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut out = Vec::new();
+    let mut chars = text.char_indices().peekable();
+    let mut space_start = 0;
+    while let Some(&(i, c)) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        let space = &text[space_start..i];
+        let mut end = i + c.len_utf8();
+        chars.next();
+        if matches!(c, '"' | '\'' | '`') {
+            let mut escaped = false;
+            for (j, d) in chars.by_ref() {
+                end = j + d.len_utf8();
+                if escaped {
+                    escaped = false;
+                } else if d == '\\' {
+                    escaped = true;
+                } else if d == c || d == '\n' {
+                    break;
+                }
+            }
+        } else if word(c) {
+            while let Some(&(j, d)) = chars.peek() {
+                if !word(d) {
+                    break;
+                }
+                end = j + d.len_utf8();
+                chars.next();
+            }
+        }
+        out.push((space, &text[i..end]));
+        space_start = end;
+    }
+    out
 }
 
 /// ast-grep re-indents a multi-line template's later lines to the
@@ -870,6 +987,61 @@ fn metavariables(pattern: &str) -> Vec<Var> {
     out
 }
 
+/// One compiled `let`: `var` is `from`'s text through `steps`.
+#[derive(Debug)]
+struct Derived {
+    var: String,
+    from: String,
+    steps: Vec<crate::derive::Step>,
+}
+
+impl Derived {
+    /// The `let`s among `constraints`, in order. Each derives from a
+    /// metavariable the pattern binds or an earlier `let`, and names a
+    /// new `$VAR`, written with one `$`: it holds text, not nodes.
+    fn compile_all(bound: &[Var], constraints: &[Constraint]) -> Result<Vec<Self>, String> {
+        let mut out: Vec<Self> = Vec::new();
+        for c in constraints {
+            let Test::Let { var, from, steps } = &c.test else {
+                continue;
+            };
+            if var.multi {
+                return Err(format!(
+                    "`{c}`: a `let` holds text, so it is named with one `$`: `${}`",
+                    var.name
+                ));
+            }
+            if let Some(b) = bound.iter().find(|b| b.name == var.name) {
+                return Err(format!(
+                    "`{c}`: the pattern already binds `{b}`; name the derived value something else"
+                ));
+            }
+            if out.iter().any(|d| d.var == var.name) {
+                return Err(format!("`{c}`: `{var}` is already a `let`"));
+            }
+            let earlier = !from.multi && out.iter().any(|d| d.var == from.name);
+            if !earlier {
+                require_bound(bound, from).map_err(|e| format!("`{c}`: {e}"))?;
+            }
+            out.push(Self {
+                var: var.name.clone(),
+                from: from.name.clone(),
+                steps: steps
+                    .iter()
+                    .map(crate::derive::Step::compile)
+                    .collect::<Result<_, _>>()?,
+            });
+        }
+        Ok(out)
+    }
+
+    fn apply(&self, text: &str) -> String {
+        self.steps
+            .iter()
+            .fold(text.to_string(), |text, step| step.apply(&text))
+    }
+}
+
 /// One compiled `where` constraint.
 struct Check {
     negated: bool,
@@ -952,6 +1124,7 @@ impl Check {
             }
             Test::Inside(text) => CheckKind::Inside(nested(language, "inside", text)?),
             Test::Has(text) => CheckKind::Has(nested(language, "has", text)?),
+            Test::Let { .. } => unreachable!("`let` is compiled by `Derived`"),
         };
         Ok(Self {
             negated: constraint.negated,
@@ -1158,6 +1331,13 @@ impl PatternRule {
         action: PatternAction,
         constraints: &[Constraint],
     ) -> Result<Self, String> {
+        if matches!(action, PatternAction::Delete)
+            && let Some(c) = constraints.iter().find(|c| c.is_let())
+        {
+            return Err(format!(
+                "`{c}`: a `let` derives a value for the `replace` template, and `delete` has none"
+            ));
+        }
         Ok(Self {
             pattern: StructuralPattern::compile(language, text)?
                 .constrain(language, constraints)?,
@@ -1308,9 +1488,10 @@ impl std::fmt::Display for PatternRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "pattern '{}'{}",
+            "pattern '{}'{}{}",
             self.pattern.text(),
-            colab_core::constraint::display_where(self.pattern.constraints())
+            colab_core::constraint::display_where(self.pattern.constraints()),
+            colab_core::constraint::display_lets(self.pattern.constraints())
         )?;
         match &self.action {
             PatternAction::Replace(template) => write!(f, " -> '{template}'"),
@@ -1632,6 +1813,100 @@ mod tests {
     }
 
     const GO_SRC: &str = "package main\n\nfunc main() {\n\tif err := f(); err != nil {\n\t\treturn errors.Wrap(err, \"f failed\")\n\t}\n\tlog.Println(\"a\", 1)\n}\n";
+
+    #[test]
+    fn a_rewrite_keeps_the_layout_of_what_it_does_not_change() {
+        // A one-line template over a many-line match changes one name.
+        assert_eq!(
+            keep_layout("f() {\n\tx := 1\n\treturn x\n}", "g() { x := 1 return x }"),
+            "g() {\n\tx := 1\n\treturn x\n}"
+        );
+        // Next to a change, the template's spacing: tokens never fuse.
+        assert_eq!(
+            keep_layout("extern \"C\" {}", "unsafe extern \"C\" {}"),
+            "unsafe extern \"C\" {}"
+        );
+        assert_eq!(keep_layout("x+y", "x in y"), "x in y");
+        // Where the template breaks a line, its indentation stands.
+        assert_eq!(
+            keep_layout("if c:\n    a()", "if c:\n    with l:\n        a()"),
+            "if c:\n    with l:\n        a()"
+        );
+        // A string is one token: its spaces are never taken from the old.
+        assert_eq!(keep_layout("f(\"a  b\")", "f(\"a b\")"), "f(\"a b\")");
+    }
+
+    // ---------- let ------------------------------------------------------
+
+    fn derive(var_: &str, from: &str, steps: Vec<colab_core::Transform>) -> Constraint {
+        c(
+            false,
+            Test::Let {
+                var: var(var_),
+                from: var(from),
+                steps,
+            },
+        )
+    }
+
+    #[test]
+    fn a_let_fills_the_template_with_a_derived_value() {
+        use colab_core::Transform::{Snake, StripPrefix, Upper};
+        let lets = [
+            derive("$NAME", "$F", vec![StripPrefix("Get".into())]),
+            // From an earlier `let`.
+            derive("$SNAKE", "$NAME", vec![Snake, Upper]),
+        ];
+        let p = constrained("$X.$F()", &lets).unwrap();
+        let src = "package p\nfunc f() { u.GetUserID(); u.Other() }\n";
+        assert_eq!(
+            p.rewrite(src, "$X.$NAME() + $SNAKE"),
+            "package p\nfunc f() { u.UserID() + USER_ID; u.Other() + OTHER }\n"
+        );
+        // Nested matches are rewritten inside out, the `let` with them.
+        let nested = "package p\nfunc f() { a.GetB().GetC() }\n";
+        assert_eq!(
+            p.rewrite(nested, "$X.$NAME()"),
+            "package p\nfunc f() { a.B().C() }\n"
+        );
+        let rule = PatternRule::compile(
+            &go(),
+            "$X.$F()",
+            PatternAction::Replace("$X.$NAME()".into()),
+            &lets[..1],
+        )
+        .unwrap();
+        assert_eq!(
+            rule.to_string(),
+            "pattern '$X.$F()' let $NAME = $F | strip_prefix(\"Get\") -> '$X.$NAME()'"
+        );
+    }
+
+    #[test]
+    fn a_let_must_name_a_new_value_from_a_bound_one() {
+        let lower = || vec![colab_core::Transform::Lower];
+        let err = |lets: &[Constraint]| constrained("$X.$F()", lets).unwrap_err();
+        assert!(err(&[derive("$X", "$F", lower())]).contains("already binds `$X`"));
+        assert!(err(&[derive("$N", "$Q", lower())]).contains("not a metavariable"));
+        assert!(err(&[derive("$$$N", "$F", lower())]).contains("one `$`"));
+        assert!(
+            err(&[derive("$N", "$F", lower()), derive("$N", "$X", lower())])
+                .contains("already a `let`")
+        );
+        let bad = colab_core::Transform::Replace {
+            regex: "(".into(),
+            with: String::new(),
+        };
+        assert!(err(&[derive("$N", "$F", vec![bad])]).contains("replace(/(/"));
+        let delete = PatternRule::compile(
+            &go(),
+            "$X.$F()",
+            PatternAction::Delete,
+            &[derive("$N", "$F", lower())],
+        )
+        .unwrap_err();
+        assert!(delete.contains("`delete` has none"), "{delete}");
+    }
 
     // ---------- where constraints ----------------------------------------
 

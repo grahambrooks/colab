@@ -1,0 +1,8 @@
+// A camelCase client library moved to snake_case method names. `let`
+// converts each name; `where` leaves methods already in snake_case alone.
+refactor "camel-to-snake" {
+    match python::pattern '$O.$M($$$A)' where $M matches /^[a-z]+[A-Z]/ {
+        let $S = $M | snake
+        replace '$O.$S($$$A)'
+    }
+}

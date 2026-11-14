@@ -15,12 +15,12 @@ use std::path::{Path, PathBuf};
 use lalrpop_util::ParseError;
 use lalrpop_util::lalrpop_mod;
 
-use crate::ast::{Action, Command, Fences, ImportClause, Item, Match};
+use crate::ast::{Action, Command, Fences, ImportClause, Item, Let, Match, Namespace};
 use crate::model::Refactoring;
 use colab_core::suggest;
 use colab_core::{
-    BackendRegistry, Error, FencedOperation, Followup, LanguageBackend, Operation, ParseDetail,
-    ProseRename, Result, RuleSpec, ScopedOperation, WithFollowups,
+    BackendRegistry, Constraint, Error, FencedOperation, Followup, LanguageBackend, Operation,
+    ParseDetail, ProseRename, Result, RuleSpec, ScopedOperation, WithFollowups,
 };
 
 lalrpop_mod!(grammar, "/codemod.rs");
@@ -296,6 +296,38 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Lowered> {
     Ok((ops, advice))
 }
 
+/// `let` clauses as the constraints that carry them to the pattern
+/// compiler, each step checked.
+fn lower_lets(namespace: &Namespace, action: &Action, lets: Vec<Let>) -> Result<Vec<Constraint>> {
+    if namespace.module != "pattern" {
+        return Err(Error::UnsupportedOperation(format!(
+            "`let` derives a value from a metavariable for a `replace` template, and only \
+             `{}::pattern` binds metavariables; `{}::{}` has none",
+            namespace.lang, namespace.lang, namespace.module
+        )));
+    }
+    if !matches!(action, Action::Replace(_)) {
+        return Err(Error::UnsupportedOperation(
+            "`let` derives a value for the `replace` template; this rule has no template".into(),
+        ));
+    }
+    lets.into_iter()
+        .map(|Let { var, from, steps }| {
+            let steps = steps
+                .into_iter()
+                .map(|(name, args)| colab_core::Transform::parse(&name, args))
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| {
+                    Error::UnsupportedOperation(format!("`let {var} = {from} | …`: {e}"))
+                })?;
+            Ok(Constraint {
+                negated: false,
+                test: colab_core::Test::Let { var, from, steps },
+            })
+        })
+        .collect()
+}
+
 fn lower_match_ops(
     m: Match,
     backends: &BackendRegistry,
@@ -309,7 +341,8 @@ fn lower_match_ops(
         prose,
         message: _,
         severity: _,
-        constraints,
+        mut constraints,
+        lets,
         action,
         imports,
         span: _,
@@ -323,6 +356,9 @@ fn lower_match_ops(
             suggest::candidates_note(&namespace.lang, "languages", &backends.languages())
         ))
     })?;
+    if !lets.is_empty() {
+        constraints.extend(lower_lets(&namespace, &action, lets)?);
+    }
     let spec = match action {
         Action::Replace(replacement) => RuleSpec::Replace {
             target: match_string,
@@ -646,6 +682,7 @@ mod tests {
                 message: None,
                 severity: None,
                 constraints: Vec::new(),
+                lets: Vec::new(),
                 action: Action::Replace("d.e.f".to_string()),
                 imports: Vec::new(),
                 span: crate::ast::Span { start: 1, end: 46 },
@@ -1112,6 +1149,53 @@ import (
             out,
             "package p\n\nimport \"fmt\"\n\nfunc f() {\n\tfmt.Errorf(\"a\", err)\n\terrors.Wrap(err, m)\n}\n"
         );
+    }
+
+    #[test]
+    fn a_let_parses_every_step_form_and_reaches_the_template() {
+        let m = one_match(
+            r#"match go::pattern '$X.$F()' { let $N = $F | strip_prefix("Get") | replace(/^(a)/, "b") | substring(1, -1) | snake let $M = $N | upper replace '$X.$M()' }"#,
+        );
+        let shown: Vec<String> = m.lets.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            shown,
+            [
+                r#"let $N = $F | strip_prefix("Get") | replace(/^(a)/, "b") | substring(1, -1) | snake"#,
+                "let $M = $N | upper",
+            ]
+        );
+        let script = r#"refactor "t" { match go::pattern '$X.$F()' where $F matches /^Get/ { let $N = $F | strip_prefix("Get") replace '$X.$N()' } }"#;
+        let refactoring = compile(script, &registry()).unwrap();
+        assert_eq!(
+            refactoring.rules[0].to_string(),
+            r#"go::pattern '$X.$F()' where $F matches /^Get/ let $N = $F | strip_prefix("Get") -> '$X.$N()'"#
+        );
+        let src = "package p\n\nfunc f() { u.GetName(); u.Name() }\n";
+        assert_eq!(
+            refactoring.rules[0].apply(src),
+            "package p\n\nfunc f() { u.Name(); u.Name() }\n"
+        );
+    }
+
+    #[test]
+    fn a_let_is_refused_where_it_cannot_apply() {
+        let err = |rule: &str| {
+            compile(&format!("refactor \"t\" {{ {rule} }}"), &registry())
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default()
+        };
+        let e = err(r#"match go::symbol "a" { let $N = $F | lower replace "b" }"#);
+        assert!(e.contains("only `go::pattern` binds metavariables"), "{e}");
+        let e = err(r#"match go::pattern '$X.$F()' { let $N = $F | lower delete }"#);
+        assert!(e.contains("has no template"), "{e}");
+        let e = err(r#"match go::pattern '$X.$F()' { let $N = $F | snak replace '$N' }"#);
+        assert!(e.contains("did you mean `snake`"), "{e}");
+        let e =
+            err(r#"match go::pattern '$X.$F()' { let $N = $F | strip_prefix(1) replace '$N' }"#);
+        assert!(e.contains("takes one string"), "{e}");
+        let e = err(r#"match go::pattern '$X.$F()' { let $N = $F | lower(1) replace '$N' }"#);
+        assert!(e.contains("takes no arguments"), "{e}");
     }
 
     #[test]

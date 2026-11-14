@@ -16,6 +16,9 @@ pub struct Command {
 }
 
 /// One element inside a `refactor "..." { … }` block.
+// A script holds a handful of items, parsed once and lowered at once;
+// boxing `Match` would buy nothing but indirection at every use.
+#[allow(clippy::large_enum_variant)]
 #[derive(PartialEq, Debug)]
 pub enum Item {
     Match(Match),
@@ -46,6 +49,8 @@ pub struct Match {
     pub severity: Option<colab_core::Severity>,
     /// Constraints from a `where` clause, in order. Empty without one.
     pub constraints: Vec<colab_core::Constraint>,
+    /// `let $NEW = $FROM | step …` clauses before the action, in order.
+    pub lets: Vec<Let>,
     pub action: Action,
     /// `requires import` / `drops import … when unused` clauses after the
     /// action, in order.
@@ -73,6 +78,30 @@ pub enum Location {
 }
 
 /// One clause after a rule's action.
+/// `let $NEW = $FROM | step | …`: a value derived from a binding for a
+/// `<lang>::pattern` `replace` template. Steps are `(name, args)` as
+/// written; the compiler checks them ([`colab_core::Transform::parse`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Let {
+    pub var: colab_core::Var,
+    pub from: colab_core::Var,
+    pub steps: Vec<(String, Vec<colab_core::TransformArg>)>,
+}
+
+impl std::fmt::Display for Let {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "let {} = {}", self.var, self.from)?;
+        for (name, args) in &self.steps {
+            write!(f, " | {name}")?;
+            if !args.is_empty() {
+                let args: Vec<String> = args.iter().map(ToString::to_string).collect();
+                write!(f, "({})", args.join(", "))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Clause {
     Import(ImportClause),

@@ -26,7 +26,7 @@ Whitespace is insignificant outside string literals.
 ```ebnf
 program     = "refactor" string "{" item* "}"
 item        = match | "include" string
-match       = "match" namespace string location* [ where ] "{" action clause* "}"
+match       = "match" namespace string location* [ where ] "{" let* action clause* "}"
 location    = "in" string                -- path scope, at most once
             | "in" "fences"              -- only inside Markdown code fences
             | "and" "fences"             -- the rule's files, and fences
@@ -39,6 +39,9 @@ test        = metavar "matches" ( regex | string )
             | "inside" string           -- the only test on symbol / call: a code scope
             | "has" string
 range       = number | number ".." number | number ".." | ".." number
+let         = "let" metavar "=" metavar ( "|" step )+   -- before the action; pattern only
+step        = identifier [ "(" [ arg ( "," arg )* ] ")" ]
+arg         = string | regex | [ "-" ] number
 metavar     = "$" NAME | "$$$" NAME
 regex       = "/" ( any-char-except-slash-or-newline | "\" any-char )+ "/"
 clause      = import | "message" string | "severity" ( "error" | "warning" | "info" )
@@ -264,6 +267,12 @@ How it matches:
   quotes (a Rust lifetime and a string) as a raw string, `r#"…"#`; see
   [Reserved tokens](#reserved-tokens).
 
+- **The layout around a change is kept.** A template replaces the whole
+  match, but every token it leaves unchanged keeps the whitespace it had,
+  so `func ($R $T) $F() $OUT { $$$B }` → `… $NAME() $OUT { $$$B }` renames
+  the function and leaves a many-line body as it was. Next to a changed
+  token, and wherever the template breaks a line, the template's own
+  spacing is used, so a template that re-indents a block still does.
 - **Templates are re-indented.** Lines after a template's first are
   indented to the match's column, so write a multi-line template
   flush-left in its final shape. Tab-indented code (Go) is indented with tabs.
@@ -310,6 +319,51 @@ match go::pattern 'errors.Wrap($E, $M)'
   pattern's bindings.
 - Constraints only remove matches, so the prefilter stays sound, and
   `colab find` lists exactly what `refactor` would change.
+
+### Derived values: `let`
+
+A metavariable binds a whole node, so `Get$NAME` cannot match part of
+an identifier. A `let` before the action computes the part from the
+whole, for the template to use:
+
+```
+// Go getters drop the `Get` prefix (Effective Go).
+match go::pattern '$X.$F()' where $F matches /^Get[A-Z]/ {
+    let $NAME = $F | strip_prefix("Get")
+    replace '$X.$NAME()'
+}
+// A camelCase client library moved to snake_case methods.
+match python::pattern '$O.$M($$$A)' where $M matches /^[a-z]+[A-Z]/ {
+    let $S = $M | snake
+    replace '$O.$S($$$A)'
+}
+```
+
+`let $NEW = $FROM | step | …` passes the text bound to `$FROM` through
+each step in turn and binds the result to `$NEW`. The steps:
+
+| Step | Gives |
+| ---- | ----- |
+| `lower`, `upper` | the text in lower or upper case |
+| `capitalize` | the first character upper-cased, the rest kept |
+| `snake`, `kebab`, `upper_snake` | `get_user_id`, `get-user-id`, `GET_USER_ID` |
+| `camel`, `pascal` | `getUserId`, `GetUserId` |
+| `strip_prefix("…")`, `strip_suffix("…")` | the text without it; unchanged when it is not there |
+| `replace(/re/, "with")` | every match of the regex replaced; `$1` or `${name}` in `with` is a group |
+| `substring(start, end)` | characters `start` to `end`; a negative index counts from the end, and `end` may be left out (`substring(1, -1)` unquotes a string) |
+
+- The case steps split the text into words at `_`, `-`, spaces and case
+  changes, and keep an acronym whole: `HTTPServer` is `HTTP` and `Server`.
+  Leading and trailing underscores stay: `_privateName` → `_private_name`.
+- `$FROM` is a metavariable the pattern binds, or an earlier `let`.
+  `$NEW` is a new name, written with one `$`: the pattern must not bind
+  it already. Both are checked when the script compiles, as is every
+  step name (with a "did you mean") and regex.
+- A `let` narrows nothing: pair it with a `where` (above) to choose the
+  matches it applies to. It only fills a `replace` template, so it is
+  refused on `delete` and on modules other than `pattern`.
+- A derived value is computed from the binding *after* nested matches
+  inside it are rewritten, like the binding itself.
 
 ### Imports: `requires import` and `drops import … when unused`
 
@@ -750,7 +804,7 @@ The grammar keywords are:
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
 `count`, `inside`, `has`, `requires`, `import`, `drops`, `when`,
-`unused`; and for finding clauses `message`, `severity` (`error`,
+`unused`; `let` for derived values; and for finding clauses `message`, `severity` (`error`,
 `warning` and `info` are ordinary identifiers).
 
 `::` is the namespace separator. `//` starts a line comment.

@@ -1,0 +1,8 @@
+client.py:2:15: [0] client.getUserProfile(user_id)
+    $A = user_id
+    $M = getUserProfile
+    $O = client
+client.py:3:5: [0] client.updateHTTPHeaders({"x": 1})
+    $A = {"x": 1}
+    $M = updateHTTPHeaders
+    $O = client
