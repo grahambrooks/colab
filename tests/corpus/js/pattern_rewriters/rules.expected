@@ -1,0 +1,1 @@
+1 js::pattern 'createClient({ $$$OPTS })' where not has 'legacy: true' let $NEW = $$$OPTS | rewrite(timeout, retries) -> 'connect({ $NEW })'

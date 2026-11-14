@@ -196,6 +196,9 @@ match js::pattern 'console.log($$$ARGS)' { delete }
   repeated one with `pattern test_func = '…'` and write `inside test_func`),
   each optionally preceded by `not`. Only
   `pattern` takes them.
+- **Rewrite inside a binding with `rewriter`.** `rewriter t = 'timeout: $V' -> 'timeoutMs: $V'`
+  at the top, then `let $NEW = $$$OPTS | rewrite(t, …)` before the
+  action: each match inside `$$$OPTS` is rewritten in place, the rest kept.
 - **Derive part of a name with `let`.** A metavariable is a whole node,
   so `Get$N` cannot match; bind the whole name and transform it before
   the action: `where $F matches /^Get[A-Z]/ { let $N = $F | strip_prefix("Get")

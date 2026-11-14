@@ -31,6 +31,9 @@ pub Item: Item = {
     "include" <s: StringLiteral> => Item::Include(s),
     // `pattern helper = '…'`: a pattern `where` clauses name.
     <start: @L> "pattern" <name: Identifier> "=" <text: StringLiteral> <end: @R> => Item::Pattern { name, text, span: Span { start, end } },
+    // `rewriter opt = '<pattern>' -> '<template>'`: what a `let`'s
+    // `rewrite(opt)` step does to each match inside a binding.
+    <start: @L> "rewriter" <name: Identifier> "=" <pattern: StringLiteral> "->" <template: StringLiteral> <end: @R> => Item::Rewriter { name, pattern, template, span: Span { start, end } },
 };
 
 // The optional `in "<glob>"` clause restricts the rule to matching
@@ -129,6 +132,7 @@ StepArg: TransformArg = {
     <r: Regex> => TransformArg::Regex(r),
     <n: Number> => TransformArg::Int(i64::try_from(n).unwrap_or(i64::MAX)),
     "-" <n: Number> => TransformArg::Int(-i64::try_from(n).unwrap_or(i64::MAX)),
+    <name: Identifier> => TransformArg::Name(name),
 };
 
 Comma<T>: Vec<T> = {
@@ -227,6 +231,7 @@ pub Identifier: String = {
     "nth" => "nth".to_string(),
     "field" => "field".to_string(),
     "pattern" => "pattern".to_string(),
+    "rewriter" => "rewriter".to_string(),
 };
 
 // Three spellings, none with escapes. A double-quoted string cannot

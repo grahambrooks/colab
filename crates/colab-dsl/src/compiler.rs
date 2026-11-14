@@ -157,9 +157,8 @@ fn compile_inner(
         seen.insert(canonical);
     }
 
-    let mut defs = Vec::new();
+    let mut defs = Definitions::default();
     let mut matches = expand_includes(command.items, base_path, &mut seen, &mut defs)?;
-    let defs = named_patterns(defs)?;
     for m in &mut matches {
         resolve_names(m, &defs, None)?;
     }
@@ -223,21 +222,16 @@ pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
         .items
         .iter()
         .any(|item| matches!(item, Item::Include(_)));
-    let defs: Vec<(String, String)> = command
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Pattern { name, text, .. } => Some((name.clone(), text.clone())),
-            _ => None,
-        })
-        .collect();
-    let defs = named_patterns(defs)?;
+    let mut defs = Definitions::default();
+    for item in &command.items {
+        defs.add(item)?;
+    }
     Ok(command
         .items
         .into_iter()
         .filter_map(|item| match item {
             Item::Match(m) => Some(m),
-            Item::Include(_) | Item::Pattern { .. } => None,
+            Item::Include(_) | Item::Pattern { .. } | Item::Rewriter { .. } => None,
         })
         .map(|mut m| {
             let span = m.span;
@@ -264,13 +258,14 @@ fn expand_includes(
     items: Vec<Item>,
     base_path: Option<&Path>,
     seen: &mut HashSet<PathBuf>,
-    defs: &mut Vec<(String, String)>,
+    defs: &mut Definitions,
 ) -> Result<Vec<Match>> {
     let mut out = Vec::new();
     for item in items {
+        defs.add(&item)?;
         match item {
             Item::Match(m) => out.push(m),
-            Item::Pattern { name, text, .. } => defs.push((name, text)),
+            Item::Pattern { .. } | Item::Rewriter { .. } => {}
             Item::Include(rel) => {
                 let resolved = resolve_include_path(&rel, base_path)?;
                 let canonical = resolved
@@ -292,41 +287,114 @@ fn expand_includes(
     Ok(out)
 }
 
-/// The script's named patterns (its includes' too), each name once.
-fn named_patterns(
-    defs: Vec<(String, String)>,
-) -> Result<std::collections::HashMap<String, String>> {
-    let mut out = std::collections::HashMap::new();
-    for (name, text) in defs {
-        if out.contains_key(&name) {
-            return Err(Error::Config(format!(
-                "`pattern {name}` is defined twice; give each pattern its own name"
-            )));
+/// The script's named patterns and rewriters (its includes' too).
+#[derive(Default)]
+struct Definitions {
+    patterns: std::collections::HashMap<String, String>,
+    /// Name → (pattern, template).
+    rewriters: std::collections::HashMap<String, (String, String)>,
+}
+
+impl Definitions {
+    /// Record `item` if it defines something, each name once per kind.
+    fn add(&mut self, item: &Item) -> Result<()> {
+        let twice = |kind: &str, name: &str| {
+            Error::Config(format!(
+                "`{kind} {name}` is defined twice; give each {kind} its own name"
+            ))
+        };
+        match item {
+            Item::Pattern { name, text, .. } => {
+                if self.patterns.insert(name.clone(), text.clone()).is_some() {
+                    return Err(twice("pattern", name));
+                }
+            }
+            Item::Rewriter {
+                name,
+                pattern,
+                template,
+                ..
+            } => {
+                let def = (pattern.clone(), template.clone());
+                if self.rewriters.insert(name.clone(), def).is_some() {
+                    return Err(twice("rewriter", name));
+                }
+            }
+            Item::Match(_) | Item::Include(_) => {}
         }
-        out.insert(name, text);
+        Ok(())
     }
-    Ok(out)
+}
+
+/// `names` in order for a message, with a "did you mean" for `name`.
+fn known_names<'a>(name: &str, names: impl Iterator<Item = &'a String>) -> (String, Vec<&'a str>) {
+    let mut known: Vec<&str> = names.map(String::as_str).collect();
+    known.sort_unstable();
+    let hint = suggest::closest(name, known.iter().copied())
+        .map(|k| format!(" (did you mean `{k}`?)"))
+        .unwrap_or_default();
+    (hint, known)
 }
 
 /// Replace each `inside <name>` (and every other named reference) in
-/// `m`'s constraints with the named pattern's text, or with `unknown` for
-/// a name `defs` lacks, when given.
-fn resolve_names(
-    m: &mut Match,
-    defs: &std::collections::HashMap<String, String>,
-    unknown: Option<&str>,
-) -> Result<()> {
+/// `m`'s constraints with the named pattern's text, and complete each
+/// `rewrite(<name>)` step with its rewriter. With `unknown`, a name `defs`
+/// lacks may be defined in an include `check` cannot see: a pattern
+/// becomes `unknown`, a rewrite step changes nothing.
+fn resolve_names(m: &mut Match, defs: &Definitions, unknown: Option<&str>) -> Result<()> {
+    for l in &mut m.lets {
+        for (step, args) in &mut l.steps {
+            if step != "rewrite" {
+                continue;
+            }
+            let names: Option<Vec<String>> = args
+                .iter()
+                .map(|a| match a {
+                    colab_core::TransformArg::Name(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect();
+            let Some(names) = names else {
+                continue;
+            };
+            let mut expanded = Vec::with_capacity(names.len() * 3);
+            for name in &names {
+                match defs.rewriters.get(name) {
+                    Some((pattern, template)) => {
+                        expanded.push(colab_core::TransformArg::Name(name.clone()));
+                        expanded.push(colab_core::TransformArg::Text(pattern.clone()));
+                        expanded.push(colab_core::TransformArg::Text(template.clone()));
+                    }
+                    // Perhaps defined in an include `check` cannot see:
+                    // the step is checked as one that changes nothing.
+                    None if unknown.is_some() => {
+                        expanded.clear();
+                        break;
+                    }
+                    None => {
+                        let (hint, _) = known_names(name, defs.rewriters.keys());
+                        return Err(Error::UnsupportedOperation(format!(
+                            "`rewrite({name})`: no rewriter named `{name}`{hint}; define it with \
+                             `rewriter {name} = '<pattern>' -> '<template>'`"
+                        )));
+                    }
+                }
+            }
+            if expanded.is_empty() && !names.is_empty() {
+                *step = "strip_prefix".into();
+                *args = vec![colab_core::TransformArg::Text(String::new())];
+            } else {
+                *args = expanded;
+            }
+        }
+    }
     for constraint in &mut m.constraints {
         for pattern in constraint.test.patterns_mut() {
             let Some(name) = colab_core::constraint::pattern_name(pattern) else {
                 continue;
             };
-            let Some(text) = defs.get(name).map(String::as_str).or(unknown) else {
-                let mut known: Vec<&str> = defs.keys().map(String::as_str).collect();
-                known.sort_unstable();
-                let hint = suggest::closest(name, known.iter().copied())
-                    .map(|k| format!(" (did you mean `{k}`?)"))
-                    .unwrap_or_default();
+            let Some(text) = defs.patterns.get(name).map(String::as_str).or(unknown) else {
+                let (hint, known) = known_names(name, defs.patterns.keys());
                 let defined = if known.is_empty() {
                     "the script defines none; add `pattern <name> = '<code>'`".to_string()
                 } else {
@@ -1288,6 +1356,42 @@ import (
         // `check` resolves the file's own names too.
         let checks = check(script, &registry()).unwrap();
         assert!(checks[0].outcome.is_ok(), "{:?}", checks[0].outcome);
+    }
+
+    #[test]
+    fn a_rewriter_is_named_once_and_used_by_a_let() {
+        let script = r#"refactor "t" {
+            rewriter wrap = 'g($X)' -> 'h($X)'
+            match go::pattern 'f($$$A)' { let $N = $$$A | rewrite(wrap) replace 'ff($N)' }
+        }"#;
+        let parsed = parse(script).unwrap();
+        let crate::ast::Item::Match(m) = &parsed.items[1] else {
+            panic!("a match second");
+        };
+        assert_eq!(m.lets[0].to_string(), "let $N = $$$A | rewrite(wrap)");
+        let refactoring = compile(script, &registry()).unwrap();
+        assert_eq!(
+            refactoring.rules[0].to_string(),
+            "go::pattern 'f($$$A)' let $N = $$$A | rewrite(wrap) -> 'ff($N)'"
+        );
+        assert_eq!(
+            refactoring.rules[0].apply("package p\n\nfunc m() { f(g(1), 2) }\n"),
+            "package p\n\nfunc m() { ff(h(1), 2) }\n"
+        );
+        let err = |script: &str| compile(script, &registry()).err().unwrap().to_string();
+        let e = err(
+            r#"refactor "t" { rewriter wrap = 'g($X)' -> 'h($X)' match go::pattern 'f($$$A)' { let $N = $$$A | rewrite(wrp) replace 'ff($N)' } }"#,
+        );
+        assert!(
+            e.contains("no rewriter named `wrp` (did you mean `wrap`?)"),
+            "{e}"
+        );
+        let e = err(r#"refactor "t" { rewriter a = 'x' -> 'y' rewriter a = 'x' -> 'z' }"#);
+        assert!(e.contains("`rewriter a` is defined twice"), "{e}");
+        let e = err(
+            r#"refactor "t" { match go::pattern 'f($$$A)' { let $N = $$$A | rewrite("wrap") replace 'ff($N)' } }"#,
+        );
+        assert!(e.contains("takes the names of rewriters"), "{e}");
     }
 
     #[test]

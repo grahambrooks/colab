@@ -1,0 +1,14 @@
+// A client library's v2: `createClient(opts)` became `connect(opts)`,
+// `timeout` (seconds) became `timeoutMs`, and `retries` `maxRetries`. One
+// rule renames the call; its rewriters rename each option inside it, in
+// place, so the other options, the commas and the layout stay. A call
+// still marked `legacy: true` is left for its owner, and a `timeout`
+// outside a `createClient` call is not one of its options.
+refactor "client-v2" {
+    rewriter timeout = 'timeout: $V' -> 'timeoutMs: $V * 1000'
+    rewriter retries = 'retries: $N' -> 'maxRetries: $N'
+    match js::pattern 'createClient({ $$$OPTS })' where not has 'legacy: true' {
+        let $NEW = $$$OPTS | rewrite(timeout, retries)
+        replace 'connect({ $NEW })'
+    }
+}

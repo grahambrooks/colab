@@ -135,6 +135,17 @@ fn explain_command(cmd: &ast::Command) -> Value {
                 "name": name,
                 "pattern": text,
             }),
+            ast::Item::Rewriter {
+                name,
+                pattern,
+                template,
+                ..
+            } => json!({
+                "kind": "rewriter",
+                "name": name,
+                "pattern": pattern,
+                "template": template,
+            }),
         })
         .collect();
     json!({ "name": cmd.refactor_name, "items": items })

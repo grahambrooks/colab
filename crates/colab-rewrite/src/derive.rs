@@ -77,6 +77,8 @@ fn apply(step: &Transform, text: &str) -> String {
                 chars[from..to].iter().collect()
             }
         }
+        // Applied by the pattern engine, which has the code it needs.
+        Transform::Rewrite(_) => text.to_string(),
         // Compiled into `Step::Replace`; kept total for a plain call.
         Transform::Replace { regex, with } => regex::Regex::new(regex)
             .map(|re| re.replace_all(text, with.as_str()).into_owned())

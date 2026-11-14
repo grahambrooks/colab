@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then **M30** (rule expressiveness), **M31** (CI fit), **M10.6**, **M32**–**M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`) and M29 (the follow-up sweep) have shipped.
+**M20's install step**, now that the stable gate has passed, then **M31** (CI fit), **M10.6**, **M32**–**M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep) and M30 (rule expressiveness) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -41,13 +41,12 @@ what it lets that dogfooding cover.
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
 | 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
-| 2 | M30 Rule expressiveness | The commonest reasons an agent leaves colab for `sed` (survey of 2026-11-14). |
-| 3 | M31 CI fit | Gating a repository on its packs: tests, baselines, data tables, rule selection, Windows. |
-| 4 | M10.6 | Parse-once batching: performance, for the largest repositories. |
-| 5 | M32 Type and name constraints, delegated | Same-named APIs from different libraries; research spike first. |
-| 6 | M33 Fleet: many repositories, shared packs | Migrations across repositories; packs shared as git sources. |
-| 7 | M34 Symbol-addressed edits | One-off agent edits by symbol, not exact strings. |
-| 8 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
+| 2 | M31 CI fit | Gating a repository on its packs: tests, baselines, data tables, rule selection, Windows. |
+| 3 | M10.6 | Parse-once batching: performance, for the largest repositories. |
+| 4 | M32 Type and name constraints, delegated | Same-named APIs from different libraries; research spike first. |
+| 5 | M33 Fleet: many repositories, shared packs | Migrations across repositories; packs shared as git sources. |
+| 6 | M34 Symbol-addressed edits | One-off agent edits by symbol, not exact strings. |
+| 7 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
 
 ## Stable gate before M20
 
@@ -96,37 +95,6 @@ Wave D of the M29 follow-up sweep: decide before building.
 - Static Linux release binaries (musl via release-kit's
   `EXTRA_TARGETS`): changes what every release ships, so it waits for
   a go-ahead.
-
-### M30 — Rule expressiveness
-
-The most frequent reasons an agent leaves colab for `sed` or hand edits,
-from the 2026-11-14 survey (ast-grep 0.51, GritQL, Comby, codemod.com,
-LibCST, Rector, Coccinelle, rust-analyzer SSR, IntelliJ SSR). All are
-template or constraint work on the existing pattern engine; none needs
-types.
-
-- **Transforms on captured values** (shipped: `let $NEW = $F | step …` before a pattern's `replace`, see [`dsl.md`](dsl.md#derived-values-let); rewrites now keep the layout of the tokens they leave unchanged), used in templates: case conversion
-  (`$N | snake`, `camel`, `pascal`, `kebab`, `upper`, `lower`), regex
-  replace and substring. Convention renames (`getFoo` → `foo`) are
-  impossible today. ast-grep `transform`, Grit functions, Comby.
-- **Composition and neighbour constraints** in `where` (shipped: `any` / `all`, `follows` / `precedes`, `nth`, `field`, and `directly` / `until '…'` as the stop for all four relations; see [`dsl.md`](dsl.md#constraints-where)): `any` / `all` of
-  patterns (one rule for two shapes), `follows` / `precedes`, `nth`,
-  `field` (which child a match sits in), and `stopBy` for `inside` / `has`.
-  ast-grep-core implements most of it; constraints still only narrow.
-- **Deletes and rewrites that take their separator** (shipped for `delete`: a match inside a line goes with the comma beside it, and Python keyword arguments, dict entries and JS object properties are patterns now; a rewrite keeps its separators as they are): removing an
-  argument, list element or key also removes its comma or blank line, as
-  ast-grep's `expandStart` / `expandEnd` do. Today a deletion inside a
-  list is refused or leaves a dangling comma.
-- **Named sub-patterns** (shipped: `pattern <name> = '…'`, script-wide and shared through `include`, usable after `inside` / `has` / `follows` / `precedes` / `until`) shared across rules and `where` clauses
-  (`pattern helper = '…'`, referenced as `inside helper`), so large packs
-  stop repeating constraints. ast-grep `utils`, Grit `pattern`.
-- **Rewriters on sub-captures**: apply rules to each element of a `$$$`
-  capture or a body and join the results (`$$$ARGS | rewrite(name) |
-  join(", ")`), for per-element migrations such as every option of an
-  object literal. ast-grep `rewriters`, Grit `some`. Each rewriter must be
-  idempotent on its own output; the corpus harness checks.
-
-Done when each has a corpus case, a `dsl.md` section, and a dogfood use.
 
 ### M31 — CI fit
 
@@ -254,6 +222,7 @@ whichever milestone touches the same code.
 | Type constraints in `where` (via the server's hover) | M26 |
 | Remote pack registry and publishing | M11 |
 | Linux release binaries that run on older glibc: they need 2.39, so Ubuntu 22.04 and Debian 12 cannot run them. A static `x86_64-unknown-linux-musl` build (release-kit's `EXTRA_TARGETS`) is one way; it built cleanly in M21 | M21 |
+| Constraints on a nested pattern: `inside` / `has` / … take a pattern, not a rule, so a scope cannot say "a `mod` that follows `#[cfg(test)]`" (a Rust attribute is the item's sibling). ast-grep's relational rules take a whole rule | M30 |
 
 ## Unscheduled
 

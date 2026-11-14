@@ -740,8 +740,14 @@ impl colab_mcp::ToolProvider for LspTools {
 
         let mut action = position_properties();
         action["at"] = json!({"type": "string", "description": "`FILE:LINE:COL` or a selection `FILE:LINE:COL-LINE:COL`, relative to `cwd`. Extract-style actions need a selection."});
-        action.as_object_mut().unwrap().remove("symbol");
-        action.as_object_mut().unwrap().remove("in");
+        action
+            .as_object_mut()
+            .expect("position_properties builds an object")
+            .remove("symbol");
+        action
+            .as_object_mut()
+            .expect("position_properties builds an object")
+            .remove("in");
         action["list"] = json!({"type": "boolean", "default": false, "description": "List the actions offered at `at` instead of running one."});
         action["kind"] = json!({"type": "string", "description": "Dotted-prefix kind, e.g. `refactor.extract` or `refactor.inline`."});
         action["title"] = json!({"type": "string", "description": "Case-insensitive substring of the action's title."});

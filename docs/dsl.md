@@ -27,6 +27,7 @@ Whitespace is insignificant outside string literals.
 program     = "refactor" string "{" item* "}"
 item        = match | "include" string
             | "pattern" identifier "=" string   -- a pattern constraints name
+            | "rewriter" identifier "=" string "->" string   -- what `rewrite(…)` does
 match       = "match" namespace string location* [ where ] "{" let* action clause* "}"
 location    = "in" string                -- path scope, at most once
             | "in" "fences"              -- only inside Markdown code fences
@@ -50,7 +51,7 @@ pattern     = string | identifier            -- code, or the name of a `pattern`
 range       = number | number ".." number | number ".." | ".." number
 let         = "let" metavar "=" metavar ( "|" step )+   -- before the action; pattern only
 step        = identifier [ "(" [ arg ( "," arg )* ] ")" ]
-arg         = string | regex | [ "-" ] number
+arg         = string | regex | [ "-" ] number | identifier   -- a rewriter's name
 metavar     = "$" NAME | "$$$" NAME
 regex       = "/" ( any-char-except-slash-or-newline | "\" any-char )+ "/"
 clause      = import | "message" string | "severity" ( "error" | "warning" | "info" )
@@ -337,7 +338,10 @@ match go::pattern 'errors.Wrap($E, $M)'
   sigil (`$M`, or `$$$ARGS` for `count`). An unknown node kind gets a "did
   you mean". A regex or nested pattern that does not compile fails the
   script. All of these are caught at compile time, not mid-run.
-- The metavariables inside a nested pattern (`inside`, `has`, `follows`, `precedes`, `until`) are its own. `$F`
+- A nested pattern (`inside`, `has`, `follows`, `precedes`, `until`)
+  matches in every form its text compiles to, so `has 'legacy: true'`
+  finds a JavaScript property, not only a label. Its metavariables are its
+  own. `$F`
   above matches any test function; it is not compared with the outer
   pattern's bindings, and a template cannot use them: a template metavariable
   the pattern does not bind (nor a `let`) fails the script, rather than
@@ -408,6 +412,7 @@ each step in turn and binds the result to `$NEW`. The steps:
 | `strip_prefix("…")`, `strip_suffix("…")` | the text without it; unchanged when it is not there |
 | `replace(/re/, "with")` | every match of the regex replaced; `$1` or `${name}` in `with` is a group |
 | `substring(start, end)` | characters `start` to `end`; a negative index counts from the end, and `end` may be left out (`substring(1, -1)` unquotes a string) |
+| `rewrite(name, …)` | the binding's code with each match of the named [rewriters](#rewriters-rewriter-and-rewrite) rewritten in place; the first step only |
 
 - The case steps split the text into words at `_`, `-`, spaces and case
   changes, and keep an acronym whole: `HTTPServer` is `HTTP` and `Server`.
@@ -421,6 +426,39 @@ each step in turn and binds the result to `$NEW`. The steps:
   refused on `delete` and on modules other than `pattern`.
 - A derived value is computed from the binding *after* nested matches
   inside it are rewritten, like the binding itself.
+
+### Rewriters: `rewriter` and `rewrite`
+
+A migration that changes a call and, inside it, each of its options, is
+one rule with rewriters: the rule rewrites the call, and a `let` rewrites
+the options in the code it binds.
+
+```
+refactor "client-v2" {
+    rewriter timeout = 'timeout: $V' -> 'timeoutMs: $V * 1000'
+    rewriter retries = 'retries: $N' -> 'maxRetries: $N'
+    match js::pattern 'createClient({ $$$OPTS })' where not has 'legacy: true' {
+        let $NEW = $$$OPTS | rewrite(timeout, retries)
+        replace 'connect({ $NEW })'
+    }
+}
+```
+
+`createClient({ host: "db", timeout: 5, retries: 3 })` becomes
+`connect({ host: "db", timeoutMs: 5 * 1000, maxRetries: 3 })`, and a
+`timeout` that is not an option of `createClient` is left.
+
+- `rewriter <name> = '<pattern>' -> '<template>'` is an item, like
+  `pattern`: script-wide, shared through `include`, each name once.
+- `rewrite(a, b, …)` is a `let`'s first step, from a metavariable of the
+  pattern (`$X` or `$$$X`). It takes the code that binding covers and
+  rewrites each outermost match of any of the rewriters there; the text
+  between matches (other elements, separators, comments, line breaks)
+  stays as it was. Later steps work on the result.
+- There is no `join`: the separators are the original ones.
+- A rewriter's template may use only its own pattern's metavariables,
+  like a rule's. It rewrites code in the file, never its own output, so
+  the corpus harness's idempotency check holds for it as for any rule.
 
 ### Imports: `requires import` and `drops import … when unused`
 
@@ -857,7 +895,7 @@ refactor "javax-to-jakarta" {
 
 The grammar keywords are:
 
-`refactor`, `match`, `in`, `include`, `pattern`, `replace`, `delete`, `ensure`,
+`refactor`, `match`, `in`, `include`, `pattern`, `rewriter`, `replace`, `delete`, `ensure`,
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
 `count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `requires`, `import`, `drops`, `when`,

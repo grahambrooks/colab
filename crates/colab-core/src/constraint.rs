@@ -212,6 +212,19 @@ pub enum Transform {
         start: i64,
         end: Option<i64>,
     },
+    /// `rewrite(<name>, …)`, after `rewriter <name> = '<pattern>' ->
+    /// '<template>'`: each match of a rewriter's pattern inside the
+    /// binding, rewritten with its template, the text between them kept.
+    /// The compiler fills in each rewriter; it is a `let`'s first step.
+    Rewrite(Vec<Rewriter>),
+}
+
+/// A named `rewriter`, as a [`Transform::Rewrite`] step applies it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rewriter {
+    pub name: String,
+    pub pattern: String,
+    pub template: String,
 }
 
 /// An argument to a transform, as written.
@@ -220,6 +233,8 @@ pub enum TransformArg {
     Text(String),
     Regex(String),
     Int(i64),
+    /// A bare name: the rewriter `rewrite(<name>)` applies.
+    Name(String),
 }
 
 impl fmt::Display for TransformArg {
@@ -228,6 +243,7 @@ impl fmt::Display for TransformArg {
             Self::Text(t) => write!(f, "\"{t}\""),
             Self::Regex(r) => write!(f, "/{r}/"),
             Self::Int(n) => write!(f, "{n}"),
+            Self::Name(name) => f.write_str(name),
         }
     }
 }
@@ -246,12 +262,13 @@ pub const TRANSFORMS: &[&str] = &[
     "strip_suffix",
     "replace",
     "substring",
+    "rewrite",
 ];
 
 impl Transform {
     /// The step `name(args)`, or why it is not one.
     pub fn parse(name: &str, args: Vec<TransformArg>) -> Result<Self, String> {
-        use TransformArg::{Int, Regex, Text};
+        use TransformArg::{Int, Name, Regex, Text};
         let shown = || {
             let list: Vec<String> = args.iter().map(ToString::to_string).collect();
             if list.is_empty() {
@@ -308,6 +325,30 @@ impl Transform {
                     shown()
                 )),
             },
+            // The compiler follows each name with its rewriter's pattern
+            // and template.
+            "rewrite" => {
+                let wrong = || {
+                    format!(
+                        "`{}`: `rewrite` takes the names of rewriters, `rewrite(<name>, …)`",
+                        shown()
+                    )
+                };
+                if args.is_empty() || !args.len().is_multiple_of(3) {
+                    return Err(wrong());
+                }
+                args.chunks(3)
+                    .map(|chunk| match chunk {
+                        [Name(name), Text(pattern), Text(template)] => Ok(Rewriter {
+                            name: name.clone(),
+                            pattern: pattern.clone(),
+                            template: template.clone(),
+                        }),
+                        _ => Err(wrong()),
+                    })
+                    .collect::<Result<_, _>>()
+                    .map(Self::Rewrite)
+            }
             _ => {
                 let hint = crate::suggest::closest(name, TRANSFORMS.iter().copied())
                     .map(|t| format!(" (did you mean `{t}`?)"))
@@ -344,6 +385,10 @@ impl fmt::Display for Transform {
                 start,
                 end: Some(end),
             } => write!(f, "substring({start}, {end})"),
+            Self::Rewrite(rewriters) => {
+                let names: Vec<&str> = rewriters.iter().map(|r| r.name.as_str()).collect();
+                write!(f, "rewrite({})", names.join(", "))
+            }
         }
     }
 }

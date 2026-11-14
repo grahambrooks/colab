@@ -37,6 +37,9 @@ colab refactor --script examples/patterns/delete-separators/drop-debug.codemod -
 colab explain --script examples/patterns/named/hygiene.codemod
 colab refactor --script examples/patterns/named/hygiene.codemod --format diff examples/patterns/named
 
+# M30: one rule renames a call; rewriters rename each option inside it.
+colab refactor --script examples/patterns/rewriters/client-v2.codemod --format diff examples/patterns/rewriters
+
 # Why does (or doesn't) a pattern match? Compare the trees.
 colab ast --lang go --pattern 'errors.Wrap($ERR, $MSG)'
 colab ast --lang go --stdin < examples/patterns/go/main.go
@@ -52,3 +55,4 @@ colab ast --lang go --stdin < examples/patterns/go/main.go
 | `go-relations/` | `any(inside '…', inside '…')` for two shapes of goroutine; `nth 1` for a function's first statement; `follows '$V, err := os.Stat($P)' directly` for the error check right after its call. |
 | `delete-separators/` | `delete` of a keyword argument, a dict entry (Python) and an object property (JavaScript) with the comma beside it, first, middle or last, and of a line in a multi-line call. |
 | `named/` | `pattern goroutine = '…'` in `shared.codemod`, brought in by `include`, and a local `pattern cleanup`; `where inside test_func, not any(inside goroutine, inside cleanup)`. |
+| `rewriters/` | `rewriter timeout = '…' -> '…'` and `let $NEW = $$$OPTS \| rewrite(timeout, retries)`: options renamed in place on one line and on many; `not has 'legacy: true'` (a property, found in every form the pattern compiles to) skips a call. |

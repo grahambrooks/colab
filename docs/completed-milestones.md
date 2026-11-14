@@ -836,6 +836,39 @@ An item leaves the follow-ups table when it ships.
 
 **Wave D — decide, do not build yet:** moved to [Decisions waiting](development-plan.md#decisions-waiting-from-m29) in the plan.
 
+## Rule expressiveness (M30)
+
+### ✅ M30 — Rule expressiveness
+
+The most frequent reasons an agent leaves colab for `sed` or hand edits,
+from the 2026-11-14 survey (ast-grep 0.51, GritQL, Comby, codemod.com,
+LibCST, Rector, Coccinelle, rust-analyzer SSR, IntelliJ SSR). All are
+template or constraint work on the existing pattern engine; none needs
+types.
+
+- **Transforms on captured values** (shipped: `let $NEW = $F | step …` before a pattern's `replace`, see [`dsl.md`](dsl.md#derived-values-let); rewrites now keep the layout of the tokens they leave unchanged), used in templates: case conversion
+  (`$N | snake`, `camel`, `pascal`, `kebab`, `upper`, `lower`), regex
+  replace and substring. Convention renames (`getFoo` → `foo`) are
+  impossible today. ast-grep `transform`, Grit functions, Comby.
+- **Composition and neighbour constraints** in `where` (shipped: `any` / `all`, `follows` / `precedes`, `nth`, `field`, and `directly` / `until '…'` as the stop for all four relations; see [`dsl.md`](dsl.md#constraints-where)): `any` / `all` of
+  patterns (one rule for two shapes), `follows` / `precedes`, `nth`,
+  `field` (which child a match sits in), and `stopBy` for `inside` / `has`.
+  ast-grep-core implements most of it; constraints still only narrow.
+- **Deletes and rewrites that take their separator** (shipped for `delete`: a match inside a line goes with the comma beside it, and Python keyword arguments, dict entries and JS object properties are patterns now; a rewrite keeps its separators as they are): removing an
+  argument, list element or key also removes its comma or blank line, as
+  ast-grep's `expandStart` / `expandEnd` do. Today a deletion inside a
+  list is refused or leaves a dangling comma.
+- **Named sub-patterns** (shipped: `pattern <name> = '…'`, script-wide and shared through `include`, usable after `inside` / `has` / `follows` / `precedes` / `until`) shared across rules and `where` clauses
+  (`pattern helper = '…'`, referenced as `inside helper`), so large packs
+  stop repeating constraints. ast-grep `utils`, Grit `pattern`.
+- **Rewriters on sub-captures** (shipped: `rewriter <name> = '…' -> '…'` and `let $N = $$$X | rewrite(a, b)`; separators are kept, so no `join` is needed): apply rules to each element of a `$$$`
+  capture or a body and join the results (`$$$ARGS | rewrite(name) |
+  join(", ")`), for per-element migrations such as every option of an
+  object literal. ast-grep `rewriters`, Grit `some`. Each rewriter must be
+  idempotent on its own output; the corpus harness checks.
+
+Done when each has a corpus case, a `dsl.md` section, and a dogfood use. All five shipped on 2026-11-14, each with its corpus case and `dsl.md` section; the dogfood use is the `.unwrap()` audit of the crates (named patterns, `any`, `where`), whose two real hits were fixed with the rule that found them.
+
 ## Appendix: the original design (2026-05-09)
 
 The plan as first written, goal by goal. Almost all of it has shipped

@@ -452,7 +452,7 @@ impl StructuralPattern {
             .filter(|c| !c.is_let())
             .map(|c| Check::compile(language, &bound, c))
             .collect::<Result<_, _>>()?;
-        self.lets = Derived::compile_all(&bound, constraints)?;
+        self.lets = Derived::compile_all(language, &bound, constraints)?;
         self.constraints = constraints.to_vec();
         self.also = std::mem::take(&mut self.also)
             .into_iter()
@@ -599,10 +599,51 @@ impl StructuralPattern {
         }
         let (template, names) = transformable_template(template);
         let fix = TemplateFix::with_transform(&template, &self.lang, &names);
+        // A `let`'s `rewrite(<name>)` step: for each form the rewriter's
+        // pattern compiled to (its `also` ones too), the fix and its
+        // matches in this source; one list per `let`, empty without one.
+        type Parts<'g> = Vec<(
+            &'g StructuralPattern,
+            TemplateFix,
+            Vec<NodeMatch<'g, StrDoc<TsLang>>>,
+        )>;
+        let sub_parts: Vec<Parts<'_>> = self
+            .lets
+            .iter()
+            .map(|d| {
+                let grep = &grep;
+                d.rewriters
+                    .iter()
+                    .flat_map(|(sub, template)| {
+                        let (template, names) = transformable_template(template);
+                        std::iter::once(sub).chain(&sub.also).map(move |form| {
+                            let fix = TemplateFix::with_transform(&template, &form.lang, &names);
+                            (form, fix, form.matches(grep, source))
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
+        let subs: Vec<Vec<Rewriter<'_, '_>>> = sub_parts
+            .iter()
+            .map(|parts| {
+                parts
+                    .iter()
+                    .map(|(form, fix, matches)| Rewriter {
+                        pattern: &form.pattern,
+                        fix,
+                        lets: &[],
+                        subs: &[],
+                        matches,
+                    })
+                    .collect()
+            })
+            .collect();
         let rewriter = Rewriter {
             pattern: &self.pattern,
             fix: &fix,
             lets: &self.lets,
+            subs: &subs,
             matches: &matches,
         };
         let edits = rewriter
@@ -760,6 +801,9 @@ struct Rewriter<'a, 't> {
     pattern: &'a Pattern,
     fix: &'a TemplateFix,
     lets: &'a [Derived],
+    /// The rewriter of each `let` that has a `rewrite` step, by position:
+    /// one per form its pattern compiled to (empty without one).
+    subs: &'a [Vec<Rewriter<'a, 't>>],
     /// Every match in the source, nested ones included.
     matches: &'a [NodeMatch<'t, StrDoc<TsLang>>],
 }
@@ -814,8 +858,10 @@ impl Rewriter<'_, '_> {
     fn render(&self, source: &str, i: usize) -> Edit {
         let mut nm = self.matches[i].clone();
         let vars: Vec<MetaVariable> = nm.get_env().get_matched_variables().collect();
-        // Each binding's (rewritten) text, for the `let`s derived from it.
-        let mut values: Vec<(String, MetaVariable, String)> = Vec::new();
+        // Each binding's (rewritten) text and source span, for the `let`s
+        // derived from it.
+        type Value = (String, MetaVariable, String, Option<std::ops::Range<usize>>);
+        let mut values: Vec<Value> = Vec::new();
         for var in vars {
             let (name, span) = match &var {
                 MetaVariable::Capture(name, _) => {
@@ -839,20 +885,30 @@ impl Rewriter<'_, '_> {
                 _ => continue,
             };
             let text = span
+                .clone()
                 .map(|span| self.rewrite_span(source, span, i))
                 .unwrap_or_default();
             nm.get_env_mut()
                 .insert_transformation(&var, &name, text.clone().into_bytes());
-            values.push((name, var, text));
+            values.push((name, var, text, span));
         }
-        for derived in self.lets {
-            let Some((_, var, text)) = values.iter().find(|(n, _, _)| *n == derived.from) else {
+        for (k, derived) in self.lets.iter().enumerate() {
+            let Some((_, var, text, span)) = values.iter().find(|(n, ..)| *n == derived.from)
+            else {
                 continue;
             };
-            let (var, text) = (var.clone(), derived.apply(text));
+            // A rewriter starts from the binding's source: each of its
+            // matches there rewritten, the text between them kept.
+            let start = match (self.subs.get(k), span) {
+                (Some(forms), Some(span)) if !forms.is_empty() => {
+                    rewrite_with(forms, source, span.clone())
+                }
+                _ => text.clone(),
+            };
+            let (var, text) = (var.clone(), derived.apply(&start));
             nm.get_env_mut()
                 .insert_transformation(&var, &derived.var, text.clone().into_bytes());
-            values.push((derived.var.clone(), var, text));
+            values.push((derived.var.clone(), var, text, None));
         }
         let edit = nm.make_edit(self.pattern, self.fix);
         let text = String::from_utf8_lossy(&edit.inserted_text);
@@ -884,33 +940,60 @@ fn keep_layout(old: &str, new: &str) -> String {
     let tb: Vec<&str> = b.iter().map(|t| t.1).collect();
     let ops = similar::capture_diff_slices(similar::Algorithm::Myers, &ta, &tb);
     let mut out = String::with_capacity(new.len());
+    // Whose layout the line being written follows: the original's, once a
+    // line of it is kept, or the template's (from the start, and after a
+    // line the template made).
+    let mut original_line = false;
+    let emit = |out: &mut String, line: &mut bool, space: &str, token: &str, original: bool| {
+        if space.contains('\n') {
+            *line = original;
+        }
+        out.push_str(space);
+        out.push_str(token);
+    };
     for op in ops {
         let (o, n) = (op.old_range(), op.new_range());
-        if matches!(op.tag(), similar::DiffTag::Equal) {
-            let new_start = n.start;
-            for (k, ((old_space, token), (new_space, _))) in
-                a[o.clone()].iter().zip(&b[n]).enumerate()
-            {
-                // Next to a change the original's spaces belonged to a
-                // token that is gone, so the template's are used, unless
-                // the original broke the line there (a closing brace keeps
-                // its own line). Where the template breaks the line, its
-                // indentation stands, so a re-indented block stays so.
-                let next_to_change = k == 0 && (o.start != 0 || new_start != 0);
-                let renewed = next_to_change && !old_space.contains('\n');
-                let space = if renewed || new_space.contains('\n') {
-                    new_space
+        if !matches!(op.tag(), similar::DiffTag::Equal) {
+            for (k, (space, token)) in b[n.clone()].iter().enumerate() {
+                // A token that replaces others takes their place: the
+                // original's whitespace before the first of them (not at
+                // the edit's start, which sits where the match did, and
+                // not where there was none, so `x+y` → `x in y` keeps the
+                // template's spaces).
+                let in_place = k == 0 && n.start != 0 && !o.is_empty() && !a[o.start].0.is_empty();
+                if in_place {
+                    emit(&mut out, &mut original_line, a[o.start].0, token, true);
                 } else {
-                    old_space
-                };
-                out.push_str(space);
-                out.push_str(token);
+                    emit(&mut out, &mut original_line, space, token, false);
+                }
             }
-        } else {
-            for (space, token) in &b[n] {
-                out.push_str(space);
-                out.push_str(token);
-            }
+            continue;
+        }
+        let new_start = n.start;
+        for (k, ((old_space, token), (new_space, _))) in a[o.clone()].iter().zip(&b[n]).enumerate()
+        {
+            let (old_break, new_break) = (old_space.contains('\n'), new_space.contains('\n'));
+            let next_to_change = k == 0 && (o.start != 0 || new_start != 0);
+            let original = if new_start + k == 0 {
+                // The edit's first token sits where the match did.
+                false
+            } else if next_to_change && !old_break {
+                // The original's space belonged to a token that is gone,
+                // and without a line break nothing of its layout is lost.
+                false
+            } else if old_break && new_break {
+                // A line both break: as the line before it went, so a
+                // block keeps its indentation and a re-indented one
+                // stays re-indented.
+                original_line
+            } else {
+                // Where only the template breaks the line, its layout
+                // stands; elsewhere (a closing brace on its own line, a
+                // body a one-line template would join) the original's.
+                !new_break
+            };
+            let space = if original { old_space } else { new_space };
+            emit(&mut out, &mut original_line, space, token, original);
         }
     }
     // Trailing whitespace belongs to whichever text has the last word.
@@ -957,6 +1040,33 @@ fn layout_tokens(text: &str) -> Vec<(&str, &str)> {
         out.push((space, &text[i..end]));
         space_start = end;
     }
+    out
+}
+
+/// `source[span]` with every outermost match of any of `forms` (one
+/// rewriter's pattern as each context compiled it) rewritten, the text
+/// between them kept; of two overlapping edits the outer one is made.
+fn rewrite_with(forms: &[Rewriter<'_, '_>], source: &str, span: std::ops::Range<usize>) -> String {
+    let mut edits: Vec<Edit> = forms
+        .iter()
+        .flat_map(|form| {
+            form.outermost(span.clone(), None)
+                .into_iter()
+                .map(|i| form.render(source, i))
+        })
+        .collect();
+    edits.sort_by_key(|e| (e.start, std::cmp::Reverse(e.end)));
+    let mut out = String::new();
+    let mut at = span.start;
+    for edit in edits {
+        if edit.start < at {
+            continue;
+        }
+        out.push_str(&source[at..edit.start]);
+        out.push_str(&edit.text);
+        at = edit.end;
+    }
+    out.push_str(&source[at..span.end]);
     out
 }
 
@@ -1112,6 +1222,9 @@ fn unbound_in_template(
 struct Derived {
     var: String,
     from: String,
+    /// A first `rewrite(<name>, …)` step: each rewriter's pattern,
+    /// compiled for this language, and its template (empty without one).
+    rewriters: Vec<(StructuralPattern, String)>,
     steps: Vec<crate::derive::Step>,
 }
 
@@ -1119,7 +1232,11 @@ impl Derived {
     /// The `let`s among `constraints`, in order. Each derives from a
     /// metavariable the pattern binds or an earlier `let`, and names a
     /// new `$VAR`, written with one `$`: it holds text, not nodes.
-    fn compile_all(bound: &[Var], constraints: &[Constraint]) -> Result<Vec<Self>, String> {
+    fn compile_all(
+        language: &PatternLanguage,
+        bound: &[Var],
+        constraints: &[Constraint],
+    ) -> Result<Vec<Self>, String> {
         let mut out: Vec<Self> = Vec::new();
         for c in constraints {
             let Test::Let { var, from, steps } = &c.test else {
@@ -1143,10 +1260,39 @@ impl Derived {
             if !earlier {
                 require_bound(bound, from).map_err(|e| format!("`{c}`: {e}"))?;
             }
+            let (rewriters, rest) = match steps.split_first() {
+                Some((colab_core::Transform::Rewrite(list), rest)) => {
+                    if earlier {
+                        return Err(format!(
+                            "`{c}`: a rewriter works on the code a metavariable binds, so `rewrite` takes `{from}` from the pattern, not from a `let`"
+                        ));
+                    }
+                    let compiled = list
+                        .iter()
+                        .map(|r| {
+                            unbound_in_template(&r.pattern, &r.template, &[])
+                                .and_then(|()| StructuralPattern::compile(language, &r.pattern))
+                                .map(|sub| (sub, r.template.clone()))
+                                .map_err(|e| format!("`rewriter {}`: {e}", r.name))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    (compiled, rest)
+                }
+                _ => (Vec::new(), steps.as_slice()),
+            };
+            if let Some(late) = rest
+                .iter()
+                .find(|s| matches!(s, colab_core::Transform::Rewrite(_)))
+            {
+                return Err(format!(
+                    "`{c}`: `{late}` must be the first step: a rewriter works on the code, not on text another step made"
+                ));
+            }
             out.push(Self {
                 var: var.name.clone(),
                 from: from.name.clone(),
-                steps: steps
+                rewriters,
+                steps: rest
                     .iter()
                     .map(crate::derive::Step::compile)
                     .collect::<Result<_, _>>()?,
@@ -1182,11 +1328,11 @@ enum CheckKind {
         min: usize,
         max: Option<usize>,
     },
-    Inside(Pattern),
-    Has(Pattern),
+    Inside(Forms),
+    Has(Forms),
     Related {
         relation: Relation,
-        pattern: Pattern,
+        pattern: Forms,
         stop: StopAt,
     },
     Any(Vec<Check>),
@@ -1199,7 +1345,18 @@ enum CheckKind {
 enum StopAt {
     Anywhere,
     Directly,
-    Until(Pattern),
+    Until(Forms),
+}
+
+/// A nested pattern as every context compiled it: `retries: $N` is a
+/// label on its own and a property in an object, and a nested pattern
+/// matches either.
+struct Forms(Vec<Pattern>);
+
+impl Forms {
+    fn match_node(&self, node: &TsNode<'_>) -> bool {
+        self.0.iter().any(|p| node.matches(p))
+    }
 }
 
 type TsNode<'t> = ast_grep_core::Node<'t, StrDoc<TsLang>>;
@@ -1232,20 +1389,20 @@ fn same_span<'t>(node: &TsNode<'t>) -> Vec<TsNode<'t>> {
 
 /// Whether some node related to `node` matches `pattern`, searched
 /// nearest first and no further than `stop`.
-fn related(node: &TsNode<'_>, relation: Relation, pattern: &Pattern, stop: &StopAt) -> bool {
+fn related(node: &TsNode<'_>, relation: Relation, pattern: &Forms, stop: &StopAt) -> bool {
     // Candidates nearest first, and whether each is the last `directly`
     // allows.
     let search = |candidates: &mut dyn Iterator<Item = TsNode<'_>>,
                   last: &dyn Fn(&TsNode<'_>) -> bool| {
         for c in candidates {
-            if c.matches(pattern) {
+            if pattern.match_node(&c) {
                 return true;
             }
             match stop {
                 StopAt::Anywhere => {}
                 StopAt::Directly if last(&c) => return false,
                 StopAt::Directly => {}
-                StopAt::Until(until) if c.matches(until) => return false,
+                StopAt::Until(until) if until.match_node(&c) => return false,
                 StopAt::Until(_) => {}
             }
         }
@@ -1259,16 +1416,16 @@ fn related(node: &TsNode<'_>, relation: Relation, pattern: &Pattern, stop: &Stop
             a.range() != node.range()
         }),
         Relation::Has => match stop {
-            StopAt::Directly => node.children().any(|c| c.matches(pattern)),
-            StopAt::Anywhere => node.has(pattern),
+            StopAt::Directly => node.children().any(|c| pattern.match_node(&c)),
+            StopAt::Anywhere => node.dfs().skip(1).any(|n| pattern.match_node(&n)),
             // Depth first, not descending into a node matching `until`.
             StopAt::Until(until) => {
                 let mut stack: Vec<TsNode<'_>> = node.children().collect();
                 while let Some(n) = stack.pop() {
-                    if n.matches(pattern) {
+                    if pattern.match_node(&n) {
                         return true;
                     }
-                    if !n.matches(until) {
+                    if !until.match_node(&n) {
                         stack.extend(n.children());
                     }
                 }
@@ -1461,8 +1618,8 @@ impl Check {
                     .count();
                 n >= *min && max.is_none_or(|max| n <= max)
             }
-            CheckKind::Inside(pattern) => m.get_node().inside(pattern),
-            CheckKind::Has(pattern) => m.get_node().has(pattern),
+            CheckKind::Inside(forms) => m.get_node().ancestors().any(|a| forms.match_node(&a)),
+            CheckKind::Has(forms) => m.get_node().dfs().skip(1).any(|n| forms.match_node(&n)),
             CheckKind::Related {
                 relation,
                 pattern,
@@ -1499,10 +1656,12 @@ fn require_bound(bound: &[Var], var: &Var) -> Result<(), String> {
 /// An `inside` / `has` pattern, compiled in the same language. Its
 /// metavariables are its own: they are not unified with the outer
 /// pattern's.
-fn nested(language: &PatternLanguage, keyword: &str, text: &str) -> Result<Pattern, String> {
-    StructuralPattern::compile(language, text)
-        .map(|p| p.pattern)
-        .map_err(|e| format!("`{keyword} '{text}'`: {e}"))
+fn nested(language: &PatternLanguage, keyword: &str, text: &str) -> Result<Forms, String> {
+    let compiled = StructuralPattern::compile(language, text)
+        .map_err(|e| format!("`{keyword} '{text}'`: {e}"))?;
+    let mut forms = vec![compiled.pattern];
+    forms.extend(compiled.also.into_iter().map(|alt| alt.pattern));
+    Ok(Forms(forms))
 }
 
 /// Every visible named node kind the grammar defines.
@@ -2149,6 +2308,21 @@ mod tests {
             keep_layout("if e {\n\treturn e\n}", "if e { return g(e) }"),
             "if e {\n\treturn g(e)\n}"
         );
+        // A many-line capture in a one-line template keeps its lines'
+        // indentation, and unwrapping a block keeps it unwrapped.
+        assert_eq!(
+            keep_layout("c({\n  t: 1,\n  u: 2,\n})", "d({ t: 1,\nu: 2, })"),
+            "d({\n  t: 1,\n  u: 2,\n})"
+        );
+        assert_eq!(
+            keep_layout("with l:\n    a()\n    b()", "a()\nb()"),
+            "a()\nb()"
+        );
+        // A replaced token takes the place of the one it replaces.
+        assert_eq!(
+            keep_layout("c({\n  t: 1,\n  u: 2,\n})", "d({ tMs: 1 * 9,\nu: 2, })"),
+            "d({\n  tMs: 1 * 9,\n  u: 2,\n})"
+        );
         // A string is one token: its spaces are never taken from the old.
         assert_eq!(keep_layout("f(\"a  b\")", "f(\"a b\")"), "f(\"a b\")");
     }
@@ -2316,6 +2490,51 @@ mod tests {
             rule.to_string(),
             "pattern '$X.$F()' let $NAME = $F | strip_prefix(\"Get\") -> '$X.$NAME()'"
         );
+    }
+
+    #[test]
+    fn a_rewriter_rewrites_each_match_inside_a_binding() {
+        let rewrite = |pattern: &str, template: &str| {
+            colab_core::Transform::Rewrite(vec![colab_core::Rewriter {
+                name: "r".into(),
+                pattern: pattern.into(),
+                template: template.into(),
+            }])
+        };
+        let lets = [derive("$N", "$$$A", vec![rewrite("g($X)", "h($X)")])];
+        let p = constrained("f($$$A)", &lets).unwrap();
+        let src = "package p\nfunc m() { f(g(1), 2, g(3)); k(g(4)) }\n";
+        // Each element the rewriter matches; the rest, and the separators,
+        // as they were. Outside the binding nothing changes.
+        assert_eq!(
+            p.rewrite(src, "ff($N)"),
+            "package p\nfunc m() { ff(h(1), 2, h(3)); k(g(4)) }\n"
+        );
+        // Later steps act on the rewritten text.
+        let upper = [derive(
+            "$N",
+            "$$$A",
+            vec![rewrite("g($X)", "h($X)"), colab_core::Transform::Upper],
+        )];
+        let q = constrained("f($$$A)", &upper).unwrap();
+        assert_eq!(
+            q.rewrite("package p\nfunc m() { f(g(x)) }\n", "f($N)"),
+            "package p\nfunc m() { f(H(X)) }\n"
+        );
+        let err = |lets: &[Constraint]| constrained("f($$$A)", lets).unwrap_err();
+        let late = derive(
+            "$N",
+            "$$$A",
+            vec![colab_core::Transform::Lower, rewrite("g($X)", "h($X)")],
+        );
+        assert!(err(&[late]).contains("must be the first step"));
+        let from_let = [
+            derive("$M", "$$$A", vec![colab_core::Transform::Lower]),
+            derive("$N", "$M", vec![rewrite("g($X)", "h($X)")]),
+        ];
+        assert!(err(&from_let).contains("not from a `let`"));
+        let unbound = derive("$N", "$$$A", vec![rewrite("g($X)", "h($Y)")]);
+        assert!(err(&[unbound]).contains("`$Y`"));
     }
 
     #[test]

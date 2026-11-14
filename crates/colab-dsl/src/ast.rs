@@ -29,6 +29,14 @@ pub enum Item {
         text: String,
         span: Span,
     },
+    /// `rewriter <name> = '<pattern>' -> '<template>'`: what a `let`'s
+    /// `rewrite(<name>)` step does to each match inside a binding.
+    Rewriter {
+        name: String,
+        pattern: String,
+        template: String,
+        span: Span,
+    },
 }
 
 /// One `match <namespace> "<target>" [in "<glob>"] [where …] { <action> <import clause>* }`

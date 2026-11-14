@@ -27,7 +27,7 @@ pub use backend::{
     ALREADY, ActionCapability, AstInput, BackendRegistry, Capability, LanguageBackend, Operation,
     RuleSpec, SyntaxTree,
 };
-pub use constraint::{Constraint, Relation, Stop, Test, Transform, TransformArg, Var};
+pub use constraint::{Constraint, Relation, Rewriter, Stop, Test, Transform, TransformArg, Var};
 pub use error::{Error, ParseDetail, Result};
 pub use fences::{Fence, FenceLocator, FencedOperation};
 pub use followup::{Followup, WithFollowups};

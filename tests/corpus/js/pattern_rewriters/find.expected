@@ -1,0 +1,4 @@
+db.js:3:24: [0] createClient({ host: "db", timeout: 5, retries: 3 })
+    $OPTS = host: "db", timeout: 5, retries: 3
+db.js:5:24: [0] createClient({\n  host: "replica",\n  timeout: 10,\n  tls: true,\n})
+    $OPTS = host: "replica",\n  timeout: 10,\n  tls: true,
