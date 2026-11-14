@@ -8,9 +8,9 @@ Bytes are what the agent sent and read (tokens ≈ bytes / 4). Time is modelled:
 | ---- | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: |
 | Roll out a minimum toolchain (config-rollout) | 1 | 698 | 0.8 s | 3.8 s | 9 | 3092 | 25.0 s | 78% | 6.6× |
 | Docs upkeep after a release (docs-upkeep) | 2 | 1654 | 0.0 s | 7.3 s | 11 | 4096 | 30.9 s | 60% | 4.3× |
-| Extract the total into a function (extract-function) | 3 | 1623 | 4.6 s | 12.2 s | 4 | 1507 | 11.3 s | -7% | 0.9× |
+| Extract the total into a function (extract-function) | 3 | 1563 | 4.7 s | 12.0 s | 4 | 1507 | 11.3 s | -3% | 0.9× |
 | Migrate from github.com/pkg/errors to fmt (go-errors-migration) | 2 | 1310 | 0.0 s | 6.4 s | 11 | 4825 | 31.8 s | 73% | 5.0× |
-| Rename the util module to helpers (move-file-with-history) | 1 | 516 | 3.2 s | 5.6 s | 5 | 1407 | 13.4 s | 64% | 2.4× |
+| Rename the util module to helpers (move-file-with-history) | 1 | 516 | 3.3 s | 5.7 s | 5 | 1407 | 13.4 s | 64% | 2.3× |
 | Rename ParseConfig to LoadConfig (rename-across-code-and-docs) | 1 | 714 | 0.0 s | 3.0 s | 9 | 3746 | 26.2 s | 81% | 8.8× |
 | Move the crate to Rust 2024 (rust-edition-2024) | 2 | 988 | 0.0 s | 5.2 s | 11 | 4964 | 31.7 s | 81% | 6.1× |
-| **Total** | 12 | 7503 | 8.7 s | 43.4 s | 60 | 23637 | 170.2 s | 69% | 3.9× |
+| **Total** | 12 | 7443 | 8.9 s | 43.3 s | 60 | 23637 | 170.2 s | 69% | 3.9× |

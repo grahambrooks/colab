@@ -139,17 +139,20 @@ impl Session {
         root: &Path,
         timeout: Duration,
     ) -> Result<Transport> {
+        // A kept server, unless that fails: then this command gets its own,
+        // as it would with `COLAB_KEEP_SERVER=0`.
         #[cfg(unix)]
         if crate::daemon::enabled() {
-            let exe = std::env::current_exe()
-                .map_err(|e| Error::Config(format!("cannot find colab itself: {e}")))?;
-            return crate::daemon::connect_or_start(&exe, program, args, root, timeout)
-                .and_then(Transport::over)
-                .map_err(|e| {
-                    Error::Config(format!(
-                        "could not reach a kept language server for `{program}`: {e} (unset COLAB_KEEP_SERVER to start one per command)"
-                    ))
-                });
+            let kept = std::env::current_exe().and_then(|exe| {
+                crate::daemon::connect_or_start(&exe, program, args, root, timeout)
+                    .and_then(Transport::over)
+            });
+            match kept {
+                Ok(transport) => return Ok(transport),
+                Err(e) => log::warn!(
+                    "could not reach a kept `{program}` ({e}); starting one for this command"
+                ),
+            }
         }
         Transport::spawn(program, args, root).map_err(|e| {
             Error::Config(format!(

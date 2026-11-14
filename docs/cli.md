@@ -836,13 +836,11 @@ turns that off.
 
 Every command that asks a language server (`rename`, `mv`, `action`,
 `references`, `safe-delete`, `--tidy`, `--verify-lsp`, and the MCP tools
-built on them) starts the server and waits for it to index. With
-`COLAB_KEEP_SERVER=1` the first such command starts `colab lsp-daemon`,
+built on them) needs a server that has indexed the project. The first such command starts `colab lsp-daemon`,
 which keeps the server running for that server command and project root,
 and later commands connect to it:
 
 ```sh
-export COLAB_KEEP_SERVER=1
 colab action --at src/main.rs:3:5-6:6 --list          # starts rust-analyzer: 3.5 s
 colab action --at src/main.rs:3:5-6:6 --kind refactor.extract --title function --write   # 0.6 s
 colab rename --symbol fun_name --in src/main.rs --to total_price --write                 # 0.6 s
@@ -852,8 +850,7 @@ colab lsp-daemon --stop                                # stop them all (or --roo
 Each command still sees the files as they are on disk: when a command
 ends, the documents it opened are closed, and when the next connects the
 server is told which files changed in between. A daemon exits after ten
-minutes without a command. It is opt-in while it is dogfooded; it is
-meant to become the default.
+minutes without a command. This is the default for the `colab` binary. `COLAB_KEEP_SERVER=0` gives every command a server of its own; if the daemon cannot be reached, a command warns and starts its own. A rebuilt or upgraded colab starts daemons of its own rather than reuse ones running older code.
 
 ## Exit codes
 
@@ -911,7 +908,7 @@ colab refactor --script s.codemod --write --verify "cargo check --quiet" --commi
 - `NO_COLOR` — when set, ANSI colour is disabled in `human` output.
 - `RUST_LOG` — standard `env_logger` filter; set to `debug` to see
   per-file "no changes" lines and tree-sitter parse hints.
-- `COLAB_KEEP_SERVER` — set to `1` to keep each language server running between commands; see [Kept language servers](#kept-language-servers).
+- `COLAB_KEEP_SERVER` — `0` gives each command its own language server instead of the kept one (the default); see [Kept language servers](#kept-language-servers).
 
 ## See also
 

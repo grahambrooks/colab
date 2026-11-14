@@ -7,6 +7,8 @@
 //! listens on a Unix socket; every later command for the same server and
 //! project root connects to it instead of starting its own. The daemon
 //! exits after [`IDLE`] without a client, or on `colab lsp-daemon --stop`.
+//! It is on by default for the `colab` binary ([`enabled`]);
+//! `COLAB_KEEP_SERVER=0` gives every command a server of its own.
 //!
 //! The daemon proxies the language server protocol, so the client code is
 //! the same either way. It makes one server look fresh to each client:
@@ -47,8 +49,32 @@ pub const IDLE: Duration = Duration::from_secs(600);
 const SCAN_LIMIT: usize = 50_000;
 
 /// Whether commands should share a long-lived server: `COLAB_KEEP_SERVER=1`.
+///
+/// On by default when running as the `colab` binary, the only program that
+/// can start `colab lsp-daemon`; `COLAB_KEEP_SERVER=0` turns it off, and
+/// `=1` turns it on anywhere.
 pub fn enabled() -> bool {
-    std::env::var("COLAB_KEEP_SERVER").is_ok_and(|v| v == "1" || v == "true")
+    match std::env::var("COLAB_KEEP_SERVER").as_deref() {
+        Ok("0" | "false" | "no" | "off") => false,
+        Ok(_) => true,
+        Err(_) => std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.file_stem().map(|s| s == "colab"))
+            .unwrap_or(false),
+    }
+}
+
+/// What identifies the colab build that would run the daemon: its path
+/// and when it was built. A rebuilt or upgraded colab gets daemons of its
+/// own, never one running older code.
+fn build_identity() -> (PathBuf, u128) {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let built = std::fs::metadata(&exe)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    (exe, built)
 }
 
 /// Where daemons keep their sockets: one directory per user.
@@ -57,13 +83,14 @@ pub fn socket_dir() -> PathBuf {
     std::env::temp_dir().join(format!("colab-lsp-{user}"))
 }
 
-/// The socket for `program args…` serving `root`.
+/// The socket for `program args…` serving `root`, from this colab build.
 pub fn socket_for(program: &str, args: &[String], root: &Path) -> PathBuf {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     program.hash(&mut hasher);
     args.hash(&mut hasher);
     root.hash(&mut hasher);
+    build_identity().hash(&mut hasher);
     socket_dir().join(format!("{:016x}.sock", hasher.finish()))
 }
 

@@ -199,7 +199,6 @@ whichever milestone touches the same code.
 | Type constraints in `where` (via the server's hover) | M26 |
 | Compile-time warning when a template re-matches its own pattern | M18 |
 | LSP `WorkDoneProgress` for long previews / applies | M13.5 |
-| Make `COLAB_KEEP_SERVER` the default once dogfooding shows no stale result (the kept server shipped 2026-11-14, opt-in) | M23 (eval: extract-function is 0.7× because each of three commands starts rust-analyzer) |
 | `--bisect`: check the starting tree first, and say so when it already fails | M20 (dogfood) |
 | Go-to-definition for `include` in `.codemod` files | M19 |
 | Remote pack registry and publishing | M11 |

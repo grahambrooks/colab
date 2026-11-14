@@ -45,8 +45,13 @@ fn write(path: &std::path::Path, contents: &str) {
     f.write_all(contents.as_bytes()).unwrap();
 }
 
+/// The colab binary, each command with a language server of its own:
+/// these tests drive a fake server whose behaviour on start-up they check.
+/// `kept_server_is_the_default` covers the shared one.
 fn colab() -> Command {
-    Command::cargo_bin("colab").expect("colab binary built")
+    let mut cmd = Command::cargo_bin("colab").expect("colab binary built");
+    cmd.env("COLAB_KEEP_SERVER", "0");
+    cmd
 }
 
 #[test]
@@ -2943,6 +2948,53 @@ fn refactor_tidy_runs_the_server_after_the_rules_as_its_own_rule() {
     assert_eq!(
         fs::read_to_string(root.join("a.rs")).unwrap(),
         "use alpha;\nuse zeta;\nfn new() {}\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn kept_server_is_the_default() {
+    let root = rename_workspace("kept-default");
+    let lsp = fake_lsp();
+    let run = |to: &str, from: &str| {
+        colab()
+            .env_remove("COLAB_KEEP_SERVER")
+            .current_dir(&root)
+            .args([
+                "rename", "--symbol", from, "--in", "a.rs", "--to", to, "--write",
+            ])
+            .args(["--lsp", lsp.as_str(), "--root", ".", "--format", "json"])
+            .output()
+            .unwrap()
+    };
+    let first = run("middle", "old");
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    // The second command reaches the same server, and sees the first's
+    // edit on disk.
+    let second = run("newest", "middle");
+    assert!(
+        second.status.success(),
+        "{}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    assert!(
+        fs::read_to_string(root.join("a.rs"))
+            .unwrap()
+            .contains("fn newest()")
+    );
+    let stop = colab()
+        .args(["lsp-daemon", "--stop", "--root"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&stop.stdout).trim(),
+        "stopped 1 kept language server(s)",
+        "the commands shared one daemon"
     );
     fs::remove_dir_all(&root).ok();
 }
