@@ -139,6 +139,17 @@ wrong, and its outcome: fixed in a named commit, scheduled to a named
 milestone, or "won't fix" with the reason. A small fix goes into the same
 commit as the work that found it.
 
+To see what colab saved, price the diff it produced as `Read` + `Edit`
+calls and compare with the bytes of the colab commands and their output:
+
+```sh
+git diff -U0 > /tmp/change.diff
+scripts/price-edits.py --rev HEAD /tmp/change.diff
+```
+
+The [token cost table](dogfood-log.md#token-cost-m27--m22) has the
+results so far: about 77% saved overall, more as sites multiply.
+
 When colab did the work in a commit, say so in the commit body, e.g.
 `colab refactor (rust::pattern, 12 sites)`. These notes are the raw
 material for the M23 eval suite.

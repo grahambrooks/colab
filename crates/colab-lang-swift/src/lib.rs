@@ -112,6 +112,16 @@ impl LanguageBackend for SwiftBackend {
         Some("import")
     }
 
+    fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
+        let kinds = [
+            "comment",
+            "multiline_comment",
+            "line_str_text",
+            "multi_line_str_text",
+        ];
+        crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
+    }
+
     fn build_rule_where(
         &self,
         module: &str,

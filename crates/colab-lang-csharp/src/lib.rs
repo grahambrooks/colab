@@ -120,6 +120,16 @@ impl LanguageBackend for CSharpBackend {
         Some("using")
     }
 
+    fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
+        let kinds = [
+            "comment",
+            "string_literal_content",
+            "string_content",
+            "verbatim_string_literal",
+        ];
+        crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
+    }
+
     fn build_rule_where(
         &self,
         module: &str,

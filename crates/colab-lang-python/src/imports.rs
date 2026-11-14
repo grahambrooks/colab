@@ -70,7 +70,7 @@ pub(crate) fn module_paths(source: &str) -> Vec<String> {
 /// Every name `source`'s imports bind: `os` for `import os.path`, the
 /// alias for `import json as j`, `c` for `from a import c`. A wildcard
 /// import binds names no one can list, so it is reported as `*`.
-pub(crate) fn bound_names(source: &str) -> Vec<String> {
+pub(crate) fn imported_names(source: &str) -> Vec<String> {
     let Some(tree) = crate::parse(source) else {
         return vec!["*".into()];
     };

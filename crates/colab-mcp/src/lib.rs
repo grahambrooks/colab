@@ -73,6 +73,7 @@ use colab_dsl::compile;
 use serde_json::{Map, Value, json};
 
 mod tools;
+mod workflows;
 
 /// JSON-RPC error code for "method not found" (-32601).
 const METHOD_NOT_FOUND: i64 = -32601;
@@ -510,6 +511,14 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
         "colab.ast" => ast(args, backends),
         "colab.preview" => run_script(args, backends, RunMode::Preview, &mut NoProgress),
         "colab.apply" => run_script(args, backends, RunMode::Apply, &mut NoProgress),
+        "colab.move_import" => {
+            let script = workflows::move_import_script(args, backends)?;
+            run_generated(script, args, backends)
+        }
+        "colab.set_config_key" => {
+            let script = workflows::config_key_script(args)?;
+            run_generated(script, args, backends)
+        }
         other => Err(ToolError::protocol(format!(
             "unknown tool `{}`; {}",
             other,
@@ -518,7 +527,28 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
     }
 }
 
-const TOOL_NAMES: [&str; 9] = [
+/// Run a script a workflow tool generated, previewing unless `write` is
+/// true, and return the report with the `script` beside it.
+fn run_generated(
+    script: String,
+    args: &Value,
+    backends: &BackendRegistry,
+) -> Result<Value, ToolError> {
+    let mut run_args = args.clone();
+    run_args["script"] = json!(script);
+    let mode = if arg_bool(args, "write")? {
+        RunMode::Apply
+    } else {
+        RunMode::Preview
+    };
+    let mut value = run_script(&run_args, backends, mode, &mut NoProgress)?;
+    value["script"] = json!(script);
+    Ok(value)
+}
+
+const TOOL_NAMES: [&str; 11] = [
+    "colab.move_import",
+    "colab.set_config_key",
     "colab.find",
     "colab.ast",
     "colab.list_languages",
@@ -1341,6 +1371,69 @@ mod tests {
                 .unwrap()
                 .contains("load")
         );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn workflow_tools_generate_the_script_and_preview_by_default() {
+        use std::fs;
+        let dir = std::env::temp_dir().join(format!("colab-mcp-workflow-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let go = "package main\n\nimport \"old/pkg\"\n";
+        fs::write(dir.join("main.go"), go).unwrap();
+        fs::write(dir.join("Cargo.toml"), "[dependencies]\nregex = \"1.9\"\n").unwrap();
+        let call = |name: &str, args: Value| {
+            let req = json!({"jsonrpc":"2.0","id":13,"method":"tools/call",
+                "params":{"name": name, "arguments": args}});
+            let resp = handle(&req, &registry()).unwrap();
+            let text = resp["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            serde_json::from_str::<Value>(&text).unwrap()
+        };
+        let paths = json!([dir.to_string_lossy()]);
+
+        let preview = call(
+            "colab.move_import",
+            json!({"lang": "go", "from": "old/pkg", "to": "new/pkg", "paths": paths}),
+        );
+        assert_eq!(preview["applied"], false, "{preview}");
+        assert_eq!(preview["rules"][0]["files"], 1, "{preview}");
+        assert!(
+            preview["script"]
+                .as_str()
+                .unwrap()
+                .contains("match go::import \"old/pkg\" { replace \"new/pkg\" }")
+        );
+        assert_eq!(fs::read_to_string(dir.join("main.go")).unwrap(), go);
+
+        let applied = call(
+            "colab.move_import",
+            json!({"lang": "go", "from": "old/pkg", "to": "new/pkg", "paths": paths, "write": true}),
+        );
+        assert_eq!(applied["applied"], true, "{applied}");
+        assert!(
+            fs::read_to_string(dir.join("main.go"))
+                .unwrap()
+                .contains("new/pkg")
+        );
+
+        let toml = dir.join("Cargo.toml");
+        let set = call(
+            "colab.set_config_key",
+            json!({"key": "dependencies.regex", "value": "\"1.10\"", "paths": [toml.to_string_lossy()], "write": true}),
+        );
+        assert_eq!(set["applied"], true, "{set}");
+        assert!(
+            fs::read_to_string(&toml)
+                .unwrap()
+                .contains("regex = \"1.10\"")
+        );
+
+        let unknown = handle(&json!({"jsonrpc":"2.0","id":14,"method":"tools/call",
+            "params":{"name":"colab.move_import","arguments":{"lang":"toml","from":"a","paths":paths}}}), &registry()).unwrap();
+        assert_eq!(unknown["result"]["isError"], true, "{unknown}");
         fs::remove_dir_all(&dir).ok();
     }
 

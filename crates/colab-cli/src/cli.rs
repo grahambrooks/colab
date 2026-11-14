@@ -363,6 +363,13 @@ struct RenameArgs {
     #[arg(long, value_name = "SECS", default_value_t = 120)]
     timeout: u64,
 
+    /// Also change the old name where the server does not: whole-word
+    /// matches in comments and string literals of source files, and in
+    /// config and docs files (TOML, JSON, YAML, Markdown, text) under the
+    /// root. Reported as its own rule. Without it they are only counted.
+    #[arg(long = "include-text")]
+    include_text: bool,
+
     #[command(flatten)]
     apply: ApplyFlags,
 }
@@ -1479,21 +1486,38 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
         },
     )?;
 
-    let label = format!(
-        "lsp rename `{}` -> `{}` via {}",
-        outcome.old_name.as_deref().unwrap_or("?"),
-        args.to,
-        server.program
-    );
+    let old = outcome.old_name.as_deref().unwrap_or("?").to_string();
+    let mut labels = vec![format!(
+        "lsp rename `{old}` -> `{}` via {}",
+        args.to, server.program
+    )];
+    let mut changes = outcome.changes;
+    let mut warnings = Vec::new();
+    if outcome.old_name.is_some() {
+        let text = crate::lsp_commands::text_occurrences(&old, &args.to, &root, &changes)?;
+        if args.include_text {
+            labels.push(format!("text occurrences of `{old}` -> `{}`", args.to));
+            crate::lsp_commands::merge_text(&mut changes, text);
+        } else if !text.is_empty() {
+            let summary = crate::lsp_commands::text_summary(&text, &cwd, false);
+            warnings.push(format!(
+                "`{old}` also appears on {} line(s) in {} file(s) the server left alone (comments, strings, config, docs), e.g. {}:{}; --include-text changes them",
+                summary["lines"],
+                summary["files"],
+                summary["sample"][0]["path"].as_str().unwrap_or("?"),
+                summary["sample"][0]["line"],
+            ));
+        }
+    }
     let tidy = crate::lsp_commands::Tidy {
         server: &server,
         root: &root,
         timeout: args.timeout,
     };
     run_change_set(
-        &label,
-        outcome.changes,
-        Vec::new(),
+        labels,
+        changes,
+        warnings,
         &args.apply,
         &cwd,
         started,
@@ -1587,14 +1611,22 @@ fn run_mv(args: MvArgs) -> Result<i32> {
     if args.apply.tidy && tidy.is_none() {
         warnings.push("--tidy needs a language server; nothing was tidied".to_string());
     }
-    run_change_set(&label, changes, warnings, &args.apply, &cwd, started, tidy)
+    run_change_set(
+        vec![label.to_string()],
+        changes,
+        warnings,
+        &args.apply,
+        &cwd,
+        started,
+        tidy,
+    )
 }
 
 /// Report, and in write mode apply, a language server's answer: file
 /// operations through git first, then edits — with `--check`,
 /// `--backup`, and `--verify` behaving as for `refactor`.
 pub(crate) fn run_change_set(
-    label: &str,
+    mut labels: Vec<String>,
     mut set: colab_core::fileops::ChangeSet,
     mut warnings: Vec<String>,
     flags: &ApplyFlags,
@@ -1618,12 +1650,13 @@ pub(crate) fn run_change_set(
         commit_moves: flags.commit_moves,
         backup: flags.backup.clone(),
     };
-    let mut labels = vec![label.to_string()];
+    let label = labels.first().cloned().unwrap_or_default();
     if flags.tidy
         && let Some(tidy) = &tidy
     {
+        let rule = labels.len();
         labels.push(format!("tidy via {}", tidy.server.program));
-        warnings.extend(crate::lsp_commands::tidy_change_set(tidy, &mut set, 1)?);
+        warnings.extend(crate::lsp_commands::tidy_change_set(tidy, &mut set, rule)?);
     }
     let prepared = crate::apply::prepare(&set, &options)?;
     warnings.extend(prepared.warnings.iter().cloned());

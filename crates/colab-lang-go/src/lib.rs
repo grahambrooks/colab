@@ -114,6 +114,15 @@ impl LanguageBackend for GoBackend {
         Some("import")
     }
 
+    fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
+        let kinds = [
+            "comment",
+            "interpreted_string_literal_content",
+            "raw_string_literal_content",
+        ];
+        crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
+    }
+
     fn drop_unused_import(&self, target: &str) -> Result<Box<dyn Operation>> {
         Ok(Box::new(imports::ImportDropUnused {
             target: target.to_string(),

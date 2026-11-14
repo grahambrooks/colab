@@ -2661,3 +2661,79 @@ fn verify_lsp_refuses_a_change_that_adds_a_server_error() {
 
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn mcp_rename_symbol_offers_text_occurrences_and_includes_them_on_request() {
+    let root = workspace_temp("mcp-rename-symbol");
+    write(
+        &root.join("a.rs"),
+        "fn helper() {}\nfn main() { helper(); }\n",
+    );
+    write(&root.join("README.md"), "Call `helper` to help.\n");
+    // Go is not the server's language: only the comment is prose.
+    let go = "package p\n\n// helper is mirrored here\nfunc helper() {}\n";
+    write(&root.join("tool.go"), go);
+    let lsp = fake_lsp();
+    let cwd = root.to_str().unwrap();
+    let call = |id: u32, include: bool| {
+        serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": {"name": "colab.rename_symbol", "arguments": {
+                "symbol": "helper", "in": "a.rs", "to": "assist", "lsp": lsp,
+                "root": ".", "cwd": cwd, "include_text": include, "write": include}}})
+        .to_string()
+    };
+    let input = format!("{}\n{}\n", call(1, false), call(2, true));
+    let mut child = colab()
+        .arg("mcp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let text = |i: usize| -> Value {
+        serde_json::from_str(replies[i]["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    };
+
+    let preview = text(0);
+    assert_eq!(preview["changed"], serde_json::json!(["a.rs"]), "{preview}");
+    assert_eq!(preview["text"]["files"], 2, "{preview}");
+    assert_eq!(preview["text"]["included"], false);
+    let sample: Vec<&str> = preview["text"]["sample"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(sample, ["README.md", "tool.go"], "{preview}");
+
+    let applied = text(1);
+    assert_eq!(applied["written"], true, "{applied}");
+    assert_eq!(applied["rules"][1]["files"], 2, "{applied}");
+    assert_eq!(
+        fs::read_to_string(root.join("README.md")).unwrap(),
+        "Call `assist` to help.\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("tool.go")).unwrap(),
+        go.replace("// helper", "// assist"),
+        "the Go function is another symbol and keeps its name"
+    );
+    assert!(
+        fs::read_to_string(root.join("a.rs"))
+            .unwrap()
+            .contains("fn assist()")
+    );
+    fs::remove_dir_all(&root).ok();
+}

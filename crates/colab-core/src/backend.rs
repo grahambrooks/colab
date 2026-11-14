@@ -217,6 +217,15 @@ pub trait LanguageBackend: Send + Sync {
         None
     }
 
+    /// The byte ranges of `source` that are prose rather than code — its
+    /// comments and the contents of its string literals — where a rename
+    /// may also want to change the old name (`colab.rename_symbol`'s text
+    /// occurrences). `None` (the default) means the backend cannot tell,
+    /// and nothing in its files is offered.
+    fn prose_ranges(&self, _source: &str) -> Option<Vec<std::ops::Range<usize>>> {
+        None
+    }
+
     /// The operation behind `drops import "<target>" when unused`: delete
     /// the import, but only when nothing in the file still uses it. A
     /// backend that cannot tell whether an import is used keeps this

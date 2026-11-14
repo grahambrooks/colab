@@ -62,6 +62,34 @@ fn run_properties() -> Value {
     })
 }
 
+/// What every workflow tool takes besides its own arguments: where to run,
+/// how much to report, and whether to write.
+fn workflow_properties(own: Value) -> Value {
+    let mut properties = run_properties();
+    let map = properties.as_object_mut().expect("an object");
+    map.remove("script");
+    map.insert(
+        "write".into(),
+        json!({
+            "type": "boolean",
+            "default": false,
+            "description": "Apply the change. Default: preview only."
+        }),
+    );
+    map.insert(
+        "allow_conflicts".into(),
+        json!({
+            "type": "boolean",
+            "default": false,
+            "description": "With `write`, write even when the change reports conflicts."
+        }),
+    );
+    for (key, value) in own.as_object().expect("an object") {
+        map.insert(key.clone(), value.clone());
+    }
+    properties
+}
+
 pub fn list() -> Vec<Value> {
     vec![
         json!({
@@ -191,6 +219,38 @@ pub fn list() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "colab.move_import",
+            "description": "Point every import of one module, package or header at another (or delete it) across the given paths, in any source language: Go import paths, Rust `use` paths, Python modules, C includes, … No DSL needed. Previews unless `write` is true; the response includes the generated `script`, the same report as colab.preview, and `conflicts`.",
+            "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": workflow_properties(json!({
+                    "lang": {"type": "string", "description": "Source language namespace: go, rust, python, js, java, kotlin, c, cpp, csharp, php, ruby, swift."},
+                    "from": {"type": "string", "description": "The import as written today, e.g. `github.com/pkg/errors`, `crate::old::path`, `os.path`."},
+                    "to": {"type": "string", "description": "What to import instead. Omit to delete the import."}
+                })),
+                "required": ["lang", "from", "paths"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "colab.set_config_key",
+            "description": "Set, insert or delete one key in JSON or TOML files (or a managed block in Markdown), comparing by meaning so an equal value is left alone and formatting is kept. No DSL needed. Previews unless `write` is true; the response includes the generated `script`.",
+            "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": workflow_properties(json!({
+                    "key": {"type": "string", "description": "TOML: dotted path (`dependencies.regex`; `name[field=value]` picks an array element). JSON: a JSON Pointer (`/scripts/test`). Markdown: the block name."},
+                    "value": {"type": "string", "description": "The value in the file's own syntax: `\"1.10\"` for a TOML or JSON string, `true`, `{ version = \"1\" }`."},
+                    "only_if_absent": {"type": "boolean", "default": false, "description": "Insert: leave an existing value alone."},
+                    "delete": {"type": "boolean", "default": false, "description": "Remove the key instead; `value` is then not needed."},
+                    "lang": {"type": "string", "enum": ["json", "toml", "markdown"], "description": "Defaults from the first path's extension."}
+                })),
+                "required": ["key", "paths"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "colab.apply",
             "description": "Apply a script to one or more paths and write the changes to disk. Run colab.preview first and check the per-rule counts. If any rule reports a conflict (a rename onto a name the file already uses, a rewrite introducing an unimported qualifier), nothing is written and `applied` is false, unless `allow_conflicts` is true.",
             "annotations": { "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false },
@@ -222,13 +282,15 @@ mod tests {
     }
 
     #[test]
-    fn only_apply_is_marked_destructive() {
+    fn only_tools_that_can_write_are_marked_destructive() {
         for tool in list() {
             let name = tool["name"].as_str().unwrap();
             let destructive = tool["annotations"]["destructiveHint"]
                 .as_bool()
                 .unwrap_or(false);
-            assert_eq!(destructive, name == "colab.apply", "{name}");
+            let writes =
+                name == "colab.apply" || tool["inputSchema"]["properties"].get("write").is_some();
+            assert_eq!(destructive, writes, "{name}");
         }
     }
 

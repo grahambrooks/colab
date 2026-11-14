@@ -43,7 +43,7 @@ pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
 const QUALIFIERS: Qualifiers = Qualifiers {
     kind: "attribute",
     field: "object",
-    imported: crate::imports::bound_names,
+    imported: crate::imports::imported_names,
     builtin: PYTHON_BUILTINS,
 };
 

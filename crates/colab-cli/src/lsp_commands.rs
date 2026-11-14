@@ -306,7 +306,7 @@ pub fn run_action(args: ActionArgs) -> Result<i32> {
         timeout: args.timeout,
     };
     run_change_set(
-        &label,
+        vec![label.to_string()],
         outcome.changes,
         warnings,
         &args.apply,
@@ -497,7 +497,7 @@ pub fn run_safe_delete(args: SafeDeleteArgs) -> Result<i32> {
                 timeout: args.timeout,
             };
             run_change_set(
-                &label,
+                vec![label.to_string()],
                 changes,
                 Vec::new(),
                 &args.apply,
@@ -573,6 +573,9 @@ impl colab_mcp::ToolProvider for LspTools {
         rename["to"] = json!({"type": "string", "description": "The new name."});
         write_properties(&mut rename);
 
+        let mut rename_symbol = rename.clone();
+        rename_symbol["include_text"] = json!({"type": "boolean", "default": false, "description": "Also change the old name where the server does not: whole-word matches in comments and string literals of source files, and in config and docs files (TOML, JSON, YAML, Markdown, text) under the root. Without it they are only listed, under `text`."});
+
         let mut action = position_properties();
         action["at"] = json!({"type": "string", "description": "`FILE:LINE:COL` or a selection `FILE:LINE:COL-LINE:COL`, relative to `cwd`. Extract-style actions need a selection."});
         action.as_object_mut().unwrap().remove("symbol");
@@ -596,6 +599,12 @@ impl colab_mcp::ToolProvider for LspTools {
                 "inputSchema": {"type": "object", "properties": rename, "required": ["to"], "additionalProperties": false}
             }),
             json!({
+                "name": "colab.rename_symbol",
+                "description": "Rename a symbol the way an IDE does: the language server renames the symbol and every reference it resolves, and colab also finds the old name in comments, strings, and config/docs files, which the server skips. Those text matches are listed under `text` and only changed with `include_text: true`. Give `symbol` + `in` (the declaring file) or `at`. Previews unless `write` is true.",
+                "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false},
+                "inputSchema": {"type": "object", "properties": rename_symbol, "required": ["to"], "additionalProperties": false}
+            }),
+            json!({
                 "name": "colab.action",
                 "description": "Run one of the language server's code actions — extract function/variable, inline, change signature, organize imports, … — at a position or selection. Call with `list: true` first to see what is offered, then pick with `kind` and/or `title`. Returns a colab report; set `write` to apply.",
                 "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false},
@@ -608,6 +617,7 @@ impl colab_mcp::ToolProvider for LspTools {
         let run = match name {
             "colab.references" => mcp_references,
             "colab.rename" => mcp_rename,
+            "colab.rename_symbol" => mcp_rename_symbol,
             "colab.action" => mcp_action,
             _ => return None,
         };
@@ -687,7 +697,218 @@ fn mcp_rename(args: &Value) -> Result<Value> {
         root: &root,
         timeout,
     };
-    change_set_json(&label, outcome.changes, Vec::new(), args, &cwd, Some(tidy))
+    change_set_json(
+        vec![label],
+        outcome.changes,
+        Vec::new(),
+        args,
+        &cwd,
+        Some(tidy),
+    )
+}
+
+/// `colab.rename_symbol`: the server's rename, plus the old name's text
+/// occurrences it does not touch — listed, or included on request.
+fn mcp_rename_symbol(args: &Value) -> Result<Value> {
+    let (cwd, place, server, root, timeout) = mcp_context(args)?;
+    let to = arg(args, "to").ok_or_else(|| Error::Config("`to` is required".into()))?;
+    let outcome = colab_lsp_client::rename(
+        &server,
+        &colab_lsp_client::RenameRequest {
+            file_operations: crate::git::Repo::discover(&root).is_some(),
+            root: root.clone(),
+            file: place.file.clone(),
+            offset: place.start,
+            new_name: to.to_string(),
+            timeout: Duration::from_secs(timeout),
+            settle: SETTLE,
+        },
+    )?;
+    let old = outcome
+        .old_name
+        .clone()
+        .ok_or_else(|| Error::Config("the server did not say what the old name was".into()))?;
+    let mut set = outcome.changes;
+    let text = text_occurrences(&old, to, &root, &set)?;
+    let include = flag(args, "include_text");
+
+    let mut labels = vec![format!(
+        "lsp rename `{old}` -> `{to}` via {}",
+        server.program
+    )];
+    let summary = text_summary(&text, &cwd, include);
+    if include {
+        labels.push(format!("text occurrences of `{old}` -> `{to}`"));
+        merge_text(&mut set, text);
+    }
+    let tidy = Tidy {
+        server: &server,
+        root: &root,
+        timeout,
+    };
+    let mut value = change_set_json(labels, set, Vec::new(), args, &cwd, Some(tidy))?;
+    value["text"] = summary;
+    Ok(value)
+}
+
+/// Files a text occurrence may be in without a parser: config and docs.
+const TEXT_EXTENSIONS: &[&str] = &[
+    "toml", "json", "yaml", "yml", "md", "markdown", "txt", "rst", "adoc",
+];
+
+/// Whole-word occurrences of `old` the rename in `set` left behind, under
+/// the git work tree holding `root` (else `root`), as edits to `new` on
+/// top of it: in source files, only inside comments and
+/// string contents (`LanguageBackend::prose_ranges`); in config and docs
+/// files, anywhere. Each edit's `before` is the file as the rename leaves
+/// it, at its final path, and is attributed to rule 1.
+pub(crate) fn text_occurrences(
+    old: &str,
+    new: &str,
+    root: &Path,
+    set: &ChangeSet,
+) -> Result<Vec<colab_core::FileChange>> {
+    // The server's root is the nearest project marker, which in a
+    // workspace is one crate or package; docs and config usually live at
+    // the top of the work tree, so search that when there is one.
+    let top = crate::git::Repo::discover(root).map(|repo| repo.top().to_path_buf());
+    let root = top.as_deref().unwrap_or(root);
+    let registry = colab_backends::registry();
+    // A backend claims a path when its own `symbol` rule would.
+    let claims: Vec<(
+        &dyn colab_core::LanguageBackend,
+        Box<dyn colab_core::Operation>,
+    )> = registry
+        .languages()
+        .into_iter()
+        .filter_map(|lang| {
+            let backend = registry.get(lang)?;
+            backend.prose_ranges("")?;
+            let op = backend
+                .build_rule(
+                    "symbol",
+                    colab_core::RuleSpec::Replace {
+                        target: old.into(),
+                        replacement: new.into(),
+                    },
+                )
+                .ok()?;
+            Some((backend, op))
+        })
+        .collect();
+    let renamed: std::collections::HashMap<PathBuf, &colab_core::FileChange> = set
+        .edits
+        .iter()
+        .map(|e| (set.origin_of(&e.path).unwrap_or_else(|| e.path.clone()), e))
+        .collect();
+
+    let mut out = Vec::new();
+    let candidates = Candidates { claims: &claims };
+    colab_core::walker::walk(&candidates, root, &mut |change| {
+        let (path, base) = match renamed.get(&change.path) {
+            Some(edit) => (edit.path.clone(), edit.after.clone()),
+            None => (change.path.clone(), change.before),
+        };
+        let prose = match claims
+            .iter()
+            .find(|(_, op)| op.is_file_relevant(&change.path))
+        {
+            Some((backend, _)) => backend.prose_ranges(&base),
+            None => Some(std::iter::once(0..base.len()).collect()),
+        };
+        let Some(prose) = prose else { return Ok(()) };
+        let after = replace_words(&base, old, new, &prose);
+        if after != base {
+            out.push(colab_core::FileChange {
+                path,
+                before: base,
+                after,
+                rules_fired: vec![1],
+                conflicts: Vec::new(),
+            });
+        }
+        Ok(())
+    })?;
+    Ok(out)
+}
+
+/// Selects the files [`text_occurrences`] reads; it never changes them.
+struct Candidates<'a> {
+    claims: &'a [(
+        &'a dyn colab_core::LanguageBackend,
+        Box<dyn colab_core::Operation>,
+    )],
+}
+
+impl colab_core::CodeTransformer for Candidates<'_> {
+    fn is_file_relevant(&self, path: &Path) -> bool {
+        let text = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| TEXT_EXTENSIONS.contains(&e));
+        text || self.claims.iter().any(|(_, op)| op.is_file_relevant(path))
+    }
+
+    fn apply(&self, source: &str) -> String {
+        source.to_string()
+    }
+}
+
+/// `text` with every whole-word `old` inside one of `ranges` made `new`.
+fn replace_words(text: &str, old: &str, new: &str, ranges: &[std::ops::Range<usize>]) -> String {
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for (at, _) in text.match_indices(old) {
+        let end = at + old.len();
+        let bounded = !text[..at].chars().next_back().is_some_and(is_word)
+            && !text[end..].chars().next().is_some_and(is_word);
+        if bounded && at >= last && ranges.iter().any(|r| r.start <= at && end <= r.end) {
+            out.push_str(&text[last..at]);
+            out.push_str(new);
+            last = end;
+        }
+    }
+    out.push_str(&text[last..]);
+    out
+}
+
+/// Fold text edits into the server's change set: a file both touched keeps
+/// the server's `before` and takes the text edit's `after`.
+pub(crate) fn merge_text(set: &mut ChangeSet, text: Vec<colab_core::FileChange>) {
+    for change in text {
+        match set.edits.iter_mut().find(|e| e.path == change.path) {
+            Some(edit) => {
+                edit.after = change.after;
+                edit.rules_fired.push(1);
+            }
+            None => set.edits.push(change),
+        }
+    }
+}
+
+/// `{files, occurrences, included, sample: [{path, line, text}]}`, the
+/// sample capped so a common word cannot flood the response.
+pub(crate) fn text_summary(text: &[colab_core::FileChange], cwd: &Path, included: bool) -> Value {
+    const SAMPLE: usize = 20;
+    let mut sample = Vec::new();
+    let mut occurrences = 0;
+    for change in text {
+        for (number, (old, new)) in change.before.lines().zip(change.after.lines()).enumerate() {
+            if old == new {
+                continue;
+            }
+            occurrences += 1;
+            if sample.len() < SAMPLE {
+                sample.push(json!({
+                    "path": relative(&change.path, cwd).display().to_string(),
+                    "line": number + 1,
+                    "text": old.trim(),
+                }));
+            }
+        }
+    }
+    json!({"files": text.len(), "lines": occurrences, "included": included, "sample": sample})
 }
 
 fn mcp_action(args: &Value) -> Result<Value> {
@@ -713,14 +934,21 @@ fn mcp_action(args: &Value) -> Result<Value> {
         root: &root,
         timeout,
     };
-    change_set_json(&label, outcome.changes, Vec::new(), args, &cwd, Some(tidy))
+    change_set_json(
+        vec![label],
+        outcome.changes,
+        Vec::new(),
+        args,
+        &cwd,
+        Some(tidy),
+    )
 }
 
 /// The `colab.preview`-shaped report for a change set — the same JSON as
 /// `--format json` — applying it first when `write` is set. Nothing is
 /// printed: stdout is the MCP transport.
 fn change_set_json(
-    label: &str,
+    mut labels: Vec<String>,
     mut set: ChangeSet,
     mut warnings: Vec<String>,
     args: &Value,
@@ -729,12 +957,12 @@ fn change_set_json(
 ) -> Result<Value> {
     use colab_core::render::{self, ChangeCollector, Detail, RenderOptions};
 
-    let mut labels = vec![label.to_string()];
     if flag(args, "tidy")
         && let Some(tidy) = &tidy
     {
+        let rule = labels.len();
         labels.push(format!("tidy via {}", tidy.server.program));
-        warnings.extend(tidy_change_set(tidy, &mut set, 1)?);
+        warnings.extend(tidy_change_set(tidy, &mut set, rule)?);
     }
     let options = crate::apply::ApplyOptions::default();
     let prepared = crate::apply::prepare(&set, &options)?;

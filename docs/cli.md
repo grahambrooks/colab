@@ -296,8 +296,18 @@ colab rename (--at FILE:LINE:COL | --symbol NAME --in FILE) --to NEW
              [--lsp '<command>'] [--root DIR] [-C DIR]
              [--format human|json|ndjson|diff] [--write|--dry-run|--check]
              [--backup DIR] [--verify CMD] [--allow-dirty] [--commit-moves]
-             [--tidy] [--timeout SECS] [--detail LEVEL]
+             [--tidy] [--include-text] [--timeout SECS] [--detail LEVEL]
 ```
+
+The server renames code only. colab also looks for the old name, as a
+whole word, in comments and string literals of every source file and
+anywhere in config and docs files (TOML, JSON, YAML, Markdown, text)
+across the git work tree, not just the server's project root. Without
+`--include-text` they are counted in a warning (`` `old` also appears on
+3 line(s) in 2 file(s) the server left alone …, e.g. README.md:12``);
+with it they become a second rule, `text occurrences of `old` -> `new``,
+so they can be reviewed separately in `--format json`. A code occurrence
+the server did not rename is a different symbol and is never touched.
 
 ```sh
 # Rename the field, not the function that shares its name.
@@ -697,12 +707,15 @@ MCP-aware host) can call them directly:
 | `colab.find` | `script`, `paths[]`, `cwd?`, `detail?` (`concise`/`detailed`), `max_results?` | Read-only search; same document as `colab find --format json`. Paths are reported relative to `cwd`. |
 | `colab.ast` | `lang`, one of `pattern` / `source` | A pattern's tree as compiled (with `context` and `prefilter`), or a snippet's (with `has_error`). |
 | `colab.preview` | `script`, `paths[]`, `cwd?`, `detail?`, `max_files?`, `max_diff_bytes?` | Summary, per-rule match counts, changed paths, and (at `detail: "diff"`) capped diffs. Disk untouched. |
-| `colab.apply` | same as preview | Same shape, but writes changes back. |
+| `colab.apply` | same as preview, `allow_conflicts?` | Same shape, but writes changes back; writes nothing while a rule reports a conflict. |
+| `colab.move_import` | `lang`, `from`, `to?`, `paths[]`, `cwd?`, `write?`, `detail?`, `allow_conflicts?` | No DSL needed: generates `match <lang>::<import module> "<from>" { replace "<to>" }` (`delete` without `to`) and returns the preview / apply report with the generated `script`. |
+| `colab.set_config_key` | `key`, `value` or `delete: true`, `only_if_absent?`, `paths[]`, `lang?`, `write?`, … | No DSL needed: `json::key` / `toml::key` `set` (`insert` with `only_if_absent`, or `delete`), or `markdown::block`; the format comes from the first path's extension. Returns the report with the `script`. |
 | `colab.references` | `at` (`FILE:LINE:COL`) or `symbol` + `in`, `include_declaration?`, `max_results?`, `lsp?`, `root?`, `cwd?` | References the language server resolves; same document as `colab references --format json`. Read-only. |
 | `colab.rename` | position as above, `to`, `write?`, `tidy?`, `detail?`, `lsp?`, `root?`, `cwd?` | Scope-aware rename via the server; the `colab.preview` report plus `written`. |
 | `colab.action` | `at` (position or `FILE:L:C-L:C` selection), `list?`, `kind?`, `title?`, `write?`, `tidy?`, … | With `list: true`, `{actions: [{title, kind, preferred, disabled?}]}`; otherwise runs the one matching action and returns the report. |
+| `colab.rename_symbol` | as `colab.rename`, plus `include_text?` | The server's rename, plus the old name's text occurrences the server leaves alone: comments and string contents in source files, and anywhere in config/docs files (TOML, JSON, YAML, Markdown, text) in the git work tree. Listed under `text: {files, lines, included, sample[]}`; changed as a second rule only with `include_text: true`. |
 
-The last three are served by the `colab` binary: `colab-mcp` stays free of
+The four language-server tools are served by the `colab` binary: `colab-mcp` stays free of
 the language-server client, and the binary registers them through
 `colab_mcp::ToolProvider`. They preview unless `write: true`, and are
 annotated `destructiveHint` because they can write.

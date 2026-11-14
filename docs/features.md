@@ -371,6 +371,14 @@ disabled actions with its reason. A missing capability is an error or a
 warning naming it (`no codeActionProvider`, `no
 workspace.fileOperations.willRename`), never a silent no-op.
 
+
+**Text occurrences.** A server renames code; `colab rename
+--include-text` and the `colab.rename_symbol` MCP tool also offer the old
+name where it appears as prose: comments and string contents, which each
+source backend recognises with its own grammar (`prose_ranges`), and
+config and docs files (TOML, JSON, YAML, Markdown, text) anywhere in the
+git work tree. They are listed by default and applied only on request.
+
 ## What `colab` does *not* do
 
 These are deliberate non-goals. They live in

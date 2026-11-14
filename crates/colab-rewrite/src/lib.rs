@@ -160,6 +160,19 @@ pub fn rename_nodes_by_text(
     apply_edits(source, edits)
 }
 
+/// The byte ranges of every node whose kind is in `kinds`: a backend's
+/// comments and string contents, for
+/// `LanguageBackend::prose_ranges`. Ranges may nest.
+pub fn ranges_of_kinds(tree: &Tree, kinds: &[&str]) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    visit_all(tree, |node| {
+        if kinds.contains(&node.kind()) {
+            out.push(node.byte_range());
+        }
+    });
+    out
+}
+
 /// The conflict a [`rename_nodes_by_text`] from `from` to `to` would
 /// cause in `source`: `to` already occurs there as an identifier, so the
 /// rename would merge two names into one. `None` when it does not, or

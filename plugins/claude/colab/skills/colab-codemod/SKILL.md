@@ -415,6 +415,15 @@ the server process started, and `include "..."` does not work at all.
 | sample hunks | `colab.preview {..., detail: "diff", max_files: 5}` |
 | apply | `colab.apply {script, paths, cwd}` |
 
+**Three common jobs need no script at all.** Each previews unless
+`write: true`, and returns the generated `script` so you can extend it:
+
+| Job | Tool |
+| --- | ---- |
+| an import / `use` / include moved | `colab.move_import {lang, from, to, paths, cwd}` (omit `to` to delete) |
+| a dependency version or config value | `colab.set_config_key {key, value, paths, cwd}` — `value` in the file's syntax, e.g. `"\"1.10\""` |
+| rename a symbol, docs and comments too | `colab.rename_symbol {symbol, in, to, cwd}` — the server renames code; the old name in comments, strings, and config/docs files is listed under `text` and changed only with `include_text: true` |
+
 `colab.test_rule` is the cheapest way to confirm a rule before a repo-wide
 preview: hand it a few lines shaped like the real code and the `path` it
 would live at (only the extension matters). With `expected`, it answers

@@ -281,3 +281,58 @@ fn the_import_module_supports_ensure() {
         );
     }
 }
+
+/// Every source backend finds prose — comments and string contents — and
+/// only prose: `Needle` appears once in a comment, once in a string, and
+/// once as code, so exactly two occurrences fall inside its ranges.
+#[test]
+fn prose_ranges_cover_comments_and_strings_but_not_code() {
+    let samples: &[(&str, &str)] = &[
+        ("c", "// Needle\nconst char *s = \"Needle\";\nint Needle;\n"),
+        ("cpp", "// Needle\nauto s = \"Needle\";\nint Needle;\n"),
+        (
+            "csharp",
+            "// Needle\nclass A { string s = \"Needle\"; int Needle; }\n",
+        ),
+        (
+            "go",
+            "package p\n// Needle\nvar s = \"Needle\"\nvar Needle int\n",
+        ),
+        (
+            "java",
+            "class A { // Needle\n String s = \"Needle\"; int Needle; }\n",
+        ),
+        ("js", "// Needle\nconst s = \"Needle\";\nlet Needle;\n"),
+        ("kotlin", "// Needle\nval s = \"Needle\"\nval Needle = 1\n"),
+        (
+            "php",
+            "<?php\n// Needle\n$s = \"Needle\";\nfunction Needle() {}\n",
+        ),
+        ("python", "# Needle\ns = \"Needle\"\nNeedle = 1\n"),
+        ("ruby", "# Needle\ns = \"Needle\"\nNeedle = 1\n"),
+        (
+            "rust",
+            "// Needle\nconst S: &str = \"Needle\";\nfn Needle() {}\n",
+        ),
+        ("swift", "// Needle\nlet s = \"Needle\"\nlet Needle = 1\n"),
+    ];
+    let registry = colab_backends::registry();
+    for (lang, source) in samples {
+        let ranges = registry
+            .get(lang)
+            .unwrap()
+            .prose_ranges(source)
+            .unwrap_or_else(|| panic!("{lang} has no prose_ranges"));
+        let inside = source
+            .match_indices("Needle")
+            .filter(|(at, _)| ranges.iter().any(|r| r.start <= *at && at + 6 <= r.end))
+            .count();
+        assert_eq!(inside, 2, "{lang}: {ranges:?}");
+    }
+    for lang in ["json", "markdown", "toml"] {
+        assert!(
+            registry.get(lang).unwrap().prose_ranges("x").is_none(),
+            "{lang}"
+        );
+    }
+}

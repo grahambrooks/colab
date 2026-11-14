@@ -797,10 +797,19 @@ then M14, M21, M23.
   binaries, for sandboxes with no Rust toolchain.
 - `--format sarif` and `--format github` for `--check` annotations.
 
-### M22 — Workflow-shaped MCP tools
-- `colab.rename_symbol`, `colab.move_import`, `colab.set_config_key`:
-  each generates the DSL internally and returns a preview, so a first
-  call needs no DSL at all.
+### ✅ M22 — Workflow-shaped MCP tools
+- `colab.move_import` and `colab.set_config_key` generate a one-rule
+  script, run it through the `colab.preview` / `colab.apply` path
+  (`write` selects), and return the report with the generated `script`,
+  so the first call needs no DSL and its answer teaches it. A value that
+  holds both quote characters is refused, since DSL strings have no
+  escapes.
+- `colab.rename_symbol` (and `colab rename --include-text`): the
+  server's rename, plus whole-word text occurrences it leaves alone, in
+  comments and string contents (`LanguageBackend::prose_ranges`, all 12
+  source backends) and in config/docs files across the git work tree.
+  They are listed separately and applied only on request, as IntelliJ's
+  "search in comments and strings".
 
 ### M23 — Agent eval suite
 - Scripted tasks (repo-wide rename, API migration, config rollout)
@@ -835,7 +844,7 @@ rename and nothing else:
 | SSR constraints (count, regex, type, within) | `where` on `<lang>::pattern`: `matches`, `is`, `count`, `inside`, `has`, `not` (M26); type constraints not yet | ✅ M26 |
 | Conflicts dialog before applying | conflicts reported before writing; `--write` refuses (exit 11) (M27) | ✅ M27 |
 | `//noinspection` suppression | none | M20 |
-| Rename in comments, strings, non-code files | none (the server skips them) | M22 |
+| Rename in comments, strings, non-code files | `colab.rename_symbol` / `rename --include-text`: listed, applied on request (M22) | ✅ M22 |
 
 colab still computes nothing semantic. Each gap is closed either by
 asking the language's own server, as M19 does for rename, or with a
