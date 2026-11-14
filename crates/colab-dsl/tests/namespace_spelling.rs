@@ -91,6 +91,8 @@ fn every_module_name_is_also_scopable() {
                 "delete" => "delete",
                 "ensure" => "ensure",
                 "replace_call" => "replace_call \"y($args)\"",
+                "set" => "set \"1\"",
+                "insert" => "insert \"1\"",
                 other => panic!("unhandled action `{other}`"),
             };
             let script = format!(

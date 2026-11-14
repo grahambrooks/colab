@@ -134,11 +134,19 @@ pub Identifier: String = {
     "unused" => "unused".to_string(),
 };
 
-// Two spellings, neither with escapes. A double-quoted string cannot
+// Three spellings, none with escapes. A double-quoted string cannot
 // contain `"`; a single-quoted one cannot contain `'`. Single quotes exist
 // for values that are themselves quoted text — a TOML inline table or a
-// JSON object passed to `set` / `insert`. Both may span lines.
+// JSON object passed to `set` / `insert`. A raw string, `r#"…"#`, may
+// contain both (Markdown about code, a template with a lifetime and a
+// string); it ends at the first `"#`, so its text cannot contain `"#` or
+// end with `"`. `r##"…"##` ends at the first `"##`, for text that
+// mentions `"#` (documentation of raw strings). Two hashes is the limit:
+// LALRPOP quotes each token's regex in an `r###` string in the code it
+// generates. All may span lines.
 pub StringLiteral: String = {
     <s:r#""[^"]*""#> => s[1..s.len() - 1].to_string(),
     <s:r#"'[^']*'"#> => s[1..s.len() - 1].to_string(),
+    <s:r##"r#"([^"]|"[^#])*"#"##> => s[3..s.len() - 2].to_string(),
+    <s:r###"r##"([^"]|"[^#]|"#[^#])*"##"###> => s[4..s.len() - 3].to_string(),
 };

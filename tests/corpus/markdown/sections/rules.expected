@@ -1,0 +1,7 @@
+1 markdown::section "Usage > Options" -> set in "docs/guide.md"
+1 markdown::section "Usage > Examples" -> set in "docs/guide.md"
+1 markdown::section "#deprecated" -> delete in "docs/guide.md"
+1 markdown::section "Old name" -> "New name" in "docs/guide.md"
+1 markdown::frontmatter "updated" = '2026-11-13' in "docs/**"
+1 markdown::frontmatter "draft" -> delete in "docs/**"
+conflict docs/guide.md rule 4: 1 link(s) in this file point at `#old-name`, which the rename makes `#new-name`; add `match markdown::link "#old-name" { replace "#new-name" }` once links are supported, or edit them

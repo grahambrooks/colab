@@ -2737,3 +2737,86 @@ fn mcp_rename_symbol_offers_text_occurrences_and_includes_them_on_request() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn outline_and_section_read_markdown_by_structure() {
+    let root = workspace_temp("md-outline");
+    let doc = "# Plan\n\n## Order\n\n```sh\n# not a heading\n```\n\n## Risks\n\nrisky\n";
+    write(&root.join("docs/plan.md"), doc);
+    let out = colab()
+        .current_dir(&root)
+        .args(["outline", "docs", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let hs = v["files"][0]["headings"].as_array().unwrap();
+    assert_eq!(hs.len(), 3, "the fenced `#` is not a heading: {v}");
+    assert_eq!(hs[1]["address"], "Plan > Order");
+    assert_eq!(hs[1]["fences"], 1);
+
+    let out = colab()
+        .current_dir(&root)
+        .args(["section", "docs/plan.md", "#risks", "--body"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "risky\n");
+    let miss = colab()
+        .current_dir(&root)
+        .args(["section", "docs/plan.md", "Risk"])
+        .output()
+        .unwrap();
+    assert!(!miss.status.success());
+    assert!(String::from_utf8_lossy(&miss.stderr).contains("did you mean `Plan > Risks`"));
+
+    // The same over MCP.
+    let call = |id: u32, name: &str, args: Value| {
+        serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": {"name": name, "arguments": args}})
+        .to_string()
+    };
+    let cwd = root.to_str().unwrap();
+    let input = format!(
+        "{}\n{}\n",
+        call(
+            1,
+            "colab.outline",
+            serde_json::json!({"paths": ["docs"], "cwd": cwd, "depth": 1})
+        ),
+        call(
+            2,
+            "colab.section",
+            serde_json::json!({"path": "docs/plan.md", "section": "Order", "cwd": cwd})
+        ),
+    );
+    let mut child = colab()
+        .arg("mcp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let text = |i: usize| -> Value {
+        serde_json::from_str(replies[i]["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    };
+    assert_eq!(text(0)["files"][0]["path"], "docs/plan.md");
+    assert_eq!(text(0)["files"][0]["headings"].as_array().unwrap().len(), 1);
+    assert!(text(1)["text"].as_str().unwrap().starts_with("## Order\n"));
+    fs::remove_dir_all(&root).ok();
+}

@@ -68,14 +68,17 @@ just the readable form.
 | `swift::call`       |    |    |    | ✅ |    |    | `.swift` |
 | `swift::pattern`    | ✅ | ✅ |    |    |    |    | `.swift` |
 | `json::key`         |    | ✅ |    |    | ✅ | ✅ | `.json` |
+| `markdown::section` | ✅ | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
+| `markdown::frontmatter` |  | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
 | `markdown::block`   |    | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
 | `toml::key`         |    | ✅ |    |    | ✅ | ✅ | `.toml` |
 
 **Config-file backends.** `json`, `markdown` and `toml` edit data files
-rather than source, so they do not share the source floor below. Each has
-one module whose target is an address — a JSON Pointer, a managed-block
-name, or a dotted TOML path with `[field=value]` selectors — and the
-`set` / `insert` / `delete` actions. `set` and `insert` create what is
+rather than source, so they do not share the source floor below. Their
+modules take an address — a JSON Pointer, a dotted TOML path with
+`[field=value]` selectors, a Markdown heading path or anchor, a front-matter
+key, or a managed-block name — and the `set` / `insert` / `delete` actions
+(`markdown::section` also renames a heading with `replace`). `set` and `insert` create what is
 missing, so scope them with `in "<glob>"` or run them on named files. See
 [Config-file backends](#config-file-backends) below.
 
@@ -581,6 +584,58 @@ match json::key "/enabledPlugins/code-intelligence@gb-agent-skills" in ".claude/
   object; missing parent objects are written compactly on one line.
 - An array step must be an existing index; `set` and `insert` never grow
   arrays, and `delete` does not remove array elements.
+
+### `markdown::section` — a section by heading
+
+```
+match markdown::section "Order of work" in "docs/development-plan.md" { set '…new body…' }
+match markdown::section "M28 — Markdown structure > Phase 1" { insert '- outline and section' }
+match markdown::section "#risks" { replace "Risks and mitigations" }
+match markdown::section "Unscheduled" { delete }
+```
+
+- A section is a heading and everything under it, up to the next heading of
+  the same or a higher level, so it includes its subsections. ATX (`##`)
+  and setext (underlined) headings both count; a `#` line inside a code
+  fence does not.
+- The address is a heading path, `"Parent > Child"`, compared with the
+  text as a reader sees it (no `*`, backticks or link syntax). The outer
+  segments must enclose the heading in that order but need not be its
+  direct parents. `"#slug"` addresses a GitHub-style anchor instead, with
+  duplicates numbered `-1`, `-2` as GitHub does.
+- An address that matches two headings changes nothing, and the report's
+  `unchanged` reason lists them with their lines. A dead rule's near misses
+  are the file's heading paths.
+- `set` replaces everything under the heading and keeps one blank line
+  after it; it is a no-op when the body is already that text, ignoring
+  trailing spaces and surrounding blank lines. On a missing section, `set`
+  and `insert` add it at the end of its parent (the path minus its last
+  segment), one level below; a single-segment path is added at the end of
+  the file, under a lone `#` title if there is one.
+- `replace` renames the heading in place, keeping its level. Links in the
+  same file to the old anchor become [conflicts](./cli.md#conflicts), so
+  `--write` stops until they are fixed.
+- To read a section without the whole file, use
+  [`colab outline` and `colab section`](./cli.md#colab-outline-and-colab-section).
+
+### `markdown::frontmatter` — a front-matter key
+
+```
+match markdown::frontmatter "updated" in "wiki/**" { set '2026-11-13' }
+match markdown::frontmatter "tags" { set '
+  - colab
+  - markdown' }
+```
+
+- Top-level keys of the YAML block between `---` lines at the top of the
+  file. A key's entry is its line plus the indented or `- ` lines under it,
+  so a list or block scalar is replaced whole; a value that starts with a
+  newline is written on the lines under the key.
+- Values compare by meaning: `"x"`, `'x'` and `x` are equal, and so are
+  values that differ only in spacing.
+- `set` and `insert` add a missing key before the closing `---`, and a
+  missing front matter at the top of the file. Nested keys are not
+  addressed yet.
 
 ### `markdown::block` — managed block
 

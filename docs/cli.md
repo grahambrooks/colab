@@ -770,6 +770,42 @@ colab --help-json                 # the root: subcommands
 colab refactor --help-json        # every refactor flag
 ```
 
+### `colab outline` and `colab section`
+
+Read Markdown by structure instead of whole files. An outline costs a
+few lines; a section costs only itself.
+
+```
+colab outline <files or dirs>... [--depth N] [--format human|json]
+colab section <file> "<heading path or #anchor>" [--body] [--format human|json]
+```
+
+```
+$ colab outline docs/development-plan.md --depth 2
+docs/development-plan.md (329 lines)
+    1-329   # Colab Development Plan                    4 tables, 16 lists, 1 fence
+    6-20      ## Vision                                 1 list
+   31-51      ## Order of work                          1 table
+  ...
+$ colab section docs/development-plan.md "Order of work" --body
+```
+
+- Each heading is listed with its line span (the section runs to the next
+  heading of the same or a higher level, so it includes its subsections)
+  and the tables, lists and code fences it holds. `--format json` gives
+  each heading's `address` (what `section` and `markdown::section` rules
+  take), `anchor`, `line` and `end_line`.
+- A `#` line inside a code fence is code, not a heading, which a
+  `grep '^#'` outline gets wrong.
+- A section is addressed as in [`markdown::section`](features.md#markdownsection--a-section-by-heading):
+  `"Parent > Child"` (the outer segments need not be direct parents) or
+  `"#anchor"`. An ambiguous or missing address is an error naming the
+  candidates.
+- Directories are searched for `.md` / `.markdown` files, honouring
+  `.gitignore`.
+- MCP: `colab.outline {paths, depth?, cwd?}` and
+  `colab.section {path, section, body?, cwd?}`, both read-only.
+
 ## Exit codes
 
 The same table is in `colab --help`:

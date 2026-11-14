@@ -14,6 +14,7 @@ mod git;
 mod help_json;
 mod language_server;
 mod lsp_commands;
+mod markdown;
 mod packs;
 
 use std::io::Write;

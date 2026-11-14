@@ -136,6 +136,14 @@ An edit that overlaps a parse error is refused.
    checks; a `colab.set_config_key`-style MCP tool for sections and rows.
 3. Code fences as source.
 
+#### Status
+
+Phase 1 shipped: `tree-sitter-md`, `colab outline` / `colab section` and
+their MCP tools, `markdown::section` (`set` / `insert` / `delete` /
+`replace`), `markdown::frontmatter`, and `colab ast --lang markdown`.
+Dogfooding it on this repo's docs needed raw strings, `r#"…"#`, which
+also shipped. Next: phase 2 (`row`, `item`, `link`, link checks).
+
 ### M20 — Agent install & guardrails
 - `colab agent install` detects Claude Code / Cursor / Codex and wires
   skill + MCP server (+ optional hook).
@@ -276,7 +284,7 @@ whichever milestone touches the same code.
 | LSP `WorkDoneProgress` for long previews / applies | M13.5 |
 | Go-to-definition for `include` in `.codemod` files | M19 |
 | Remote pack registry and publishing | M11 |
-| Raw strings in the DSL (a value or pattern holding both `'` and `"`, or a Rust lifetime) | dogfood |
+| Report a satisfied `set` / `insert` as already done, not "matched no files", in `toml::key`, `json::key` and `markdown::block` (done for `markdown::section` / `frontmatter`) | dogfood |
 | Re-indent a template's later lines in tab-indented source (Go) | dogfood |
 | Suggest `--bisect` when `--verify` fails on rule 1 | dogfood |
 | Let `field: $X` match Rust's shorthand field `field`; a struct-field context for nested patterns | dogfood |

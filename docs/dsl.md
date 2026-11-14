@@ -43,6 +43,8 @@ namespace   = identifier "::" identifier
 identifier  = [a-zA-Z_][a-zA-Z0-9_]* | keyword   -- see "Reserved tokens"
 string      = '"' (any-char-except-double-quote)* '"'
             | "'" (any-char-except-single-quote)* "'"
+            | 'r#"' (any-text-without '"#')* '"#'        -- raw string
+            | 'r##"' (any-text-without '"##')* '"##'
 action      = "replace" string
             | "delete"
             | "ensure"
@@ -236,7 +238,9 @@ How it matches:
   metavariables and punctuation (`$A + $B`) parses every file of its
   language.
 - **Quoting.** The DSL has no escapes, so write patterns containing `"`
-  with single quotes, as above.
+  with single quotes, as above, and patterns or templates containing both
+  quotes (a Rust lifetime and a string) as a raw string, `r#"…"#`; see
+  [Reserved tokens](#reserved-tokens).
 
 - **Templates are re-indented.** Lines after a template's first are
   indented to the match's column, so write a multi-line template
@@ -576,10 +580,25 @@ import-clause keyword: `go::import` still parses.
 
 **String literals have no escape sequences.** A backslash is a literal
 backslash, which is what makes PHP namespaces (`"App\Old\Thing"`) work
-naturally. It also means a double-quoted string cannot contain `"`, so a
-second spelling exists: a single-quoted string, which cannot contain `'`.
-Use it for values that are quoted text themselves — a TOML inline table,
-a JSON object. Either spelling may span lines.
+naturally. There are three spellings:
+
+| Spelling | Cannot contain | Use it for |
+| -------- | -------------- | ---------- |
+| `"…"` | `"` | most targets and values |
+| `'…'` | `'` | values that are quoted text themselves: a TOML inline table, a JSON object, a pattern with string literals |
+| `r#"…"#` | `"#` | text holding both quotes: Markdown about code, a Rust template with a lifetime and a string |
+
+Every spelling may span lines, so a whole Markdown section can be a raw
+string:
+
+```
+match markdown::section "Install" in "README.md" { set r#"Run `cargo install colab`, or
+`npx colab` where there is no Rust toolchain ("no Rust" means no `cargo`)."# }
+```
+
+Text that itself contains `"#`, such as this section, takes two hashes:
+`r##` before the opening quote and two after the closing one. Two is the
+most the grammar accepts.
 
 ## Future directions
 

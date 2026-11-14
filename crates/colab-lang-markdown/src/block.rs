@@ -92,10 +92,7 @@ enum Found {
 
 impl Operation for BlockEdit {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        matches!(
-            path.extension().and_then(|e| e.to_str()),
-            Some("md" | "markdown")
-        )
+        crate::is_markdown(path)
     }
 
     fn apply(&self, source_code: &str) -> String {

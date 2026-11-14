@@ -38,12 +38,24 @@ routes need (finding node kinds) is excluded from both.
 - **Practice that follows:** generate repetitive scripts from a table,
   preview with `find` (one line per site) rather than a diff, apply with
   `--format json --detail summary`, and let `--bisect` be the check.
+- **Markdown (M28 phase 1).** Reading by structure paid off at once: four
+  `outline` / `section` calls cost 12.7 KB, against 104 KB to read the
+  four files whole. Writing paid off less: the docs script and its
+  application cost 12.0 KB against 13.6 KB modelled for `Read` + `Edit`
+  (12% less), because `set` re-sends a whole section and three previews
+  failed on quoting before raw strings existed. Without the failed
+  previews it was 8.2 KB (40% less). Phase 2's `item` and `row` address
+  the re-sending.
 - **Not counted:** the agent's own reasoning tokens, which favour colab
   further (no per-site Read to digest), and wall time, which favours
   `Edit` (each `--bisect` runs `cargo check`).
 
 | Date | Task | Command | Friction | Outcome |
 | ---- | ---- | ------- | -------- | ------- |
+| 2026-11-13 | M28: update four docs (two sections set, two inserted) | `refactor` with `markdown::section` rules | Every body quoting a colab rule held both `'` and `"`, which no DSL string could hold. Then the docs *about* raw strings contained `"#`, and the cli.md text quoted `"#anchor"`, each closing an `r#` string. | Fixed: raw strings `r#"…"#` and `r##"…"##` (LALRPOP caps it at two: its generated code quotes regexes in `r###`). |
+| 2026-11-13 | same | `refactor --check` on the applied script | A satisfied `set` / `insert` reported "matched no files", as if the rule were dead. | Fixed for the markdown modules (`unchanged: already as the rule asks`). Open for `toml::key` / `json::key` / `markdown::block`. |
+| 2026-11-13 | same | `markdown::section … { set }` | A small change inside a long section means sending the whole section back; bullets, table rows (these log rows, the plan's follow-ups) and the EBNF line in `dsl.md` were hand-edited. | Open: phase 2 (`item`, `row`). |
+| 2026-11-13 | M28: read four docs (104 KB) to find what to change | `outline`, `section` | None. 12.7 KB in four calls, 88% less than reading the files whole. | Done by colab. |
 | 2026-11-13 | M22: `prose_ranges` in 12 backends, each with its own node kinds | `refactor --bisect`, script generated from a table, `--format json --detail summary` | None; first time. Generating the 12 scoped rules from a table, and asking only for the summary, kept both the script and its output out of the conversation. | Done by colab. |
 | 2026-11-13 | M22: `run_change_set(&label, …)` → `vec![…]` at 4 call sites | `refactor --bisect 'cargo check'` with one inline `rust::pattern` | My hand edit of the definition was incomplete (the body still used `label`); `--bisect` failed the build and reverted the call-site rewrite. Rerun after the fix passed. | Worked as designed: the check caught my mistake, not colab's. |
 | 2026-11-13 | M22: rename `bound_names` → `imported_names` | `rename` (rust-analyzer) | None. | Done by colab. |

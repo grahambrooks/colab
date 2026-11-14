@@ -1,0 +1,21 @@
+// Markdown by structure: sections by heading path or anchor, and
+// front-matter keys. Each rule is idempotent; the second corpus pass
+// changes nothing.
+// - `Usage > Options` names the Options under Usage, not the one under
+//   Internals; plain `Options` would be ambiguous and change nothing.
+// - `set` on a missing section adds it under its parent.
+// - The `#` lines in the shell fence are code, not headings.
+// - Renaming `Old name` reports the in-file link to `#old-name` as a
+//   conflict.
+refactor "doc-sections" {
+    match markdown::section "Usage > Options" in "**/guide.md" { set r#"- `--fast`: skip the "slow" checks.
+- `--out DIR`: where to write."# }
+    match markdown::section "Usage > Examples" in "**/guide.md" { set '```sh
+# a comment, not a heading
+tool --fast
+```' }
+    match markdown::section "#deprecated" in "**/guide.md" { delete }
+    match markdown::section "Old name" in "**/guide.md" { replace "New name" }
+    match markdown::frontmatter "updated" in "**/guide.md" { set '2026-11-13' }
+    match markdown::frontmatter "draft" in "**/guide.md" { delete }
+}

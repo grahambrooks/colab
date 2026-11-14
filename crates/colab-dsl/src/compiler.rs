@@ -711,6 +711,29 @@ import (
     }
 
     #[test]
+    fn raw_strings_hold_both_quotes_and_span_lines() {
+        let script = "refactor \"r\" {\n  match toml::key r#\"a\"# { set r#\"say \"hi\" isn't\n'\"x\"'\"# }\n}\n";
+        let parsed = crate::parse(script).unwrap();
+        let crate::ast::Item::Match(m) = &parsed.items[0] else {
+            panic!("a match")
+        };
+        assert_eq!(m.match_string, "a");
+        assert_eq!(
+            m.action,
+            crate::ast::Action::Set("say \"hi\" isn't\n'\"x\"'".into())
+        );
+        let two = "refactor \"r\" { match toml::key \"a\" { set r##\"a raw string ends at \"# here\"## } }";
+        let parsed = crate::parse(two).unwrap();
+        let crate::ast::Item::Match(m) = &parsed.items[0] else {
+            panic!("a match")
+        };
+        assert_eq!(
+            m.action,
+            crate::ast::Action::Set("a raw string ends at \"# here".into())
+        );
+    }
+
+    #[test]
     fn parses_every_constraint_form() {
         let m = one_match(
             r#"match go::pattern 'f($A, $$$R)' where $A matches /^"a\/b/, $A is identifier, not $A matches "x", $$$R count 1..3, $$$R count 2.., $$$R count ..4, $$$R count 0, inside 'func $F() { $$$ }', not has 'g()' { delete }"#,

@@ -6,7 +6,10 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Markdown edits for colab: set, insert or delete a managed block between HTML-comment markers."
+description = "Markdown edits for colab, addressed by structure: sections, front matter, and managed blocks."
 
 [dependencies]
 colab-core = { workspace = true }
+colab-rewrite = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-md = { workspace = true }

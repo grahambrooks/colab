@@ -227,20 +227,31 @@ before writing a rule for a namespace you have not used.
 
 ## Config files are addresses, not syntax
 
-`toml::key`, `json::key` and `markdown::block` edit data rather than
-source, so they take `set` / `insert` / `delete` instead of the source
-actions:
+`toml::key`, `json::key` and the `markdown::` modules edit data rather
+than source, so they take `set` / `insert` / `delete` instead of the
+source actions:
 
 ```
 match toml::key "workspace.package.edition" in "Cargo.toml" { set '"2024"' }
 match json::key "/scripts/test" in "package.json" { set '"vitest run"' }
 match markdown::block "conventions" in "AGENTS.md" { set '- run `make check`' }
+match markdown::section "Order of work" in "docs/plan.md" { set r#"…new body…"# }
+match markdown::frontmatter "updated" in "wiki/**" { set '2026-11-13' }
 ```
 
 `set` overwrites or creates; `insert` only creates. Values are compared
 by meaning, not text, so both are idempotent. Because they act where the
 target is *missing*, **always scope them** with `in "<glob>"` or a named
 file — an unscoped `set` adds the key to every file of that type.
+
+**Markdown is addressed by structure.** A section is a heading path,
+`"Parent > Child"`, or an anchor, `"#risks"`; it runs to the next heading
+of the same or a higher level. `markdown::section` takes `set` (replace
+everything under the heading), `insert`, `delete`, and `replace "<new
+heading>"`. A body that holds both quote characters goes in a raw string,
+`r#"…"#`. Before reading a long Markdown file, run `colab outline FILE`
+and then `colab section FILE "<address>"` for the part you need, rather
+than reading all of it.
 
 ## Symbol renames are blunt — scope them
 

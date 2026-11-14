@@ -106,6 +106,11 @@ enum Commands {
     /// Print the syntax tree of a snippet or a pattern, to see why a
     /// pattern does or does not match.
     Ast(AstArgs),
+    /// The heading outline of Markdown files: each section's address,
+    /// anchor, line span, and the tables, lists and fences it holds.
+    Outline(crate::markdown::OutlineArgs),
+    /// Print one Markdown section, by heading path or anchor.
+    Section(crate::markdown::SectionArgs),
     /// Parse a script and print its IR as JSON without running it.
     Explain(ExplainArgs),
     /// List every language backend the binary knows about.
@@ -613,7 +618,7 @@ pub async fn run() -> Result<i32> {
         }
         Some(Commands::Mcp) => {
             info!("Starting MCP server on stdio");
-            colab_mcp::run_with(default_backends(), &crate::lsp_commands::LspTools).map_err(
+            colab_mcp::run_with(default_backends(), &crate::markdown::BinaryTools).map_err(
                 |e| Error::Io {
                     path: None,
                     source: e,
@@ -634,6 +639,8 @@ pub async fn run() -> Result<i32> {
         Some(Commands::References(args)) => crate::lsp_commands::run_references(args),
         Some(Commands::SafeDelete(args)) => crate::lsp_commands::run_safe_delete(args),
         Some(Commands::Ast(args)) => run_ast(args),
+        Some(Commands::Outline(args)) => crate::markdown::run_outline(args),
+        Some(Commands::Section(args)) => crate::markdown::run_section(args),
         Some(Commands::ListLanguages) => print_json(&discover::list_languages(&default_backends())),
         Some(Commands::ListRules(args)) => {
             let value = discover::list_rules(&default_backends(), &args.lang)?;
