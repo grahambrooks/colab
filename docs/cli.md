@@ -101,7 +101,10 @@ format. They are counted in the summary and nothing more.
   `--max-diff-bytes`, with any residue reported under `truncated`).
   `--detail summary` emits the `summary` object alone.
 - **`ndjson`** — one object per *changed* file, newline separated,
-  then a final summary object carrying the per-rule counts:
+  then a final summary object carrying the per-rule counts. At `--detail
+  diff` each file event adds its `diff` and `rule_lines`
+  (`[{rule, added, removed}]`, the lines each rule changed there, which
+  `colab review` reads):
   ```json
   {"type":"file","path":"cmd/main.go","bytes_before":42,"bytes_after":48,"rules":[0]}
   {"type":"summary","summary":{...},"rules":[{"i":0,"rule":"…","files":3}]}
@@ -401,8 +404,11 @@ next: colab review run.ndjson --rule 1   # page through its diffs
   line counts or pages, and the review says so.
 - Rules are numbered from 1, as in the human output; JSON's `i` is from 0.
   A rule that changed nothing is listed as such.
-- A file's diff is the run's whole change to it, so in a file several
-  rules changed (`shared` in JSON) the lines count for each of them.
+- With `--detail diff`, each file event carries `rule_lines` — the lines
+  each rule added and removed there, from the blocks it changed — so a
+  file several rules changed is split between them. A log without it (or
+  a block two rules both touch) counts the file's lines for each rule,
+  flagged as `shared` in JSON.
 - Flags: `--rule N`, `--page P` (with `--rule`), `--per-page K`
   (default 10), `--top N` most-edited files per rule (default 5),
   `--format human|json`.

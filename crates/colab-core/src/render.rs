@@ -747,9 +747,6 @@ fn touches(a: &std::ops::Range<usize>, b: &std::ops::Range<usize>) -> bool {
 /// (`report.spans`, from [`crate::report::attribute`]); without spans,
 /// or when no rule claims it, to every rule that changed the file.
 pub fn findings(change: &FileChange, report: &RunReport) -> Vec<Finding> {
-    if !change.changed() {
-        return Vec::new();
-    }
     let severity = |rules: &[usize]| {
         rules
             .iter()
@@ -758,16 +755,47 @@ pub fn findings(change: &FileChange, report: &RunReport) -> Vec<Finding> {
             .max()
             .unwrap_or_default()
     };
-    let spans = report.spans.get(&change.path);
-    let diff = similar::TextDiff::from_lines(&change.before, &change.after);
     let new: Vec<&str> = change.after.split_inclusive('\n').collect();
+    blocks(change, report.spans.get(&change.path).map(Vec::as_slice))
+        .into_iter()
+        .map(|block| Finding {
+            start_line: block.old.start + 1,
+            end_line: block.old.end,
+            replacement: new
+                .get(block.new.clone())
+                .map(|l| l.concat())
+                .unwrap_or_default(),
+            severity: severity(&block.rules),
+            rules: block.rules,
+        })
+        .collect()
+}
+
+/// One changed block of a file: its lines before and after (0-based,
+/// end exclusive) and the rules credited with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Block {
+    pub old: std::ops::Range<usize>,
+    pub new: std::ops::Range<usize>,
+    pub rules: Vec<usize>,
+}
+
+/// Each changed block of `change`, with no context lines, credited to the
+/// rules whose own change touches it (`spans`, from
+/// [`crate::report::attribute`]); without spans, or when no rule claims
+/// it, to every rule that changed the file.
+pub fn blocks(change: &FileChange, spans: Option<&[crate::report::RuleSpan]>) -> Vec<Block> {
+    if !change.changed() {
+        return Vec::new();
+    }
+    let diff = similar::TextDiff::from_lines(&change.before, &change.after);
     let mut out = Vec::new();
     for group in diff.grouped_ops(0) {
         let (Some(first), Some(last)) = (group.first(), group.last()) else {
             continue;
         };
         let old = first.old_range().start..last.old_range().end;
-        let added = first.new_range().start..last.new_range().end;
+        let new = first.new_range().start..last.new_range().end;
         let mut rules: Vec<usize> = spans
             .into_iter()
             .flatten()
@@ -779,15 +807,27 @@ pub fn findings(change: &FileChange, report: &RunReport) -> Vec<Finding> {
         if rules.is_empty() {
             rules = change.rules_fired.clone();
         }
-        out.push(Finding {
-            start_line: old.start + 1,
-            end_line: old.end,
-            replacement: new.get(added).map(|l| l.concat()).unwrap_or_default(),
-            severity: severity(&rules),
-            rules,
-        });
+        out.push(Block { old, new, rules });
     }
     out
+}
+
+/// Lines each rule added and removed in `change`, by its blocks:
+/// `[(rule, added, removed)]` in rule order. A block two rules both touch
+/// counts for each.
+pub fn rule_lines(
+    change: &FileChange,
+    spans: Option<&[crate::report::RuleSpan]>,
+) -> Vec<(usize, usize, usize)> {
+    let mut by_rule: std::collections::BTreeMap<usize, (usize, usize)> = Default::default();
+    for block in blocks(change, spans) {
+        for rule in &block.rules {
+            let entry = by_rule.entry(*rule).or_default();
+            entry.0 += block.new.len();
+            entry.1 += block.old.len();
+        }
+    }
+    by_rule.into_iter().map(|(r, (a, d))| (r, a, d)).collect()
 }
 
 #[cfg(test)]
@@ -889,6 +929,30 @@ mod tests {
         let json = collector.to_json(&report);
         assert_eq!(json["skipped"][0]["path"], "bin.py");
         assert_eq!(json["summary"]["skipped"], 1);
+    }
+
+    #[test]
+    fn rule_lines_split_a_file_between_its_rules() {
+        let change = FileChange {
+            path: "f.go".into(),
+            before: "a\nb\nc\nd\n".into(),
+            after: "A\nb\nC1\nC2\nd\n".into(),
+            rules_fired: vec![0, 1],
+            conflicts: Vec::new(),
+        };
+        let spans = [
+            crate::report::RuleSpan {
+                rule: 0,
+                lines: 0..1,
+            },
+            crate::report::RuleSpan {
+                rule: 1,
+                lines: 2..3,
+            },
+        ];
+        assert_eq!(rule_lines(&change, Some(&spans)), [(0, 1, 1), (1, 2, 1)]);
+        // Without spans every block is credited to every rule.
+        assert_eq!(rule_lines(&change, None), [(0, 3, 2), (1, 3, 2)]);
     }
 
     #[test]

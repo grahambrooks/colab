@@ -1167,7 +1167,7 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
         report.record(change);
     }
     lsp_check(args, &pending, &mut report)?;
-    attribute_lines(args.format, refactoring, &pending, &mut report);
+    attribute_lines(args, refactoring, &pending, &mut report, reporter.as_mut());
     let blocked = matches!(exec_mode, ExecMode::Write) && refuse_conflicts(args, &mut report);
     if blocked {
         reporter.refused();
@@ -1382,14 +1382,25 @@ fn run_split(
 
 /// For the CI formats, which annotate each changed block, record which
 /// rule changed which lines (one extra apply per rule per changed file).
+/// For the outputs that credit lines to rules — the CI formats, and
+/// ndjson with `--detail diff` (`rule_lines`, which `colab review` reads) —
+/// record which rule changed which lines (one extra apply per rule per
+/// changed file), and hand that to the reporter.
 fn attribute_lines(
-    format: Format,
+    args: &RefactorArgs,
     refactoring: &codemod::Refactoring,
     changes: &[FileChange],
     report: &mut RunReport,
+    reporter: &mut dyn format::Reporter,
 ) {
-    if matches!(format, Format::Sarif | Format::Github) {
+    let wanted = match args.format {
+        Format::Sarif | Format::Github => true,
+        Format::Ndjson => args.render_options().detail == Detail::Diff,
+        _ => false,
+    };
+    if wanted {
         colab_core::report::attribute(&refactoring.rules, changes, report);
+        reporter.attribution(&report.spans);
     }
 }
 
@@ -1677,7 +1688,7 @@ fn run_refactor_bisect(
             report.record(change);
         }
         lsp_check(args, &pending, &mut report)?;
-        attribute_lines(args.format, refactoring, &pending, &mut report);
+        attribute_lines(args, refactoring, &pending, &mut report, reporter.as_mut());
         if refuse_conflicts(args, &mut report) {
             reporter.refused();
             report_all(reporter.as_mut(), &pending)?;
@@ -1919,14 +1930,15 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
                 .map_err(io_to_error)?;
         }
         Format::Json | Format::Ndjson | Format::Diff | Format::Sarif | Format::Github => {
+            let mut reporter =
+                format::make_reporter(args.format, ExecMode::DryRun, args.render_options());
             attribute_lines(
-                args.format,
+                &args,
                 &refactoring,
                 std::slice::from_ref(&change),
                 &mut report,
+                reporter.as_mut(),
             );
-            let mut reporter =
-                format::make_reporter(args.format, ExecMode::DryRun, args.render_options());
             reporter
                 .report(&change)
                 .map_err(|e| Error::io_at(&change.path, e))?;

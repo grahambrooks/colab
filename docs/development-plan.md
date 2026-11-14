@@ -104,7 +104,7 @@ An item leaves the follow-ups table when it ships.
    `rules.expected`), and `--script builtin:<pack>`, which `colab pack
    list` already prints.
 
-**Wave B — one engine, not twelve copies:**
+**Wave B — one engine, not twelve copies** — ✅ shipped 2026-11-14 (item 9 for JS only: the other nine languages' imports do not bind the qualifier, so a syntactic check there could only guess):
 
 8. One call rewriter in `colab_rewrite` for the seven backends whose
    `calls.rs` differ only in the call node's kind.
@@ -166,7 +166,6 @@ whichever milestone touches the same code.
 | Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |
 | An eval task for `colab fix` | M14 |
 | Linux release binaries that run on older glibc: they need 2.39, so Ubuntu 22.04 and Debian 12 cannot run them. A static `x86_64-unknown-linux-musl` build (release-kit's `EXTRA_TARGETS`) is one way; it built cleanly in M21 | M21 |
-| Per-hunk rule attribution in ndjson file events, so `colab review` counts a shared file's lines per rule (it now flags them as shared) | M16 |
 | `--split-pr` stacked mode (each rule's branch on the previous one), for rules that only apply to an earlier rule's output | M16 |
 
 ## Unscheduled

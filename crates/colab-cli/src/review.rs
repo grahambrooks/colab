@@ -60,11 +60,31 @@ struct File {
     diff: Option<String>,
     added: usize,
     removed: usize,
+    /// Lines each rule added and removed here, when the run attributed
+    /// them (`rule_lines`); `None` when it did not.
+    per_rule: Option<BTreeMap<usize, (usize, usize)>>,
 }
 
 impl File {
-    fn lines(&self) -> usize {
-        self.added + self.removed
+    /// What `rule` added and removed here: its own lines when the log
+    /// attributes them, else the whole file's.
+    fn lines_of(&self, rule: usize) -> (usize, usize) {
+        match &self.per_rule {
+            Some(per) => per.get(&rule).copied().unwrap_or_default(),
+            None => (self.added, self.removed),
+        }
+    }
+
+    /// Lines `rule` changed here, added and removed together.
+    fn size(&self, rule: usize) -> usize {
+        let (a, r) = self.lines_of(rule);
+        a + r
+    }
+
+    /// `true` when other rules changed this file too and the log cannot
+    /// say whose lines are whose.
+    fn shared(&self) -> bool {
+        self.rules.len() > 1 && self.per_rule.is_none()
     }
 }
 
@@ -128,6 +148,17 @@ fn parse(text: &str) -> Result<Log> {
                     diff,
                     added,
                     removed,
+                    per_rule: event["rule_lines"].as_array().map(|lines| {
+                        lines
+                            .iter()
+                            .filter_map(|l| {
+                                let rule = l["rule"].as_u64()? as usize;
+                                let added = l["added"].as_u64()? as usize;
+                                let removed = l["removed"].as_u64()? as usize;
+                                Some((rule, (added, removed)))
+                            })
+                            .collect()
+                    }),
                 });
             }
             Some("summary") => {
@@ -160,7 +191,7 @@ const BUCKETS: &[(&str, usize, usize)] = &[
     ("101+", 101, usize::MAX),
 ];
 
-fn histogram(files: &[&File]) -> Vec<(&'static str, usize)> {
+fn histogram(files: &[&File], rule: usize) -> Vec<(&'static str, usize)> {
     BUCKETS
         .iter()
         .map(|(name, lo, hi)| {
@@ -168,7 +199,7 @@ fn histogram(files: &[&File]) -> Vec<(&'static str, usize)> {
                 *name,
                 files
                     .iter()
-                    .filter(|f| (*lo..=*hi).contains(&f.lines()))
+                    .filter(|f| (*lo..=*hi).contains(&f.size(rule)))
                     .count(),
             )
         })
@@ -182,7 +213,7 @@ fn review(log: &Log, args: &ReviewArgs) -> Result<Value> {
     for (&i, label) in &log.rules {
         let files: Vec<&File> = log.files.iter().filter(|f| f.rules.contains(&i)).collect();
         let mut top = files.clone();
-        top.sort_by(|a, b| b.lines().cmp(&a.lines()).then_with(|| a.path.cmp(&b.path)));
+        top.sort_by(|a, b| b.size(i).cmp(&a.size(i)).then_with(|| a.path.cmp(&b.path)));
         let mut rule = json!({
             "i": i,
             "rule": label,
@@ -190,21 +221,24 @@ fn review(log: &Log, args: &ReviewArgs) -> Result<Value> {
         });
         // A file's diff is the whole run's change to it, so in a file that
         // other rules changed too the lines are not this rule's alone.
-        let shared = files.iter().filter(|f| f.rules.len() > 1).count();
+        let shared = files.iter().filter(|f| f.shared()).count();
         if shared > 0 {
             rule["shared"] = json!(shared);
         }
         if log.diffs {
-            rule["added"] = json!(files.iter().map(|f| f.added).sum::<usize>());
-            rule["removed"] = json!(files.iter().map(|f| f.removed).sum::<usize>());
+            rule["added"] = json!(files.iter().map(|f| f.lines_of(i).0).sum::<usize>());
+            rule["removed"] = json!(files.iter().map(|f| f.lines_of(i).1).sum::<usize>());
             rule["top"] = json!(
                 top.iter()
                     .take(args.top)
-                    .map(|f| json!({"path": f.path, "added": f.added, "removed": f.removed}))
+                    .map(|f| {
+                        let (added, removed) = f.lines_of(i);
+                        json!({"path": f.path, "added": added, "removed": removed})
+                    })
                     .collect::<Vec<_>>()
             );
             rule["histogram"] = Value::Object(
-                histogram(&files)
+                histogram(&files, i)
                     .into_iter()
                     .map(|(k, n)| (k.to_string(), json!(n)))
                     .collect(),
@@ -292,7 +326,7 @@ fn human(doc: &Value, log_name: &str, out: &mut impl Write) -> io::Result<()> {
         if let Some(shared) = rule["shared"].as_u64() {
             writeln!(
                 out,
-                "  {shared} of them also changed by other rules: their lines count for each"
+                "  {shared} of them also changed by other rules, and the log does not split their lines, so they count for each"
             )?;
         }
         if let Some(top) = rule["top"].as_array().filter(|t| !t.is_empty()) {

@@ -3337,10 +3337,17 @@ fn review_groups_a_recorded_run_by_rule() {
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["files"], 2);
     assert_eq!(v["rules"][1]["files"], 2);
-    assert_eq!(
-        v["rules"][1]["shared"], 1,
-        "a.go was changed by rules 1 and 2"
-    );
+    // a.go was changed by rules 1 and 2; the log splits its lines, so
+    // neither is flagged as shared, and each counts only its own lines.
+    assert!(v["rules"][1].get("shared").is_none(), "{v}");
+    let lines = |i: usize| {
+        (
+            v["rules"][i]["added"].as_u64(),
+            v["rules"][i]["removed"].as_u64(),
+        )
+    };
+    assert_eq!(lines(0), (Some(1), Some(1)), "{v}");
+    assert_eq!(lines(1), (Some(2), Some(2)), "{v}");
     assert_eq!(v["rules"][2]["files"], 0);
     assert_eq!(v["page"]["pages"], 2);
     assert!(

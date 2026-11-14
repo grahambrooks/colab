@@ -85,6 +85,13 @@ pub trait Reporter {
         Ok(())
     }
     fn report(&mut self, change: &FileChange) -> io::Result<()>;
+    /// Which rule changed which lines of each file, when the run worked it
+    /// out (`report::attribute`), before any [`report`](Self::report).
+    fn attribution(
+        &mut self,
+        _spans: &std::collections::BTreeMap<std::path::PathBuf, Vec<colab_core::report::RuleSpan>>,
+    ) {
+    }
     /// The run was refused (conflicts), so report the changes still to
     /// come as "would" rather than "wrote". Only wording depends on it.
     fn refused(&mut self) {}
@@ -264,6 +271,8 @@ impl Reporter for JsonReporter {
 pub struct NdjsonReporter {
     options: RenderOptions,
     out: io::Stdout,
+    /// Per-file rule spans, for `rule_lines` (see [`Reporter::attribution`]).
+    spans: std::collections::BTreeMap<std::path::PathBuf, Vec<colab_core::report::RuleSpan>>,
 }
 
 impl NdjsonReporter {
@@ -271,11 +280,19 @@ impl NdjsonReporter {
         Self {
             options,
             out: io::stdout(),
+            spans: Default::default(),
         }
     }
 }
 
 impl Reporter for NdjsonReporter {
+    fn attribution(
+        &mut self,
+        spans: &std::collections::BTreeMap<std::path::PathBuf, Vec<colab_core::report::RuleSpan>>,
+    ) {
+        self.spans = spans.clone();
+    }
+
     fn file_op(&mut self, op: &FileOp) -> io::Result<()> {
         if self.options.detail == Detail::Summary {
             return Ok(());
@@ -314,6 +331,15 @@ impl Reporter for NdjsonReporter {
                     &change.after
                 )),
             );
+            // Lines per rule, when the run attributed them: what lets
+            // `colab review` count a file several rules changed.
+            if let Some(spans) = self.spans.get(&change.path) {
+                let lines: Vec<_> = render::rule_lines(change, Some(spans))
+                    .into_iter()
+                    .map(|(rule, added, removed)| json!({"rule": rule, "added": added, "removed": removed}))
+                    .collect();
+                obj.insert("rule_lines".to_string(), json!(lines));
+            }
         }
         writeln!(self.out, "{}", value)
     }
