@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then **M31** (CI fit), **M10.6**, **M32**–**M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep) and M30 (rule expressiveness) have shipped.
+**M20's install step**, now that the stable gate has passed, then **M10.6**, **M32**–**M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness) and M31 (CI fit) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -41,12 +41,11 @@ what it lets that dogfooding cover.
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
 | 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
-| 2 | M31 CI fit | Gating a repository on its packs: tests, baselines, data tables, rule selection, Windows. |
-| 3 | M10.6 | Parse-once batching: performance, for the largest repositories. |
-| 4 | M32 Type and name constraints, delegated | Same-named APIs from different libraries; research spike first. |
-| 5 | M33 Fleet: many repositories, shared packs | Migrations across repositories; packs shared as git sources. |
-| 6 | M34 Symbol-addressed edits | One-off agent edits by symbol, not exact strings. |
-| 7 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
+| 2 | M10.6 | Parse-once batching: performance, for the largest repositories. |
+| 3 | M32 Type and name constraints, delegated | Same-named APIs from different libraries; research spike first. |
+| 4 | M33 Fleet: many repositories, shared packs | Migrations across repositories; packs shared as git sources. |
+| 5 | M34 Symbol-addressed edits | One-off agent edits by symbol, not exact strings. |
+| 6 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
 
 ## Stable gate before M20
 
@@ -95,31 +94,6 @@ Wave D of the M29 follow-up sweep: decide before building.
 - Static Linux release binaries (musl via release-kit's
   `EXTRA_TARGETS`): changes what every release ships, so it waits for
   a go-ahead.
-
-### M31 — CI fit
-
-What a team needs to gate a repository on its packs.
-
-- **`colab test`** (shipped: `<pack>.tests/<case>/{input,expected}/`, `--bless`, exit 12; colab's own `.colab/packs/hygiene.codemod` is tested and gated in CI) for a repository's own packs: before / after fixtures
-  next to the pack, valid / invalid cases, blessable snapshots
-  (`COLAB_BLESS=1`), the idempotency re-run included. The machinery is the
-  corpus harness and MCP `colab.test_rule`. ast-grep `test`, Grit, LibCST.
-- **Findings new since a baseline** (shipped for `refactor` and `fix`): `--baseline <ref>` reports only rule
-  hits not present at the ref, so a convention can be enforced on legacy
-  code without noise (`--changed-since` narrows files, not findings).
-  Semgrep `ci` diff-aware scans.
-- **Data tables** (shipped: `find --table csv|ndjson`, `--group-by`): `find --table` emits one row per hit, keyed by the
-  metavariable bindings, as CSV / NDJSON, with `--group-by $X` counts —
-  "how many call sites, which shapes" before a migration. OpenRewrite
-  data tables, Moderne `query_datatable`.
-- **Rule selection from the command line** (shipped as `--only` / `--off` / `--severity`, since `-e/--rule` already gives an inline rule; selectors are `id` globs or numbers; `id` and `url` clauses): `--rule <name|regex>`,
-  `--off <name>`, `--severity <name>=<level>`, and a `url` per rule
-  carried into SARIF and GitHub annotations. ast-grep `scan`.
-- **A Windows build** in the release archives (no package managers; see
-  the dropped npm / PyPI packaging).
-- **A Renovate preset**: `postUpgradeTasks` that runs `colab fix`, so a
-  dependency bump and the code it breaks land in one PR; packs may name
-  the dependency range they apply to.
 
 ### M32 — Type and name constraints, delegated
 
@@ -223,6 +197,8 @@ whichever milestone touches the same code.
 | Remote pack registry and publishing | M11 |
 | Linux release binaries that run on older glibc: they need 2.39, so Ubuntu 22.04 and Debian 12 cannot run them. A static `x86_64-unknown-linux-musl` build (release-kit's `EXTRA_TARGETS`) is one way; it built cleanly in M21 | M21 |
 | Constraints on a nested pattern: `inside` / `has` / … take a pattern, not a rule, so a scope cannot say "a `mod` that follows `#[cfg(test)]`" (a Rust attribute is the item's sibling). ast-grep's relational rules take a whole rule | M30 |
+| Packs that name the dependency range they apply to, so `colab fix` after a Renovate bump runs only the packs for what changed (each ecosystem's lockfile read for the version) | M31 |
+| A clean `fix --check` warns that a finding rule matched no files, and so does a `--baseline` run whose findings were all the ref's: for a check, matching nothing is the state wanted, so the warning could be worded by what the run means, or dropped for rules with a `message` | M31 |
 
 ## Unscheduled
 

@@ -406,6 +406,22 @@ path = ".colab/packs/house-style.codemod"
   last four as for `refactor`. `fix` takes no `--script`, `-e` or paths:
   the packs and `[run] paths` come from `colab.toml`.
 
+#### Renovate: fix what a dependency bump breaks
+
+`renovate/colab.json` is a Renovate preset that runs `colab fix --write`
+after each dependency update, once per branch, so the bump and the code
+changes the repository's packs make for it land in one PR:
+
+```json
+{ "extends": ["github>grahambrooks/colab//renovate/colab"] }
+```
+
+Renovate runs post-upgrade commands only where it is allowed to:
+self-hosted, set `"allowedCommands": ["^colab fix --write$"]` and put
+colab on the runner's `PATH`. With `[run] check` in `colab.toml`, the
+fix is checked, and a rule that breaks the build is bisected and
+reverted, before Renovate commits.
+
 ### Selecting rules: --only, --off, --severity
 
 `refactor`, `find` and `fix` run a subset of a script's rules, or change
@@ -1206,7 +1222,7 @@ are what a command passes when it starts a daemon, and `--idle` (default
 Each command still sees the files as they are on disk: when a command
 ends, the documents it opened are closed, and when the next connects the
 server is told which files changed in between. A daemon exits after ten
-minutes without a command. This is the default for the `colab` binary. `COLAB_KEEP_SERVER=0` gives every command a server of its own; if the daemon cannot be reached, a command warns and starts its own. A rebuilt or upgraded colab starts daemons of its own rather than reuse ones running older code.
+minutes without a command. This is the default for the `colab` binary. `COLAB_KEEP_SERVER=0` gives every command a server of its own; if the daemon cannot be reached, a command warns and starts its own. A rebuilt or upgraded colab starts daemons of its own rather than reuse ones running older code. Kept servers use Unix sockets, so on Windows every command starts its own server, and `colab lsp-daemon` says so.
 
 ## Exit codes
 

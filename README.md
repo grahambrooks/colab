@@ -95,7 +95,7 @@ brew install colab                          # Homebrew, macOS and Linux
 cargo install --git https://github.com/grahambrooks/colab colab-cli
 ```
 
-Prebuilt archives for macOS and Linux are on the
+Prebuilt archives for macOS, Linux and Windows (x86_64, a `.zip`) are on the
 [releases page](https://github.com/grahambrooks/colab/releases).
 
 ## Quick start

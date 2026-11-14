@@ -869,6 +869,33 @@ types.
 
 Done when each has a corpus case, a `dsl.md` section, and a dogfood use. All five shipped on 2026-11-14, each with its corpus case and `dsl.md` section; the dogfood use is the `.unwrap()` audit of the crates (named patterns, `any`, `where`), whose two real hits were fixed with the rule that found them.
 
+## CI fit (M31)
+
+### ✅ M31 — CI fit
+
+What a team needs to gate a repository on its packs. All six shipped on 2026-11-14; colab's own repository is gated by its `colab.toml` pack in CI, on Linux and Windows.
+
+- **`colab test`** (shipped: `<pack>.tests/<case>/{input,expected}/`, `--bless`, exit 12; colab's own `.colab/packs/hygiene.codemod` is tested and gated in CI) for a repository's own packs: before / after fixtures
+  next to the pack, valid / invalid cases, blessable snapshots
+  (`COLAB_BLESS=1`), the idempotency re-run included. The machinery is the
+  corpus harness and MCP `colab.test_rule`. ast-grep `test`, Grit, LibCST.
+- **Findings new since a baseline** (shipped for `refactor` and `fix`): `--baseline <ref>` reports only rule
+  hits not present at the ref, so a convention can be enforced on legacy
+  code without noise (`--changed-since` narrows files, not findings).
+  Semgrep `ci` diff-aware scans.
+- **Data tables** (shipped: `find --table csv|ndjson`, `--group-by`): `find --table` emits one row per hit, keyed by the
+  metavariable bindings, as CSV / NDJSON, with `--group-by $X` counts —
+  "how many call sites, which shapes" before a migration. OpenRewrite
+  data tables, Moderne `query_datatable`.
+- **Rule selection from the command line** (shipped as `--only` / `--off` / `--severity`, since `-e/--rule` already gives an inline rule; selectors are `id` globs or numbers; `id` and `url` clauses): `--rule <name|regex>`,
+  `--off <name>`, `--severity <name>=<level>`, and a `url` per rule
+  carried into SARIF and GitHub annotations. ast-grep `scan`.
+- **A Windows build** (shipped: `x86_64-pc-windows-msvc` in `.release.env`, a `windows-latest` CI job; kept servers are Unix-only) in the release archives (no package managers; see
+  the dropped npm / PyPI packaging).
+- **A Renovate preset** (shipped: `renovate/colab.json`; packs naming the dependency range they apply to moved to the follow-ups): `postUpgradeTasks` that runs `colab fix`, so a
+  dependency bump and the code it breaks land in one PR; packs may name
+  the dependency range they apply to.
+
 ## Appendix: the original design (2026-05-09)
 
 The plan as first written, goal by goal. Almost all of it has shipped
