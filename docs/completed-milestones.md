@@ -11,7 +11,7 @@ work, including every deferral listed here, is in
 | [M9–M13.5](#operating-at-scale-m9m135) | Targeting, parallelism, includes, verify / bisect / undo, progress |
 | [M14](#repo-config-m14) | `colab.toml`, `colab fix`, built-in packs for Go, Java, JS and Python, per-extension formatters |
 | [M17–M19, M22](#agent-of-choice-m17m19-m22) | Inline rules, near misses, structural patterns, LSP both ways, workflow MCP tools |
-| [M21](#distribution-and-ci-formats-m21) | `--format sarif` / `github`, npm and PyPI packages with static Linux binaries |
+| [M21](#distribution-and-ci-formats-m21) | `--format sarif` / `github` for CI annotations and code scanning |
 | [M24–M27](#closing-the-intellij-gap-m24m27) | Git-aware file operations, code actions, `where` constraints, conflict checks |
 | [M28](#markdown-m28) | Markdown by structure: sections, rows, items, links, front matter, link checks, code fences |
 | [M23](#evaluation-m23) | The agent eval suite: correctness, bytes and budgets in CI; the Rust 2024 pack |
@@ -733,19 +733,13 @@ Phases 1 to 3 have shipped.
   the most severe rule in the file. Output validates against the OASIS
   schema, and applying the fixes to the four pack corpora reproduces their
   expected output.
-- `packaging/build.py` repacks release archives as npm packages (a
-  `colab-codemod` launcher with an optional package per platform) and
-  `py3-none-<platform>` wheels; the command is `colab` (`colab` itself is
-  taken on both registries). `.github/workflows/packages.yml` runs after
-  each release, outside release-kit: it builds static musl binaries for
-  Linux, packages, and installs with pip, uvx, npm and npx on Linux x64,
-  Linux arm64 and macOS (green on v2026.11.3).
+- **Dropped:** npm and PyPI packages. They were built and tested (a
+  launcher with a package per platform, and platform wheels), then
+  removed: colab is distributed through Homebrew and the release
+  archives only.
 - **Found:** the release's Linux binaries need glibc 2.39
   (`pidfd_spawnp`, from building on ubuntu-latest), so they fail on
-  Ubuntu 22.04, Debian 12 and most CI images; the packages ship the musl
-  builds instead, and a glibc wheel is tagged with the glibc it needs.
-- Not done: publishing, which waits on registry accounts (see
-  `packaging/README.md`).
+  Ubuntu 22.04, Debian 12 and most CI images (see the follow-ups).
 
 ## Appendix: the original design (2026-05-09)
 

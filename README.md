@@ -91,12 +91,7 @@ cargo install --git https://github.com/grahambrooks/colab colab-cli
 ```
 
 Prebuilt archives for macOS and Linux are on the
-[releases page](https://github.com/grahambrooks/colab/releases). Each
-release is also packaged for npm and PyPI as `colab-codemod`
-(`npx colab-codemod …`, `uvx colab-codemod …`; `colab` is taken), with
-static Linux binaries that run on any distribution; those registries are
-published to once publishing is switched on (see
-[`packaging/`](packaging/README.md)).
+[releases page](https://github.com/grahambrooks/colab/releases).
 
 ## Quick start
 

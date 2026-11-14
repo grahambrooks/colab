@@ -704,8 +704,8 @@ Every spelling may span lines, so a whole Markdown section can be a raw
 string:
 
 ```
-match markdown::section "Install" in "README.md" { set r#"Run `cargo install colab`, or
-`npx colab` where there is no Rust toolchain ("no Rust" means no `cargo`)."# }
+match markdown::section "Install" in "README.md" { set r#"Run `brew install colab`, or
+`cargo install --git <repo> colab-cli` (the "no brew" route needs `cargo`)."# }
 ```
 
 Text that itself contains `"#`, such as this section, takes two hashes:

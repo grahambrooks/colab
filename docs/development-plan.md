@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20 (its install step once the gate passes)**, then M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`) and M21 (CI formats, npm / PyPI packages) have shipped.
+**M20 (its install step once the gate passes)**, then M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`) and M21 (CI formats) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -166,9 +166,9 @@ whichever milestone touches the same code.
 | `markdown::item` placement: insert a bullet before or after a given item | M14 dogfooding |
 | Report the files a rule skipped (`why_unchanged`) even when it changed others | M14 dogfooding |
 | An eval task for `colab fix` | M14 |
-| Publish `colab-codemod` to npm and PyPI: set `PUBLISH_NPM` / `PUBLISH_PYPI`, the `NPM_TOKEN` secret and PyPI trusted publishing | M21 |
 | One call rewriter in `colab_rewrite` for the seven backends whose `calls.rs` differ only in the call node's kind (C, C++, C#, Go, JS, Python, Rust); RustRover's duplicate-code inspection finds them | RustRover inspections |
 | `markdown::text` inside a code fence (a line in a README `sh` block needed a hand edit) | M21 dogfooding |
+| Linux release binaries that run on older glibc: they need 2.39, so Ubuntu 22.04 and Debian 12 cannot run them. A static `x86_64-unknown-linux-musl` build (release-kit's `EXTRA_TARGETS`) is one way; it built cleanly in M21 | M21 |
 
 ## Unscheduled
 
