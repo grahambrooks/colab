@@ -3582,3 +3582,112 @@ fn verify_lsp_credits_an_error_to_the_rule_whose_change_holds_it() {
     assert_eq!(conflicts[0]["rule"], 1, "{json}");
     fs::remove_dir_all(&root).ok();
 }
+
+/// Two docs and a README linking into the first.
+fn mv_section_workspace(label: &str, target_dir: &str) -> PathBuf {
+    let root = workspace_temp(label);
+    write(
+        &root.join("docs/plan.md"),
+        "# Plan\n\nSee [the item](#old-item).\n\n## Planned\n\n### Old item\n\nText.\n\n#### Detail\n\nMore.\n\n## Keep\n\nstays\n",
+    );
+    write(
+        &root.join(target_dir).join("done.md"),
+        "# Done\n\n## Shipped\n\n### Earlier\n\ndone\n",
+    );
+    write(
+        &root.join("README.md"),
+        "# Readme\n\n[item](docs/plan.md#old-item)\n",
+    );
+    root
+}
+
+#[test]
+fn mv_section_moves_a_section_and_its_links() {
+    let root = mv_section_workspace("mv-section", "docs");
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "mv-section",
+            "docs/plan.md",
+            "Old item",
+            "--to",
+            "docs/done.md",
+            "--under",
+            "Shipped",
+            "--write",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let plan = fs::read_to_string(root.join("docs/plan.md")).unwrap();
+    let done = fs::read_to_string(root.join("docs/done.md")).unwrap();
+    assert!(
+        !plan.contains("Old item") && plan.contains("[the item](done.md#old-item)"),
+        "{plan}"
+    );
+    assert!(
+        done.ends_with("### Old item\n\nText.\n\n#### Detail\n\nMore.\n"),
+        "{done}"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("README.md")).unwrap(),
+        "# Readme\n\n[item](docs/done.md#old-item)\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn mv_section_refuses_to_break_a_link_it_cannot_repoint() {
+    // Across directories the README link's path would differ per file, so
+    // it is not rewritten: the link check stops the move.
+    let root = mv_section_workspace("mv-section-dirs", "archive");
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "mv-section",
+            "docs/plan.md",
+            "Old item",
+            "--to",
+            "archive/done.md",
+            "--write",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(11),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("README.md"));
+    assert!(
+        fs::read_to_string(root.join("docs/plan.md"))
+            .unwrap()
+            .contains("### Old item")
+    );
+    // The script is there to read.
+    let script = colab()
+        .current_dir(&root)
+        .args([
+            "mv-section",
+            "docs/plan.md",
+            "Old item",
+            "--to",
+            "archive/done.md",
+            "--show-script",
+        ])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&script.stdout);
+    assert!(
+        text.contains(r#"replace "../archive/done.md#old-item""#),
+        "{text}"
+    );
+    fs::remove_dir_all(&root).ok();
+}

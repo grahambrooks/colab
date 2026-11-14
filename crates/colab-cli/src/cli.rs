@@ -120,6 +120,9 @@ enum Commands {
     Outline(crate::markdown::OutlineArgs),
     /// Print one Markdown section, by heading path or anchor.
     Section(crate::markdown::SectionArgs),
+    /// Move a Markdown section, subsections and all, to another file:
+    /// re-levelled where it lands, links to it repointed, as one run.
+    MvSection(MvSectionArgs),
     /// List broken links in Markdown files (missing files or anchors);
     /// exit 10 when there are any.
     Links(crate::markdown::LinksArgs),
@@ -391,6 +394,192 @@ struct RefactorArgs {
     /// changed) working directory if none are supplied. Ignored with
     /// `--stdin`.
     paths: Vec<PathBuf>,
+}
+
+/// `colab mv-section`.
+#[derive(Parser, Debug)]
+struct MvSectionArgs {
+    /// The Markdown file the section is in.
+    file: PathBuf,
+
+    /// The section: a heading path (`"Plan > Old item"`) or `#anchor`.
+    section: String,
+
+    /// The file it moves to.
+    #[arg(long, value_name = "FILE")]
+    to: PathBuf,
+
+    /// Make it the last child of this section of the target.
+    #[arg(long, value_name = "SECTION", conflicts_with = "before")]
+    under: Option<String>,
+
+    /// Put it just before this section of the target, at its level.
+    /// Without `--under` or `--before` it goes at the end, top level.
+    #[arg(long, value_name = "SECTION")]
+    before: Option<String>,
+
+    /// Print the generated script and stop.
+    #[arg(long = "show-script")]
+    show_script: bool,
+
+    /// Apply the move. Default for `--format human` on a TTY.
+    #[arg(long, conflicts_with_all = ["dry_run", "check"])]
+    write: bool,
+
+    /// Report what would change without writing.
+    #[arg(long = "dry-run", conflicts_with = "check")]
+    dry_run: bool,
+
+    /// Exit 10 if the move would change anything; write nothing.
+    #[arg(long)]
+    check: bool,
+
+    /// Output format, as for `refactor`.
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    format: Format,
+
+    /// Write even when the move would break a link elsewhere.
+    #[arg(long = "allow-conflicts")]
+    allow_conflicts: bool,
+
+    /// Change to this directory first.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    change_dir: PathBuf,
+}
+
+/// `path` relative to `base` (a directory), with `..` as needed.
+fn relative_path(base: &Path, path: &Path) -> String {
+    let base: Vec<_> = base.components().collect();
+    let path_parts: Vec<_> = path.components().collect();
+    let common = base
+        .iter()
+        .zip(&path_parts)
+        .take_while(|(a, b)| a == b)
+        .count();
+    let mut out: Vec<String> = vec!["..".into(); base.len() - common];
+    out.extend(
+        path_parts[common..]
+            .iter()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+    );
+    out.join("/")
+}
+
+/// `colab mv-section`: a section moved between files, as a generated
+/// script — an insert in the target, a delete in the source, and link
+/// rewrites — run like `refactor`, so conflicts and the link check apply.
+fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
+    use colab_lang_markdown::moving::{Placement, plan};
+    change_working_dir(&args.change_dir)?;
+    let cwd = fs::canonicalize(".").map_err(io_to_error)?;
+    let canonical = |p: &Path| fs::canonicalize(p).map_err(|e| Error::io_at(p, e));
+    let (source_path, target_path) = (canonical(&args.file)?, canonical(&args.to)?);
+    if source_path == target_path {
+        return Err(Error::Config(
+            "the section is already in that file; to move it within a file, use `markdown::section` rules".into(),
+        ));
+    }
+    let rel = |p: &Path| {
+        p.strip_prefix(&cwd)
+            .map(|r| r.to_string_lossy().replace('\\', "/"))
+            .map_err(|_| Error::Config(format!("{} is outside the working directory", p.display())))
+    };
+    let (source_rel, target_rel) = (rel(&source_path)?, rel(&target_path)?);
+    let source = fs::read_to_string(&source_path).map_err(|e| Error::io_at(&source_path, e))?;
+    let target = fs::read_to_string(&target_path).map_err(|e| Error::io_at(&target_path, e))?;
+    let placement = match (&args.under, &args.before) {
+        (Some(parent), _) => Placement::Under(parent),
+        (None, Some(sibling)) => Placement::Before(sibling),
+        (None, None) => Placement::End,
+    };
+    let moved = plan(&source, &args.section, &target, placement).map_err(Error::Config)?;
+
+    let quote = |text: &str| -> Result<String> {
+        if text.contains("\"##") {
+            return Err(Error::Config(
+                "the section holds `\"##`, which the generated script cannot quote".into(),
+            ));
+        }
+        Ok(format!("r##\"{text}\"##"))
+    };
+    let dir = |p: &Path| p.parent().unwrap_or(Path::new("")).to_path_buf();
+    let to_target = relative_path(&dir(&source_path), &target_path);
+    let to_source = relative_path(&dir(&target_path), &source_path);
+    let mut script = format!(
+        "// colab mv-section: `{}` from {source_rel} to {target_rel}.\nrefactor \"mv-section\" {{\n",
+        args.section
+    );
+    script.push_str(&format!(
+        "    match markdown::section {} in \"{target_rel}\" {{ insert {} }}\n",
+        quote(&moved.insert_address)?,
+        quote(&moved.body)?
+    ));
+    script.push_str(&format!(
+        "    match markdown::section {} in \"{source_rel}\" {{ delete }}\n",
+        quote(&args.section)?
+    ));
+    // Links to the section from either file now cross the move; links
+    // from elsewhere are caught by the link check.
+    let old = format!("#{}", moved.old_slug);
+    if source.contains(&format!("]({old}")) {
+        script.push_str(&format!(
+            "    match markdown::link \"{old}\" in \"{source_rel}\" {{ replace \"{to_target}#{}\" }}\n",
+            moved.new_slug
+        ));
+    }
+    let from_target = format!("{to_source}{old}");
+    if target.contains(&format!("]({from_target}")) {
+        script.push_str(&format!(
+            "    match markdown::link \"{from_target}\" in \"{target_rel}\" {{ replace \"#{}\" }}\n",
+            moved.new_slug
+        ));
+    }
+    // Links from other files: when the two files share a directory, the
+    // file name is all that changes, wherever the link is from. Otherwise
+    // the path differs per linking file, and the link check reports them.
+    if dir(&source_path) == dir(&target_path) {
+        let (Some(from), Some(to)) = (source_path.file_name(), target_path.file_name()) else {
+            return Err(Error::Config("a file without a name".into()));
+        };
+        script.push_str(&format!(
+            "    match markdown::link \"{}{old}\" {{ replace \"{}#{}\" }}\n",
+            from.to_string_lossy(),
+            to.to_string_lossy(),
+            moved.new_slug
+        ));
+    }
+    script.push_str("}\n");
+    if args.show_script {
+        print!("{script}");
+        return Ok(0);
+    }
+
+    let format = clap::ValueEnum::to_possible_value(&args.format)
+        .map(|v| v.get_name().to_string())
+        .unwrap_or_else(|| "human".into());
+    let mut argv: Vec<String> = vec![
+        "refactor".into(),
+        "-e".into(),
+        String::new(),
+        "--format".into(),
+        format,
+    ];
+    if args.check {
+        argv.push("--check".into());
+    } else if args.write {
+        argv.push("--write".into());
+    } else if args.dry_run {
+        argv.push("--dry-run".into());
+    }
+    if args.allow_conflicts {
+        argv.push("--allow-conflicts".into());
+    }
+    // The whole tree, so the link check sees every Markdown file.
+    argv.extend(["--".into(), ".".into()]);
+    let refactor = RefactorArgs::try_parse_from(&argv).map_err(|e| Error::Config(e.to_string()))?;
+    let backends = default_backends();
+    let refactoring = codemod::compile_at_source(&script, &cwd.join("<mv-section>"), &backends)?;
+    run_compiled(&refactoring, &refactor)
 }
 
 /// `colab fix`: the packs `colab.toml` declares.
@@ -772,6 +961,7 @@ pub async fn run() -> Result<i32> {
     match args.command {
         Some(Commands::Refactor(refactor_args)) => run_refactor(refactor_args),
         Some(Commands::Fix(fix_args)) => run_fix(fix_args),
+        Some(Commands::MvSection(args)) => run_mv_section(args),
         Some(Commands::Review(review_args)) => crate::review::run(review_args),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);

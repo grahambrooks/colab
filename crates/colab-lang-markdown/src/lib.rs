@@ -28,6 +28,7 @@ pub mod check;
 pub mod frontmatter;
 pub mod link;
 pub mod list;
+pub mod moving;
 pub mod outline;
 pub mod section;
 pub mod table;

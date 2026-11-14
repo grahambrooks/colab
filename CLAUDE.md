@@ -31,6 +31,7 @@ cargo run -p colab-cli -- review run.ndjson [--rule N]           # a `--format n
 cargo run -p colab-cli -- ast --lang go --pattern '<code>'       # a pattern's (or --stdin snippet's) syntax tree
 cargo run -p colab-cli -- outline docs/ --depth 2                # Markdown heading outline: addresses, anchors, line spans
 cargo run -p colab-cli -- section docs/cli.md "Exit codes"       # print one Markdown section (heading path or #anchor)
+cargo run -p colab-cli -- mv-section a.md "Old" --to b.md --under "Done"  # move a section to another file, links repointed
 cargo run -p colab-cli -- rename --at f.rs:2:9 --to new           # scope-aware rename via the language's LSP server (dry-run)
 cargo run -p colab-cli -- rename --symbol foo --in f.rs --to bar --include-text  # also comments, strings, docs, config
 cargo run -p colab-cli -- mv src/a.rs src/b.rs                   # git mv + the server's reference updates (willRenameFiles)

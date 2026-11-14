@@ -54,7 +54,7 @@ MCP](#driving-it-over-mcp). The workflow is identical.
   positives grep gets from strings and comments
 - a config convention rolls out across repos — a `Cargo.toml` key, a
   `.claude/settings.json` entry, a managed block in `AGENTS.md`
-- **Markdown, by structure**: read with `colab outline` / `colab section`; change a section, table row, list item, phrase (`markdown::text "Section[phrase]"`), link or front-matter key with the `markdown::` modules, and every run refuses to break a link (`colab links` lists the broken ones, exit 10)
+- **Markdown, by structure**: read with `colab outline` / `colab section`; change a section, table row, list item, phrase (`markdown::text "Section[phrase]"`), link or front-matter key with the `markdown::` modules, and every run refuses to break a link (`colab links` lists the broken ones, exit 10); move a section to another file with `colab mv-section a.md "Old" --to b.md --under "Done"`, which repoints the links to it
 - **Docs examples too**: add `and fences` to a code rule and it also rewrites the matching ```` ```go ```` / ```` ```rust ```` / … fences in Markdown files; `and prose` on a `symbol` rule also renames the name in comments and strings
 
 **Do not use colab when** the change needs meaning rather than shape:

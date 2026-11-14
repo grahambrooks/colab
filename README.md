@@ -196,7 +196,8 @@ alone. See [`docs/cli.md`](docs/cli.md#colab-fix).
   one diff, sliced by rule: counts and pages of each rule's diffs, or one
   git branch (and pull request) per rule.
 - `colab outline` / `section` / `links` — read Markdown by structure, and
-  find broken links.
+  find broken links; `colab mv-section` moves a section to another file,
+  links and all.
 - `colab undo --from <dir>` — restore a run made with `--backup <dir>`.
 
 ## Output formats

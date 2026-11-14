@@ -2,7 +2,7 @@
 
 The `colab` binary ships its operations as subcommands: `refactor`,
 `fix`, `review`, `find`, `rename`, `mv`, `action`, `references`, `safe-delete`,
-`ast`, `outline`, `section`, `links`, `explain`, `schema`,
+`ast`, `outline`, `section`, `mv-section`, `links`, `explain`, `schema`,
 `list-languages`, `list-rules`, `pack`, `undo`, `server`, `mcp` and
 `lsp-daemon`. Output goes to stdout (one stream
 per invocation); progress and error logging go to stderr so
@@ -1015,6 +1015,34 @@ $ colab section docs/development-plan.md "Order of work" --body
   `.gitignore`.
 - MCP: `colab.outline {paths, depth?, cwd?}` and
   `colab.section {path, section, body?, cwd?}`, both read-only.
+
+### colab mv-section
+
+Move a Markdown section, subsections and all, to another file:
+
+```sh
+colab mv-section docs/plan.md "Old item" --to docs/done.md --under "Shipped" --format diff
+colab mv-section docs/plan.md "#old-item" --to docs/done.md --before "Earlier" --write
+colab mv-section docs/plan.md "Old item" --to docs/done.md --show-script
+```
+
+- Rules act on one file each, so a move is a script colab writes for
+  you and runs like `refactor`: a `markdown::section` insert in the
+  target (the body read from the source), a delete in the source, and
+  `markdown::link` rules that repoint links to it. `--show-script`
+  prints it instead.
+- Without `--under` or `--before` the section goes at the end of the
+  target, at its top level. Its subsection headings shift to the level
+  it lands at; `#` lines inside code fences stay as they are.
+- Links to it in the source and the target are rewritten, and, when the
+  two files share a directory, links from every other file too (only the
+  file name changes). Across directories a link's path differs per
+  linking file, so those are left to the link check: a move that would
+  break one writes nothing and exits 11 (`--allow-conflicts` overrides).
+- A target that already has a section with that title there, a heading
+  holding ` > ` or ` < `, or a move within one file is refused.
+- Flags: `--write | --dry-run | --check`, `--format`, `--allow-conflicts`,
+  `-C`.
 
 ### `colab links`
 

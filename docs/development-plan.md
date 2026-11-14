@@ -113,7 +113,7 @@ An item leaves the follow-ups table when it ships.
 10. Per-hunk rule attribution in ndjson file events, so `colab review`
     counts a shared file's lines per rule.
 
-**Wave C — surfaces:**
+**Wave C — surfaces** — ✅ shipped 2026-11-14 (item 17 as `colab mv-section`, a generated two-file script, rather than a rule that writes two files):
 
 11. A `colab.mv` MCP tool.
 12. Attribute a `--verify-lsp` error to the rule that caused it.
@@ -159,7 +159,6 @@ whichever milestone touches the same code.
 | ---- | ---- |
 | Type constraints in `where` (via the server's hover) | M26 |
 | Remote pack registry and publishing | M11 |
-| Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |
 | Linux release binaries that run on older glibc: they need 2.39, so Ubuntu 22.04 and Debian 12 cannot run them. A static `x86_64-unknown-linux-musl` build (release-kit's `EXTRA_TARGETS`) is one way; it built cleanly in M21 | M21 |
 
 ## Unscheduled
