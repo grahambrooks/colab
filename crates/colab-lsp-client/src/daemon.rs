@@ -2,8 +2,8 @@
 //!
 //! Starting rust-analyzer or gopls and waiting for it to index costs
 //! seconds, and an agent's colab commands come one after another: list the
-//! code actions, run one, rename what it made. With `COLAB_KEEP_SERVER=1`
-//! the first command starts `colab lsp-daemon`, which runs the server and
+//! code actions, run one, rename what it made. By default the first
+//! command starts `colab lsp-daemon`, which runs the server and
 //! listens on a Unix socket; every later command for the same server and
 //! project root connects to it instead of starting its own. The daemon
 //! exits after [`IDLE`] without a client, or on `colab lsp-daemon --stop`.
@@ -48,7 +48,7 @@ pub const IDLE: Duration = Duration::from_secs(600);
 /// tells the server nothing and relies on the server's own file watching.
 const SCAN_LIMIT: usize = 50_000;
 
-/// Whether commands should share a long-lived server: `COLAB_KEEP_SERVER=1`.
+/// Whether commands should share a long-lived server (`COLAB_KEEP_SERVER`).
 ///
 /// On by default when running as the `colab` binary, the only program that
 /// can start `colab lsp-daemon`; `COLAB_KEEP_SERVER=0` turns it off, and

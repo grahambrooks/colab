@@ -30,8 +30,9 @@ it:
 cargo install --git https://github.com/grahambrooks/colab --locked
 ```
 
-There is also a Homebrew formula and per-platform release archives at
-<https://github.com/grahambrooks/colab/releases>.
+or with Homebrew (`brew tap grahambrooks/colab
+https://github.com/grahambrooks/colab && brew install colab`); per-platform
+archives are at <https://github.com/grahambrooks/colab/releases>.
 
 If the host has the colab **MCP server** connected instead of (or as
 well as) the binary, use the tools — see [Driving it over
@@ -53,8 +54,8 @@ MCP](#driving-it-over-mcp). The workflow is identical.
   positives grep gets from strings and comments
 - a config convention rolls out across repos — a `Cargo.toml` key, a
   `.claude/settings.json` entry, a managed block in `AGENTS.md`
-- **Markdown, by structure**: read with `colab outline` / `colab section`; change a section, table row, list item, link or front-matter key with the `markdown::` modules, and every run refuses to break a link
-- **Docs examples too**: add `and fences` to a code rule and it also rewrites the matching ```` ```go ```` / ```` ```rust ```` / … fences in Markdown files
+- **Markdown, by structure**: read with `colab outline` / `colab section`; change a section, table row, list item, phrase (`markdown::text "Section[phrase]"`), link or front-matter key with the `markdown::` modules, and every run refuses to break a link (`colab links` lists the broken ones, exit 10)
+- **Docs examples too**: add `and fences` to a code rule and it also rewrites the matching ```` ```go ```` / ```` ```rust ```` / … fences in Markdown files; `and prose` on a `symbol` rule also renames the name in comments and strings
 
 **Do not use colab when** the change needs meaning rather than shape:
 type-directed edits, resolving overloads, moving a symbol to another
@@ -297,9 +298,11 @@ colab rename --at src/config.rs:2:9 --to amount --write --verify 'cargo check'
 `--at FILE:LINE:COL` should point at the declaration; `--symbol NAME
 --in FILE` uses the first whole-word occurrence. It needs the server
 installed (`--lsp` to choose one) and the project root it expects
-(`.git`, `Cargo.toml`, `go.mod`, … — or `--root`). Indexing makes it
-take seconds, not milliseconds: use `<lang>::symbol` when the name is
-unique, `colab rename` when it is not.
+(`.git`, `Cargo.toml`, `go.mod`, … — or `--root`). The first call starts
+and indexes the server, which takes seconds; later calls reuse it (it is
+kept running; `COLAB_KEEP_SERVER=0` turns that off, `colab lsp-daemon
+--stop` stops it). Use `<lang>::symbol` when the name is unique,
+`colab rename` when it is not.
 
 ## IDE refactorings — extract, inline, references, safe delete
 
@@ -381,9 +384,14 @@ intended. Over MCP, `colab.apply` returns `applied: false` with the same
 ```sh
 # Cheap pre-write check by the language server (gopls, rust-analyzer, …).
 colab refactor --script fix.codemod --verify-lsp --write .
-``` Whatever you use, **run the
-project's own build or tests afterwards** — colab guarantees the edit
-was syntactic, not that the result compiles.
+
+# Format the changed files (colab.toml [formatters], else the language
+# server) before writing; combines with --bisect, not with --verify.
+colab refactor --script fix.codemod --tidy --bisect 'cargo check' --write .
+```
+
+Whatever you use, **run the project's own build or tests afterwards** —
+colab guarantees the edit was syntactic, not that the result compiles.
 
 Narrowing what gets touched:
 
@@ -407,7 +415,8 @@ colab refactor --script lint.codemod --check .
 
 Exit codes: `0` success · `1` config error · `2` script parse error ·
 `3` unsupported namespace/action · `4` I/O error · `10` `--check` found
-pending changes.
+pending changes · `11` conflicts found, nothing written
+(`--allow-conflicts` overrides).
 
 Defaults worth knowing: `--format human` on a TTY implies `--write`;
 every other format, and any non-TTY stdout, defaults to `--dry-run`.
@@ -424,13 +433,17 @@ fix. The exit code is unchanged.
 
 If the repository has a `colab.toml`, its conventions are already
 written down: `colab fix --check` reports what its packs would change
-(exit 10), `colab fix` applies them with the file's build check and
-formatters. Prefer it to running the packs one by one, and add a new
-lint rule to a pack it lists rather than to a loose script.
-`colab pack list` names the built-in packs (`go/1.18-modern`,
-`java/8-to-21`, `js/esm`, `python/3.12-typing`,
-`rust/edition-2021-to-2024`); a one-off migration can still run one
-with `refactor`, after reading its README for what it leaves alone.
+(exit 10), and `colab fix --write` applies them, with `[run] check`
+bisected and reverted on failure and the `[formatters]` / `tidy`
+settings. (A bare `colab fix` writes only on a terminal; from an agent or
+a pipe it previews, like `refactor`.) Prefer it to running the packs one
+by one, and add a new lint rule to a pack it lists rather than to a
+loose script. `colab pack list` names the built-in packs
+(`go/1.18-modern`, `java/8-to-21`, `js/esm`, `python/3.12-typing`,
+`rust/edition-2021-to-2024`). They run only through `colab.toml`
+(`[[packs]] pack = "…"`) and `colab fix` — there is no `--script
+builtin:…`; read the pack's README (`examples/packs/`) for what it leaves
+alone.
 
 ```toml
 [run]
@@ -447,9 +460,21 @@ pack = "go/1.18-modern"
 Give a lint rule a `message` and `severity` after its action, so CI
 output says what is wrong (`warning: pkg/errors is archived …`), and
 use `severity info` for rules that should report without failing
-`--check`. Leave a deliberate exception in place with a
-`// colab:ignore <script-name>` comment on the line, or on its own line
-above, rather than narrowing the rule.
+`--check`:
+
+```
+match go::import "github.com/pkg/errors" {
+    delete
+    message "pkg/errors is archived; use fmt.Errorf"
+    severity warning
+}
+```
+
+Leave a deliberate exception in place with a `colab:ignore` comment on
+the line, or on its own line above, rather than narrowing the rule. Use
+the file's comment syntax (`// colab:ignore`, `# colab:ignore`,
+`<!-- colab:ignore -->`); names after it (a script name, or
+`<lang>::<module>`) limit it to those rules.
 
 ## Driving it over MCP
 
@@ -467,6 +492,10 @@ the server process started, and `include "..."` does not work at all.
 | blast radius | `colab.preview {script, paths, cwd}` — defaults to `detail: "counts"` |
 | sample hunks | `colab.preview {..., detail: "diff", max_files: 5}` |
 | apply | `colab.apply {script, paths, cwd}` |
+| read Markdown | `colab.outline {paths, depth?}`, `colab.section {path, section, body?}` |
+| change Markdown | `colab.edit_markdown {module, action, target, value?, paths, cwd}` — previews unless `write: true` |
+
+There is no MCP tool for `colab fix` or `colab mv`; use the CLI for them.
 
 **Three common jobs need no script at all.** Each previews unless
 `write: true`, and returns the generated `script` so you can extend it:

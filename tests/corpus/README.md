@@ -35,7 +35,10 @@ COLAB_BLESS=1 cargo test -p colab-dsl --test corpus
 
 and review what it wrote. A `0` in `rules.expected` is a rule that never
 fired, which is a bug unless the case is about dead rules
-(`go/no_match`, `*/near_miss_targets`).
+(`go/no_match`, `*/near_miss_targets`, `go/conflicts`) or is a pack whose
+fixture does not exercise every rule (`go/modern_1_18`, `java/modern_21`,
+`python/typing_3_12`, `rust/edition_2024`; widening those fixtures is a
+follow-up).
 
 Cases worth knowing when changing the engine:
 

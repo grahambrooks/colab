@@ -49,12 +49,15 @@ Code Lab (colab) is a command-line code refactoring (or 'codemod') tool.
 
 It reads a small DSL describing one or more refactoring rules, parses
 target source files with tree-sitter, and rewrites them. Use `colab
-refactor` to run a script, `colab schema` / `colab list-languages` /
-`colab list-rules <lang>` for capability discovery, `colab explain
---script foo.codemod` to inspect a parsed script as JSON, `colab
-server` for the LSP, or `colab mcp` for the Model Context Protocol
-server (so MCP-aware hosts can call preview / apply / schema /
-lint_script as tools).
+refactor` to run a script (or `-e` rules), `colab fix` to run the packs
+a repository's colab.toml declares, and `colab find` / `colab ast` to
+search and debug patterns. `colab rename` / `mv` / `action` /
+`references` / `safe-delete` delegate to the language's own server;
+`colab outline` / `section` / `links` read Markdown. `colab schema` /
+`list-languages` / `list-rules <lang>` describe the capabilities,
+`colab explain` prints a parsed script as JSON, `colab server` is the
+LSP for .codemod files, and `colab mcp` the Model Context Protocol
+server.
 
 Exit codes:
    0   Success (no changes needed, or --write succeeded).
@@ -118,7 +121,8 @@ enum Commands {
     /// exit 10 when there are any.
     Links(crate::markdown::LinksArgs),
     /// Keep a language server running between commands (started for you
-    /// when `COLAB_KEEP_SERVER=1`); `--stop` stops every one.
+    /// by default; `COLAB_KEEP_SERVER=0` turns that off); `--stop` stops
+    /// every one.
     LspDaemon(LspDaemonArgs),
     /// Parse a script and print its IR as JSON without running it.
     Explain(ExplainArgs),
@@ -300,7 +304,8 @@ struct RefactorArgs {
     bisect: Option<String>,
 
     /// Before any rule writes a file, save the pre-modification
-    /// contents to `<dir>/<rel-path>`. Pair with `colab undo
+    /// contents under `<dir>`, mirroring the file's absolute path. Pair
+    /// with `colab undo
     /// --from <dir>` to roll back the run.
     #[arg(long, value_name = "DIR", conflicts_with_all = ["dry_run", "check"])]
     backup: Option<PathBuf>,
@@ -322,10 +327,12 @@ struct RefactorArgs {
     #[arg(long = "allow-conflicts")]
     allow_conflicts: bool,
 
-    /// After the rules, have each changed file's language server organize
-    /// its imports and format it, before anything is written. Reported as
-    /// its own rule (`tidy via <server>`) after the script's. The server
-    /// is chosen by extension; `--tidy='<command>'` names one.
+    /// After the rules, format each changed file before anything is
+    /// written: with the command colab.toml's `[formatters]` gives its
+    /// extension, or else its language server (organize imports, then
+    /// format). Reported as its own rule (`tidy via <server or command>`)
+    /// after the script's. `--tidy='<command>'` names one server for
+    /// every file.
     #[arg(long, value_name = "CMD", num_args = 0..=1, require_equals = true,
           default_missing_value = "",
           conflicts_with_all = ["verify", "commit_per_rule"])]

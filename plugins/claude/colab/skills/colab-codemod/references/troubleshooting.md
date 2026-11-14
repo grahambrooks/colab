@@ -108,7 +108,7 @@ Over MCP the same information is structured (`line`, `column`,
 says which:
 
 ```
-unknown module `rust::symbl`; known modules: call, crate, symbol, use (did you mean `symbol`?)
+unknown module `rust::symbl`; known modules: call, crate, pattern, symbol, use (did you mean `symbol`?)
 `rust::crate` does not support the `ensure` action; known actions: delete, replace
 `toml::key` does not support the `replace` action; known actions: delete, insert, set
 ```
@@ -206,7 +206,8 @@ silently pretends to be complete. `--detail summary` (or
 ## Reference
 
 - Exit codes: `0` success · `1` config · `2` parse · `3` unsupported ·
-  `4` I/O · `10` `--check` found pending changes.
+  `4` I/O · `10` `--check` found pending changes · `11` conflicts found,
+  nothing written (`--allow-conflicts` overrides).
 - `--format human` on a TTY defaults to `--write`. Everything else,
   including any non-TTY stdout, defaults to `--dry-run`. `--check`
   always overrides.

@@ -10,7 +10,7 @@ codemods as tool calls.
 | Kind | Name | Purpose |
 | ---- | ---- | ------- |
 | Skill | `colab-codemod` | When a change is mechanical and structural, write a `.codemod` script, check the blast radius, and apply it safely. Includes a namespace/match-string reference and a diagnosis guide. |
-| MCP server | `colab` | `colab.find`, `colab.ast`, `colab.test_rule`, `colab.preview`, `colab.apply`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema` over stdio. |
+| MCP server | `colab` | 18 tools over stdio. Codemods: `colab.preview`, `colab.apply`, `colab.find`, `colab.ast`, `colab.test_rule`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema`. No-script workflows: `colab.move_import`, `colab.set_config_key`, `colab.rename_symbol`. Markdown: `colab.outline`, `colab.section`, `colab.edit_markdown`. Language server: `colab.references`, `colab.rename`, `colab.action`. |
 
 The skill triggers on mechanical multi-file changes — an import path, a
 dependency rename, a symbol, a Java package, a Go struct tag, a call
@@ -25,7 +25,14 @@ cargo install --git https://github.com/grahambrooks/colab --locked
 colab --version
 ```
 
-Release archives and a Homebrew formula are on the
+Or with Homebrew:
+
+```sh
+brew tap grahambrooks/colab https://github.com/grahambrooks/colab
+brew install colab
+```
+
+Release archives are on the
 [releases page](https://github.com/grahambrooks/colab/releases).
 
 Without the binary the MCP server will fail to connect and the skill
@@ -34,14 +41,14 @@ install colab first and neither happens.
 
 ## Install
 
-From the marketplace that lists this plugin:
+From a marketplace that lists this plugin:
 
 ```sh
 claude plugin install colab@<marketplace>
 ```
 
-Or point Claude Code straight at this repository as a marketplace and
-install from there.
+This repository has no `marketplace.json` of its own. To try the plugin
+from a checkout, run `claude --plugin-dir plugins/claude/colab`.
 
 ## Layout
 
@@ -66,5 +73,6 @@ colab repo and consuming the plugin elsewhere load the same text.
 
 `crates/colab-backends/tests/skill_matches_capabilities.rs` asserts that
 every `<lang>::<module>` the skill mentions actually exists in the
-registry, so the skill cannot drift into naming a namespace the binary
-does not have.
+registry, and that the skill names every backend, so the skill cannot
+drift into naming a namespace the binary does not have. It does not
+check flags, MCP tool names, exit codes or pack names.

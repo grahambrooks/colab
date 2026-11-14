@@ -8,7 +8,8 @@ the most common source of a rule that matches nothing.
 
 Every source backend has the same floor: an import-equivalent (named for
 the language's own construct) taking `replace`/`delete`/`ensure`, a
-`symbol` rename, and a `call` rewrite. Languages with a namespace or
+`symbol` rename, a `call` rewrite, and `pattern` (a code shape with
+`$METAVARS`, taking `replace`/`delete`). Languages with a namespace or
 package declaration expose one too.
 
 | Namespace | Import-equivalent | Namespace/package | Extra | Applies to |
@@ -26,8 +27,8 @@ package declaration expose one too.
 | `rust`   | `use`     | — | `crate` (`.toml`; `replace`/`delete` only) | `.rs` `Cargo.toml` |
 | `swift`  | `import`  | — | — | `.swift` |
 
-So `<lang>::symbol` and `<lang>::call` exist for all twelve source
-backends, and the import-equivalent always takes all three of
+So `<lang>::symbol`, `<lang>::call` and `<lang>::pattern` exist for all
+twelve source backends, and the import-equivalent always takes all three of
 `replace`/`delete`/`ensure`. Two caveats worth knowing:
 
 - **`rust::crate` has no `ensure`** — adding a dependency needs a version
@@ -37,14 +38,21 @@ backends, and the import-equivalent always takes all three of
   them apart. A mixed script runs both over `.h`; every op is idempotent
   so the result is the same, at the cost of an extra parse.
 
-The three config backends address data rather than syntax, and share one
-module with the `set` / `insert` / `delete` actions:
+The three config backends address data rather than syntax. `json` and
+`toml` have one module, `key`, with `set` / `insert` / `delete`;
+`markdown` has seven:
 
-| Namespace | Module | Address | Applies to |
-| --------- | ------ | ------- | ---------- |
-| `json`     | `key`   | JSON Pointer — `/a/b`, `~1` for `/`, `~0` for `~` | `.json` |
-| `markdown` | `block` | managed-block name, between `<!-- name:begin -->` and `<!-- name:end -->` | `.md` `.markdown` |
-| `toml`     | `key`   | dotted path; `name[field=value]` selects an array element | `.toml` |
+| Namespace | Module | Address | Actions |
+| --------- | ------ | ------- | ------- |
+| `json`     | `key`   | JSON Pointer — `/a/b`, `~1` for `/`, `~0` for `~` | `set` `insert` `delete` |
+| `toml`     | `key`   | dotted path; `name[field=value]` selects an array element | `set` `insert` `delete` |
+| `markdown` | `section` | heading path `"Parent > Child"` or `"#anchor"`; `"New < Sibling"` places a new one | `set` `insert` `delete` `replace` |
+| `markdown` | `row` | `"Section[Col=value]"`; `^` adds at the top, `@2` picks the second table | `set` `insert` `delete` |
+| `markdown` | `item` | `"Section[item text]"`, the start of the item as a reader sees it | `ensure` `replace` `delete` |
+| `markdown` | `text` | `"Section[phrase]"` | `replace` `delete` |
+| `markdown` | `link` | a destination, matched by trailing path segments or `#anchor` | `replace` `delete` |
+| `markdown` | `frontmatter` | a top-level front-matter key | `set` `insert` `delete` |
+| `markdown` | `block` | managed-block name, between `<!-- name:begin -->` and `<!-- name:end -->` | `set` `insert` `delete` |
 
 Confirm at runtime rather than trusting this table:
 `colab list-rules <lang>`.
@@ -451,8 +459,8 @@ them with `'…'` and put the text inline as above.
 ## Reusable packs
 
 Put shared migrations in their own `.codemod` file and `include` them.
-`colab pack list` shows the packs colab can find in
-`<repo>/.colab/packs/` and `~/.colab/packs/`. A pack with no match
+`colab pack list` shows the built-in packs (run through `colab.toml` and
+`colab fix`) and any in `<repo>/.colab/packs/` and `~/.colab/packs/`. A pack with no match
 clauses compiles to zero rules and does nothing — the run reports
 `scanned: N, changed: 0`, which is the signal that you included a
 placeholder.

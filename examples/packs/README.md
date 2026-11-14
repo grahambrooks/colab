@@ -8,7 +8,9 @@ repository's `colab.toml` and run `colab fix` (see
 
 ## Conventions
 
-- One file per migration target, named `<lang>/<from>-to-<to>.codemod`, or for the target alone (`go/1.18-modern`) when there is no single starting point.
+- One file per migration target, named `<lang>/<from>-to-<to>.codemod`
+  (`java/8-to-21`) or `<lang>/<target>.codemod` (`go/1.18-modern`,
+  `js/esm`) when there is no single starting point.
 - Each pack's `README.md` (next to the file or one directory up) lists
   what the pack **does not** cover — the boundary between mechanical
   syntax rewrites (in scope here) and semantic refactors (out of scope).

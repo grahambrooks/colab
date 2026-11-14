@@ -19,7 +19,7 @@ millions of lines — when you want to:
    per-rule auditability, and review tooling that turns a 5k-file
    diff into something a human can confidently sign off on.
 
-## Where things stand (2026-11-13)
+## Where things stand (2026-11-14)
 
 M1–M13.5 (but M10.6), M14, M17–M19, M21, M22–M28 and M20's non-installing parts have shipped
 ([details](completed-milestones.md)). colab has 12 source backends and
@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20 (its install step once the gate passes)**, then M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`) and M21 (CI formats) have shipped.
+**M16, M15 and M10.6**, while the stable gate is earned; then **M20's install step**, once the gate passes. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`) and M21 (CI formats) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -40,8 +40,8 @@ what it lets that dogfooding cover.
 
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
-| 1 | M20 Agent install & guardrails | Its parts that install nothing (`// colab:ignore`, rule `message` / `severity`) go first; the install itself waits for the gate's second criterion. |
-| 2 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
+| 1 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
+| 2 | M20 install step | Blocked until the gate's criterion 2 holds for two milestones; its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped 2026-11-14. |
 
 ## Stable gate before M20
 
@@ -55,8 +55,7 @@ these hold:
    colab reported success, or "matched nothing", while doing the wrong
    thing (as `why_unchanged` and the crate-rooted text search were).
 3. **Little hand repair.** At most one logged hand fix per milestone
-   (today: `cargo fmt` after templates, which `--tidy` on `refactor`
-   would remove).
+   (was: `cargo fmt` after templates, removed by `--tidy` on `refactor`).
 4. **Measured benefit.** The M23 suite shows colab at least as correct as
    `Read` + `Edit` and cheaper in tokens on its tasks, in CI.
 
@@ -67,9 +66,9 @@ these hold:
 | Criterion | Status |
 | --------- | ------ |
 | 1. Coverage | Met for code at many sites, renames, Markdown sections, rows, items and links; config keys only in the eval task, not yet on this repo. |
-| 2. No silent failures | **Not met.** The follow-ups found a row `set` that re-added its row on the next run; M23 found fenced rules adding imports to doc snippets; M14 found patterns matching a node with children they never mention (an `else`, a third `Union` member, an anonymous class body) and a rewrite dropping them. All reported success; all are fixed. The next two milestones must log none. |
+| 2. No silent failures | **Not met.** The follow-ups found a row `set` that re-added its row on the next run; M23 found fenced rules adding imports to doc snippets; M14 found patterns matching a node with children they never mention (an `else`, a third `Union` member, an anonymous class body) and a rewrite dropping them; after M21, Markdown `row` / `item` / `section` rules skipped files they matched (an unsound prefilter), and `rust::use … { ensure }` put the `use` above `//!` crate docs. All reported success; all are fixed. The next two milestones must log none. |
 | 3. Little hand repair | Met: `--tidy` on `refactor` removed the `cargo fmt` step; one hand edit per milestone (a line inside a shell fence). |
-| 4. Measured benefit | Met: `evals/results.md`, 7 tasks correct, 70% fewer bytes than `Read` + `Edit`, budgets checked in CI. |
+| 4. Measured benefit | Met: `evals/results.md`, 7 tasks correct, 69% fewer bytes than `Read` + `Edit`, budgets checked in CI. |
 
 ## Planned milestones
 
@@ -206,8 +205,8 @@ whichever milestone touches the same code.
 | Workspace split temporarily slows iteration. | Migrate in one PR, no behaviour change, full CI green before any backend work begins. |
 | GenAI-driven misuse (agent runs `--write` without review). | Default to `--dry-run` in non-TTY contexts; MCP `apply` tool returns the diff and requires explicit confirmation in the host. |
 | Mass refactor lands a silent regression on a large repo. | M12: `--verify <command>` runs the project's check after each rule and auto-reverts on failure. `--commit-per-rule` makes each rule individually revertable. `colab fix --check` (M14) gates merges in CI. |
-| The walker is too slow on a 100k-file monorepo. | M10: parallel walker + per-thread parser pool, single-parse multi-rule batching. `criterion` benches under `benches/` track regressions. |
+| The walker is too slow on a 100k-file monorepo. | M10: parallel walker + per-thread parser pool; M10.6 (planned): single-parse multi-rule batching. `criterion` benches under `benches/` track regressions. |
 | Reviewers cannot audit a 5k-file diff produced by one run. | M16: per-rule attribution in JSON output, `colab review` paginated mode, `--split-pr` emits one branch per rule for separate review. |
 | Mass `<lang>::symbol` rename touches more than the user intended. | Today: documented as syntactic and verified with `--format diff`. M15: `--scope <pattern>` narrows the blast radius to a named function / class / module node. |
 | Walking a vendored / generated tree wastes CPU and risks corrupting third-party code. | M9: default-on `.gitignore` awareness via the `ignore` crate; `--include`/`--exclude` glob filters; `--changed-since` for CI runs. |
-| Long-running `colab.preview` / `colab.apply` MCP calls hang the host. | M13: streaming progress over MCP `notifications/progress` and LSP `$/progress`. `--summary-only` for headless runs that just need the aggregate. |
+| Long-running `colab.preview` / `colab.apply` MCP calls hang the host. | M13: streaming progress over MCP `notifications/progress` (LSP `$/progress` is a follow-up). `--summary-only` for headless runs that just need the aggregate. |

@@ -13,10 +13,11 @@ also edits **TOML, JSON and Markdown** configuration by key path, JSON
 Pointer or managed block, so a repository convention can be rolled out
 the same way (see [`examples/config`](examples/config/repo_migration/)).
 
-Agents typically use diffs and tools like sed command tools to change files. Colab is a more precise, idempotent, and
-language-aware alternative. Because it is code aware a function rename not only renames the fuction to be called but
-also all the call sites. It can also rename a crate and all the `use` statements in Rust, or a package and all the
-`import` statements in Java.
+Agents typically change files with diffs and tools like sed. Colab is a more precise, idempotent and
+language-aware alternative: a rule matches syntax, not text, so renaming a call rewrites the call sites and
+leaves strings and comments alone. It can rename a crate and all the `use` statements in Rust, or a package and
+all the `import` statements in Java, and it delegates scope-aware renames, file moves and IDE refactorings to the
+language's own server (`colab rename`, `mv`, `action`).
 
 ```sh
 colab refactor --script rename-tokio.codemod --check .
@@ -44,7 +45,8 @@ agent.
 ## Capabilities
 
 Twelve languages, each with the same capability floor — an
-import-equivalent, a symbol rename, and call rewriting:
+import-equivalent, a symbol rename, call rewriting, and `pattern`
+(match a code shape with `$METAVARS`):
 
 | Language                | Namespace | Modules                                             |
 |-------------------------|-----------|-----------------------------------------------------|
@@ -61,10 +63,13 @@ import-equivalent, a symbol rename, and call rewriting:
 | Rust                    | `rust`    | `use`, `symbol`, `crate` (Cargo.toml), `call`       |
 | Swift                   | `swift`   | `import`, `symbol`, `call`                          |
 
-Actions: `replace`, `delete`, `ensure`, `replace_call` (with
-`$1`/`$args`/`$func` template placeholders). The import-equivalent module
-takes all three of `replace`/`delete`/`ensure`; `symbol` and the
-namespace/package modules take `replace`; `call` takes `replace_call`.
+Every row also has `pattern`. Actions: `replace`, `delete`, `ensure`,
+`replace_call` (with `$1`/`$args`/`$func` template placeholders). The
+import-equivalent module takes all three of `replace`/`delete`/`ensure`;
+`symbol` and the namespace/package modules take `replace`; `call` takes
+`replace_call`; `pattern` takes `replace`/`delete`. The config backends
+(`json`, `toml`, `markdown`) take `set`/`insert`/`delete`, and Markdown
+also `replace`/`ensure`.
 
 Each backend's module is named for the language's own construct, so a
 polyglot script reads naturally — see
@@ -78,8 +83,8 @@ At runtime, ask the binary directly:
 colab schema           # full JSON capability schema
 colab list-languages   # backends registered in this build
 colab list-rules go    # modules and actions for one backend
-colab server           # LSP: diagnostics + completion for .codemod files
-colab mcp              # MCP server: preview / apply / schema / list-* / lint_script tools
+colab server           # LSP for .codemod files: diagnostics, hover, completion, code actions
+colab mcp              # MCP server: 18 tools (preview, apply, find, ast, test_rule, rename, outline, …)
 ```
 
 ## Install
@@ -113,7 +118,9 @@ target/release/colab refactor \
 
 You'll see a unified diff against `Cargo.toml` and `src/main.rs`.
 Replace `--format diff` with `--write` to apply, or `--check` for a
-CI-friendly exit code (10 if changes are pending, 0 otherwise).
+CI-friendly exit code (10 if changes are pending for a rule above
+`severity info`, 0 otherwise; 11 if `--write` found conflicts and wrote
+nothing).
 
 ## A two-rule script
 
@@ -143,12 +150,59 @@ match rust::symbol "Config" in "crates/core/**" { replace "CoreConfig" }
 
 The complete DSL is documented in [`docs/dsl.md`](docs/dsl.md).
 
+## Repository conventions: `colab.toml` and `colab fix`
+
+A repository can declare the codemods it keeps applied. `colab fix`
+runs them all as one run, with the file's settings:
+
+```toml
+# colab.toml
+[run]
+exclude = ["vendor/**"]
+check = "go build ./..."     # after writing; a failure is bisected to one rule and reverted
+tidy = true                  # format the changed files
+
+[formatters]
+go = "gofmt"                 # reads the file on stdin, writes it on stdout
+
+[[packs]]
+pack = "go/1.18-modern"      # built in: `colab pack list`
+
+[[packs]]
+path = ".colab/packs/house-style.codemod"
+```
+
+```sh
+colab fix --check     # CI: exit 10 if a pack would change anything
+colab fix             # apply
+```
+
+Built-in packs: `go/1.18-modern`, `java/8-to-21`, `js/esm`,
+`python/3.12-typing` and `rust/edition-2021-to-2024`; each one's README
+in [`examples/packs/`](examples/packs/README.md) says what it leaves
+alone. See [`docs/cli.md`](docs/cli.md#colab-fix).
+
+## Beyond scripts
+
+- `colab find` — read-only structural search (`path:line:col`), the same
+  matching `refactor` uses.
+- `colab ast` — a snippet's or a pattern's syntax tree, for a pattern that
+  matches nothing.
+- `colab rename` / `mv` / `action` / `references` / `safe-delete` —
+  scope-aware refactorings delegated to the language's own server
+  (rust-analyzer, gopls, …), reported and applied like a codemod; file
+  moves go through `git mv`. The server is kept running between commands.
+- `colab outline` / `section` / `links` — read Markdown by structure, and
+  find broken links.
+- `colab undo --from <dir>` — restore a run made with `--backup <dir>`.
+
 ## Output formats
 
 ```sh
 colab refactor --script s.codemod --format human .   # default on TTY: write + log
 colab refactor --script s.codemod --format diff .    # unified diff to stdout
 colab refactor --script s.codemod --format json .    # one JSON doc: counters + per-rule counts
+colab refactor --script s.codemod --format ndjson .  # one object per changed file, then a summary
 colab refactor --script s.codemod --check .          # exit 10 if changes pending
 colab fix --check --format github                    # CI: annotations on the pull request
 colab fix --check --format sarif > colab.sarif       # CI: code scanning (SARIF 2.1.0)
@@ -172,13 +226,14 @@ codes.
 script text  →  parse (LALRPOP)            →  raw AST
              →  compile (uses backend registry)  →  Refactoring (Vec<Box<dyn Operation>>)
              →  walk filesystem            →  Operation::apply per file
-             →  reporter (human/json/diff) →  stdout / write back
+             →  conflict checks            →  write, or refuse (exit 11)
+             →  reporter (human/json/ndjson/diff/sarif/github) →  stdout
 ```
 
 The same `Operation` trait is implemented by every backend; the CLI
 walks the filesystem, the visitor decides whether to write. Adding
-a new language means a new `colab-lang-*` crate and one line in the
-binary's default registry. See [`docs/architecture.md`](docs/architecture.md)
+a new language means a new `colab-lang-*` crate and one `register` line
+in `crates/colab-backends/src/lib.rs::registry`. See [`docs/architecture.md`](docs/architecture.md)
 for the workspace layout and an extension walk-through.
 
 ## Documentation
@@ -186,13 +241,15 @@ for the workspace layout and an extension walk-through.
 - [`docs/dsl.md`](docs/dsl.md) — codemod script language reference.
 - [`docs/features.md`](docs/features.md) — what each backend can do,
   with caveats.
-- [`docs/cli.md`](docs/cli.md) — flags, formats, exit codes,
-  pipelines.
+- [`docs/cli.md`](docs/cli.md) — every command and flag, `colab.toml`,
+  formats, exit codes, pipelines.
 - [`docs/architecture.md`](docs/architecture.md) — workspace layout
   and how to extend.
 - [`docs/development-plan.md`](docs/development-plan.md) — roadmap
   and non-goals; [`docs/completed-milestones.md`](docs/completed-milestones.md)
   — what has shipped.
+- [`docs/dogfooding.md`](docs/dogfooding.md) — developing colab with colab;
+  [`docs/dogfood-log.md`](docs/dogfood-log.md) — where it fell short.
 
 ### Agent skills
 
@@ -227,7 +284,9 @@ The repo is a Cargo workspace under `crates/`:
 
 ```
 crates/
-  colab-core/         # Error, walker, CodeTransformer, LanguageBackend, registry
+  colab-core/         # Error, walker, CodeTransformer, LanguageBackend, registry, RunReport, render
+  colab-rewrite/      # shared tree-sitter rewriting and the <lang>::pattern engine (ast-grep-core)
+  colab-backends/     # registry(): the one place every backend is registered
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR
   colab-lang-c/       # C backend
   colab-lang-cpp/     # C++ backend
@@ -241,9 +300,12 @@ crates/
   colab-lang-ruby/    # Ruby backend
   colab-lang-rust/    # Rust backend
   colab-lang-swift/   # Swift backend
-  colab-mcp/          # MCP server (preview / apply / schema / list_rules /
-                      # list_languages / lint_script)
-  colab-cli/          # The `colab` binary; LSP server; `colab mcp` launcher
+  colab-lang-json/    # JSON (key by JSON Pointer)
+  colab-lang-markdown/  # Markdown by structure (sections, rows, items, links, …)
+  colab-lang-toml/    # TOML (key by dotted path)
+  colab-lsp-client/   # colab as an LSP client: rename, mv, action, references, tidy, lsp-daemon
+  colab-mcp/          # MCP server (18 tools; see docs/cli.md#colab-mcp)
+  colab-cli/          # The `colab` binary: commands, colab fix, LSP server, `colab mcp`
 ```
 
 Test corpus: `tests/corpus/<lang>/<case>/{script,input/,expected/}`.
@@ -260,8 +322,9 @@ add a corpus case.
 | [`examples/rust/rename_crate/`](examples/rust/rename_crate/)                                           | End-to-end crate rename across `Cargo.toml` and `*.rs`.                                         |
 | [`examples/rust/scoped_rename/`](examples/rust/scoped_rename/)                                         | Scoping a symbol rename with `in "<glob>"` so a shared name is only renamed where it should be. |
 | [`examples/polyglot/`](examples/polyglot/)                                                             | One script rewriting an import and a call site across C, C#, PHP, Ruby, Kotlin, and Swift.      |
-| [`examples/packs/rust/edition-2021-to-2024.codemod`](examples/packs/rust/edition-2021-to-2024.codemod) | Skeleton for an edition-migration pack.                                                         |
-| [`examples/packs/java/8-to-21.codemod`](examples/packs/java/8-to-21.codemod)                           | Skeleton for a Java 8→21 pack.                                                                  |
+| [`examples/packs/`](examples/packs/README.md)                                                          | The built-in packs: Go 1.18, Java 8→21, CommonJS→ESM, Python 3.12 typing, Rust 2024.            |
+| [`examples/patterns/`](examples/patterns/)                                                             | Structural patterns with `$METAVARS`.                                                           |
+| [`examples/markdown/`](examples/markdown/)                                                             | Markdown edits by structure: sections, rows, items, links.                                      |
 
 ## Contributing
 
@@ -275,4 +338,4 @@ PRs welcome. Before opening one:
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT (the `license` field in [`Cargo.toml`](Cargo.toml)).

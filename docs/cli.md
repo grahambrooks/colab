@@ -1,7 +1,10 @@
 # CLI Reference
 
-The `colab` binary ships every operation under one of five
-subcommands plus the LSP stub. Output goes to stdout (one stream
+The `colab` binary ships its operations as subcommands: `refactor`,
+`fix`, `find`, `rename`, `mv`, `action`, `references`, `safe-delete`,
+`ast`, `outline`, `section`, `links`, `explain`, `schema`,
+`list-languages`, `list-rules`, `pack`, `undo`, `server`, `mcp` and
+`lsp-daemon`. Output goes to stdout (one stream
 per invocation); progress and error logging go to stderr so
 JSON / diff pipelines stay clean.
 
@@ -14,6 +17,7 @@ Run a codemod script against one or more paths.
 ```
 colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
                                 [--format human|json|ndjson|diff|sarif|github]
+                                [--tidy[=<CMD>]] [--no-link-check]
                                 [--stdin --path <hint>]
                                 [-C|--change-dir <dir>]
                                 [--include <glob>]... [--exclude <glob>]...
@@ -31,9 +35,9 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |
 | `--script <path>` | one of `--script` / `-e` | The `.codemod` file to execute. `-` reads the script from stdin (not combinable with `--stdin`). |
-| `-e`, `--rule <rule>` | one of `--script` / `-e` | An inline rule — one `match …` block — so no script file is needed. Repeatable; rules run in the order given, under the script name `inline`. A single value that is a whole `refactor "…" { … }` script is used as-is. `include` resolves against the working directory. |
-| `-C`, `--change-dir <dir>` | `.` | Resolve `paths` relative to this directory. |
-| `--format <h|j|n|d>` | `human` | Output format. `human` is coloured log lines plus a summary. `json` emits one JSON document for the whole run. `ndjson` streams one object per *changed* file then a summary. `diff` emits a unified diff per changed file. |
+| `-e`, `--rule <rule>` | one of `--script` / `-e` | An inline rule — one or more `match …` blocks, or an `include` — so no script file is needed. Repeatable; rules run in the order given, under the script name `inline`. A single value that is a whole `refactor "…" { … }` script is used as-is. `include` resolves against the working directory. |
+| `-C`, `--change-dir <dir>` | `.` | Change to this directory first: `paths`, `include` and the `colab.toml` lookup (for `[formatters]`) are relative to it. |
+| `--format <FORMAT>` | `human` | Output format: `human`, `json`, `ndjson`, `diff`, `sarif` or `github`. `human` is coloured log lines plus a summary. `json` emits one JSON document for the whole run. `ndjson` streams one object per *changed* file then a summary. `diff` emits a unified diff per changed file. `sarif` and `github` report each changed block for CI (SARIF 2.1.0, or GitHub Actions annotations); see [shapes](#--format-shapes). |
 | `--write` | — | Apply changes in place. |
 | `--dry-run` | — | Report what would change without writing. |
 | `--check` | — | Like `--dry-run`, but exit code 10 if a rule above `severity info` would change a file. CI-friendly. |
@@ -47,17 +51,17 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--jobs <N>` | `num_cpus` | Worker thread count for parallel file processing. Falls back to the `COLAB_JOBS` env var when unset. Set to `1` for sequential. |
 | `--verify <CMD>` | — | Run `<CMD>` (a shell command) after each rule's edits. Non-zero exit reverts that rule's changes and aborts the run with exit 1. Implies `--write`. Every rule must pass on its own; for rules that only compile together (a new parameter and its callers), use `--bisect`. |
 | `--commit-per-rule` | — | After each successful rule, `git add -u && git commit -m "colab: <rule>"`. Requires a git repo. Implies `--write`. |
-| `--bisect <CMD>` | — | After applying every rule, run `<CMD>`. On failure, binary-search the rule list to identify the single breaking rule, then revert the working tree to its pre-run state. Conflicts with `--verify`. |
+| `--bisect <CMD>` | — | After applying every rule, run `<CMD>`. On failure, binary-search the rule list to identify the single breaking rule, then revert the working tree to its pre-run state. Conflicts with `--verify`, `--commit-per-rule`, `--dry-run` and `--check`. |
 | `--verify-lsp[=<CMD>]` | — | Before writing, open each changed file in its language server, change it in memory, and report every error diagnostic the change adds as a conflict. The server is chosen by extension; `=<CMD>` names one (the `=` is required). Combines with `--bisect`, not with `--verify` / `--commit-per-rule`. See [Conflicts](#conflicts). |
 | `--allow-conflicts` | — | Write even when the run found conflicts. Without it, a `--write` run that finds any writes nothing and exits 11. |
 | `--tidy[=<CMD>]` | — | After the rules, tidy each changed file in memory, before the conflict checks and the write: through the `[formatters]` command `colab.toml` gives its extension, or else its language server (organize imports, then format). Reported as its own rule, `tidy via <server or command>`. `=<CMD>` names one server for every file. Whole files are formatted, not only the changed lines. Not with `--verify` or `--commit-per-rule`; with `--bisect`, the full set is tidied once before the check. See [`--tidy`](#--tidy). |
-| `--backup <DIR>` | — | Before any rule writes a file, save the pre-modification contents to `<DIR>/<rel-path>`. Pair with `colab undo --from <DIR>` to roll back. |
+| `--backup <DIR>` | — | Before any rule writes a file, save the pre-modification contents under `<DIR>`, mirroring each file's absolute path. Pair with `colab undo --from <DIR>` to roll back. |
+| `--no-link-check` | — | Skip the Markdown link check; without it, each link the run would break is a conflict (see [`colab links`](#colab-links)). |
 | `--detail <level>` | `counts` (`diff` for `--format diff`) | How much to report. `summary`: aggregate counters only. `counts`: adds per-rule match counts and changed paths. `diff`: adds capped unified diffs. |
 | `--max-files <N>` | `20` | At `--detail diff`, the maximum number of per-file diffs to render. The residue is reported under `truncated`. |
 | `--max-diff-bytes <N>` | `2000` | At `--detail diff`, the maximum size of any single rendered diff. |
 | `--summary-only` | — | Alias for `--detail summary`. |
 | `paths...` | `.` | Files or directories to walk recursively. Multiple roots are walked in order. |
-| `--format <FORMAT>` |  | Output format. `human` is coloured log lines plus a summary. `json` emits one JSON document for the whole run. `ndjson` streams one object per *changed* file then a summary. `diff` emits a unified diff per changed file. `sarif` and `github` report each changed block for CI (SARIF 2.1.0, or GitHub Actions annotations); see [shapes](#--format-shapes). |
 
 **Default execution mode** is resolved from `--format` and TTY state:
 
@@ -65,7 +69,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | ------ | :-----------: | ------------ |
 | `human` | yes | `--write` |
 | `human` | no  | `--dry-run` |
-| `json`, `ndjson`, `diff` | any | `--dry-run` |
+| `json`, `ndjson`, `diff`, `sarif`, `github` | any | `--dry-run` |
 | `--check` | any | always wins (exit 10 if changes pending) |
 
 Explicit `--write` / `--dry-run` / `--check` always override the
@@ -136,8 +140,10 @@ format. They are counted in the summary and nothing more.
   out), so its level is that rule's severity (`error` / `warning` /
   `notice`, SARIF `note`) and its text the rule's `message`, or the rule.
   A block no rule claims on its own (one rule rewriting another's
-  output) is credited to every rule that changed the file. With
-  `--check` the exit code is still 10 for pending changes.
+  output) is credited to every rule that changed the file. Run warnings
+  have no location: `github` prints them as `::warning title=colab::…`
+  (`matched no files: …`). With `--check` the exit code is still 10 for
+  pending changes.
 
 #### Reading the result
 
@@ -312,8 +318,10 @@ path = ".colab/packs/house-style.codemod"
   `refactor --check`.
 - An unknown key or section is an error that names the allowed ones; an
   unknown built-in pack gets a "did you mean".
-- `--format`, `--detail`, `--allow-conflicts` and `--no-link-check` are
-  `refactor`'s.
+- Flags: `--check | --write | --dry-run`, `-C <dir>`, `--config <file>`,
+  `--format`, `--detail`, `--allow-conflicts` and `--no-link-check`, the
+  last four as for `refactor`. `fix` takes no `--script`, `-e` or paths:
+  the packs and `[run] paths` come from `colab.toml`.
 
 ### `colab find`
 
@@ -521,6 +529,7 @@ $ colab action --at src/main.rs:11:16-11:25 --kind refactor.extract --title func
 ```
 colab references (--at FILE:LINE:COL | --symbol NAME --in FILE) [--include-declaration]
                  [--format human|json] [--max-results N] [--lsp …] [--root DIR] [-C DIR]
+                 [--timeout SECS]
 ```
 
 The references the server resolves to the symbol — scope-aware, unlike
@@ -535,6 +544,7 @@ before making it.
 ```
 colab safe-delete (--at FILE:LINE:COL | --symbol NAME --in FILE) [--lsp …] [--root DIR] [-C DIR]
                   [--format …] [--write|--dry-run|--check] [--backup DIR] [--verify CMD] [--tidy]
+                  [--allow-dirty] [--commit-moves] [--timeout SECS] [--detail LEVEL]
 ```
 
 Delete a declaration only if nothing outside it refers to it. The
@@ -829,8 +839,8 @@ work at all.
 **Errors.** A tool that ran and rejected its input returns
 `isError: true` with a structured body — `{"error": {kind, message,
 exit_code, line?, column?, expected?, snippet?}}`. JSON-RPC error
-responses (`-32602`) are reserved for malformed *calls*: unknown method
-or tool, missing or mistyped arguments.
+responses are reserved for malformed *calls*: `-32601` for an unknown
+method, `-32602` for an unknown tool or missing or mistyped arguments.
 
 Wire format: JSON-RPC 2.0 over stdio using MCP's stdio transport:
 one JSON message per line, newline-delimited (no `Content-Length`
@@ -939,6 +949,14 @@ colab rename --symbol fun_name --in src/main.rs --to total_price --write        
 colab lsp-daemon --stop                                # stop them all (or --root DIR)
 ```
 
+```
+colab lsp-daemon [--stop] [--socket PATH] [--root DIR] [--idle SECS] [-- SERVER...]
+```
+
+You rarely start one by hand: `--socket`, `--root` and the server command
+are what a command passes when it starts a daemon, and `--idle` (default
+600 seconds) is how long one waits without a client.
+
 Each command still sees the files as they are on disk: when a command
 ends, the documents it opened are closed, and when the next connects the
 server is told which files changed in between. A daemon exits after ten
@@ -971,8 +989,8 @@ colab refactor --script s.codemod --format diff path/
 # Pre-commit gate: fail if anything would change.
 colab refactor --script s.codemod --check . || exit $?
 
-# Stream JSON to a structured log.
-colab refactor --script s.codemod --format json . | tee changes.ndjson
+# Stream one object per changed file to a structured log.
+colab refactor --script s.codemod --format ndjson . | tee changes.ndjson
 
 # stdin rewriter for an editor pre-save hook.
 cat current-buffer.go | colab refactor --script s.codemod --stdin --path current-buffer.go > rewritten.go

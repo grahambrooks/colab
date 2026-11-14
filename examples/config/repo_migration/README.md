@@ -13,13 +13,14 @@ to the next version.
 # Preview. -C makes the scope globs relative to the repository. Name the
 # files: a walk of `.` skips hidden directories such as .claude/ (unless
 # --no-ignore), but a file named on the command line is always processed.
-FILES="prek.toml .claude/settings.json AGENTS.md myspec.toml"
 colab refactor -C examples/config/repo_migration/repo \
-    --script ../migration.codemod --format diff $FILES
+    --script ../migration.codemod --format diff \
+    prek.toml .claude/settings.json AGENTS.md myspec.toml
 
 # Would anything change? Exit 10 means yes; wire this into CI.
 colab refactor -C examples/config/repo_migration/repo \
-    --script ../migration.codemod --check $FILES
+    --script ../migration.codemod --check \
+    prek.toml .claude/settings.json AGENTS.md myspec.toml
 ```
 
 What to look for in the diff:

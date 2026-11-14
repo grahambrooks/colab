@@ -17,7 +17,9 @@ colab section examples/markdown/guide.md "Options"
 
 # Edit sections and front matter. Rule 4 (a heading rename) reports the
 # link to `#old-name` as a conflict, so --write would refuse (exit 11).
-colab refactor --script examples/markdown/sections.codemod --format diff examples/markdown
+# Run it on guide.md alone: its `in "**/guide.md"` scope also matches
+# fences/guide.md, where `set` would add front matter.
+colab refactor --script examples/markdown/sections.codemod --format diff examples/markdown/guide.md
 ```
 
 | Rule | Shows |

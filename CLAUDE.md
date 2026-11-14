@@ -21,9 +21,10 @@ cargo run -p colab-cli -- refactor --script <s> --format json    # one JSON doc:
 cargo run -p colab-cli -- refactor --script <s> --detail diff     # add capped unified diffs to that document
 cargo run -p colab-cli -- refactor --script <s> --format diff    # unified diff to stdout
 cargo run -p colab-cli -- refactor --script <s> --stdin --path <hint>  # stdin → transformed source on stdout
-cargo run -p colab-cli -- refactor --script <s> --tidy --write .     # then organize imports + format the changed files via their LSP
+cargo run -p colab-cli -- refactor --script <s> --tidy --write .     # then format the changed files: colab.toml [formatters], else their LSP
 cargo run -p colab-cli -- find -e '<match …>' [paths...]         # read-only: where each rule matches (path:line:col)
 cargo run -p colab-cli -- fix [--check|--write]                  # run the packs colab.toml declares, with its [run] settings
+cargo run -p colab-cli -- fix --check --format github            # CI annotations (--format sarif: SARIF 2.1.0 for code scanning)
 cargo run -p colab-cli -- pack list                              # built-in packs (examples/packs/) + .colab/packs/
 cargo run -p colab-cli -- ast --lang go --pattern '<code>'       # a pattern's (or --stdin snippet's) syntax tree
 cargo run -p colab-cli -- outline docs/ --depth 2                # Markdown heading outline: addresses, anchors, line spans
@@ -40,7 +41,11 @@ cargo run -p colab-cli -- <cmd> --help-json                      # any command's
 cargo run -p colab-cli -- list-languages                         # registered backends
 cargo run -p colab-cli -- list-rules <lang>                      # modules + actions for one backend
 cargo run -p colab-cli -- explain --script <s>                   # parsed IR as JSON, no execution
-cargo run -p colab-cli -- server                                 # LSP stub on stdio
+cargo run -p colab-cli -- links docs/                            # broken Markdown links (exit 10 if any)
+cargo run -p colab-cli -- undo --from <dir>                      # restore a run made with --backup <dir>
+cargo run -p colab-cli -- lsp-daemon --stop                      # stop every kept language server
+cargo run -p colab-cli -- server                                 # LSP for .codemod files: diagnostics, hover, completion, code actions
+cargo run -p colab-cli -- mcp                                    # MCP server on stdio (newline-delimited JSON-RPC)
 ```
 
 Exit codes from `colab refactor` (also documented in `--help`):
@@ -55,7 +60,7 @@ Exit codes from `colab refactor` (also documented in `--help`):
 | 10   | `--check` found changes that would be made. |
 | 11   | `--write` found conflicts and wrote nothing (`--allow-conflicts` overrides). |
 
-Defaults: `--format human` on a TTY implies `--write`; everything else (`json` / `ndjson` / `diff`, or non-TTY stdout) defaults to `--dry-run`. `--check` overrides both.
+Defaults: `--format human` on a TTY implies `--write`; everything else (`json` / `ndjson` / `diff` / `sarif` / `github`, or non-TTY stdout) defaults to `--dry-run`. `--check` overrides both.
 
 The repo is a Cargo workspace under `crates/`:
 
@@ -65,13 +70,13 @@ The repo is a Cargo workspace under `crates/`:
 | `colab-rewrite`  | Tree-sitter rewriting primitives every backend shares: `apply_edits` (reverse byte order), `line_span`, `delete_lines`, `visit_all`, `rename_nodes_by_text`, `field_texts`, and `pattern` — the structural matcher behind every `<lang>::pattern` (wraps `ast-grep-core`; no backend sees an ast-grep type). Also evaluates `where` constraints, and provides `build_rule_where`, the shared body of every source backend's `LanguageBackend::build_rule_where`. Depends on `tree-sitter` + `ast-grep-core` + `colab-core` (for `Constraint` / `RuleSpec` / `Operation`). `colab-core` never depends on it, so `colab-dsl`/`colab-mcp` never inherit a grammar engine. |
 | `colab-backends` | The single composition root: `registry()` registers all 15 backends. `colab-cli` depends on it at runtime; `colab-dsl`/`colab-mcp` as a dev-dependency only. Owns the cross-backend contract tests. |
 | `colab-dsl`      | LALRPOP grammar, AST, compiler, `Refactoring` IR. Depends only on `colab-core`; no compile-time knowledge of any backend. |
-| `colab-lang-*`      | One crate per language, 15 in total: 12 source languages and 3 config formats (`json`, `markdown`, `toml`). Every source backend provides an import-equivalent (`replace`/`delete`/`ensure`), `symbol` (rename), and `call` (`replace_call`); see the table below and [`docs/features.md`](docs/features.md) for the per-backend extras and caveats. |
+| `colab-lang-*`      | One crate per language, 15 in total: 12 source languages and 3 config formats (`json`, `markdown`, `toml`). Every source backend provides an import-equivalent (`replace`/`delete`/`ensure`), `symbol` (rename), `call` (`replace_call`) and `pattern` (`replace`/`delete`); see the table below and [`docs/features.md`](docs/features.md) for the per-backend extras and caveats. |
 | `colab-lsp-client`  | colab as an LSP *client*: spawns rust-analyzer / gopls / clangd / …, waits for indexing, runs `prepareRename` + `rename`, `workspace/willRenameFiles`, and (`actions.rs`) code actions — resolving them or executing their command and capturing the `workspace/applyEdit` it triggers —, references, document symbols, organize-imports and formatting, and turns the `WorkspaceEdit` (file operations included) into a `ChangeSet`. Used by `colab rename`; depends on `colab-core` + `colab-rewrite` only, and is deliberately not a dependency of `colab-mcp`. Tests drive `examples/fake_lsp.rs`. |
-| `colab-mcp`         | MCP server. Wraps `preview`/`apply`/`schema`/`lint_script` as MCP tools over JSON-RPC 2.0 with Content-Length framing on stdio. Depends only on `colab-core` + `colab-dsl`; never pulls in a `colab-lang-*` crate. Workflow tools (`colab.move_import`, `colab.set_config_key`, in `workflows.rs`) generate a one-rule script and return it with the report. Tools that need other crates (`colab.references` / `colab.rename` / `colab.rename_symbol` / `colab.action`) are injected by the binary through `colab_mcp::ToolProvider` (`colab-cli/src/lsp_commands.rs::LspTools`). |
-| `colab-cli`         | The `colab` binary. Builds the default `BackendRegistry` (all 15 backends), serves the LSP (`colab server`) with diagnostics + completion for `.codemod` files, and launches the MCP server (`colab mcp`). |
+| `colab-mcp`         | MCP server: 18 tools (`preview`, `apply`, `find`, `ast`, `test_rule`, `schema`, `list_*`, `lint_script`, the workflow tools, …) over JSON-RPC 2.0 on MCP's stdio transport (newline-delimited JSON; only `colab server` uses Content-Length framing). Depends only on `colab-core` + `colab-dsl`; never pulls in a `colab-lang-*` crate. Workflow tools (`colab.move_import`, `colab.set_config_key`, in `workflows.rs`) generate a one-rule script and return it with the report. Tools that need other crates are injected by the binary through `colab_mcp::ToolProvider`: `colab.references` / `colab.rename` / `colab.rename_symbol` / `colab.action` (`colab-cli/src/lsp_commands.rs::LspTools`) and `colab.outline` / `colab.section` (`colab-cli/src/markdown.rs`). |
+| `colab-cli`         | The `colab` binary. Builds the default `BackendRegistry` (all 15 backends), serves the LSP (`colab server`) with diagnostics, hover, completion and code actions for `.codemod` files, and launches the MCP server (`colab mcp`). Also hosts `colab fix` / `colab.toml` (`config.rs`, `packs.rs`), the CI formats (`ci_format.rs`), the LSP-client commands (`lsp_commands.rs`) and the Markdown commands (`markdown.rs`). |
 
 Language backends and the modules each adds beyond the common floor
-(`<import-equivalent>` / `symbol` / `call`):
+(`<import-equivalent>` / `symbol` / `call` / `pattern`):
 
 | Crate | Namespace | Import module | Extra modules | Files |
 | ----- | --------- | ------------- | ------------- | ----- |
@@ -88,8 +93,10 @@ Language backends and the modules each adds beyond the common floor
 | `colab-lang-rust`   | `rust`   | `use`     | `crate` (no `ensure`) | `.rs`, `Cargo.toml` |
 | `colab-lang-swift`  | `swift`  | `import`  | — | `.swift` |
 
-Config-file backends edit data, not source. Each has one module whose
-target is an address, and the `set` / `insert` / `delete` actions (see
+Config-file backends edit data, not source. `json` and `toml` have one
+module, `key`; `markdown` has seven. Each module's target is an address,
+and they take `set` / `insert` / `delete` where they apply, Markdown
+adding `replace` (section, item, link, text) and `ensure` (item) (see
 [`docs/features.md`](docs/features.md#config-file-backends-colab-lang-json-colab-lang-markdown-colab-lang-toml)):
 
 | Crate | Namespace | Module | Address | Files |

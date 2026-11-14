@@ -80,9 +80,12 @@ just the readable form.
 **Config-file backends.** `json`, `markdown` and `toml` edit data files
 rather than source, so they do not share the source floor below. Their
 modules take an address — a JSON Pointer, a dotted TOML path with
-`[field=value]` selectors, a Markdown heading path or anchor, a front-matter
-key, or a managed-block name — and the `set` / `insert` / `delete` actions
-(`markdown::section` also renames a heading with `replace`). `set` and `insert` create what is
+`[field=value]` selectors, a Markdown heading path or anchor (`section`),
+a table-row or list-item selector (`row`, `item`), a phrase (`text`), a
+link destination (`link`), a front-matter key, or a managed-block name.
+Most take `set` / `insert` / `delete`; `item` takes `ensure` / `replace` /
+`delete`, `text` and `link` take `replace` / `delete`, and `section` also
+renames a heading with `replace`. `set` and `insert` create what is
 missing, so scope them with `in "<glob>"` or run them on named files. See
 [Config-file backends](#config-file-backends-colab-lang-json-colab-lang-markdown-colab-lang-toml) below.
 
@@ -106,9 +109,12 @@ clause. Go and Python templates are also checked for a qualifier
 a new name the file already uses; both are [conflicts](./cli.md#conflicts),
 which stop a `--write` before it writes. Per-language notes:
 
-- **Go** cannot match a bare identifier (`x`): every Go wrapper declares
-  a name before the pattern, which would be selected instead, so it is
-  refused. Rename identifiers with `go::symbol`.
+- **Go** matches a bare identifier (`x`) only where it is used; a
+  declared name (`var x`, `func x`) is not matched. Rename declarations
+  with `go::symbol`.
+- **Python** patterns are also compiled as type annotations, so
+  `Optional[$T]` matches both `cast(Optional[str], x)` and
+  `def f(a: Optional[str])`, which parse as different nodes.
 - **PHP** patterns are parsed as pure PHP (no surrounding HTML), and a
   metavariable cannot stand where only a `$variable` may — `$X = $Y;`
   does not compile, `$y = $X;` does.
@@ -191,8 +197,11 @@ In-file rename of identifier-like tokens.
 
 - **Targets:** every `identifier`, `type_identifier`, and
   `field_identifier` whose text equals the match string.
-- **Excludes:** package identifiers, label names, raw string
-  contents, comments — all live under different tree-sitter kinds.
+- **Excludes:** the import alias and package qualifiers in type
+  position (`package_identifier`), label names, raw string contents,
+  comments — all different tree-sitter kinds. A package qualifier in an
+  expression (`fmt.Sprint(…)`) is an `identifier` and *is* renamed when it
+  matches.
 - **Caveat:** scope-blind. A local variable named `Foo` and a
   top-level `type Foo struct{}` are renamed together. Verify with
   `--format diff` before `--write`.
@@ -242,8 +251,9 @@ Edits to `use` declarations.
   work: `tokio::sync` → `tokio_v2::sync` rewrites only that prefix.
 - **`delete`:** removes the entire `use ...;` line.
 - **`ensure`:** inserts `use <target>;` at the top of the file
-  (after any leading inner attributes like `#![allow(...)]`) if no
-  existing `use` already begins with the same path.
+  (after any leading inner attributes like `#![allow(...)]` and inner doc
+  comments `//!` / `/*! */`) if no existing `use` already begins with
+  the same path.
 
 ### `rust::symbol`
 
@@ -362,6 +372,8 @@ rewriting; type-aware operations are out of scope.
   single-quoted stays single-quoted).
 - **`delete`:** removes the whole `import` / `export ... from`
   statement.
+- **`ensure`:** adds a side-effect import `import '<target>';` after the
+  last import when the module is not imported in any form.
 
 ### `js::symbol`
 
@@ -376,7 +388,8 @@ rewriting; type-aware operations are out of scope.
 ## Delegated refactorings (language servers)
 
 `colab rename`, `mv`, `action`, `references`, `safe-delete`, and `--tidy`
-ask the language's own server and report its answer (see
+(unless `colab.toml`'s `[formatters]` names a command for the file's
+extension) ask the language's own server and report its answer (see
 [cli.md](cli.md#colab-action)). What you get depends on the server:
 
 | Server | Verified with colab | Expected from the server (unverified here) |
@@ -422,9 +435,10 @@ conflict with colab's syntactic-rewriter premise.
   language's own server (rust-analyzer, gopls, clangd, …) and reports,
   checks, backs up, and verifies the answer like any codemod. colab
   still does no name resolution of its own.
-- **Conflict resolution between simultaneous edits.** Rules in one
-  script are applied in source order, sequentially. There is no
-  "merge" semantic.
+- **Merging simultaneous edits.** Rules in one script are applied in
+  source order, sequentially. colab *detects* some conflicts (see
+  [Conflicts](cli.md#conflicts)) and refuses to write, but it never
+  merges edits.
 - **Plugin marketplace.** Premature until `LanguageBackend` and the
   capability registry stabilise further.
 
@@ -556,7 +570,8 @@ convention (a new pre-commit hook, a settings entry, a managed section of
 `AGENTS.md`) can be applied across many repositories by the same scripts
 and `--check` gate as a source refactoring.
 
-All three share the same three actions:
+The key-like modules (`toml::key`, `json::key`, and `markdown::section`,
+`row`, `frontmatter`, `block`) share these three actions:
 
 | Action | Present, same value | Present, different | Absent |
 | ------ | ------------------- | ------------------ | ------ |

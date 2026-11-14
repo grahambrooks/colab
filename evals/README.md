@@ -1,8 +1,8 @@
 # Agent eval suite (M23)
 
 Each task is a change an agent is asked to make, with the colab commands
-that make it. `cargo test -p colab-cli --test evals` runs every task and
-checks three things:
+that make it. `cargo test -p colab-cli --test evals` runs every task,
+checks three things and reports a fourth:
 
 1. **Correct.** The commands run in a temporary git repository holding
    `input/`. Every file in `expected/` must match exactly, every other

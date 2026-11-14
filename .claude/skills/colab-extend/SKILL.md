@@ -42,7 +42,13 @@ Four places, in order:
    `apply_edits` to apply byte-range edits, `delete_lines` for whole-line
    removal, `rename_nodes_by_text` for a symbol rename. Do not hand-roll
    a cursor recursion or a reverse-order edit loop; those were duplicated
-   across twelve crates until they were extracted.
+   across twelve crates until they were extracted. An op that targets a
+   value (an import path, a call name) also implements
+   `near_miss_target` / `observed_targets`, in the normalized form its
+   matcher compares, so a dead rule says what it nearly matched; add
+   `conflicts` / `why_unchanged` when a change can collide or be refused.
+   A `pattern` matching bug is fixed in `colab_rewrite::pattern`, never in
+   a backend, and `where` clauses go through `build_rule_where`.
 2. **`build_rule`** — a match arm in that crate's `LanguageBackend`
    mapping `(module, RuleSpec)` to your operation.
 3. **`capabilities()`** — add the module/action so `colab schema`,
@@ -177,7 +183,8 @@ Grammar changes ripple further than backend changes. All of:
 2. `crates/colab-dsl/src/ast.rs` — the AST node.
 3. `colab_core::RuleSpec` + `action_name()` — the backend-neutral form.
 4. `compiler::lower_match` — AST to `RuleSpec`.
-5. `colab_cli::discover::explain` — the JSON IR serializer.
+5. `explain_command` in `crates/colab-cli/src/discover.rs` — the JSON IR
+   serializer.
 6. At least one backend that implements it.
 7. `docs/dsl.md`, including the reserved-token list if you added a
    keyword.
@@ -204,7 +211,11 @@ change. A case that passes either way tests nothing.
 - [ ] `Operation` impl with a sound `prefilter` (`None` for `ensure`)
 - [ ] `build_rule` arm, catch-all delegating to `self.unsupported`
 - [ ] `capabilities()` updated — drives schema, `list-rules`, completion
-- [ ] `registry.register(...)` in `default_backends` (new backend only)
+- [ ] `registry.register(...)` in `colab-backends/src/lib.rs::registry`,
+      plus `BACKEND_COUNT` (new backend only)
+- [ ] `docs/features.md` matrix row (`docs_match_capabilities.rs` fails
+      without it) and, for a new backend, its name in the colab-codemod
+      skill (`the_skill_names_every_backend`)
 - [ ] Corpus case that fails without the change
 - [ ] `cargo test -p colab-backends` passes — the generic contract tests
       cover prefilter soundness and DSL-spellability for your new module

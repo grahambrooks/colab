@@ -11,7 +11,7 @@ colab refactor --script examples/polyglot/rename-logger.codemod \
 ```
 
 ```json
-{"summary":{"visited":7,"scanned":6,"changed":6,"skipped":0,"elapsed_ms":6},
+{"summary":{"visited":8,"scanned":6,"changed":6,"skipped":0,"elapsed_ms":6},
  "rules":[{"i":0,"files":1,"rule":"c::include \"oldlog/log.h\" -> \"newlog/log.h\""},
           {"i":1,"files":1,"rule":"c::call \"log_write\" -> replace_call \"newlog_write($args)\""},
           … 12 rules, one file each …]}
@@ -37,9 +37,9 @@ outright for `Service.kt`, not run and discarded: colab gates each rule on
 the path before parsing. That is why a 12-rule polyglot script runs about
 as fast as a 2-rule single-language one.
 
-**`visited: 7` vs `scanned: 6`.** The seventh file is the `.codemod`
-script itself — visited by the walker, but not a language any rule
-targets, so never parsed.
+**`visited: 8` vs `scanned: 6`.** The other two files are the
+`.codemod` script and this README — visited by the walker, but not a
+language any rule targets, so never parsed.
 
 ## Per-language notes worth knowing
 

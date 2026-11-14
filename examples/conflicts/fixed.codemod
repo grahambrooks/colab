@@ -4,5 +4,6 @@ refactor "fixed" {
     match go::pattern 'errors.Wrap($E, $M)' {
         replace 'fmt.Errorf("%s: %w", $M, $E)'
         requires import "fmt"
+        drops import "github.com/pkg/errors" when unused
     }
 }

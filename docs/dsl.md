@@ -2,7 +2,7 @@
 
 A codemod script tells `colab` what to find and how to rewrite it. The
 language is small on purpose: each script is one named refactoring
-containing zero or more `match` blocks, each pairing a *namespace* (the
+containing zero or more `match` blocks (or `include` directives), each pairing a *namespace* (the
 target language and module) with an *action* (what to do at every
 match site).
 
@@ -24,7 +24,8 @@ edits before writing.
 Whitespace is insignificant outside string literals.
 
 ```ebnf
-program     = "refactor" string "{" match* "}"
+program     = "refactor" string "{" item* "}"
+item        = match | "include" string
 match       = "match" namespace string location* [ where ] "{" action clause* "}"
 location    = "in" string                -- path scope, at most once
             | "in" "fences"              -- only inside Markdown code fences
@@ -100,7 +101,7 @@ each rule is a no-op on its own output.
 ### `replace_call "<template>"`
 
 Rewrite a call expression whose callee text equals the match string.
-Available on the `<lang>::call` module, which every backend provides.
+Available on the `<lang>::call` module, which every source backend provides.
 The template is a string with substitution placeholders:
 
 The target is the callee **exactly as the call reads in the source**, so
@@ -130,8 +131,8 @@ match go::call "logger.Info" { replace_call "logger.WithContext(ctx).Info($args)
 
 ### `set '<value>'` and `insert '<value>'`
 
-The config-file backends (`toml::key`, `json::key`, `markdown::block`)
-address a key or block and give it a value written in the file's own
+The config-file backends (`toml::key`, `json::key`, and the Markdown
+modules `section`, `row`, `frontmatter` and `block`) address a key or block and give it a value written in the file's own
 syntax. `set` creates the target — and any missing parents — or
 overwrites a value that differs; `insert` creates it only when it is
 absent and never overwrites. Values are compared by meaning, so both are
@@ -176,10 +177,12 @@ refactor "company-migration" {
 ```
 
 Cycle detection is path-canonical: a → b → a yields a clear
-`circular include` error. Includes only resolve when the
-compilation entry point has a known base path (the CLI's
-`compile_at_path`); compiling a bare string raises a clear error
-when an `include` directive is encountered.
+`circular include` error. A script file's includes resolve against its
+directory; `--script -` and `-e` resolve against the working directory
+(after `-C`); MCP resolves against its root. Only the library's
+`colab_dsl::compile`, which has no base path, rejects `include`.
+`include` takes a path, not a built-in pack name: built-in packs are
+named in `colab.toml` (`pack = "go/1.18-modern"`) and run by `colab fix`.
 
 ## Structural patterns: `<lang>::pattern`
 
@@ -395,7 +398,7 @@ x := errors.Wrap(err, "kept from this script only")
 ## Inline rules
 
 The `refactor "<name>" { … }` wrapper is optional on the command line.
-Each `-e` / `--rule` value is one `match` block; the CLI wraps them in
+Each `-e` / `--rule` value is one or more items (`match` blocks or an `include`); the CLI wraps them in
 `refactor "inline" { … }` and compiles them exactly like a file:
 
 ```sh
@@ -429,11 +432,13 @@ refactor "stub" { }
 
 ## Namespaces
 
-Each backend owns a namespace — `c`, `cpp`, `csharp`, `go`, `java`, `js`,
-`kotlin`, `php`, `python`, `ruby`, `rust`, `swift` — and exposes one or
-more *modules* within it. Every backend provides an import-equivalent
-(named for the language's own construct), a `symbol` rename, and a `call`
-rewrite; those with a namespace or package declaration expose one too. The full list is
+Each backend owns a namespace and exposes one or more *modules* within
+it. Every source backend — `c`, `cpp`, `csharp`, `go`, `java`, `js`,
+`kotlin`, `php`, `python`, `ruby`, `rust`, `swift` — provides an
+import-equivalent (named for the language's own construct), a `symbol`
+rename, a `call` rewrite and `pattern`; those with a namespace or
+package declaration expose one too. The config backends `json`,
+`markdown` and `toml` have modules of their own. The full list is
 machine-discoverable via `colab schema` and `colab list-rules <lang>`,
 and is documented in [features.md](./features.md).
 
@@ -486,7 +491,7 @@ table below summarises:
 | `js::import` | Exact ES module specifier (the string after `from`). | `"lodash"` |
 | `js::symbol` | Identifier text (covers `identifier`, `property_identifier`, `shorthand_property_identifier`). | `"oldHelper"` |
 
-In every case matching is on tree-sitter node text, not raw substrings
+For the source modules, matching is on tree-sitter node text, not raw substrings
 — `tokio` does **not** match `my_tokio` and `another.module` does
 **not** match `yet.another.module`.
 
@@ -676,13 +681,16 @@ refactor "javax-to-jakarta" {
 The grammar keywords are:
 
 `refactor`, `match`, `in`, `include`, `replace`, `delete`, `ensure`,
-`replace_call`, `set`, `insert`, and for `where` / import clauses
-`where`, `not`, `matches`, `is`, `count`, `inside`, `has`, `requires`,
-`import`, `drops`, `when`, `unused`.
+`replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
+`prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
+`count`, `inside`, `has`, `requires`, `import`, `drops`, `when`,
+`unused`; and for finding clauses `message`, `severity` (`error`,
+`warning` and `info` are ordinary identifiers).
 
 `::` is the namespace separator. `//` starts a line comment.
 
-**Keywords are still usable as namespace segments.** A backend's module
+**Keywords other than `refactor`, `match` and `replace_call` are usable
+as namespace segments.** A backend's module
 is named after the language's own construct, and C's is `#include` — so
 `match c::include "stdio.h" { ... }` parses fine even though `include` is
 also the pack directive. The two positions are never ambiguous, because a
@@ -720,7 +728,7 @@ The DSL is intentionally small. Capabilities being considered:
   `replace_call "f(ctx, $args)"` pattern.
 - A query namespace (e.g. `go::regex`) for opt-in regex-based
   rewrites where a tree-sitter rule does not suffice.
-- Type constraints (`$X has type T`) via the language server's hover.
+- Type constraints (`$X is type T`) via the language server's hover.
 - A scope-aware `<lang>::symbol` mode that respects shadowing.
   (`in "<glob>"` narrows a rename by *path*; this would narrow it by
   lexical scope.)

@@ -11,7 +11,7 @@ This applies to anyone changing this repo, human or agent.
 
 ```sh
 scripts/dogfood.sh        # builds, copies to .dogfood/colab (git-ignored)
-alias colab=.dogfood/colab
+alias colab="$(git rev-parse --show-toplevel)/.dogfood/colab"   # an agent's shell does not keep aliases: call .dogfood/colab
 ```
 
 Use the pinned copy, not `cargo run`. That way a half-finished change in
@@ -35,7 +35,7 @@ built.
 | Delete code you believe is dead | `colab safe-delete --symbol X --in FILE` | deleting and waiting for the compiler |
 | Extract a function or variable, inline, change a signature | `colab action --at FILE:L:C-L:C --list`, then `--kind` / `--title` | retyping the code |
 | A `use` path moved | `match rust::use "old::path" { replace "new::path" }` | |
-| A dependency or version in `Cargo.toml` | `match toml::key "workspace.dependencies.regex" { set '"1"' }` | |
+| A dependency or version in `Cargo.toml` | `match toml::key "workspace.dependencies.regex" in "Cargo.toml" { set '"1.10"' }` (scoped: an unscoped `set` adds the key to every `.toml`) | |
 | One edit in one place | `Edit` | colab, which buys nothing there |
 
 When colab would fit and you use something else anyway, that is a
@@ -92,15 +92,15 @@ Choose the check flag by how the rules relate:
   that rule at the first failure. Use it only when every rule stands on
   its own. On a coordinated change it always fails at the first rule.
 
-`colab undo` reverts the last run. Add `--tidy` to have rust-analyzer organize imports and format the changed files before the write; no `cargo fmt` step is needed.
+`colab undo --from DIR` reverts a run made with `--backup DIR`. Add `--tidy` to have rust-analyzer organize imports and format the changed files before the write; no `cargo fmt` step is needed.
 
 For the language-server commands, preview first: they are dry runs unless
 you pass `--write`.
 
 ```sh
 colab references --symbol build_rule --in crates/colab-core/src/backend.rs
-colab rename --at crates/colab-core/src/backend.rs:164:8 --to build_operation --format diff
-colab rename --at … --to build_operation --write --tidy --verify 'cargo check -q --workspace'
+colab rename --symbol build_rule --in crates/colab-core/src/backend.rs --to build_operation --format diff
+colab rename --symbol build_rule --in crates/colab-core/src/backend.rs --to build_operation --write --tidy --verify 'cargo check -q --workspace'
 ```
 
 ## 4. Writing Rust patterns
@@ -146,4 +146,4 @@ results so far: about 77% saved overall, more as sites multiply.
 
 When colab did the work in a commit, say so in the commit body, e.g.
 `colab refactor (rust::pattern, 12 sites)`. These notes are the raw
-material for the M23 eval suite.
+material for the eval suite (`evals/`).

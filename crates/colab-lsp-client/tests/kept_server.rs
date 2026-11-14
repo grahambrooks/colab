@@ -1,4 +1,5 @@
-//! `COLAB_KEEP_SERVER=1`: commands in a row share one server through
+//! Kept servers (the default; forced on here with `COLAB_KEEP_SERVER=1`):
+//! commands in a row share one server through
 //! `colab lsp-daemon`, and each still sees the files as they are on disk.
 //! Its own test binary, since it sets the variable for the process.
 

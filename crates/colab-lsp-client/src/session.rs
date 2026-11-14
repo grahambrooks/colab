@@ -131,7 +131,7 @@ impl Session {
         Ok(session)
     }
 
-    /// The server's own process, or, with `COLAB_KEEP_SERVER=1`, a
+    /// The server's own process, or, when servers are kept (the default), a
     /// connection to the `colab lsp-daemon` that keeps one running.
     fn transport(
         program: &str,

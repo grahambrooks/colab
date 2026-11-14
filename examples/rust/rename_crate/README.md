@@ -4,9 +4,9 @@ A walk-through of renaming `old_tokio` → `tokio` across both `Cargo.toml`
 and source files in one script.
 
 ```sh
-# From the repo root:
+# From the repo root: preview, then add --write to apply.
 colab refactor --script examples/rust/rename_crate/rename.codemod \
-    examples/rust/rename_crate
+    --format diff examples/rust/rename_crate
 ```
 
 What the script does:
@@ -17,7 +17,7 @@ What the script does:
    `use old_tokio::…` declaration in `*.rs` files under the target
    tree.
 
-Try a `--check` first if you want CI-style read-only verification:
+For CI-style read-only verification, use `--check`:
 
 ```sh
 colab refactor --script examples/rust/rename_crate/rename.codemod \

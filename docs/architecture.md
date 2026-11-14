@@ -19,14 +19,23 @@ crates/
                       # BackendRegistry, RuleSpec, template engine,
                       # RunReport (per-rule attribution), render (the
                       # shared JSON serializer), ScopedOperation,
-                      # suggest ("did you mean"). No internal deps.
+                      # suggest ("did you mean"), and the generic
+                      # pieces every backend inherits: constraint
+                      # (`where` data), fences, prose, followup (import
+                      # clauses), ignore (`colab:ignore`), near_miss,
+                      # find, fileops. No internal deps.
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR.
                       # Depends only on colab-core; never on a backend.
   colab-rewrite/      # Tree-sitter rewriting primitives shared by all
-                      # backends (apply_edits, delete_lines, visit_all,
-                      # rename_nodes_by_text). Depends on tree-sitter
-                      # only, so colab-dsl and colab-mcp never inherit
-                      # a grammar engine.
+                      # backends (apply_edits, line_span, delete_lines,
+                      # visit_all, rename_nodes_by_text, rename_conflict)
+                      # and `pattern`, the structural matcher behind
+                      # every <lang>::pattern (wraps ast-grep-core; also
+                      # evaluates `where`; build_rule_where). Depends on
+                      # tree-sitter, ast-grep-core, regex and
+                      # colab-core; colab-core never depends on it, so
+                      # colab-dsl and colab-mcp never inherit a grammar
+                      # engine.
   colab-backends/     # The single composition root: registry() wires
                       # every backend. Runtime dep of colab-cli, dev-only
                       # for colab-dsl / colab-mcp. Home of the
@@ -43,17 +52,35 @@ crates/
   colab-lang-ruby/    # Ruby backend (tree-sitter-ruby).
   colab-lang-rust/    # Rust backend (tree-sitter-rust + toml_edit).
   colab-lang-swift/   # Swift backend (tree-sitter-swift).
-  colab-mcp/          # Model Context Protocol server (preview / apply
-                      # / schema / list_rules / list_languages /
-                      # lint_script as MCP tools).
+  colab-lang-json/    # JSON config (tree-sitter-json): key by JSON Pointer.
+  colab-lang-markdown/  # Markdown by structure (tree-sitter-md): section,
+                      # row, item, text, link, frontmatter, block.
+  colab-lang-toml/    # TOML config (toml_edit): key by dotted path.
+  colab-lsp-client/   # colab as an LSP client: rename, mv, action,
+                      # references, safe-delete, --tidy, --verify-lsp,
+                      # and the kept server (`colab lsp-daemon`).
+                      # Depends on colab-core + colab-rewrite only.
+  colab-mcp/          # Model Context Protocol server: the colab.* tools
+                      # (preview, apply, find, ast, schema, lint_script,
+                      # test_rule, list_*, and the workflows
+                      # move_import, set_config_key, edit_markdown).
+                      # Tools that need other crates (outline, section,
+                      # references, rename, rename_symbol, action) are
+                      # injected by the binary via colab_mcp::ToolProvider.
                       # JSON-RPC 2.0 over stdio, newline-delimited
                       # (MCP stdio transport; the LSP server keeps
                       # Content-Length). Depends only on colab-core +
                       # colab-dsl; like colab-dsl, must not pull in
                       # any colab-lang-* crate at runtime.
-  colab-cli/          # `colab` binary; assembles the default
-                      # BackendRegistry, owns the LSP server,
-                      # launches the MCP server via `colab mcp`.
+  colab-cli/          # `colab` binary: every command; colab.toml and
+                      # `colab fix` (config.rs, packs.rs); the CI
+                      # formats (ci_format.rs); git file operations
+                      # (apply.rs); the LSP-client commands
+                      # (lsp_commands.rs); the Markdown commands and
+                      # link check (markdown.rs); the LSP server for
+                      # .codemod files; `colab mcp`. Depends on
+                      # colab-backends, and on colab-lsp-client and
+                      # colab-lang-markdown directly.
 tests/corpus/         # Per-language end-to-end fixtures.
 examples/             # Runnable scripts and migration packs.
 docs/                 # User-facing reference.
@@ -82,9 +109,12 @@ text ─▶ │  parse args  →  read script  →  drive run      │
         │  ast::Command  (raw AST, n match blocks)       │
         │      │                                         │
         │      ▼                                         │
-        │  compile(ast, &registry)                       │
-        │      │   for each Match → registry.get(lang)   │
-        │      │              .build_rule(module, spec)  │
+        │  compile_at_source(text, base, &registry)      │
+        │      │   expands includes; for each Match →    │
+        │      │   registry.get(lang).build_rule(…),     │
+        │      │   wrapped in ScopedOperation (in),      │
+        │      │   FencedOperation (fences),             │
+        │      │   WithFollowups (import clauses)        │
         │      ▼                                         │
         │  Refactoring { rules: Vec<Box<dyn Operation>> }│
         │  (impls CodeTransformer)                       │
@@ -97,12 +127,21 @@ text ─▶ │  parse args  →  read script  →  drive run      │
         │  – calls apply_at(path, src) per file:         │
         │      gate on is_file_relevant, then prefilter, │
         │      then parse — per rule                     │
+        │  – undoes changes on `colab:ignore` lines,     │
+        │    collects each rule's conflicts              │
         │  – yields FileChange { path, before, after,    │
-        │                        rules_fired }           │
+        │                rules_fired, conflicts }        │
         │  – returns WalkOutcome { files_visited,        │
         │                          skipped }             │
         └───────────────┬────────────────────────────────┘
                         │  folded into colab_core::RunReport
+        ┌───────────────▼────────────────────────────────┐
+        │   after the walk (colab_cli::cli / apply.rs)   │
+        │  --tidy, --verify-lsp, Markdown link check →   │
+        │  conflicts? refuse to write (exit 11) : write  │
+        │  (git for file ops) → near_miss::probe         │
+        └───────────────┬────────────────────────────────┘
+                        │
         ┌───────────────▼────────────────────────────────┐
         │             colab_core::render                 │
         │  RunReport + changed files → JSON, at a        │
@@ -152,6 +191,11 @@ pub trait LanguageBackend: Send + Sync {
     fn description(&self) -> &'static str { "" }
     fn capabilities(&self) -> &'static [Capability];
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>>;
+    // Abridged. Also: build_rule_where (`where` clauses; pattern only),
+    // import_module (what `requires import` lowers to), drop_unused_import
+    // (Go), prose_ranges / prose_locator (`and prose`), fence_names /
+    // fence_locator (`in fences`), syntax_tree (`colab ast`), and
+    // unsupported (the "did you mean" error for unknown modules).
 }
 
 pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
@@ -160,6 +204,9 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     /// A literal that must be present for this op to change anything.
     /// `None` disables the fast path — required for `ensure`.
     fn prefilter(&self) -> Option<&str> { None }
+    // Abridged. Also: near_miss_target / observed_targets (the `near`
+    // hints for a dead rule), locate (`colab find`), conflicts (checked
+    // before writing), why_unchanged (a match the rule could not apply).
 }
 ```
 
@@ -185,9 +232,9 @@ pub enum RuleSpec {
 ```
 
 Adding a new action variant means: AST + grammar token, lower in
-`compiler::lower_match`, JSON serializer in
-`colab_cli::discover::explain`, and at least one backend that
-implements it.
+`compiler::lower_match`, extend `RuleSpec::action_name` / `target`,
+the JSON serializer in `explain_command` (`colab-cli/src/discover.rs`),
+and at least one backend that implements it.
 
 ### `BackendRegistry`
 
@@ -200,8 +247,10 @@ impl BackendRegistry {
 }
 ```
 
-`colab-cli::cli::default_backends` is the single place where every
-backend is registered. New `colab-lang-*` crates plug in here.
+`colab_backends::registry()` (`crates/colab-backends/src/lib.rs`) is the
+single place where every backend is registered; the CLI, the corpus
+harness and the MCP tests all call it. New `colab-lang-*` crates plug in
+there.
 
 ### `FileChange` (walker visitor)
 
@@ -216,7 +265,9 @@ pub struct FileChange {
 let outcome: WalkOutcome = walker::walk(transformer, path, &mut |change| { … })?;
 ```
 
-The visitor closure decides whether to write back, format a diff,
+A `FileChange` is built from the transformer's `ApplyOutcome` (`output`,
+`rules_fired`, `conflicts`) by `FileChange::from_outcome`. The visitor
+closure decides whether to write back, format a diff,
 emit JSON, or just count for `--check`. Directory entries are
 sorted before iteration so output ordering is deterministic across
 filesystems.
@@ -236,9 +287,14 @@ pub struct RunReport {
     pub files_visited: u64,   // walker yielded
     pub files_scanned: u64,   // relevant, and read
     pub files_changed: u64,   // actually rewritten
-    pub rules: Vec<RuleStat>, // { index, rule, files_matched }
+    pub rules: Vec<RuleStat>, // { index, rule, files_matched, near_misses,
+                              //   unchanged, message, severity }
     pub skipped: Vec<SkippedFile>,
-    /* bytes, elapsed */
+    pub conflicts: Vec<Conflict>, // checked before anything is written
+    pub file_ops: Vec<FileOp>,    // moves / creates / deletes, through git
+    pub warnings: Vec<String>,
+    pub spans: BTreeMap<PathBuf, Vec<RuleSpan>>, // per-line attribution, CI formats
+    /* bytes_before / bytes_after, elapsed, scanned_sample */
 }
 ```
 
@@ -267,20 +323,27 @@ To add `colab-lang-<x>` (replace `<x>` with `kotlin`, `swift`, etc.):
    to your `Operation` impls.
 4. **Operations.** One module per namespace
    (`src/imports.rs`, `src/symbols.rs`, …). Each Operation impl is
-   a struct that holds the rule's parameters, plus an `apply`
-   method that uses tree-sitter to compute byte-range edits and
-   applies them in reverse byte order.
+   a struct that holds the rule's parameters, plus an `apply` built on
+   the shared helpers — `colab_rewrite::apply_edits`, `delete_lines`,
+   `rename_nodes_by_text` — never a hand-rolled edit application. Ops
+   that target a value implement `near_miss_target` / `observed_targets`.
+   Add `src/patterns.rs`: a `PatternLanguage` (grammar, expando char,
+   context wrappers, `also` contexts) for `<x>::pattern`; matching itself
+   lives in `colab_rewrite::pattern`. Implement `import_module`,
+   `prose_ranges` and `fence_names` so the generic clauses work.
 5. **Register.** Add `registry.register(Box::new(<X>Backend));` to
-   `crates/colab-cli/src/cli.rs::default_backends`. Add
-   `colab-lang-<x>` to `colab-cli/Cargo.toml` `[dependencies]` and
-   to `colab-dsl/Cargo.toml` `[dev-dependencies]` (for the corpus
-   harness).
+   `crates/colab-backends/src/lib.rs::registry`, add `colab-lang-<x>` to
+   `crates/colab-backends/Cargo.toml`, and bump `BACKEND_COUNT`. The test
+   `every_colab_lang_crate_is_registered` fails if you forget.
 6. **Corpus.** At least one fixture under
-   `tests/corpus/<lang>/<case>/{script,input/,expected/}`. The
-   harness in `crates/colab-dsl/tests/corpus.rs` will pick it up
-   automatically and run it (and assert idempotency).
-7. **Docs.** Add a row to `docs/features.md` and update the
-   capability table in `README.md`.
+   `tests/corpus/<lang>/<case>/{script,input/,expected/}`, with generated
+   `rules.expected` and `find.expected` (write them with
+   `COLAB_BLESS=1 cargo test -p colab-dsl --test corpus` and review the
+   diff). The harness picks it up and asserts idempotency.
+7. **Docs.** Add the backend's rows to the `docs/features.md` matrix
+   (`docs_match_capabilities.rs` fails the build otherwise), name it in
+   the skill (`skill_matches_capabilities.rs`), and update the capability
+   table in `README.md`.
 
 CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
 --workspace`, so a broken backend is caught immediately.
@@ -291,12 +354,13 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
   add `Operation` impls, add a `Capability` row to that backend's
   `CAPABILITIES`, add an arm to `build_rule`, add a corpus case.
 - **New action verb (in addition to `replace`/`delete`/`ensure`/
-  `replace_call`):** extend `Action` in
+  `replace_call`/`set`/`insert`):** extend `Action` in
   `crates/colab-dsl/src/ast.rs`, add the token to
   `codemod.lalrpop`, add the matching `RuleSpec` variant in
   `colab_core::backend`, lower in
-  `colab_dsl::compiler::lower_match`, serialize in
-  `colab_cli::discover::explain`, then implement in whatever
+  `colab_dsl::compiler::lower_match`, extend `RuleSpec::action_name` /
+  `target`, serialize in `explain_command` (`colab-cli/src/discover.rs`),
+  then implement in whatever
   backends should support it.
 
 ## Invariants (and why)
@@ -332,6 +396,21 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
   returning `None` becomes `Error::UnsupportedOperation` (CLI exit
   3). Backends do the same for unknown modules within their
   language.
+- **`where` narrows, never widens.** Constraints filter the match list,
+  so the prefilter stays sound and `find` agrees with `refactor`.
+- **A pattern match covers the whole node.** A match must account for
+  every named child unless a `$$$` absorbs them, so a rewrite never drops
+  what the pattern did not mention.
+- **Import clauses are follow-ups.** `requires import` / `drops import`
+  run only in files the rule changed (`colab_core::WithFollowups`).
+- **Conflicts are checked before anything is written.** Every write path
+  buffers its changes and writes nothing while a conflict stands (exit 11)
+  unless `--allow-conflicts`.
+- **File operations go through git or not at all**, and **semantic edits
+  are delegated** to the language's own server; a kept server must answer
+  exactly as a fresh one would.
+- **`colab:ignore` is generic.** It is applied in `Refactoring::apply_at`;
+  backends need nothing for it.
 
 ## Error handling
 
@@ -356,9 +435,16 @@ one `error!` log line. Library code never panics on user input;
 ```
 unit tests            in each crate's src/
 integration tests     crates/colab-cli/tests/cli.rs (assert_cmd)
-DSL unit tests        crates/colab-dsl/src/compiler.rs (parser)
+agent eval suite      crates/colab-cli/tests/evals.rs + evals/tasks/
+DSL unit tests        crates/colab-dsl/src/compiler.rs (parser),
+                      crates/colab-dsl/tests/namespace_spelling.rs
 end-to-end corpus     crates/colab-dsl/tests/corpus.rs +
-                      tests/corpus/<lang>/<case>/{script,input/,expected/}
+                      tests/corpus/<lang>/<case>/{script,input/,expected/,
+                      rules.expected,find.expected}
+cross-backend         crates/colab-backends/tests/contracts.rs,
+                      docs_match_capabilities.rs, skill_matches_capabilities.rs
+LSP client            crates/colab-lsp-client/tests/ (fake_server.rs,
+                      kept_server.rs), driven by examples/fake_lsp.rs
 ```
 
 The corpus harness is the canonical "did the new feature break

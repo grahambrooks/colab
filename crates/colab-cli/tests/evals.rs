@@ -372,7 +372,7 @@ fn run_task(dir: &Path, bin_dir: &Path) -> Result<Outcome, String> {
             }
         }
     }
-    // Stop any server a task kept running (`COLAB_KEEP_SERVER=1`).
+    // Stop any server a task kept running (kept servers are the default).
     let _ = Command::new(bin_dir.join("colab"))
         .args(["lsp-daemon", "--stop", "--root"])
         .arg(&work)
