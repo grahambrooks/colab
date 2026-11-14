@@ -26,7 +26,7 @@ cargo run -p colab-cli -- find -e '<match …>' [paths...]         # read-only: 
 cargo run -p colab-cli -- fix [--check|--write]                  # run the packs colab.toml declares, with its [run] settings
 cargo run -p colab-cli -- fix --check --format github            # CI annotations (--format sarif: SARIF 2.1.0 for code scanning)
 cargo run -p colab-cli -- pack list                              # built-in packs (examples/packs/) + .colab/packs/
-cargo run -p colab-cli -- refactor --script <s> --split-pr .     # one git branch per rule (HEAD + that rule), tree untouched
+cargo run -p colab-cli -- refactor --script <s> --split-pr .     # one git branch per rule (HEAD + that rule; --stacked chains them), tree untouched
 cargo run -p colab-cli -- review run.ndjson [--rule N]           # a `--format ndjson --detail diff` log, by rule, paged
 cargo run -p colab-cli -- ast --lang go --pattern '<code>'       # a pattern's (or --stdin snippet's) syntax tree
 cargo run -p colab-cli -- outline docs/ --depth 2                # Markdown heading outline: addresses, anchors, line spans

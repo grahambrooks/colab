@@ -26,7 +26,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
                                 [--jobs <N>]
                                 [--verify <CMD>] [--commit-per-rule]
                                 [--bisect <CMD>] [--verify-lsp[=<CMD>]]
-                                [--allow-conflicts] [--backup <DIR>] [--split-pr[=<PREFIX>]]
+                                [--allow-conflicts] [--backup <DIR>] [--split-pr[=<PREFIX>] [--stacked]]
                                 [--detail summary|counts|diff] [--summary-only]
                                 [--max-files <N>] [--max-diff-bytes <N>]
                                 [paths...]
@@ -56,7 +56,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--allow-conflicts` | — | Write even when the run found conflicts. Without it, a `--write` run that finds any writes nothing and exits 11. |
 | `--tidy[=<CMD>]` | — | After the rules, tidy each changed file in memory, before the conflict checks and the write: through the `[formatters]` command `colab.toml` gives its extension, or else its language server (organize imports, then format). Reported as its own rule, `tidy via <server or command>`. `=<CMD>` names one server for every file. Whole files are formatted, not only the changed lines. Not with `--verify` or `--commit-per-rule`; with `--bisect`, the full set is tidied once before the check. See [`--tidy`](#--tidy). |
 | `--backup <DIR>` | — | Before any rule writes a file, save the pre-modification contents under `<DIR>`, mirroring each file's absolute path. Pair with `colab undo --from <DIR>` to roll back. |
-| `--split-pr[=<PREFIX>]` | — | Make one git branch per rule instead of writing: `HEAD` plus that rule alone, named `<PREFIX>/<NN>-<rule>` (default `colab/<script>`). Leaves the work tree alone. See [Splitting a run into pull requests](#splitting-a-run-into-pull-requests). |
+| `--split-pr[=<PREFIX>]` | — | Make one git branch per rule instead of writing: `HEAD` plus that rule alone, named `<PREFIX>/<NN>-<rule>` (default `colab/<script>`). Leaves the work tree alone. `--stacked` bases each branch on the previous one instead. See [Splitting a run into pull requests](#splitting-a-run-into-pull-requests). |
 | `--no-link-check` | — | Skip the Markdown link check; without it, each link the run would break is a conflict (see [`colab links`](#colab-links)). |
 | `--detail <level>` | `counts` (`diff` for `--format diff`) | How much to report. `summary`: aggregate counters only. `counts`: adds per-rule match counts and changed paths. `diff`: adds capped unified diffs. |
 | `--max-files <N>` | `20` | At `--detail diff`, the maximum number of per-file diffs to render. The residue is reported under `truncated`. |
@@ -323,8 +323,10 @@ git format-patch main..colab/migrate/01-…  # or a patch series
   [conflict](#conflicts) (exit 11).
 - Rules are applied independently, each to `HEAD`'s files. A rule that
   changes nothing on its own (it rewrites what an earlier rule wrote)
-  gets no branch and is reported as matching nothing; merge those
-  branches in order, or run the script whole.
+  gets no branch and is reported as matching nothing. For those, add
+  `--stacked`: each rule then applies to the previous rule's output and
+  its branch starts from the previous branch, a chain of pull requests
+  merged in order (`colab/<script>/02-…` is based on `…/01-…`).
 - Not with `--write`, `--dry-run`, `--check`, `--verify`,
   `--commit-per-rule` (which commits each rule on the current branch),
   `--bisect`, `--tidy`, `--backup` or `--stdin`. The report lists the

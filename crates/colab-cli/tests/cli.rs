@@ -3507,3 +3507,50 @@ fn mcp_mv_moves_a_file_and_updates_its_references() {
     assert!(git(&root, &["status", "--porcelain"]).contains("R  util.rs -> helpers.rs"));
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn split_pr_stacked_chains_rules_that_build_on_each_other() {
+    let root = split_workspace("split-stacked");
+    let rules = [
+        "-e",
+        r#"match go::import "old/log" { replace "new/log" }"#,
+        "-e",
+        r#"match go::import "new/log" { replace "newer/log" }"#,
+    ];
+    let out = colab()
+        .current_dir(&root)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .args([
+            "refactor",
+            "--split-pr=stk",
+            "--stacked",
+            "--format",
+            "json",
+        ])
+        .args(rules)
+        .arg(".")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let second = v["branches"][1]["branch"].as_str().unwrap().to_string();
+    // Rule 2 only matches rule 1's output, yet has its branch, on rule 1's.
+    let first = v["branches"][0]["commit"].as_str().unwrap();
+    assert_eq!(
+        git(&root, &["rev-parse", &format!("{second}~1")]).trim(),
+        first
+    );
+    assert!(git(&root, &["show", &format!("{second}:a.go")]).contains("\"newer/log\""));
+    assert!(
+        git(&root, &["status", "--short"]).trim().is_empty(),
+        "tree untouched"
+    );
+    fs::remove_dir_all(&root).ok();
+}

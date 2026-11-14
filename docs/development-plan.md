@@ -164,7 +164,6 @@ whichever milestone touches the same code.
 | Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |
 | An eval task for `colab fix` | M14 |
 | Linux release binaries that run on older glibc: they need 2.39, so Ubuntu 22.04 and Debian 12 cannot run them. A static `x86_64-unknown-linux-musl` build (release-kit's `EXTRA_TARGETS`) is one way; it built cleanly in M21 | M21 |
-| `--split-pr` stacked mode (each rule's branch on the previous one), for rules that only apply to an earlier rule's output | M16 |
 
 ## Unscheduled
 

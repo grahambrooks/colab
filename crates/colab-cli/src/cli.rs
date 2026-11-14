@@ -352,6 +352,13 @@ struct RefactorArgs {
                                 "bisect", "tidy", "backup", "stdin"])]
     split_pr: Option<String>,
 
+    /// With `--split-pr`: stack the branches. Each rule applies to the
+    /// previous rule's output and its branch starts from the previous
+    /// branch, for a chain of pull requests merged in order. A rule that
+    /// only rewrites what an earlier one wrote gets a branch too.
+    #[arg(long, requires = "split_pr")]
+    stacked: bool,
+
     /// Skip the link check. Without it, a run that changes Markdown files
     /// checks every Markdown file under the paths, and each link the run
     /// would break (a renamed heading, a moved file) is a conflict.
@@ -1239,11 +1246,26 @@ fn run_split(
     let mut per_rule: Vec<Vec<FileChange>> = Vec::new();
     // Bytes the branches add (or remove) between them.
     let mut delta: i64 = 0;
+    // Stacked: each file as the rules so far left it. A rule reads this,
+    // not the disk, for a file an earlier rule changed.
+    let mut state: std::collections::BTreeMap<PathBuf, String> = Default::default();
     for (index, rule) in refactoring.rules.iter().enumerate() {
         let single =
             codemod::SingleRule::new(rule.as_ref()).in_script(refactoring.script_of(index));
         let mut changes = Vec::new();
-        let mut visit = |mut change: FileChange| -> Result<()> {
+        let mut seen_now = BTreeSet::new();
+        let restack = |change: FileChange| -> FileChange {
+            match state.get(&change.path) {
+                Some(current) if args.stacked => {
+                    let outcome = single.apply_at(&change.path, current);
+                    FileChange::from_outcome(change.path, current.clone(), outcome)
+                }
+                _ => change,
+            }
+        };
+        let mut visit = |change: FileChange| -> Result<()> {
+            seen_now.insert(change.path.clone());
+            let mut change = restack(change);
             change.rules_fired = change.rules_fired.iter().map(|_| index).collect();
             for conflict in &mut change.conflicts {
                 conflict.rule = index;
@@ -1262,6 +1284,29 @@ fn run_split(
         let outcome = run_transformer(&single, args, targets, &mut visit)?;
         if index == 0 {
             report.record_walk(outcome);
+        }
+        // A file an earlier rule changed may now hold what this rule's
+        // prefilter looks for, though the walker skipped it on disk.
+        if args.stacked {
+            for (path, current) in &state {
+                if seen_now.contains(path) || !single.is_file_relevant(path) {
+                    continue;
+                }
+                let outcome = single.apply_at(path, current);
+                let mut change = FileChange::from_outcome(path.clone(), current.clone(), outcome);
+                change.rules_fired = change.rules_fired.iter().map(|_| index).collect();
+                for conflict in &mut change.conflicts {
+                    conflict.rule = index;
+                }
+                if change.changed() {
+                    changed_paths.insert(change.path.clone());
+                    delta += change.after.len() as i64 - change.before.len() as i64;
+                    changes.push(change);
+                }
+            }
+            for change in &changes {
+                state.insert(change.path.clone(), change.after.clone());
+            }
         }
         report.rules[index].files_matched = changes.len() as u64;
         for change in &changes {
@@ -1333,6 +1378,9 @@ fn run_split(
 
     if !blocked {
         let short = &base[..base.len().min(10)];
+        // Stacked, each branch starts from the one before.
+        let mut parent = base.clone();
+        let mut previous: Option<usize> = None;
         for (i, changes) in per_rule.iter().enumerate() {
             // A rule that changes nothing on its own gets no branch; the
             // report lists it as a rule that matched nothing.
@@ -1348,14 +1396,24 @@ fn run_split(
                     (rel.to_string_lossy().replace('\\', "/"), c.after.as_str())
                 })
                 .collect();
+            let on = match previous {
+                Some(p) if args.stacked => format!("on rule {}'s branch `{}`", p + 1, names[p]),
+                _ if args.stacked => format!("on {short}, the first of a stack"),
+                _ => format!("alone to {short}"),
+            };
             let message = format!(
-                "colab: {label}\n\nRule {} of {} in `{}`, applied alone to {short} by `colab refactor --split-pr`.",
+                "colab: {label}\n\nRule {} of {} in `{}`, applied {on} by `colab refactor --split-pr`.",
                 i + 1,
                 refactoring.rules.len(),
                 refactoring.script_of(i)
             );
-            let commit = repo.commit_on(&base, &files, &message)?;
+            let from = if args.stacked { &parent } else { &base };
+            let commit = repo.commit_on(from, &files, &message)?;
             repo.create_branch(&names[i], &commit)?;
+            if args.stacked {
+                parent = commit.clone();
+                previous = Some(i);
+            }
             report.branches.push(colab_core::report::Branch {
                 rule: i,
                 name: names[i].clone(),
