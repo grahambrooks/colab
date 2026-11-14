@@ -263,7 +263,7 @@ incomplete:
 | ----- | ----------- |
 | `<lang>::symbol` rename | The new name already occurs as an identifier in the file, so the rename would merge two names. |
 | `go::pattern`, `python::pattern` template | The template introduces a qualifier (`fmt.`, `pathlib.`) that the file did not use before and does not import afterwards. A `requires import`, or a later rule in the script that adds the import, clears it. Python builtins (`str.`, `dict.`) and wildcard imports never conflict. |
-| `--verify-lsp` | The file's language server reports an error after the change that it did not report before. Errors are compared by message, so code that moves does not count. |
+| `--verify-lsp` | The file's language server reports an error after the change that it did not report before. Errors are compared by message, so code that moves does not count. Credited to the rule whose change holds the error's line, or to the only rule that changed the file; otherwise the whole file's. |
 
 Conflicts are judged against the file as the whole script leaves it.
 They appear in every format: `conflicts` in JSON (`[{path, rule,

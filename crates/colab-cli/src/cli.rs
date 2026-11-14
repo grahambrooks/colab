@@ -1173,7 +1173,7 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
     for change in &pending {
         report.record(change);
     }
-    lsp_check(args, &pending, &mut report)?;
+    lsp_check(args, refactoring, &pending, &mut report)?;
     attribute_lines(args, refactoring, &pending, &mut report, reporter.as_mut());
     let blocked = matches!(exec_mode, ExecMode::Write) && refuse_conflicts(args, &mut report);
     if blocked {
@@ -1481,7 +1481,12 @@ fn refuse_conflicts(args: &RefactorArgs, report: &mut RunReport) -> bool {
 
 /// The checks that run on a whole run's changes before anything is
 /// written: Markdown links, then `--verify-lsp`.
-fn lsp_check(args: &RefactorArgs, pending: &[FileChange], report: &mut RunReport) -> Result<()> {
+fn lsp_check(
+    args: &RefactorArgs,
+    refactoring: &codemod::Refactoring,
+    pending: &[FileChange],
+    report: &mut RunReport,
+) -> Result<()> {
     if !args.no_link_check {
         let roots = if args.paths.is_empty() {
             vec![PathBuf::from(".")]
@@ -1496,6 +1501,7 @@ fn lsp_check(args: &RefactorArgs, pending: &[FileChange], report: &mut RunReport
             Some(command).filter(|c| !c.is_empty()),
             pending,
             report,
+            Some(&refactoring.rules),
         ),
     }
 }
@@ -1745,7 +1751,7 @@ fn run_refactor_bisect(
         for change in &pending {
             report.record(change);
         }
-        lsp_check(args, &pending, &mut report)?;
+        lsp_check(args, refactoring, &pending, &mut report)?;
         attribute_lines(args, refactoring, &pending, &mut report, reporter.as_mut());
         if refuse_conflicts(args, &mut report) {
             reporter.refused();

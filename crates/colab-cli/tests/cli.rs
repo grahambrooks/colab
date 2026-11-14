@@ -2644,10 +2644,8 @@ fn verify_lsp_refuses_a_change_that_adds_a_server_error() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let conflicts = json["conflicts"].as_array().unwrap();
     assert_eq!(conflicts.len(), 2, "{json}");
-    assert!(
-        conflicts[0].get("rule").is_none(),
-        "a server error is the file's, not a rule's"
-    );
+    // One rule changed the file, so the error is that rule's.
+    assert_eq!(conflicts[0]["rule"], 0, "{json}");
     assert!(
         conflicts[0]["message"]
             .as_str()
@@ -3552,5 +3550,35 @@ fn split_pr_stacked_chains_rules_that_build_on_each_other() {
         git(&root, &["status", "--short"]).trim().is_empty(),
         "tree untouched"
     );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn verify_lsp_credits_an_error_to_the_rule_whose_change_holds_it() {
+    let root = workspace_temp("verify-lsp-blame");
+    write(
+        &root.join("a.rs"),
+        "fn old() {}\n\nfn main() {\n    let quiet = 1;\n}\n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args(["refactor", "--write", "--format", "json"])
+        .arg(format!("--verify-lsp={}", fake_lsp()))
+        .args(["-e", r#"match rust::symbol "old" { replace "fresh" }"#])
+        .args(["-e", r#"match rust::symbol "quiet" { replace "BROKEN" }"#])
+        .arg("a.rs")
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(11),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let conflicts = json["conflicts"].as_array().unwrap();
+    assert_eq!(conflicts.len(), 1, "{json}");
+    // The fake server flags line 4, which only rule 2's rename touched.
+    assert_eq!(conflicts[0]["rule"], 1, "{json}");
     fs::remove_dir_all(&root).ok();
 }
