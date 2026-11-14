@@ -561,6 +561,7 @@ impl StructuralPattern {
             .outermost(0..source.len(), None)
             .into_iter()
             .map(|i| rewriter.render(source, i))
+            .filter(|edit| !same_but_whitespace(&source[edit.start..edit.end], &edit.text))
             .collect();
         apply_edits(source, edits)
     }
@@ -594,6 +595,46 @@ impl StructuralPattern {
     fn parses_cleanly(&self, source: &str) -> bool {
         parse_clean(&self.lang.grammar, source).is_ok()
     }
+}
+
+/// `true` when `a` and `b` differ only in whitespace outside quoted text.
+///
+/// A multi-line `$$$` capture filled into a one-line template loses the
+/// line breaks around it, so `f($$$A)` → `f($$$A)` would reflow every
+/// call it matched and report each as changed. Such an edit changes no
+/// token, so it is not made. Whitespace inside `"…"`, `'…'` or `` `…` ``
+/// is compared as is (a string's spaces are its content); a quote the
+/// scan misreads, such as a Rust lifetime, only keeps more whitespace in
+/// the comparison, so the edit is made, as it would be without the check.
+fn same_but_whitespace(a: &str, b: &str) -> bool {
+    fn tokens(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut quote: Option<char> = None;
+        let mut escaped = false;
+        for c in text.chars() {
+            match quote {
+                Some(q) => {
+                    out.push(c);
+                    if escaped {
+                        escaped = false;
+                    } else if c == '\\' {
+                        escaped = true;
+                    } else if c == q {
+                        quote = None;
+                    }
+                }
+                None if c.is_whitespace() => {}
+                None => {
+                    if matches!(c, '"' | '\'' | '`') {
+                        quote = Some(c);
+                    }
+                    out.push(c);
+                }
+            }
+        }
+        out
+    }
+    a != b && tokens(a) == tokens(b)
 }
 
 /// Fills a template for one match after rewriting the matches nested in
@@ -1085,6 +1126,13 @@ impl PatternRule {
             return None;
         };
         let out = self.pattern.rewrite(source, template);
+        if out == source && !self.pattern.find(source).is_empty() {
+            return Some(
+                "the template gives back what it matched, apart from whitespace, so nothing was \
+                 changed"
+                    .into(),
+            );
+        }
         if out == source
             || self.pattern.parses_cleanly(&out)
             || !self.pattern.parses_cleanly(source)
@@ -1620,6 +1668,21 @@ mod tests {
         let nested = c(false, Test::Inside("func (".into()));
         let err = constrained("errors.Wrap($E, $M)", &[nested]).unwrap_err();
         assert!(err.starts_with("`inside 'func ('`"), "{err}");
+    }
+
+    #[test]
+    fn a_rewrite_that_only_moves_whitespace_is_not_made() {
+        let src = "package p\nfunc g() {\n\tf(\n\t\ta,\n\t\tb,\n\t)\n}\n";
+        let p = StructuralPattern::compile(&go(), "f($$$A)").unwrap();
+        assert_eq!(
+            p.rewrite(src, "f($$$A)"),
+            src,
+            "an identity rewrite reflowed the call"
+        );
+        assert_ne!(p.rewrite(src, "h($$$A)"), src);
+        // Whitespace inside a string is content.
+        assert!(!same_but_whitespace(r#"f("a b")"#, r#"f("ab")"#));
+        assert!(same_but_whitespace("f(\n a,\n b)", "f(a, b)"));
     }
 
     #[test]

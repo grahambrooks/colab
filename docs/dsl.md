@@ -238,6 +238,10 @@ How it matches:
   one text parses as different nodes in different places, both are
   matched: in Python, `Optional[$T]` finds the subscript in
   `cast(Optional[str], x)` and the annotation in `def f(a: Optional[str])`.
+- **Whitespace-only rewrites are not made.** A result that differs from
+  what it matched only in whitespace outside quotes — `f($$$A)` →
+  `f($$$A)` over a call whose arguments span lines — changes no token, so
+  the file is left as it is and the rule explains why it changed nothing.
 - **The whole node, nothing left over.** A match must account for every
   named child of the code it matches, unless a `$$$` absorbs them. So
   `if $C { $$$B }` does not match an `if` that has an `else`,
