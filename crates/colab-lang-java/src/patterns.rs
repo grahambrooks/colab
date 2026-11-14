@@ -28,6 +28,7 @@ pub(crate) fn language() -> PatternLanguage {
             "class C {\nvoid m() {\n@@PATTERN@@;\n}\n}\n",
             "class C {\n@@PATTERN@@\n}\n",
         ],
+        also: &[],
     }
 }
 

@@ -19,6 +19,7 @@ pub(crate) fn language() -> PatternLanguage {
         grammar: tree_sitter_javascript::LANGUAGE.into(),
         expando: '$',
         contexts: &["class C {\n@@PATTERN@@\n}\n"],
+        also: &[],
     }
 }
 

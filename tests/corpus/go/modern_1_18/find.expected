@@ -1,0 +1,18 @@
+main.go:9:21: [0] interface{}
+    $X = interface{}
+main.go:11:25: [0] interface{}
+    $X = interface{}
+main.go:12:12: [1] ioutil.ReadFile(path)
+    $P = path
+main.go:16:12: [3] ioutil.ReadAll(strings.NewReader(string(b)))
+    $R = strings.NewReader(string(b))
+main.go:17:12: [4] ioutil.TempDir("", "x")
+    $D = ""
+    $P = "x"
+main.go:18:6: [2] ioutil.WriteFile(dir+"/out", all, 0o644)
+    $D = all
+    $M = 0o644
+    $P = dir+"/out"
+main.go:21:6: [6] ioutil.NopCloser(strings.NewReader(""))
+    $R = strings.NewReader("")
+main.go:22:15: [7] ioutil.Discard

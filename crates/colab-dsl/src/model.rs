@@ -26,6 +26,9 @@ pub struct Refactoring {
 pub struct RuleNote {
     pub message: Option<String>,
     pub severity: colab_core::Severity,
+    /// The script the rule came from, when it differs from the
+    /// refactoring's own name (`colab fix` combines several packs).
+    pub script: Option<String>,
 }
 
 impl Refactoring {
@@ -35,6 +38,35 @@ impl Refactoring {
             colab_core::RunReport::with_rules(self.rules.iter().map(|r| r.to_string()));
         self.annotate(&mut report);
         report
+    }
+
+    /// The name of the script rule `index` came from: its pack's, or the
+    /// refactoring's. What `colab:ignore <name>` compares against.
+    pub fn script_of(&self, index: usize) -> &str {
+        self.notes
+            .get(index)
+            .and_then(|n| n.script.as_deref())
+            .unwrap_or(&self.name)
+    }
+
+    /// Several scripts as one run, in order, each rule keeping its
+    /// script's name.
+    pub fn combine(name: &str, parts: Vec<Refactoring>) -> Self {
+        let mut rules = Vec::new();
+        let mut notes = Vec::new();
+        for part in parts {
+            for (i, rule) in part.rules.into_iter().enumerate() {
+                let mut note = part.notes.get(i).cloned().unwrap_or_default();
+                note.script.get_or_insert_with(|| part.name.clone());
+                rules.push(rule);
+                notes.push(note);
+            }
+        }
+        Self {
+            name: name.to_string(),
+            rules,
+            notes,
+        }
     }
 
     /// Copy each rule's note onto an already seeded report.
@@ -130,7 +162,7 @@ impl CodeTransformer for Refactoring {
                 continue;
             }
             let next = rule.apply(&current);
-            let next = keep_ignored(&self.name, rule.as_ref(), &current, next);
+            let next = keep_ignored(self.script_of(index), rule.as_ref(), &current, next);
             if next != current {
                 rules_fired.push(index);
                 inputs.push((index, std::mem::replace(&mut current, next)));

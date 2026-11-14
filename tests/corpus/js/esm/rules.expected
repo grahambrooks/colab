@@ -1,0 +1,3 @@
+1 js::pattern 'const $X = require($M);' where $X is identifier, $M is string, not inside '{ $$$B }' -> 'import $X from $M;'
+1 js::pattern 'module.exports = $X;' where not inside '{ $$$B }' -> 'export default $X;'
+1 js::pattern 'exports.$N = $V;' where not inside '{ $$$B }' -> 'export const $N = $V;'

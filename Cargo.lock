@@ -378,6 +378,7 @@ dependencies = [
  "serde_json",
  "similar",
  "tokio",
+ "toml_edit",
  "tower-lsp",
 ]
 

@@ -48,6 +48,11 @@ pub struct PatternLanguage {
     /// when the pattern does not parse cleanly on its own — so a Go
     /// expression, which is not a valid Go file, still parses.
     pub contexts: &'static [&'static str],
+    /// Wrappers a pattern is compiled in *as well*, wherever it parses
+    /// there as a different tree, and matched in all of them: Python's
+    /// `Optional[$T]` is a `subscript` in an expression but a
+    /// `generic_type` in an annotation, and a pattern should find both.
+    pub also: &'static [&'static str],
 }
 
 /// ast-grep's view of a [`PatternLanguage`].
@@ -158,6 +163,72 @@ pub struct StructuralPattern {
     checks: Vec<Check>,
     /// The constraints as written, for display.
     constraints: Vec<Constraint>,
+    /// The same pattern compiled in the language's `also` contexts.
+    also: Vec<StructuralPattern>,
+    /// The pattern's named structure, to refuse a match whose node has
+    /// children the pattern does not account for (see [`Shape`]).
+    shape: Shape,
+}
+
+/// The named structure of a compiled pattern.
+///
+/// ast-grep's default strictness ignores a candidate's *trailing*
+/// children once the pattern's run out, so `new C<T>()` matches
+/// `new C<T>() { … }` and `if $C { $$$B }` matches an `if` with an
+/// `else`. A rewrite or delete of such a match replaces the whole node
+/// and silently drops what the pattern never mentioned. A match is kept
+/// only when every node it pairs with the pattern has no more named
+/// children than the pattern gives it, unless a `$$$` there absorbs them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Shape {
+    /// A metavariable or a literal leaf: anything ast-grep accepted.
+    Any,
+    /// A `$$$` sequence.
+    Many,
+    /// An inner node and its named, non-comment children.
+    Node(Vec<Shape>),
+}
+
+impl Shape {
+    fn of(node: Node<'_>, source: &str, expando: char) -> Self {
+        let text = node.utf8_text(source.as_bytes()).unwrap_or("").trim();
+        if let Some(rest) = text.strip_prefix(expando) {
+            let many = rest.starts_with(expando);
+            let name = rest.trim_start_matches(expando);
+            if name.chars().all(|c| is_var_start(c) || c.is_ascii_digit()) {
+                return if many { Self::Many } else { Self::Any };
+            }
+        }
+        if node.child_count() == 0 {
+            return Self::Any;
+        }
+        let mut cursor = node.walk();
+        Self::Node(
+            node.named_children(&mut cursor)
+                .filter(|c| !c.is_extra() && !c.is_missing())
+                .map(|c| Self::of(c, source, expando))
+                .collect(),
+        )
+    }
+
+    /// `true` unless `candidate`, which ast-grep matched against this
+    /// shape, has named children the pattern leaves out.
+    fn fits<D: ast_grep_core::Doc>(&self, candidate: &ast_grep_core::Node<'_, D>) -> bool {
+        let Self::Node(goals) = self else {
+            return true;
+        };
+        if goals.contains(&Self::Many) {
+            return true;
+        }
+        let named: Vec<_> = candidate
+            .children()
+            .filter(|c| c.is_named() && !c.is_extra())
+            .collect();
+        if named.len() != goals.len() {
+            return named.len() < goals.len();
+        }
+        goals.iter().zip(&named).all(|(g, c)| g.fits(c))
+    }
 }
 
 impl std::fmt::Debug for StructuralPattern {
@@ -178,6 +249,26 @@ impl StructuralPattern {
     /// names every attempt, so a pattern that is not valid code in this
     /// language says so rather than silently matching nothing.
     pub fn compile(language: &PatternLanguage, text: &str) -> Result<Self, String> {
+        let mut primary = Self::compile_one(language, text, true)?;
+        for context in language.also {
+            let only = PatternLanguage {
+                contexts: std::slice::from_ref(context),
+                also: &[],
+                ..language.clone()
+            };
+            if let Ok(alt) = Self::compile_one(&only, text, false)
+                && alt.tree != primary.tree
+                && primary.also.iter().all(|a| a.tree != alt.tree)
+            {
+                primary.also.push(alt);
+            }
+        }
+        Ok(primary)
+    }
+
+    /// Compile in the language's contexts, trying the pattern on its own
+    /// first when `bare`.
+    fn compile_one(language: &PatternLanguage, text: &str, bare: bool) -> Result<Self, String> {
         if text.trim().is_empty() {
             return Err("a pattern cannot be empty".into());
         }
@@ -190,22 +281,39 @@ impl StructuralPattern {
         // A lone metavariable (`$X`) has no shape of its own, so it matches
         // any node; a `where $X is <kind>` then picks the kind. Built
         // without a context, which would pin it to the wrapper's node kind.
-        if is_lone_metavariable(text.trim())
+        if bare
+            && is_lone_metavariable(text.trim())
             && let Ok(pattern) = Pattern::try_new(text.trim(), lang.clone())
         {
             let printed = format!("{} (any node)", text.trim());
-            return Ok(Self::finish(lang, pattern, text, None, None, printed));
+            return Ok(Self::finish(
+                lang,
+                pattern,
+                text,
+                None,
+                None,
+                printed,
+                Shape::Any,
+            ));
         }
 
         let mut attempts = Vec::new();
         // Bare pattern.
-        match parse_clean(&lang.grammar, &expanded) {
+        let as_is = if bare {
+            parse_clean(&lang.grammar, &expanded)
+        } else {
+            Err("not tried".to_string())
+        };
+        match as_is {
             Ok(tree) => match Pattern::try_new(text, lang.clone()) {
                 Ok(pattern) => {
                     let root = single_root(tree.root_node());
                     let prefilter = longest_literal(root, &expanded, lang.expando);
                     let printed = print_tree(root, &expanded, lang.expando, false);
-                    return Ok(Self::finish(lang, pattern, text, prefilter, None, printed));
+                    let shape = Shape::of(root, &expanded, lang.expando);
+                    return Ok(Self::finish(
+                        lang, pattern, text, prefilter, None, printed, shape,
+                    ));
                 }
                 Err(e) => attempts.push(format!("as-is: {e}")),
             },
@@ -253,6 +361,7 @@ impl StructuralPattern {
                 Ok(pattern) => {
                     let prefilter = longest_literal(node, &filled_expanded, lang.expando);
                     let printed = print_tree(node, &filled_expanded, lang.expando, false);
+                    let shape = Shape::of(node, &filled_expanded, lang.expando);
                     return Ok(Self::finish(
                         lang,
                         pattern,
@@ -260,6 +369,7 @@ impl StructuralPattern {
                         prefilter,
                         Some(context.to_string()),
                         printed,
+                        shape,
                     ));
                 }
                 Err(e) => attempts.push(format!("in `{}`: {e}", context.replace('\n', " "))),
@@ -279,6 +389,7 @@ impl StructuralPattern {
         prefilter: Option<String>,
         context: Option<String>,
         tree: String,
+        shape: Shape,
     ) -> Self {
         Self {
             lang,
@@ -289,6 +400,8 @@ impl StructuralPattern {
             tree,
             checks: Vec::new(),
             constraints: Vec::new(),
+            also: Vec::new(),
+            shape,
         }
     }
 
@@ -307,6 +420,10 @@ impl StructuralPattern {
             .map(|c| Check::compile(language, &bound, c))
             .collect::<Result<_, _>>()?;
         self.constraints = constraints.to_vec();
+        self.also = std::mem::take(&mut self.also)
+            .into_iter()
+            .map(|alt| alt.constrain(language, constraints))
+            .collect::<Result<_, _>>()?;
         Ok(self)
     }
 
@@ -323,6 +440,7 @@ impl StructuralPattern {
     ) -> Vec<NodeMatch<'t, StrDoc<TsLang>>> {
         grep.root()
             .find_all(&self.pattern)
+            .filter(|m| self.shape.fits(m.get_node()))
             .filter(|m| self.checks.iter().all(|c| c.holds(m, source)))
             .collect()
     }
@@ -355,6 +473,17 @@ impl StructuralPattern {
     /// Every match in `source` in source order, an outer match before the
     /// matches nested inside it.
     pub fn find(&self, source: &str) -> Vec<Found> {
+        let mut found = self.find_own(source);
+        for alt in &self.also {
+            found.extend(alt.find_own(source));
+        }
+        found.sort_by_key(|f| (f.start, f.end));
+        found.dedup_by_key(|f| (f.start, f.end));
+        found
+    }
+
+    /// Matches of this compilation only, not its `also` ones.
+    fn find_own(&self, source: &str) -> Vec<Found> {
         let grep = self.lang.ast_grep(source);
         self.matches(&grep, source)
             .into_iter()
@@ -407,6 +536,15 @@ impl StructuralPattern {
     /// rewritten; text the template introduces is never re-matched, so a
     /// wrap-style template (`f($A)` → `f(g($A))`) cannot run away.
     pub fn rewrite(&self, source: &str, template: &str) -> String {
+        // Each compilation matches different nodes, so they rewrite in turn.
+        self.also
+            .iter()
+            .fold(self.rewrite_own(source, template), |out, alt| {
+                alt.rewrite_own(&out, template)
+            })
+    }
+
+    fn rewrite_own(&self, source: &str, template: &str) -> String {
         let grep = self.lang.ast_grep(source);
         let matches = self.matches(&grep, source);
         if matches.is_empty() {
@@ -1315,6 +1453,7 @@ mod tests {
             grammar: tree_sitter_go::LANGUAGE.into(),
             expando: 'µ',
             contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
+            also: &[],
         }
     }
 
@@ -1323,6 +1462,7 @@ mod tests {
             grammar: tree_sitter_python::LANGUAGE.into(),
             expando: 'µ',
             contexts: &[],
+            also: &["def _(x: @@PATTERN@@): pass\n"],
         }
     }
 
@@ -1483,11 +1623,39 @@ mod tests {
     }
 
     #[test]
+    fn a_match_keeps_no_children_the_pattern_leaves_out() {
+        // An `else` is a trailing child `if $C { $$$B }` does not mention:
+        // rewriting that match would drop it.
+        let p = StructuralPattern::compile(&go(), "if $C { $$$B }").unwrap();
+        let src = "package p\n\nfunc f() {\n\tif a {\n\t\tx()\n\t}\n\tif b {\n\t\ty()\n\t} else {\n\t\tz()\n\t}\n}\n";
+        let found = p.find(src);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].text.starts_with("if a"));
+        // A `$$$` still takes any number of children.
+        let q = StructuralPattern::compile(&go(), "f($$$A)").unwrap();
+        assert_eq!(q.find("package p\nfunc g() { f(1, 2, 3) }\n").len(), 1);
+    }
+
+    #[test]
+    fn an_also_context_matches_the_same_text_parsed_another_way() {
+        // `Optional[str]` is a `subscript` in an expression and a
+        // `generic_type` in an annotation: one pattern finds both.
+        let p = StructuralPattern::compile(&python(), "Optional[$T]").unwrap();
+        let src = "def f(a: Optional[str]) -> Optional[int]:\n    return cast(Optional[str], a)\n";
+        assert_eq!(p.find(src).len(), 3);
+        assert_eq!(
+            p.rewrite(src, "$T | None"),
+            "def f(a: str | None) -> int | None:\n    return cast(str | None, a)\n"
+        );
+    }
+
+    #[test]
     fn a_multi_line_template_follows_tab_indentation() {
         let go = PatternLanguage {
             grammar: tree_sitter_go::LANGUAGE.into(),
             expando: 'µ',
             contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
+            also: &[],
         };
         let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();
         let src = "package p\n\nfunc f() {\n\tif x {\n\t\tlog.Print(a)\n\t}\n}\n";

@@ -1,0 +1,19 @@
+// Python: typing written the 3.9+/3.10+ way, as 3.12 code expects.
+//
+// The `typing` aliases for builtins become the builtins (PEP 585), and
+// `Optional` / two-argument `Union` become `|` (PEP 604), in annotations
+// and anywhere else they appear. Unused `typing` imports are left for a
+// linter (`ruff --fix`, rule F401); see README.md.
+refactor "python-3.12-typing" {
+    match python::pattern 'List[$$$A]' { replace 'list[$$$A]' }
+    match python::pattern 'Dict[$$$A]' { replace 'dict[$$$A]' }
+    match python::pattern 'Set[$$$A]' { replace 'set[$$$A]' }
+    match python::pattern 'FrozenSet[$$$A]' { replace 'frozenset[$$$A]' }
+    match python::pattern 'Tuple[$$$A]' { replace 'tuple[$$$A]' }
+    match python::pattern 'Type[$$$A]' { replace 'type[$$$A]' }
+    match python::pattern 'typing.List[$$$A]' { replace 'list[$$$A]' }
+    match python::pattern 'typing.Dict[$$$A]' { replace 'dict[$$$A]' }
+    match python::pattern 'Optional[$T]' { replace '$T | None' }
+    match python::pattern 'typing.Optional[$T]' { replace '$T | None' }
+    match python::pattern 'Union[$A, $B]' { replace '$A | $B' }
+}

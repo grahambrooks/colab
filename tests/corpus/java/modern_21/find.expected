@@ -1,0 +1,23 @@
+Boxes.java:14:9: [9] names = new ArrayList<String>()
+    $A = String
+    $B = 
+    $C = ArrayList
+    $V = names
+Boxes.java:18:9: [8] List<Integer> sizes = new ArrayList<Integer>(words.size());
+    $A = Integer
+    $B = words.size()
+    $C = ArrayList
+    $T = List<Integer>
+    $V = sizes
+Boxes.java:27:25: [0] new Integer(41)
+    $X = 41
+Boxes.java:28:20: [1] new Long(7L)
+    $X = 7L
+Boxes.java:29:24: [4] new Double("0.5")
+    $X = "0.5"
+Boxes.java:30:24: [6] new Boolean(true)
+    $X = true
+Boxes.java:31:29: [7] new Character('x')
+    $X = 'x'
+Boxes.java:34:23: [0] new Integer(w.length())
+    $X = w.length()

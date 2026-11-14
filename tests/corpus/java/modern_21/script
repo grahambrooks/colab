@@ -1,0 +1,28 @@
+// Java: the mechanical modernisations a Java 8 code base can take on 21.
+//
+// The boxing constructors (`new Integer(…)` and friends, deprecated for
+// removal since 9) become `valueOf`, and explicit type arguments that the
+// diamond operator can infer are dropped where the target type is
+// written out. See README.md for what is left alone.
+refactor "java-8-to-21" {
+    match java::pattern 'new Integer($X)' { replace 'Integer.valueOf($X)' }
+    match java::pattern 'new Long($X)' { replace 'Long.valueOf($X)' }
+    match java::pattern 'new Short($X)' { replace 'Short.valueOf($X)' }
+    match java::pattern 'new Byte($X)' { replace 'Byte.valueOf($X)' }
+    match java::pattern 'new Double($X)' { replace 'Double.valueOf($X)' }
+    match java::pattern 'new Float($X)' { replace 'Float.valueOf($X)' }
+    match java::pattern 'new Boolean($X)' { replace 'Boolean.valueOf($X)' }
+    match java::pattern 'new Character($X)' { replace 'Character.valueOf($X)' }
+
+    // Diamond, only where the declared type supplies the type arguments:
+    // a typed local (not `var`, which would infer `Object`) or an
+    // assignment.
+    match java::pattern '$T $V = new $C<$$$A>($$$B);'
+        where $$$A count 1.., not $T matches /^var$/
+    {
+        replace '$T $V = new $C<>($$$B);'
+    }
+    match java::pattern '$V = new $C<$$$A>($$$B)' where $$$A count 1.. {
+        replace '$V = new $C<>($$$B)'
+    }
+}

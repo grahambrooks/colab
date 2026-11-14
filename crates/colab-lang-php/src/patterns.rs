@@ -26,6 +26,7 @@ pub(crate) fn language() -> PatternLanguage {
         grammar: tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
         expando: 'µ',
         contexts: &["@@PATTERN@@;", "class C {\n@@PATTERN@@\n}\n"],
+        also: &[],
     }
 }
 

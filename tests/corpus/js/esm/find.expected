@@ -1,0 +1,17 @@
+server.js:1:1: [0] const http = require('http');
+    $M = 'http'
+    $X = http
+server.js:2:1: [0] const path = require("path");
+    $M = "path"
+    $X = path
+server.js:4:1: [0] const helpers = require('./helpers');
+    $M = './helpers'
+    $X = helpers
+server.js:16:1: [2] exports.port = 8080;
+    $N = port
+    $V = 8080
+server.js:17:1: [2] exports.root = path.join(__dirname, 'public');
+    $N = root
+    $V = path.join(__dirname, 'public')
+server.js:23:1: [1] module.exports = start;
+    $X = start

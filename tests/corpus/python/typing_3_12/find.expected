@@ -1,0 +1,23 @@
+app.py:5:17: [0] List[Tuple[str, int]]
+    $A = Tuple[str, int]
+app.py:5:22: [4] Tuple[str, int]
+    $A = str, int
+app.py:5:43: [1] Dict[str, List[int]]
+    $A = str, List[int]
+app.py:5:53: [0] List[int]
+    $A = int
+app.py:6:10: [1] Dict[str, List[int]]
+    $A = str, List[int]
+app.py:6:20: [0] List[int]
+    $A = int
+app.py:12:17: [6] typing.List[str]
+    $A = str
+app.py:12:41: [8] Optional[str]
+    $T = str
+app.py:12:59: [10] Union[int, None]
+    $A = int
+    $B = None
+app.py:18:15: [8] Optional[Dict[str, int]]
+    $T = Dict[str, int]
+app.py:18:24: [1] Dict[str, int]
+    $A = str, int

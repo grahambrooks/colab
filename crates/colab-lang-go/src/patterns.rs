@@ -22,6 +22,7 @@ pub(crate) fn language() -> PatternLanguage {
             "package p\nfunc _() {\n@@PATTERN@@\n}\n",
             "package p\n@@PATTERN@@\n",
         ],
+        also: &[],
     }
 }
 

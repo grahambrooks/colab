@@ -2998,3 +2998,116 @@ fn kept_server_is_the_default() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+/// A repository with a `colab.toml`, run from a subdirectory.
+fn fix_workspace(label: &str, config: &str) -> PathBuf {
+    let root = workspace_temp(label);
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::create_dir_all(root.join("sub")).unwrap();
+    write(&root.join("colab.toml"), config);
+    write(
+        &root.join("app.py"),
+        "import typing\n\ndef f(a: Optional[str]) -> List[int]:\n    return old(a)\n",
+    );
+    write(
+        &root.join(".colab/house.codemod"),
+        "refactor \"house\" {\n    match python::pattern 'old($A)' { replace 'new($A)' }\n}\n",
+    );
+    root
+}
+
+#[test]
+fn fix_runs_the_packs_colab_toml_declares() {
+    let root = fix_workspace(
+        "fix",
+        "[run]\ntidy = true\n\n[formatters]\npy = \"sed 's/^import typing$/import typing  # tidy/'\"\n\n\
+         [[packs]]\npack = \"python/3.12-typing\"\n\n[[packs]]\npath = \".colab/house.codemod\"\n",
+    );
+    let fix = |flag: &str| {
+        colab()
+            .current_dir(root.join("sub"))
+            .args(["fix", flag, "--format", "json"])
+            .output()
+            .unwrap()
+    };
+    let out = fix("--check");
+    assert_eq!(
+        out.status.code(),
+        Some(10),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let out = fix("--write");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rules = v["rules"].as_array().unwrap();
+    // Both packs' rules, then the formatter as its own rule.
+    assert!(
+        rules
+            .iter()
+            .any(|r| r["rule"].as_str().unwrap().contains("old($A)")),
+        "{v}"
+    );
+    let last = rules.last().unwrap();
+    assert!(
+        last["rule"].as_str().unwrap().starts_with("tidy via sed"),
+        "{v}"
+    );
+    assert_eq!(last["files"], 1, "{v}");
+    assert_eq!(
+        fs::read_to_string(root.join("app.py")).unwrap(),
+        "import typing  # tidy\n\ndef f(a: str | None) -> list[int]:\n    return new(a)\n"
+    );
+    assert_eq!(fix("--check").status.code(), Some(0));
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn fix_says_what_is_missing() {
+    let root = workspace_temp("fix-missing");
+    fs::create_dir_all(root.join(".git")).unwrap();
+    let out = colab()
+        .current_dir(&root)
+        .args(["fix", "--check"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("no colab.toml at or above"), "{err}");
+
+    write(
+        &root.join("colab.toml"),
+        "[[packs]]\npack = \"go/1.18-modren\"\n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args(["fix", "--check"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("did you mean `go/1.18-modern`"), "{err}");
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn pack_list_names_the_builtin_packs() {
+    let out = colab().args(["pack", "list"]).output().unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let names: Vec<&str> = v["packs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["source"] == "builtin")
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"go/1.18-modern") && names.contains(&"rust/edition-2021-to-2024"),
+        "{v}"
+    );
+}

@@ -228,9 +228,15 @@ impl RunReport {
 
     /// Rules that never changed a file. Empty when every rule did something.
     pub fn dead_rules(&self) -> impl Iterator<Item = &RuleStat> {
-        self.rules.iter().filter(|r| r.files_matched == 0)
+        // A tidy step that changed nothing found the code already tidy.
+        self.rules
+            .iter()
+            .filter(|r| r.files_matched == 0 && !r.rule.starts_with(TIDY_RULE))
     }
 }
+
+/// How a `--tidy` step names itself in the report: `tidy via gofmt`.
+pub const TIDY_RULE: &str = "tidy via ";
 
 #[cfg(test)]
 mod tests {

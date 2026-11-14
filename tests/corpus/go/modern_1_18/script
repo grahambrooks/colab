@@ -1,0 +1,49 @@
+// Go: the mechanical modernisations up to 1.18.
+//
+// `interface{}` becomes `any` (1.18), and the deprecated `io/ioutil`
+// functions move to `os` and `io` (1.16), with imports fixed in the files
+// that change. See README.md for what is left alone.
+refactor "go-1.18-modern" {
+    // An empty interface type, written any way, and nothing else.
+    match go::pattern '$X' where $X is interface_type, $X matches /^interface\s*\{\s*\}$/ {
+        replace 'any'
+        message "interface{} is any since Go 1.18"
+        severity info
+    }
+
+    match go::pattern 'ioutil.ReadFile($P)' {
+        replace 'os.ReadFile($P)'
+        requires import "os"
+        drops import "io/ioutil" when unused
+    }
+    match go::pattern 'ioutil.WriteFile($P, $D, $M)' {
+        replace 'os.WriteFile($P, $D, $M)'
+        requires import "os"
+        drops import "io/ioutil" when unused
+    }
+    match go::pattern 'ioutil.ReadAll($R)' {
+        replace 'io.ReadAll($R)'
+        requires import "io"
+        drops import "io/ioutil" when unused
+    }
+    match go::pattern 'ioutil.TempDir($D, $P)' {
+        replace 'os.MkdirTemp($D, $P)'
+        requires import "os"
+        drops import "io/ioutil" when unused
+    }
+    match go::pattern 'ioutil.TempFile($D, $P)' {
+        replace 'os.CreateTemp($D, $P)'
+        requires import "os"
+        drops import "io/ioutil" when unused
+    }
+    match go::pattern 'ioutil.NopCloser($R)' {
+        replace 'io.NopCloser($R)'
+        requires import "io"
+        drops import "io/ioutil" when unused
+    }
+    match go::pattern 'ioutil.Discard' {
+        replace 'io.Discard'
+        requires import "io"
+        drops import "io/ioutil" when unused
+    }
+}

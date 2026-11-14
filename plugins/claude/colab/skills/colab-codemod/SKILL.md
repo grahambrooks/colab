@@ -183,6 +183,9 @@ match js::pattern 'console.log($$$ARGS)' { delete }
   `f(ctx, $A)` is not.
 - Nested matches (`errors.Wrap(errors.Wrap(…))`) are all rewritten in
   one pass.
+- A match covers the **whole node**: `if $C { $$$B }` does not match an
+  `if` with an `else`, nor `Union[$A, $B]` a three-member `Union`. Add a
+  metavariable (or `$$$`) for the part you want to allow.
 - **Narrow with `where`** instead of writing a cleverer pattern:
   `where $M matches /^"/, not inside 'func $F(t *testing.T) { $$$ }'`.
   The forms are `$X matches /re/`, `$X is <node-kind>`, `$$$X count 1..3`,
@@ -410,6 +413,28 @@ Defaults worth knowing: `--format human` on a TTY implies `--write`;
 every other format, and any non-TTY stdout, defaults to `--dry-run`.
 `--check` overrides both. So a script run from an agent or a pipe never
 writes unless you pass `--write`.
+
+### Repo packs: `colab.toml` and `colab fix`
+
+If the repository has a `colab.toml`, its conventions are already
+written down: `colab fix --check` reports what its packs would change
+(exit 10), `colab fix` applies them with the file's build check and
+formatters. Prefer it to running the packs one by one, and add a new
+lint rule to a pack it lists rather than to a loose script.
+`colab pack list` names the built-in packs (`go/1.18-modern`,
+`java/8-to-21`, `js/esm`, `python/3.12-typing`,
+`rust/edition-2021-to-2024`); a one-off migration can still run one
+with `refactor`, after reading its README for what it leaves alone.
+
+```toml
+[run]
+check = "go build ./..."
+tidy = true
+[formatters]
+go = "gofmt"
+[[packs]]
+pack = "go/1.18-modern"
+```
 
 ### Findings and suppressions
 

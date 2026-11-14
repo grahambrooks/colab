@@ -82,6 +82,9 @@ struct Args {
 enum Commands {
     /// Run a codemod script against one or more paths.
     Refactor(RefactorArgs),
+    /// Run the packs `colab.toml` declares, as one run, with its `[run]`
+    /// settings: `colab fix --check` in CI, `colab fix` to apply.
+    Fix(FixArgs),
     /// Start the colab language server over stdio.
     Server(ServerArgs),
     /// Start the colab MCP server (Model Context Protocol) over stdio.
@@ -197,8 +200,8 @@ struct PackArgs {
 
 #[derive(Parser, Debug)]
 enum PackCommand {
-    /// List discoverable packs in `<repo>/.colab/packs/` and
-    /// `~/.colab/packs/`.
+    /// List the packs built into colab (`colab.toml`: `pack = "<name>"`)
+    /// and those in `<repo>/.colab/packs/` and `~/.colab/packs/`.
     List,
 }
 
@@ -325,7 +328,7 @@ struct RefactorArgs {
     /// is chosen by extension; `--tidy='<command>'` names one.
     #[arg(long, value_name = "CMD", num_args = 0..=1, require_equals = true,
           default_missing_value = "",
-          conflicts_with_all = ["verify", "commit_per_rule", "bisect"])]
+          conflicts_with_all = ["verify", "commit_per_rule"])]
     tidy: Option<String>,
 
     /// Skip the link check. Without it, a run that changes Markdown files
@@ -360,6 +363,51 @@ struct RefactorArgs {
     /// changed) working directory if none are supplied. Ignored with
     /// `--stdin`.
     paths: Vec<PathBuf>,
+}
+
+/// `colab fix`: the packs `colab.toml` declares.
+#[derive(Parser, Debug)]
+struct FixArgs {
+    /// Exit 10 if any pack would change a file (at a severity above
+    /// `info`); write nothing. For CI.
+    #[arg(long, conflicts_with_all = ["write", "dry_run"])]
+    check: bool,
+
+    /// Apply the changes. Default for `--format human` on a TTY. With
+    /// `[run] check`, the command runs afterwards, and a failure is
+    /// bisected to one rule and reverted, as with `refactor --bisect`.
+    #[arg(long, conflicts_with = "dry_run")]
+    write: bool,
+
+    /// Report what would change without writing.
+    #[arg(long = "dry-run")]
+    dry_run: bool,
+
+    /// Output format, as for `refactor`.
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    format: Format,
+
+    /// `summary`, `counts` or `diff`, as for `refactor`.
+    #[arg(long, value_name = "LEVEL")]
+    detail: Option<String>,
+
+    /// Start looking for `colab.toml` here instead of the working
+    /// directory.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    change_dir: PathBuf,
+
+    /// The config file to use, instead of the nearest `colab.toml` at or
+    /// above the working directory (stopping at the repository root).
+    #[arg(long, value_name = "FILE")]
+    config: Option<PathBuf>,
+
+    /// Write even when a rule reports a conflict (see `refactor`).
+    #[arg(long = "allow-conflicts")]
+    allow_conflicts: bool,
+
+    /// Skip the Markdown link check (see `refactor`).
+    #[arg(long = "no-link-check")]
+    no_link_check: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -683,6 +731,7 @@ pub async fn run() -> Result<i32> {
     let args = Args::parse();
     match args.command {
         Some(Commands::Refactor(refactor_args)) => run_refactor(refactor_args),
+        Some(Commands::Fix(fix_args)) => run_fix(fix_args),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);
             language_server::run(default_backends()).await;
@@ -893,6 +942,127 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     let backends = default_backends();
     let refactoring = args.script.compile(&backends)?;
+    run_compiled(&refactoring, &args)
+}
+
+/// `colab fix`: compile every pack `colab.toml` names into one script and
+/// run it with the file's `[run]` settings, from the file's directory.
+fn run_fix(args: FixArgs) -> Result<i32> {
+    change_working_dir(&args.change_dir)?;
+    let cwd = std::env::current_dir().map_err(io_to_error)?;
+    let path = match &args.config {
+        Some(path) => path.clone(),
+        None => crate::config::find_from(&cwd).ok_or_else(|| {
+            Error::Config(format!(
+                "no {} at or above {} (up to the repository root); create one with a \
+                 `[[packs]]` table per pack, e.g. `pack = \"go/1.18-modern\"` \
+                 (`colab pack list` names them)",
+                crate::config::FILE,
+                cwd.display()
+            ))
+        })?,
+    };
+    let config = crate::config::load(&path)?;
+    if config.packs.is_empty() {
+        return Err(Error::Config(format!(
+            "{} declares no packs; add a `[[packs]]` table with `pack = \"<built-in>\"` \
+             or `path = \"<file>.codemod\"`",
+            path.display()
+        )));
+    }
+    if !config.dir.as_os_str().is_empty() {
+        change_working_dir(&config.dir)?;
+    }
+
+    let backends = default_backends();
+    let mut parts = Vec::new();
+    for pack in &config.packs {
+        parts.push(match pack {
+            crate::config::PackRef::Builtin(name) => {
+                let builtin = crate::packs::builtin(name)
+                    .map_err(|e| Error::Config(format!("{}: {e}", path.display())))?;
+                codemod::compile_at_source(
+                    builtin.script,
+                    &PathBuf::from(format!("<builtin {}>", builtin.name)),
+                    &backends,
+                )?
+            }
+            crate::config::PackRef::Path(file) => {
+                let text = fs::read_to_string(file).map_err(|e| Error::io_at(file, e))?;
+                codemod::compile_at_source(&text, file, &backends)?
+            }
+        });
+    }
+    let refactoring = codemod::Refactoring::combine("fix", parts);
+
+    // The rest is `refactor` with the config's settings as its flags.
+    let format = clap::ValueEnum::to_possible_value(&args.format)
+        .map(|v| v.get_name().to_string())
+        .unwrap_or_else(|| "human".into());
+    // `refactor` requires a script; this one is compiled already, so the
+    // placeholder rule is never read.
+    let mut argv: Vec<String> = vec![
+        "refactor".into(),
+        "-e".into(),
+        String::new(),
+        "--format".into(),
+        format,
+    ];
+    let writes = matches!(
+        resolve_exec_mode(
+            args.write,
+            args.dry_run,
+            args.check,
+            args.format,
+            io::stdout().is_terminal()
+        ),
+        ExecMode::Write
+    );
+    if args.check {
+        argv.push("--check".into());
+    } else if writes {
+        argv.push("--write".into());
+        if let Some(command) = &config.check {
+            argv.extend(["--bisect".into(), command.clone()]);
+        }
+    } else {
+        argv.push("--dry-run".into());
+    }
+    if let Some(detail) = &args.detail {
+        argv.extend(["--detail".into(), detail.clone()]);
+    }
+    if let Some(jobs) = config.jobs {
+        argv.extend(["--jobs".into(), jobs.to_string()]);
+    }
+    for glob in &config.exclude {
+        argv.extend(["--exclude".into(), glob.clone()]);
+    }
+    if config.tidy {
+        argv.push("--tidy".into());
+    }
+    if args.allow_conflicts {
+        argv.push("--allow-conflicts".into());
+    }
+    if args.no_link_check {
+        argv.push("--no-link-check".into());
+    }
+    argv.push("--".into());
+    argv.extend(config.paths.iter().map(|p| p.display().to_string()));
+    let refactor = RefactorArgs::try_parse_from(&argv)
+        .map_err(|e| Error::Config(format!("{}: {e}", path.display())))?;
+    run_compiled(&refactoring, &refactor)
+}
+
+/// The `[formatters]` of the nearest `colab.toml`, for `--tidy`.
+fn formatters() -> Result<std::collections::BTreeMap<String, String>> {
+    Ok(crate::config::find()?
+        .map(|c| c.formatters)
+        .unwrap_or_default())
+}
+
+/// Run an already compiled script as `refactor` would, from the working
+/// directory.
+fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Result<i32> {
     // The rules are in every report; the log names the script, so an
     // agent does not read each rule twice.
     info!(
@@ -911,13 +1081,13 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     // `--verify` and `--commit-per-rule` need per-rule visibility
     // so failures can be attributed to (and reverted at) one rule.
     if args.verify.is_some() || args.commit_per_rule {
-        return run_refactor_per_rule(&refactoring, &args, &targets);
+        return run_refactor_per_rule(refactoring, args, &targets);
     }
 
     // `--bisect` applies the full set, runs verify, and on failure
     // binary-searches the rule list to locate the breaking rule.
     if let Some(cmd) = args.bisect.clone() {
-        return run_refactor_bisect(&refactoring, &args, &targets, &cmd);
+        return run_refactor_bisect(refactoring, args, &targets, &cmd);
     }
 
     let stdout_is_tty = io::stdout().is_terminal();
@@ -949,17 +1119,17 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
         Ok(())
     };
 
-    let outcome = run_transformer(&refactoring, &args, &targets, &mut visit)?;
+    let outcome = run_transformer(refactoring, args, &targets, &mut visit)?;
     report.record_walk(outcome);
     if let Some(command) = &args.tidy {
         let command = Some(command.as_str()).filter(|c| !c.is_empty());
-        crate::lsp_commands::tidy_pending(command, &mut pending, &mut report)?;
+        crate::lsp_commands::tidy_pending(command, &formatters()?, &mut pending, &mut report)?;
     }
     for change in &pending {
         report.record(change);
     }
-    lsp_check(&args, &pending, &mut report)?;
-    let blocked = matches!(exec_mode, ExecMode::Write) && refuse_conflicts(&args, &mut report);
+    lsp_check(args, &pending, &mut report)?;
+    let blocked = matches!(exec_mode, ExecMode::Write) && refuse_conflicts(args, &mut report);
     if blocked {
         reporter.refused();
     } else if matches!(exec_mode, ExecMode::Write) {
@@ -1059,7 +1229,7 @@ fn run_refactor_per_rule(
     let mut files_visited = 0u64;
 
     for (idx, rule) in refactoring.rules.iter().enumerate() {
-        let single = codemod::SingleRule::new(rule.as_ref()).in_script(&refactoring.name);
+        let single = codemod::SingleRule::new(rule.as_ref()).in_script(refactoring.script_of(idx));
         let rule_label = rule.to_string();
         info!(
             "[{}/{}] Applying rule: {}",
@@ -1232,11 +1402,11 @@ fn run_refactor_bisect(
     {
         let mut pending: Vec<FileChange> = Vec::new();
         let mut visit = |change: FileChange| -> Result<()> {
-            report.record(&change);
             if change.changed() {
                 pending.push(change);
                 return Ok(());
             }
+            report.record(&change);
             reporter
                 .report(&change)
                 .map_err(|e| Error::io_at(&change.path, e))?;
@@ -1244,6 +1414,16 @@ fn run_refactor_bisect(
         };
         let outcome = run_transformer(refactoring, args, targets, &mut visit)?;
         report.record_walk(outcome);
+        // Tidied once, as a whole: the check then sees formatted code, and
+        // a subset bisected later is checked untidied, which a build does
+        // not mind.
+        if let Some(command) = &args.tidy {
+            let command = Some(command.as_str()).filter(|c| !c.is_empty());
+            crate::lsp_commands::tidy_pending(command, &formatters()?, &mut pending, &mut report)?;
+        }
+        for change in &pending {
+            report.record(change);
+        }
         lsp_check(args, &pending, &mut report)?;
         if refuse_conflicts(args, &mut report) {
             reporter.refused();
@@ -1313,8 +1493,9 @@ fn bisect_rules(
             fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
         }
         // Apply rules[..mid] sequentially.
-        for rule in rules.iter().take(mid) {
-            let single = codemod::SingleRule::new(rule.as_ref()).in_script(&refactoring.name);
+        for (i, rule) in rules.iter().enumerate().take(mid) {
+            let single =
+                codemod::SingleRule::new(rule.as_ref()).in_script(refactoring.script_of(i));
             run_transformer(
                 &single,
                 args,

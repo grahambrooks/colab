@@ -19,6 +19,7 @@ pub(crate) fn language() -> PatternLanguage {
         grammar: tree_sitter_kotlin_ng::LANGUAGE.into(),
         expando: 'µ',
         contexts: &["fun f() {\n@@PATTERN@@\n}\n", "class C {\n@@PATTERN@@\n}\n"],
+        also: &[],
     }
 }
 

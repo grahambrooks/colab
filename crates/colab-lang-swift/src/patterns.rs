@@ -22,6 +22,7 @@ pub(crate) fn language() -> PatternLanguage {
             "func f() {\n@@PATTERN@@\n}\n",
             "class C {\n@@PATTERN@@\n}\n",
         ],
+        also: &[],
     }
 }
 

@@ -165,6 +165,7 @@ fn compile_inner(
         let note = crate::model::RuleNote {
             message: m.message.clone(),
             severity: m.severity.unwrap_or_default(),
+            script: None,
         };
         let lowered = lower_match(m, backends)?;
         // `and fences` lowers to two rules; both carry the note.

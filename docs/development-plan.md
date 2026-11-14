@@ -21,7 +21,7 @@ millions of lines — when you want to:
 
 ## Where things stand (2026-11-13)
 
-M1–M13.5, M17–M19, M22 and M24–M27 have shipped
+M1–M13.5 (but M10.6), M14, M17–M19, M22–M28 and M20's non-installing parts have shipped
 ([details](completed-milestones.md)). colab has 12 source backends and
 3 config backends, structural patterns with `where` constraints, delegated
 rename, move, code actions, references and safe delete through the
@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20 (its install step once the gate passes)**, then M14, M21, M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups and M23 (the eval suite) have shipped.
+**M20 (its install step once the gate passes)**, then M21, M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite) and M14 (`colab.toml` + `colab fix`) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -41,9 +41,8 @@ what it lets that dogfooding cover.
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
 | 1 | M20 Agent install & guardrails | Its parts that install nothing (`// colab:ignore`, rule `message` / `severity`) go first; the install itself waits for the gate's second criterion. |
-| 2 | M14 `colab.toml` + `colab fix` | Repo-declared migrations; M20's post-edit hook and M25's per-language formatters build on it. |
-| 3 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
-| 4 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
+| 2 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
+| 3 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
 
 ## Stable gate before M20
 
@@ -69,7 +68,7 @@ these hold:
 | Criterion | Status |
 | --------- | ------ |
 | 1. Coverage | Met for code at many sites, renames, Markdown sections, rows, items and links; config keys only in the eval task, not yet on this repo. |
-| 2. No silent failures | **Not met.** The follow-ups found a row `set` that re-added its row on the next run; M23 found fenced rules adding imports to doc snippets. Both reported success. Both are fixed; the next two milestones must log none. |
+| 2. No silent failures | **Not met.** The follow-ups found a row `set` that re-added its row on the next run; M23 found fenced rules adding imports to doc snippets; M14 found patterns matching a node with children they never mention (an `else`, a third `Union` member, an anonymous class body) and a rewrite dropping them. All reported success; all are fixed. The next two milestones must log none. |
 | 3. Little hand repair | Met: `--tidy` on `refactor` removed the `cargo fmt` step; one hand edit per milestone (a line inside a shell fence). |
 | 4. Measured benefit | Met: `evals/results.md`, 7 tasks correct, 70% fewer bytes than `Read` + `Edit`, budgets checked in CI. |
 
@@ -83,40 +82,6 @@ these hold:
 - MCP resources + `llms-full.txt` generated from `docs/`, including the
   per-backend caveats.
 - ✅ Shipped 2026-11-14: `colab:ignore [names]` (after code: that line; on its own line: the line below; names are script names or `<lang>::<module>`) for find, refactor and check, by putting back what a rule changed on covered lines. Rules take `message "…"` and `severity error|warning|info`; `--check` fails only above `info`.
-
-### M14 — Repo-level config + `colab fix`
-- `colab.toml` schema (roots / excludes / packs / verify / jobs).
-- `colab fix` umbrella subcommand; `colab fix --check` for CI.
-- Pack discovery shared with M11.
-- Per-language formatter commands (`gofmt -w`, `rustfmt`,
-  `prettier --write`) for `--tidy`, deferred from M25.
-- The remaining idiom packs (Go 1.18 generics, Java 8→21, Python 3.12 typing, JS/TS ESM), each with a README of what it does not cover, discovered through `colab.toml`: before `colab fix`, a pack is a script nobody finds.
-
-Design, from the original plan:
-
-Project teams want to declare their canonical refactors once and
-have CI / pre-commit / agents pick them up:
-
-- **`colab.toml`** at repo root. Schema:
-  ```toml
-  [run]
-  roots = ["."]
-  exclude = ["vendor/**", "third_party/**"]
-  jobs = 8
-  verify = "cargo check"
-
-  [[packs]]
-  path = "scripts/refactor/2024-q4.codemod"
-
-  [[packs]]
-  path = "scripts/refactor/javax-to-jakarta.codemod"
-  ```
-- **`colab fix`** umbrella subcommand: discovers `colab.toml`,
-  applies every configured pack to the configured roots in order,
-  honours the configured `verify` command. Idempotent by
-  construction.
-- **`colab fix --check`** for CI: exit 10 if any pack would change
-  anything.
 
 ### M21 — Distribution & CI formats
 - npm (`npx colab`) and PyPI (`uvx colab`) wrappers around the release
@@ -203,6 +168,10 @@ whichever milestone touches the same code.
 | Go-to-definition for `include` in `.codemod` files | M19 |
 | Remote pack registry and publishing | M11 |
 | Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |
+| Near misses for Markdown addresses: an address that names no section lists the nearest headings | M14 dogfooding |
+| `markdown::item` placement: insert a bullet before or after a given item | M14 dogfooding |
+| Report the files a rule skipped (`why_unchanged`) even when it changed others | M14 dogfooding |
+| An eval task for `colab fix` | M14 |
 
 ## Unscheduled
 

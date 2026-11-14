@@ -19,6 +19,9 @@ pub(crate) fn language() -> PatternLanguage {
         grammar: tree_sitter_python::LANGUAGE.into(),
         expando: 'µ',
         contexts: &["def _():\n    @@PATTERN@@\n"],
+        // In an annotation `Optional[str]` is a `generic_type`, not the
+        // `subscript` it is as an expression; match both.
+        also: &["def _(x: @@PATTERN@@): pass\n"],
     }
 }
 

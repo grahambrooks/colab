@@ -1,0 +1,20 @@
+// JavaScript: CommonJS modules to ES modules, for the top-level forms
+// that translate one to one.
+//
+// `const x = require('m')` becomes a default import, `module.exports = x`
+// a default export, and `exports.name = value` a named export. A
+// `require` inside a block (a function body, an `if`) is left alone: an
+// `import` cannot go there. See README.md for what else needs a person.
+refactor "js-esm" {
+    match js::pattern 'const $X = require($M);'
+        where $X is identifier, $M is string, not inside '{ $$$B }'
+    {
+        replace 'import $X from $M;'
+    }
+    match js::pattern 'module.exports = $X;' where not inside '{ $$$B }' {
+        replace 'export default $X;'
+    }
+    match js::pattern 'exports.$N = $V;' where not inside '{ $$$B }' {
+        replace 'export const $N = $V;'
+    }
+}

@@ -50,7 +50,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--bisect <CMD>` | — | After applying every rule, run `<CMD>`. On failure, binary-search the rule list to identify the single breaking rule, then revert the working tree to its pre-run state. Conflicts with `--verify`. |
 | `--verify-lsp[=<CMD>]` | — | Before writing, open each changed file in its language server, change it in memory, and report every error diagnostic the change adds as a conflict. The server is chosen by extension; `=<CMD>` names one (the `=` is required). Combines with `--bisect`, not with `--verify` / `--commit-per-rule`. See [Conflicts](#conflicts). |
 | `--allow-conflicts` | — | Write even when the run found conflicts. Without it, a `--write` run that finds any writes nothing and exits 11. |
-| `--tidy[=<CMD>]` | — | After the rules, have each changed file's language server organize imports and format the file, in memory, before the conflict checks and the write. Reported as its own rule, `tidy via <server>`. The server is chosen by extension; `=<CMD>` names one. Whole files are formatted, not only the changed lines. Not with `--verify`, `--commit-per-rule` or `--bisect`. |
+| `--tidy[=<CMD>]` | — | After the rules, tidy each changed file in memory, before the conflict checks and the write: through the `[formatters]` command `colab.toml` gives its extension, or else its language server (organize imports, then format). Reported as its own rule, `tidy via <server or command>`. `=<CMD>` names one server for every file. Whole files are formatted, not only the changed lines. Not with `--verify` or `--commit-per-rule`; with `--bisect`, the full set is tidied once before the check. See [`--tidy`](#--tidy). |
 | `--backup <DIR>` | — | Before any rule writes a file, save the pre-modification contents to `<DIR>/<rel-path>`. Pair with `colab undo --from <DIR>` to roll back. |
 | `--detail <level>` | `counts` (`diff` for `--format diff`) | How much to report. `summary`: aggregate counters only. `counts`: adds per-rule match counts and changed paths. `diff`: adds capped unified diffs. |
 | `--max-files <N>` | `20` | At `--detail diff`, the maximum number of per-file diffs to render. The residue is reported under `truncated`. |
@@ -241,6 +241,52 @@ to decide which rules are relevant — no file is opened on disk), and
 emits the rewritten source to stdout. Combine with `--format json`
 or `--format diff` to emit a structured event instead of the
 rewritten source.
+
+### colab fix
+
+Run the packs a repository declares in `colab.toml`, as one run:
+
+```sh
+colab fix --check            # CI: exit 10 if any pack would change a file
+colab fix                    # apply (on a TTY; --write elsewhere)
+colab fix --format json      # one report, every pack's rules in it
+```
+
+`colab.toml` is found by walking up from the working directory (or
+`-C <dir>`), stopping at the repository root; `--config <file>` names one.
+Its paths are relative to its own directory, and `fix` runs from there.
+
+```toml
+[run]
+paths = ["."]                         # where the packs run (default ".")
+exclude = ["vendor/**", "gen/**"]     # gitignore-style globs
+jobs = 8
+check = "go build ./..."              # after writing; a failure is bisected and reverted
+tidy = true                           # organize imports and format the changed files
+
+[formatters]                          # per extension; --tidy uses these instead of a server
+go = "gofmt"                          # reads the file on stdin, writes it on stdout
+ts = "prettier --stdin-filepath {path}"
+
+[[packs]]
+pack = "go/1.18-modern"               # built in: `colab pack list`
+
+[[packs]]
+path = ".colab/packs/house-style.codemod"
+```
+
+- Every pack is compiled first, so a broken pack fails before any file is
+  read. The packs then run in the order listed, as one script: each rule
+  keeps its pack's name (for `colab:ignore <name>` and the report).
+- With `--write` (or a TTY), `[run] check` runs once after writing, like
+  `refactor --bisect`; if it fails, the breaking rule is named and every
+  file is restored.
+- `--check` exits 10 only for rules above `severity info`, as for
+  `refactor --check`.
+- An unknown key or section is an error that names the allowed ones; an
+  unknown built-in pack gets a "did you mean".
+- `--format`, `--detail`, `--allow-conflicts` and `--no-link-check` are
+  `refactor`'s.
 
 ### `colab find`
 
@@ -474,14 +520,26 @@ and the command exits 1.
 
 ### `--tidy`
 
-On `rename`, `mv`, `action`, and `safe-delete`: after the change, the
-same server organizes imports (`source.organizeImports`) and formats
-(`textDocument/formatting`) each changed file — the new contents, so it
+On `rename`, `mv`, `action`, `safe-delete` and `refactor`: after the
+change, each changed file is tidied — the new contents, in memory, so it
 works in a dry run too. Tidying is reported as its own rule, `tidy via
-<server>`, so the report shows which changes are the refactoring's and
-which are tidying's. A server without one of the two is warned about and
-skipped. (Not yet on `refactor`, whose report streams as it walks; and
-per-language formatter commands wait for `colab.toml`, M14.)
+<server or command>`, so the report shows which changes are the
+refactoring's and which are tidying's; one that changes nothing is not
+reported as a dead rule.
+
+- A file whose extension the nearest `colab.toml`'s `[formatters]` names
+  goes through that command (`sh -c`, the file on stdin, the result on
+  stdout; `{path}` is replaced by the file's quoted path). A formatter that
+  fails leaves the file as the rules made it, with a warning.
+- Otherwise the file's language server organizes imports
+  (`source.organizeImports`) and formats (`textDocument/formatting`); a
+  server without one of the two is warned about and skipped. A default
+  server that is not on `PATH` is skipped with a warning, so one missing
+  server does not stop the rest.
+- `--tidy=<CMD>` names the server for every file and ignores
+  `[formatters]`.
+- With `refactor --bisect`, the full set is tidied once before the check;
+  subsets tried while bisecting are not.
 
 ### File operations
 
@@ -594,22 +652,28 @@ colab undo --from .colab-backup
 
 ### `colab pack list`
 
-List discoverable `.codemod` packs. Lookup paths, in order:
+List the packs: those built into colab, then discoverable `.codemod`
+files. Lookup paths, in order:
 
-1. `<repo>/.colab/packs/` — the project-local pack directory,
+1. Built in: the packs under `examples/packs/`, named by path
+   (`go/1.18-modern`, `java/8-to-21`, `js/esm`, `python/3.12-typing`,
+   `rust/edition-2021-to-2024`). Name them in `colab.toml` with
+   `pack = "<name>"` and run them with `colab fix`.
+2. `<repo>/.colab/packs/` — the project-local pack directory,
    discovered by walking up from the current directory looking for
    a `.git` marker.
-2. `~/.colab/packs/` — the user-global pack directory.
+3. `~/.colab/packs/` — the user-global pack directory.
 
 ```sh
 colab pack list
 ```
 
-Output (sorted by path):
+Output (sorted by path; a built-in pack's path is `builtin:<name>`):
 
 ```json
 {
   "packs": [
+    { "name": "go/1.18-modern", "path": "builtin:go/1.18-modern", "source": "builtin" },
     {
       "name": "javax-to-jakarta",
       "path": "/path/to/repo/.colab/packs/javax-to-jakarta.codemod",
@@ -619,7 +683,7 @@ Output (sorted by path):
 }
 ```
 
-Combine with `colab refactor --script` to run a pack:
+Combine a file pack with `colab refactor --script`:
 
 ```sh
 PACK=$(colab pack list | jq -r '.packs[] | select(.name == "javax-to-jakarta") | .path')
@@ -627,7 +691,8 @@ colab refactor --script "$PACK" --check .
 ```
 
 A pack is just a `.codemod` file. Use `include "<path>"` from a
-top-level project script to compose multiple packs.
+top-level project script to compose multiple packs, or list them in
+`colab.toml` (see `colab fix`).
 
 ### `colab explain (--script <path> | -e <rule>...)`
 

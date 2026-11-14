@@ -231,7 +231,17 @@ How it matches:
 - **Fragments are fine.** A pattern that is not a complete file — a Go
   expression, a Java statement — is retried inside wrappers (a function
   body, a class) until it parses. If it parses in none, the rule fails to
-  compile (exit code 3) and the error names every wrapper tried.
+  compile (exit code 3) and the error names every wrapper tried. Where
+  one text parses as different nodes in different places, both are
+  matched: in Python, `Optional[$T]` finds the subscript in
+  `cast(Optional[str], x)` and the annotation in `def f(a: Optional[str])`.
+- **The whole node, nothing left over.** A match must account for every
+  named child of the code it matches, unless a `$$$` absorbs them. So
+  `if $C { $$$B }` does not match an `if` that has an `else`,
+  `Union[$A, $B]` does not match `Union[int, str, None]`, and
+  `new $C<$T>()` does not match an anonymous class `new C<T>() { … }`: a
+  rewrite of those would drop the part the pattern never mentions. Add a
+  metavariable for it (`if $C { $$$B } else { $$$E }`) to match it.
 - **Nested matches in one pass.** In `errors.Wrap(errors.Wrap(err, "a"),
   "b")` both calls match; the inner one is rewritten first and its result
   fills the outer template, so one run reaches the fixed point. Text the
@@ -248,8 +258,7 @@ How it matches:
 
 - **Templates are re-indented.** Lines after a template's first are
   indented to the match's column, so write a multi-line template
-  flush-left in its final shape. (Space-indented code only; in
-  tab-indented Go they stay flush-left.)
+  flush-left in its final shape. Tab-indented code (Go) is indented with tabs.
 
 When a pattern matches nothing, look at it the way colab does:
 

@@ -19,6 +19,7 @@ pub(crate) fn language() -> PatternLanguage {
         grammar: tree_sitter_ruby::LANGUAGE.into(),
         expando: 'µ',
         contexts: &["def _\n@@PATTERN@@\nend\n", "class C\n@@PATTERN@@\nend\n"],
+        also: &[],
     }
 }
 

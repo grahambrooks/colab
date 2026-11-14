@@ -9,6 +9,7 @@ work, including every deferral listed here, is in
 | ---------- | ----- |
 | [M1–M8](#foundation-m1m8) | Workspace, multi-rule scripts, agent-facing CLI, MCP, five backends |
 | [M9–M13.5](#operating-at-scale-m9m135) | Targeting, parallelism, includes, verify / bisect / undo, progress |
+| [M14](#repo-config-m14) | `colab.toml`, `colab fix`, built-in packs for Go, Java, JS and Python, per-extension formatters |
 | [M17–M19, M22](#agent-of-choice-m17m19-m22) | Inline rules, near misses, structural patterns, LSP both ways, workflow MCP tools |
 | [M24–M27](#closing-the-intellij-gap-m24m27) | Git-aware file operations, code actions, `where` constraints, conflict checks |
 | [M28](#markdown-m28) | Markdown by structure: sections, rows, items, links, front matter, link checks, code fences |
@@ -683,6 +684,41 @@ Phases 1 to 3 have shipped.
   the script (70% saved, from 62%).
 - Not done: running real agents on the tasks, colab against `Edit`; the
   suite measures the scripted half.
+
+## Repo config (M14)
+
+### ✅ M14 — Repo-level config + `colab fix`
+
+- `colab.toml` (found walking up to the repository root): `[run]`
+  `paths` / `exclude` / `jobs` / `check` / `tidy`, `[formatters]` per
+  extension, and `[[packs]]` naming a built-in pack or a file. An unknown
+  key or section is an error naming the allowed ones.
+- `colab fix [--check|--write]` compiles every pack, runs them as one
+  script with the config's settings (`check` as `--bisect`), and keeps
+  each rule's pack name for the report and `colab:ignore`.
+- Built-in packs, compiled into the binary and listed by `colab pack
+  list`: `go/1.18-modern` (`interface{}` → `any`, `io/ioutil` → `os` /
+  `io` with imports), `java/8-to-21` (boxing constructors → `valueOf`,
+  the diamond in typed locals and assignments), `js/esm` (top-level
+  `require` / `module.exports` / `exports.x`), `python/3.12-typing` (PEP
+  585 and 604), and the Rust 2024 pack. Each has a README of what it does
+  not cover and a corpus case; Go, Java and Python output was checked
+  with `go vet` / `go build`, `javac -Xlint:all` and Python 3.12; JS only
+  by parsing.
+- `--tidy` uses a `[formatters]` command for a file's extension before
+  its language server, skips a default server that is not installed with
+  a warning, works with `--bisect`, and a tidy step that changes nothing
+  is no longer a dead rule.
+- **Found by the packs, and fixed:** ast-grep's default strictness
+  ignores a candidate's trailing children, so `$T $V = new $C<$$$A>($$$B);`
+  matched an anonymous class and the rewrite deleted its body, and
+  `Union[$A, $B]` turned `Union[int, str, None]` into `int | str`. A match
+  must now account for every named child unless a `$$$` absorbs them.
+  And Python parses `Optional[str]` as a subscript in an expression but a
+  `generic_type` in an annotation, so a backend can now compile a pattern
+  in extra contexts (`PatternLanguage::also`) and match both.
+- Not done: an eval task for `colab fix`; the post-edit hook that runs
+  `colab fix --check` is M20's.
 
 ## Appendix: the original design (2026-05-09)
 

@@ -31,6 +31,7 @@ pub(crate) fn language() -> PatternLanguage {
             "struct _S {\n@@PATTERN@@\n}\n",
             "fn f() {\n_S {\n@@PATTERN@@\n};\n}\n",
         ],
+        also: &[],
     }
 }
 

@@ -8,6 +8,7 @@
 
 mod apply;
 mod cli;
+mod config;
 mod discover;
 mod format;
 mod git;
