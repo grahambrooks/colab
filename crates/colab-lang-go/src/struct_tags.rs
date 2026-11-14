@@ -138,7 +138,7 @@ mod tests {
     fn rewrites_in_multiple_fields() {
         let src = "package demo\n\ntype A struct { X int `json:\"old\"` }\ntype B struct { Y int `json:\"old\"` }\n";
         let out = rename("json:old", "json:new", src);
-        assert!(out.matches("json:\"new\"").count() == 2, "got: {out}");
+        assert_eq!(out.matches("json:\"new\"").count(), 2, "got: {out}");
         assert!(!out.contains("json:\"old\""));
     }
 

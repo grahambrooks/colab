@@ -11,10 +11,7 @@ description = "Model Context Protocol server for colab. Wraps preview / apply / 
 [dependencies]
 colab-core = { workspace = true }
 colab-dsl = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-similar = { workspace = true }
-log = { workspace = true }
 
 [dev-dependencies]
 colab-backends = { workspace = true }

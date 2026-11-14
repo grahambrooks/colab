@@ -90,7 +90,7 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
 
 /// The `value_arguments` node of a call, which Swift nests inside a
 /// `call_suffix`.
-fn value_arguments<'a>(node: Node<'a>) -> Option<Node<'a>> {
+fn value_arguments(node: Node<'_>) -> Option<Node<'_>> {
     let suffix = (0..node.named_child_count())
         .filter_map(|i| node.named_child(i as u32))
         .find(|c| c.kind() == "call_suffix")?;

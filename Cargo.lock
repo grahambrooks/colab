@@ -374,7 +374,6 @@ dependencies = [
  "criterion",
  "env_logger",
  "log",
- "serde",
  "serde_json",
  "similar",
  "tokio",
@@ -572,10 +571,7 @@ dependencies = [
  "colab-backends",
  "colab-core",
  "colab-dsl",
- "log",
- "serde",
  "serde_json",
- "similar",
 ]
 
 [[package]]

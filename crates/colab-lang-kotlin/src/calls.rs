@@ -86,7 +86,7 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
 }
 
 /// The `value_arguments` child of a call, if it has one.
-fn value_arguments<'a>(node: Node<'a>) -> Option<Node<'a>> {
+fn value_arguments(node: Node<'_>) -> Option<Node<'_>> {
     (0..node.named_child_count())
         .filter_map(|i| node.named_child(i as u32))
         .find(|c| c.kind() == "value_arguments")
