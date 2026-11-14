@@ -151,6 +151,14 @@ code fences of their language, with `and fences` (both) or `in fences`
 (only the fences), so a migration updates README and docs examples in the
 same run. See [Code fences](./dsl.md#code-fences-in-fences-and-and-fences).
 
+### Suppressions and findings
+
+Any rule, in any backend, skips a line marked with a `colab:ignore`
+comment (optionally naming the script or the `<lang>::<module>`), and
+any rule can carry a `message` and a `severity` for reports and
+`--check`. See [Findings](./dsl.md#findings-message-and-severity) and
+[Suppressing a site](./dsl.md#suppressing-a-site-colabignore).
+
 ## Go (`colab-lang-go`)
 
 Powered by `tree-sitter-go`.

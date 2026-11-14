@@ -741,6 +741,8 @@ fn target_closed(after_match: &str) -> bool {
 const IMPORT_CLAUSES: &[(&str, &str)] = &[
     ("requires import", "requires import \"$0\""),
     ("drops import", "drops import \"$0\" when unused"),
+    ("message", "message \"$0\""),
+    ("severity", "severity ${1|error,warning,info|}"),
 ];
 
 fn action_completions() -> Vec<CompletionItem> {

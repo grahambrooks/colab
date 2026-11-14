@@ -40,6 +40,39 @@ pub struct RuleStat {
     /// For a dead rule that did match, but left its matches alone: why,
     /// from [`Operation::why_unchanged`](crate::Operation::why_unchanged).
     pub unchanged: Option<Unchanged>,
+    /// The rule's `message "…"`, shown with what it found.
+    pub message: Option<String>,
+    /// The rule's `severity`, `Error` unless it says otherwise.
+    pub severity: Severity,
+}
+
+/// How much a rule's finding matters. `--check` fails only on `Error` and
+/// `Warning`; an `Info` rule reports without failing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Severity {
+    Info,
+    Warning,
+    #[default]
+    Error,
+}
+
+impl Severity {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "error" => Some(Self::Error),
+            "warning" => Some(Self::Warning),
+            "info" => Some(Self::Info),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Info => "info",
+        }
+    }
 }
 
 /// A dead rule's own account of why it changed nothing where it matched.
@@ -134,6 +167,8 @@ impl RunReport {
                     files_matched: 0,
                     near_misses: Vec::new(),
                     unchanged: None,
+                    message: None,
+                    severity: Severity::Error,
                 })
                 .collect(),
             ..Default::default()
@@ -181,6 +216,14 @@ impl RunReport {
             path: path.into(),
             reason: reason.into(),
         });
+    }
+
+    /// `true` when a rule that may fail `--check` (severity above `info`)
+    /// changed a file.
+    pub fn check_fails(&self) -> bool {
+        self.rules
+            .iter()
+            .any(|r| r.files_matched > 0 && r.severity > Severity::Info)
     }
 
     /// Rules that never changed a file. Empty when every rule did something.

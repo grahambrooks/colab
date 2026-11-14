@@ -25,10 +25,11 @@ Whitespace is insignificant outside string literals.
 
 ```ebnf
 program     = "refactor" string "{" match* "}"
-match       = "match" namespace string location* [ where ] "{" action import* "}"
+match       = "match" namespace string location* [ where ] "{" action clause* "}"
 location    = "in" string                -- path scope, at most once
             | "in" "fences"              -- only inside Markdown code fences
             | "and" "fences"             -- the rule's files, and fences
+            | "and" "prose"              -- a symbol rename, in comments and strings too
 where       = "where" constraint ( "," constraint )*
 constraint  = [ "not" ] test
 test        = metavar "matches" ( regex | string )
@@ -39,6 +40,7 @@ test        = metavar "matches" ( regex | string )
 range       = number | number ".." number | number ".." | ".." number
 metavar     = "$" NAME | "$$$" NAME
 regex       = "/" ( any-char-except-slash-or-newline | "\" any-char )+ "/"
+clause      = import | "message" string | "severity" ( "error" | "warning" | "info" )
 import      = "requires" "import" string
             | "drops" "import" string "when" "unused"
 namespace   = identifier "::" identifier
@@ -339,6 +341,47 @@ match rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ 
 
 This is how the Rust 2024 pack finds `extern` blocks, whose item list a
 `$$$` cannot stand for.
+
+## Findings: `message` and `severity`
+
+A rule can say what its finding means, after the action:
+
+```
+match go::pattern 'errors.Wrap($E, $M)' {
+    replace 'fmt.Errorf($M+": %w", $E)'
+    requires import "fmt"
+    message "pkg/errors is archived; use fmt.Errorf with %w"
+    severity warning
+}
+```
+
+- `message "<text>"` goes with the rule into every report: `rules[]` in
+  JSON, the rule's line in human output, and each `colab find` hit
+  (`path:line:col: warning: <message> — <code>`). A rule enforced in CI
+  or a hook then reads as an inspection, not a bare diff.
+- `severity` is `error` (the default), `warning` or `info`. `--check`
+  exits 10 only when a rule above `info` would change something, so an
+  `info` rule reports without failing the check.
+- Each may appear once per rule, in any order with the import clauses.
+
+## Suppressing a site: `colab:ignore`
+
+A comment containing `colab:ignore` keeps colab's hands off a site, in
+`refactor`, `--check` and `find` alike, in any language:
+
+```go
+return errors.Wrap(err, "kept on purpose") // colab:ignore
+// colab:ignore pkg-errors
+x := errors.Wrap(err, "kept from this script only")
+```
+
+- After code, it covers that line; on a line of its own, the line below.
+- Bare, it covers every rule. Names after it (spaces or commas) limit it
+  to rules from the script with that name (`refactor "<name>"`) or of
+  that `<lang>::<module>`: `# colab:ignore toml::key`.
+- It works on the change, not the syntax: whatever a rule would change on
+  a covered line is put back, so it needs no support from the backend. A
+  `colab:ignore` inside a string counts too.
 
 ## Inline rules
 

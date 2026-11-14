@@ -1,0 +1,13 @@
+// `colab:ignore` keeps colab's hands off a site, and `message` /
+// `severity` say what a rule's finding means.
+// - A bare marker on a line of its own covers the line below; one after
+//   code covers that line. Named markers cover only the rules named:
+//   this script (`pkg-errors`) or a `<lang>::<module>`.
+refactor "pkg-errors" {
+    match go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ {
+        replace 'fmt.Errorf($M+": %w", $E)'
+        requires import "fmt"
+        message "pkg/errors is archived; use fmt.Errorf with %w"
+        severity warning
+    }
+}

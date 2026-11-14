@@ -170,10 +170,13 @@ impl Reporter for HumanReporter {
             for rule in &report.rules {
                 writeln!(
                     self.out,
-                    "  rule {}: {} file(s) — {}",
+                    "  rule {}: {} file(s) — {}{}",
                     rule.index + 1,
                     rule.files_matched,
-                    rule.rule
+                    rule.rule,
+                    render::note_text(rule)
+                        .map(|n| format!(" ({n})"))
+                        .unwrap_or_default()
                 )?;
             }
         }

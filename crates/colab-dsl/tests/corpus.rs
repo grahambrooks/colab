@@ -139,7 +139,7 @@ fn run_case(case: &Case) -> Result<(), String> {
 
     check_matches_compile(&script_path, &refactoring)?;
 
-    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut report = refactoring.report();
 
     for (rel, source) in &inputs {
         let want = expected
@@ -266,7 +266,7 @@ fn render_rules(report: &RunReport) -> String {
 fn render_find(refactoring: &Refactoring, inputs: &BTreeMap<PathBuf, String>) -> String {
     let mut out = String::new();
     for (rel, source) in inputs {
-        let mut hits = locate_all(&refactoring.rules, rel, source);
+        let mut hits = locate_all(&refactoring.rules, rel, source, &refactoring.name);
         hits.sort_by_key(|(index, l)| (l.start, *index));
         for (index, at) in hits {
             out.push_str(&format!(

@@ -233,6 +233,8 @@ pub fn tidy_pending(
                 files_matched: 0,
                 near_misses: Vec::new(),
                 unchanged: None,
+                message: None,
+                severity: colab_core::Severity::Info,
             });
             index
         });

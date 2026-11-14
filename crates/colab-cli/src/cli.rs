@@ -875,7 +875,7 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     );
     let mut reporter = format::make_reporter(args.format, exec_mode, args.render_options());
     let started = Instant::now();
-    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut report = refactoring.report();
 
     // Writes wait until the walk is over, so a conflict in any file can
     // stop all of them.
@@ -917,7 +917,8 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     Ok(if blocked {
         CONFLICT_EXIT
-    } else if matches!(exec_mode, ExecMode::Check) && report.files_changed > 0 {
+    } else if matches!(exec_mode, ExecMode::Check) && report.check_fails() {
+        // Only rules above `severity info` fail a check.
         10
     } else {
         0
@@ -997,13 +998,13 @@ fn run_refactor_per_rule(
 ) -> Result<i32> {
     let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
-    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut report = refactoring.report();
     // Each rule gets its own walk, so every file is visited once per
     // rule. Count the tree only once, from the first rule's pass.
     let mut files_visited = 0u64;
 
     for (idx, rule) in refactoring.rules.iter().enumerate() {
-        let single = codemod::SingleRule::new(rule.as_ref());
+        let single = codemod::SingleRule::new(rule.as_ref()).in_script(&refactoring.name);
         let rule_label = rule.to_string();
         info!(
             "[{}/{}] Applying rule: {}",
@@ -1168,7 +1169,7 @@ fn run_refactor_bisect(
 
     let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
-    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut report = refactoring.report();
 
     // Phase 1: full apply, recording snapshots along the way.
     let mut snapshots: std::collections::HashMap<PathBuf, String> =
@@ -1216,7 +1217,7 @@ fn run_refactor_bisect(
         "Verify failed; bisecting on {} rule(s)…",
         refactoring.rules.len()
     );
-    let culprit_idx = bisect_rules(&refactoring.rules, &snapshots, args, targets, verify_cmd)?;
+    let culprit_idx = bisect_rules(refactoring, &snapshots, args, targets, verify_cmd)?;
     let culprit_label = refactoring.rules[culprit_idx].to_string();
 
     // Phase 4: revert.
@@ -1241,12 +1242,13 @@ fn run_refactor_bisect(
 /// verify, `rules[..hi]` fails. The single breaking rule is
 /// `rules[lo]` once `hi - lo == 1`.
 fn bisect_rules(
-    rules: &[Box<dyn colab_core::Operation>],
+    refactoring: &codemod::Refactoring,
     snapshots: &std::collections::HashMap<PathBuf, String>,
     args: &RefactorArgs,
     targets: &[PathBuf],
     verify_cmd: &str,
 ) -> Result<usize> {
+    let rules = &refactoring.rules;
     let mut lo = 0usize;
     let mut hi = rules.len();
     while hi - lo > 1 {
@@ -1257,7 +1259,7 @@ fn bisect_rules(
         }
         // Apply rules[..mid] sequentially.
         for rule in rules.iter().take(mid) {
-            let single = codemod::SingleRule::new(rule.as_ref());
+            let single = codemod::SingleRule::new(rule.as_ref()).in_script(&refactoring.name);
             run_transformer(
                 &single,
                 args,
@@ -1412,7 +1414,7 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
 
     let change = FileChange::from_outcome(path, source, applied);
 
-    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut report = refactoring.report();
     report.files_visited = 1;
     report.record(&change);
     colab_core::near_miss::probe(&refactoring.rules, &mut report, |_| {
@@ -1456,6 +1458,8 @@ fn run_find(args: FindArgs) -> Result<i32> {
         FindDetailArg::Detailed => FindDetail::Detailed,
     };
     let mut report = FindReport::new(rules, args.max_results, detail);
+    refactoring.annotate(&mut report.run);
+    report.script = refactoring.name.clone();
 
     let opts = WalkOptions {
         include: args.include.clone(),

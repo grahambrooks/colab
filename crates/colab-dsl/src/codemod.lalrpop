@@ -5,7 +5,7 @@ use crate::ast::Namespace;
 use crate::ast::Action;
 use crate::ast::Span;
 use crate::ast::ImportClause;
-use crate::ast::{Fences, Location};
+use crate::ast::{Clause, Fences, Location};
 use colab_core::{Constraint, Test, Var};
 use lalrpop_util::ParseError;
 
@@ -37,10 +37,12 @@ pub Item: Item = {
 // The optional `where` clause narrows a `<lang>::pattern` match; import
 // clauses after the action run only on the files the rule changed.
 pub Match: Match = {
-    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <constraints: Where?> "{" <action: Action> <imports: ImportClause*> "}" <end: @R> =>? {
+    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <constraints: Where?> "{" <action: Action> <clauses: Clause*> "}" <end: @R> =>? {
         let (scope, fences, prose) = crate::ast::locations(locations)
             .map_err(|error| ParseError::User { error })?;
-        Ok(Match { namespace, match_string: string, scope, fences, prose, constraints: constraints.unwrap_or_default(), action, imports, span: Span { start, end } })
+        let (imports, message, severity) = crate::ast::clauses(clauses)
+            .map_err(|error| ParseError::User { error })?;
+        Ok(Match { namespace, match_string: string, scope, fences, prose, message, severity, constraints: constraints.unwrap_or_default(), action, imports, span: Span { start, end } })
     }
 };
 
@@ -99,6 +101,13 @@ Regex: String = {
     <s: r"/([^/\\\n\r]|\\.)+/"> => s[1..s.len() - 1].to_string(),
 };
 
+// After the action: import clauses, and how a rule reports what it finds.
+Clause: Clause = {
+    <ImportClause> => Clause::Import(<>),
+    "message" <text: StringLiteral> => Clause::Message(text),
+    "severity" <level: Identifier> => Clause::Severity(level),
+};
+
 ImportClause: ImportClause = {
     "requires" "import" <path: StringLiteral> => ImportClause::Requires(path),
     "drops" "import" <path: StringLiteral> "when" "unused" => ImportClause::DropsUnused(path),
@@ -146,6 +155,8 @@ pub Identifier: String = {
     "unused" => "unused".to_string(),
     "fences" => "fences".to_string(),
     "prose" => "prose".to_string(),
+    "message" => "message".to_string(),
+    "severity" => "severity".to_string(),
     "and" => "and".to_string(),
 };
 

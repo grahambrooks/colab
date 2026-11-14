@@ -40,6 +40,10 @@ pub struct Match {
     /// `and prose`: a `symbol` rename also renames whole-word matches in
     /// comments and string contents.
     pub prose: bool,
+    /// `message "…"`: what the rule's finding means, for reports.
+    pub message: Option<String>,
+    /// `severity error | warning | info`; `None` means `error`.
+    pub severity: Option<colab_core::Severity>,
     /// Constraints from a `where` clause, in order. Empty without one.
     pub constraints: Vec<colab_core::Constraint>,
     pub action: Action,
@@ -66,6 +70,41 @@ pub enum Location {
     Glob(String),
     Fences(Fences),
     Prose,
+}
+
+/// One clause after a rule's action.
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum Clause {
+    Import(ImportClause),
+    Message(String),
+    Severity(String),
+}
+
+/// The clauses after an action: imports in order, then the one message
+/// and severity, refusing either given twice or an unknown severity.
+pub(crate) type Clauses = (
+    Vec<ImportClause>,
+    Option<String>,
+    Option<colab_core::Severity>,
+);
+
+pub(crate) fn clauses(clauses: Vec<Clause>) -> Result<Clauses, &'static str> {
+    let (mut imports, mut message, mut severity) = (Vec::new(), None, None);
+    for clause in clauses {
+        match clause {
+            Clause::Import(i) => imports.push(i),
+            Clause::Message(m) if message.is_none() => message = Some(m),
+            Clause::Message(_) => return Err("a rule takes one `message`"),
+            Clause::Severity(s) if severity.is_none() => {
+                severity = Some(
+                    colab_core::Severity::parse(&s)
+                        .ok_or("`severity` is `error`, `warning` or `info`")?,
+                );
+            }
+            Clause::Severity(_) => return Err("a rule takes one `severity`"),
+        }
+    }
+    Ok((imports, message, severity))
 }
 
 /// Fold a rule's location clauses, refusing one given twice.

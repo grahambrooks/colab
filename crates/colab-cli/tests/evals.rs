@@ -10,14 +10,17 @@
 //! 1. runs the commands in a temporary git repository holding `input/`,
 //!    and checks the result exactly: every expected file matches, every
 //!    other file is unchanged, and files listed as `deleted` are gone;
-//! 2. measures what colab cost an agent: the bytes of each command, of
-//!    each script it had to write, and of everything the command printed;
+//! 2. measures what colab cost an agent: the bytes it writes (each
+//!    command, each script) and reads (everything the command printed),
+//!    and how long the commands ran;
 //! 3. models what the same change costs as `Read` + `Edit` calls, from
 //!    the diff between `input/` and `expected/` (the same model as
-//!    `scripts/price-edits.py`); and
-//! 4. fails if the colab cost exceeds the task's `budget`, so output that
-//!    grows is caught, or if, over all tasks, colab costs more than the
-//!    model.
+//!    `scripts/price-edits.py`);
+//! 4. models how long each way takes an agent ([`seconds`]): turns, and
+//!    the tokens it writes and reads, with colab's run time measured; and
+//! 5. fails if the colab cost exceeds the task's `budget`, so output that
+//!    grows is caught, or if, over all tasks, colab costs more bytes than
+//!    the model.
 //!
 //! A task whose `meta` says `requires = <tool>` is skipped when the tool
 //! is not on `PATH`. `COLAB_BLESS=1` rewrites `evals/results.md`.
@@ -110,6 +113,50 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 // ---------------------------------------------------------------------------
+// Cost, and the agent-time model
+// ---------------------------------------------------------------------------
+
+/// What a way of making a change costs an agent. `written` is what it
+/// generates (commands, scripts, edit strings), `read` what comes back.
+#[derive(Default)]
+struct Cost {
+    written: usize,
+    read: usize,
+    calls: usize,
+    /// Measured time the commands themselves ran (colab only).
+    exec_ms: u128,
+}
+
+impl Cost {
+    fn bytes(&self) -> usize {
+        self.written + self.read
+    }
+
+    fn add(&mut self, other: &Cost) {
+        self.written += other.written;
+        self.read += other.read;
+        self.calls += other.calls;
+        self.exec_ms += other.exec_ms;
+    }
+}
+
+/// An agent pays a round trip per tool call, writes slowly (output tokens
+/// are generated one at a time) and reads quickly (input is processed in
+/// bulk). Conservative round numbers: the results print calls and bytes,
+/// so a reader can redo the sums with their own. Tokens ≈ bytes / 4.
+const TURN_SECONDS: f64 = 2.0;
+const WRITE_TOKENS_PER_SECOND: f64 = 60.0;
+const READ_TOKENS_PER_SECOND: f64 = 2000.0;
+
+/// Modelled seconds an agent spends making a change at `cost`.
+fn seconds(cost: &Cost) -> f64 {
+    cost.calls as f64 * TURN_SECONDS
+        + cost.written as f64 / 4.0 / WRITE_TOKENS_PER_SECOND
+        + cost.read as f64 / 4.0 / READ_TOKENS_PER_SECOND
+        + cost.exec_ms as f64 / 1000.0
+}
+
+// ---------------------------------------------------------------------------
 // The Read + Edit model (as scripts/price-edits.py)
 // ---------------------------------------------------------------------------
 
@@ -122,17 +169,12 @@ const GREP_CALL: usize = 200;
 const GREP_LINE: usize = 110;
 const SHELL_CALL: usize = 150;
 
-#[derive(Default)]
-struct Cost {
-    bytes: usize,
-    calls: usize,
-}
-
 /// One file's change as `Read` + `Edit`: a targeted read around its hunks
 /// and an edit per hunk; returns the hunk count too.
 fn price_file(before: &str, after: &str) -> (Cost, usize) {
     let diff = similar::TextDiff::from_lines(before, after);
     let old: Vec<&str> = before.split_inclusive('\n').collect();
+    let new: Vec<&str> = after.split_inclusive('\n').collect();
     let groups = diff.grouped_ops(0);
     let mut cost = Cost::default();
     let mut window = std::collections::BTreeSet::new();
@@ -142,28 +184,25 @@ fn price_file(before: &str, after: &str) -> (Cost, usize) {
             let r = op.old_range();
             start = start.min(r.start);
             removed += old[r.clone()].iter().map(|l| l.len()).sum::<usize>();
-            let n = op.new_range();
-            added += after
-                .split_inclusive('\n')
-                .skip(n.start)
-                .take(n.len())
-                .map(str::len)
-                .sum::<usize>();
+            added += new[op.new_range()].iter().map(|l| l.len()).sum::<usize>();
             window.extend(r.start.saturating_sub(CONTEXT)..(r.end + CONTEXT).min(old.len()));
         }
         let anchor = start
             .checked_sub(1)
             .and_then(|i| old.get(i))
             .map_or(0, |l| l.len());
-        cost.bytes += EDIT_OVERHEAD + 2 * anchor + removed + added + EDIT_RESULT;
+        // The agent writes the old and new strings, with an anchor line,
+        // and reads back a confirmation.
+        cost.written += EDIT_OVERHEAD + 2 * anchor + removed + added;
+        cost.read += EDIT_RESULT;
         cost.calls += 1;
     }
     if !groups.is_empty() {
-        cost.bytes += READ_CALL
-            + window
-                .iter()
-                .map(|&i| old[i].len() + LINE_PREFIX)
-                .sum::<usize>();
+        cost.written += READ_CALL;
+        cost.read += window
+            .iter()
+            .map(|&i| old[i].len() + LINE_PREFIX)
+            .sum::<usize>();
         cost.calls += 1;
     }
     (cost, groups.len())
@@ -181,8 +220,7 @@ fn price_task(
         match input.get(path) {
             Some(before) => {
                 let (c, h) = price_file(before, after);
-                cost.bytes += c.bytes;
-                cost.calls += c.calls;
+                cost.add(&c);
                 hunks += h;
             }
             // A moved file is one `git mv` (then edited like any other);
@@ -192,18 +230,20 @@ fn price_task(
                 .find(|d| input.get(*d).is_some_and(|t| t == after))
             {
                 Some(_) => {
-                    cost.bytes += SHELL_CALL;
+                    cost.written += SHELL_CALL;
                     cost.calls += 1;
                 }
                 None => {
-                    cost.bytes += EDIT_OVERHEAD + after.len() + EDIT_RESULT;
+                    cost.written += EDIT_OVERHEAD + after.len();
+                    cost.read += EDIT_RESULT;
                     cost.calls += 1;
                 }
             },
         }
     }
-    // One search to find the sites.
-    cost.bytes += GREP_CALL + GREP_LINE * hunks.max(1);
+    // One search to find the sites: a short command, a line per site back.
+    cost.written += GREP_CALL / 2;
+    cost.read += GREP_CALL / 2 + GREP_LINE * hunks.max(1);
     cost.calls += 1;
     cost
 }
@@ -249,7 +289,8 @@ fn run_task(dir: &Path, bin_dir: &Path) -> Result<Outcome, String> {
     let mut colab = Cost::default();
     for entry in fs::read_dir(dir).unwrap().flatten() {
         if entry.path().extension().is_some_and(|e| e == "codemod") {
-            colab.bytes += EDIT_OVERHEAD + fs::read_to_string(entry.path()).unwrap().len();
+            colab.written += EDIT_OVERHEAD + fs::read_to_string(entry.path()).unwrap().len();
+            colab.read += EDIT_RESULT;
             colab.calls += 1;
         }
     }
@@ -262,6 +303,7 @@ fn run_task(dir: &Path, bin_dir: &Path) -> Result<Outcome, String> {
         if line.trim().is_empty() {
             continue;
         }
+        let started = std::time::Instant::now();
         let out = Command::new("sh")
             .arg("-c")
             .arg(line)
@@ -270,7 +312,9 @@ fn run_task(dir: &Path, bin_dir: &Path) -> Result<Outcome, String> {
             .env("TASK", dir)
             .output()
             .unwrap();
-        colab.bytes += line.len() + out.stdout.len() + out.stderr.len();
+        colab.exec_ms += started.elapsed().as_millis();
+        colab.written += line.len();
+        colab.read += out.stdout.len() + out.stderr.len();
         colab.calls += 1;
         if !out.status.success() {
             return Err(format!(
@@ -343,34 +387,26 @@ fn run_task(dir: &Path, bin_dir: &Path) -> Result<Outcome, String> {
 }
 
 fn results_table(outcomes: &[Outcome], skipped: &[(String, String)]) -> String {
-    let mut out = String::from(
+    let mut out = format!(
         "# Eval results\n\nGenerated by `COLAB_BLESS=1 cargo test -p colab-cli --test evals`; \
-         see [`README.md`](README.md) for what is measured. Bytes are what\nthe agent sent and read; \
-         tokens ≈ bytes / 4.\n\n\
-         | Task | colab calls | colab bytes | Read + Edit calls | Read + Edit bytes | Saved |\n\
-         | ---- | ----------: | ----------: | ----------------: | ----------------: | ----: |\n",
+         see [`README.md`](README.md) for what is measured.\n\n\
+         Bytes are what the agent sent and read (tokens ≈ bytes / 4). Time is modelled: \
+         {TURN_SECONDS} s per tool call, {WRITE_TOKENS_PER_SECOND} tokens/s written, \
+         {READ_TOKENS_PER_SECOND} tokens/s read, plus colab's measured run time (`run`).\n\n\
+         | Task | colab calls | bytes | run | time | Read + Edit calls | bytes | time | Bytes saved | Faster |\n\
+         | ---- | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: |\n"
     );
-    let (mut c, mut m, mut cc, mut mc) = (0, 0, 0, 0);
+    let (mut colab, mut model) = (Cost::default(), Cost::default());
     for o in outcomes {
-        c += o.colab.bytes;
-        m += o.model.bytes;
-        cc += o.colab.calls;
-        mc += o.model.calls;
-        out.push_str(&format!(
-            "| {} ({}) | {} | {} | {} | {} | {}% |\n",
-            o.title,
-            o.name,
-            o.colab.calls,
-            o.colab.bytes,
-            o.model.calls,
-            o.model.bytes,
-            saved(o.colab.bytes, o.model.bytes)
+        colab.add(&o.colab);
+        model.add(&o.model);
+        out.push_str(&row(
+            &format!("{} ({})", o.title, o.name),
+            &o.colab,
+            &o.model,
         ));
     }
-    out.push_str(&format!(
-        "| **Total** | **{cc}** | **{c}** | **{mc}** | **{m}** | **{}%** |\n",
-        saved(c, m)
-    ));
+    out.push_str(&row("**Total**", &colab, &model));
     if !skipped.is_empty() {
         out.push_str("\nSkipped (a required tool is not installed):\n\n");
         for (name, why) in skipped {
@@ -378,6 +414,22 @@ fn results_table(outcomes: &[Outcome], skipped: &[(String, String)]) -> String {
         }
     }
     out
+}
+
+fn row(name: &str, colab: &Cost, model: &Cost) -> String {
+    let (cs, ms) = (seconds(colab), seconds(model));
+    format!(
+        "| {name} | {} | {} | {:.1} s | {:.1} s | {} | {} | {:.1} s | {}% | {:.1}× |\n",
+        colab.calls,
+        colab.bytes(),
+        colab.exec_ms as f64 / 1000.0,
+        cs,
+        model.calls,
+        model.bytes(),
+        ms,
+        saved(colab.bytes(), model.bytes()),
+        ms / cs.max(0.001)
+    )
 }
 
 fn saved(colab: usize, model: usize) -> i64 {
@@ -411,10 +463,12 @@ fn every_eval_task_is_correct_and_within_budget() {
         }
         match run_task(dir, &bin_dir) {
             Ok(o) => {
-                if o.colab.bytes > o.budget {
+                if o.colab.bytes() > o.budget {
                     failures.push(format!(
                         "{}: colab cost {} bytes, over its budget of {}",
-                        o.name, o.colab.bytes, o.budget
+                        o.name,
+                        o.colab.bytes(),
+                        o.budget
                     ));
                 }
                 outcomes.push(o);
@@ -427,8 +481,8 @@ fn every_eval_task_is_correct_and_within_budget() {
     if std::env::var_os("COLAB_BLESS").is_some() {
         fs::write(root.join("evals/results.md"), &table).unwrap();
     }
-    let colab: usize = outcomes.iter().map(|o| o.colab.bytes).sum();
-    let model: usize = outcomes.iter().map(|o| o.model.bytes).sum();
+    let colab: usize = outcomes.iter().map(|o| o.colab.bytes()).sum();
+    let model: usize = outcomes.iter().map(|o| o.model.bytes()).sum();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(outcomes.len() >= 5, "too few tasks ran: {}", outcomes.len());
     assert!(

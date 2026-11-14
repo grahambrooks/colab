@@ -17,6 +17,33 @@ pub struct Refactoring {
     /// for files it does not care about so composition is safe across
     /// languages.
     pub rules: Vec<Box<dyn Operation>>,
+    /// Each rule's `message` and `severity`, aligned with `rules`.
+    pub notes: Vec<RuleNote>,
+}
+
+/// What a rule says about what it finds.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RuleNote {
+    pub message: Option<String>,
+    pub severity: colab_core::Severity,
+}
+
+impl Refactoring {
+    /// A report seeded with every rule, its message and its severity.
+    pub fn report(&self) -> colab_core::RunReport {
+        let mut report =
+            colab_core::RunReport::with_rules(self.rules.iter().map(|r| r.to_string()));
+        self.annotate(&mut report);
+        report
+    }
+
+    /// Copy each rule's note onto an already seeded report.
+    pub fn annotate(&self, report: &mut colab_core::RunReport) {
+        for (stat, note) in report.rules.iter_mut().zip(&self.notes) {
+            stat.message = note.message.clone();
+            stat.severity = note.severity;
+        }
+    }
 }
 
 impl Refactoring {
@@ -103,6 +130,7 @@ impl CodeTransformer for Refactoring {
                 continue;
             }
             let next = rule.apply(&current);
+            let next = keep_ignored(&self.name, rule.as_ref(), &current, next);
             if next != current {
                 rules_fired.push(index);
                 inputs.push((index, std::mem::replace(&mut current, next)));
@@ -137,12 +165,37 @@ impl CodeTransformer for Refactoring {
 /// reverted at) the rule level.
 pub struct SingleRule<'a> {
     pub op: &'a dyn Operation,
+    /// The script's name, for `colab:ignore <name>` comments.
+    pub script: &'a str,
 }
 
 impl<'a> SingleRule<'a> {
     pub fn new(op: &'a dyn Operation) -> Self {
-        Self { op }
+        Self { op, script: "" }
     }
+
+    /// The rule as part of the script `script`.
+    pub fn in_script(mut self, script: &'a str) -> Self {
+        self.script = script;
+        self
+    }
+}
+
+/// `next` (what `rule` made of `current`) with the changes that a
+/// `colab:ignore` comment covers put back.
+fn keep_ignored(script: &str, rule: &dyn Operation, current: &str, next: String) -> String {
+    if next == current || !current.contains(colab_core::ignore::MARKER) {
+        return next;
+    }
+    let label = rule.to_string();
+    colab_core::ignore::keep_ignored(
+        current,
+        &next,
+        colab_core::ignore::RuleNames {
+            script,
+            namespace: label.split_whitespace().next().unwrap_or(""),
+        },
+    )
 }
 
 impl CodeTransformer for SingleRule<'_> {
@@ -163,7 +216,12 @@ impl CodeTransformer for SingleRule<'_> {
         {
             return ApplyOutcome::untraced(source_code.to_string());
         }
-        let output = self.op.apply(source_code);
+        let output = keep_ignored(
+            self.script,
+            self.op,
+            source_code,
+            self.op.apply(source_code),
+        );
         // Index 0: the caller re-indexes this against the full script.
         let (rules_fired, conflicts) = if output == source_code {
             (Vec::new(), Vec::new())
@@ -255,6 +313,7 @@ mod tests {
     fn refactoring(rules: Vec<Box<dyn Operation>>) -> Refactoring {
         Refactoring {
             name: "test".to_string(),
+            notes: vec![Default::default(); rules.len()],
             rules,
         }
     }

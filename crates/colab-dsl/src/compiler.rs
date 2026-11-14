@@ -160,12 +160,21 @@ fn compile_inner(
     let matches = expand_includes(command.items, base_path, &mut seen)?;
 
     let mut rules: Vec<Box<dyn Operation>> = Vec::with_capacity(matches.len());
+    let mut notes = Vec::with_capacity(matches.len());
     for m in matches {
-        rules.extend(lower_match(m, backends)?);
+        let note = crate::model::RuleNote {
+            message: m.message.clone(),
+            severity: m.severity.unwrap_or_default(),
+        };
+        let lowered = lower_match(m, backends)?;
+        // `and fences` lowers to two rules; both carry the note.
+        notes.extend(std::iter::repeat_n(note, lowered.len()));
+        rules.extend(lowered);
     }
     Ok(Refactoring {
         name: command.refactor_name,
         rules,
+        notes,
     })
 }
 
@@ -275,6 +284,8 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
         scope,
         fences,
         prose,
+        message: _,
+        severity: _,
         constraints,
         action,
         imports,
@@ -574,6 +585,8 @@ mod tests {
                 scope: None,
                 fences: None,
                 prose: false,
+                message: None,
+                severity: None,
                 constraints: Vec::new(),
                 action: Action::Replace("d.e.f".to_string()),
                 imports: Vec::new(),
@@ -823,6 +836,27 @@ import (
         assert!(twice.unwrap_err().to_string().contains("once"));
         // `fences` and `and` still spell namespaces.
         assert!(crate::parse(r#"refactor "r" { match x::fences "a" { delete } }"#).is_ok());
+    }
+
+    #[test]
+    fn message_and_severity_clauses_reach_the_report() {
+        let backends = colab_backends::registry();
+        let r = compile(
+            r#"refactor "r" { match go::import "a" { delete requires import "b" message "a is gone" severity warning } match go::import "c" { delete } }"#,
+            &backends,
+        )
+        .unwrap();
+        let report = r.report();
+        assert_eq!(report.rules[0].message.as_deref(), Some("a is gone"));
+        assert_eq!(report.rules[0].severity, colab_core::Severity::Warning);
+        assert_eq!(report.rules[1].severity, colab_core::Severity::Error);
+        for bad in [
+            r#"refactor "r" { match go::import "a" { delete severity loud } }"#,
+            r#"refactor "r" { match go::import "a" { delete message "x" message "y" } }"#,
+        ] {
+            assert!(crate::parse(bad).is_err(), "{bad}");
+        }
+        assert!(crate::parse(r#"refactor "r" { match x::message "a" { delete } }"#).is_ok());
     }
 
     #[test]

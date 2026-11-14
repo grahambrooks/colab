@@ -36,7 +36,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--format <h|j|n|d>` | `human` | Output format. `human` is coloured log lines plus a summary. `json` emits one JSON document for the whole run. `ndjson` streams one object per *changed* file then a summary. `diff` emits a unified diff per changed file. |
 | `--write` | — | Apply changes in place. |
 | `--dry-run` | — | Report what would change without writing. |
-| `--check` | — | Like `--dry-run`, but exit code 10 if any file would change. CI-friendly. |
+| `--check` | — | Like `--dry-run`, but exit code 10 if a rule above `severity info` would change a file. CI-friendly. |
 | `--stdin` | — | Read source from stdin instead of walking filesystem paths. Requires `--path`. |
 | `--path <hint>` | — | Filename hint for `--stdin`; drives "is this file relevant?" routing. |
 | `--include <glob>` | — | Whitelist files via gitignore-syntax glob. Repeatable. If any include is set, only matches are processed. |
@@ -843,7 +843,7 @@ The same table is in `colab --help`:
 | 2 | Script parse error. |
 | 3 | Unsupported namespace or operation. |
 | 4 | I/O error (with the offending path in the log line). |
-| 10 | `--check` found changes that would be made. |
+| 10 | `--check` found changes a rule above `severity info` would make. |
 | 11 | `--write` found [conflicts](#conflicts) and wrote nothing (`--allow-conflicts` overrides). |
 
 Code 2 is what `clap` itself uses for argument-parsing errors, which

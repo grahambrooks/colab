@@ -94,12 +94,18 @@ fn changed_lines(before: &str, after: &str) -> Vec<Located> {
 /// produced it. Rules are searched independently against the original
 /// source — `find` reports where each rule *matches*, not the result of
 /// running them in sequence.
+///
+/// Hits on a line that a `colab:ignore` comment covers for the rule are
+/// left out (see [`crate::ignore`]); `script` is the script's name, which
+/// such a comment may give.
 pub fn locate_all(
     rules: &[Box<dyn Operation>],
     path: &Path,
     source: &str,
+    script: &str,
 ) -> Vec<(usize, Located)> {
     let mut out = Vec::new();
+    let marked = source.contains(crate::ignore::MARKER);
     for (index, rule) in rules.iter().enumerate() {
         if !rule.is_file_relevant(path) {
             continue;
@@ -109,9 +115,22 @@ pub fn locate_all(
         {
             continue;
         }
+        let ignored = if marked {
+            let label = rule.to_string();
+            crate::ignore::ignored_lines(
+                source,
+                crate::ignore::RuleNames {
+                    script,
+                    namespace: label.split_whitespace().next().unwrap_or(""),
+                },
+            )
+        } else {
+            Default::default()
+        };
         out.extend(
             locate(rule.as_ref(), source)
                 .into_iter()
+                .filter(|l| !ignored.contains(&(l.line - 1)))
                 .map(|l| (index, l)),
         );
     }
@@ -182,6 +201,8 @@ pub struct FindReport {
     pub total: u64,
     pub max_results: usize,
     pub detail: FindDetail,
+    /// The script's name, for `colab:ignore <name>` comments.
+    pub script: String,
 }
 
 impl FindReport {
@@ -193,6 +214,7 @@ impl FindReport {
             total: 0,
             max_results,
             detail,
+            script: String::new(),
         }
     }
 
@@ -205,7 +227,7 @@ impl FindReport {
             rules_fired: Vec::new(),
             conflicts: Vec::new(),
         });
-        let found = locate_all(rules, path, source);
+        let found = locate_all(rules, path, source, &self.script);
         if found.is_empty() {
             return;
         }
@@ -283,9 +305,9 @@ mod tests {
     #[test]
     fn locate_all_respects_relevance_and_prefilter() {
         let rules: Vec<Box<dyn Operation>> = vec![Box::new(Rename)];
-        assert!(locate_all(&rules, Path::new("a.rs"), "old").is_empty());
-        assert!(locate_all(&rules, Path::new("a.txt"), "nothing").is_empty());
-        assert_eq!(locate_all(&rules, Path::new("a.txt"), "old\n").len(), 1);
+        assert!(locate_all(&rules, Path::new("a.rs"), "old", "").is_empty());
+        assert!(locate_all(&rules, Path::new("a.txt"), "nothing", "").is_empty());
+        assert_eq!(locate_all(&rules, Path::new("a.txt"), "old\n", "").len(), 1);
     }
 
     #[test]

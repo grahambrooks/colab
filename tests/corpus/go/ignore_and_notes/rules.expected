@@ -1,0 +1,1 @@
+1 go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ -> 'fmt.Errorf($M+": %w", $E)' requires import "fmt"

@@ -18,6 +18,19 @@ checks three things:
    `git mv` per moved file (the model in `scripts/price-edits.py`). Over
    all tasks, colab must cost less.
 
+4. **Faster.** Each way is also timed as an agent would spend it. An
+   agent pays a round trip per tool call, writes slowly (output tokens
+   come one at a time) and reads quickly, so time is modelled as calls ×
+   2 s + written tokens ÷ 60/s + read tokens ÷ 2000/s, plus colab's
+   *measured* run time, a language server's start-up included. The
+   parameters are constants in `crates/colab-cli/tests/evals.rs`, and the
+   results print calls and bytes so a reader can redo the sums with their
+   own. Time is reported, not asserted, since run times vary by machine.
+
+Faster change is the business case as much as tokens: fewer turns per
+change, results correct the first time (every task is checked exactly),
+and one reviewable, attributed diff instead of a sequence of edits.
+
 Results: [`results.md`](results.md), rewritten by
 `COLAB_BLESS=1 cargo test -p colab-cli --test evals`.
 
@@ -44,7 +57,12 @@ not installed, and listed as skipped in the results.
 - **A whole session.** Running real agents on these tasks, colab against
   `Edit`, is the next step; this suite keeps the scripted half honest
   and in CI.
+- **Review and rework.** A smaller, attributed diff is quicker to review,
+  and a change checked before it is written (conflicts, links,
+  `--verify-lsp`) is not reworked after; neither is timed here.
 - **Work the model gives `Edit` for free.** In `extract-function` the
   model assumes the agent writes the extracted function correctly by
   hand; colab has the language server compute it. On a one-site change
-  the costs are about equal (−3%).
+  the bytes are about equal (−3%), and colab is slower (0.6×): each of its
+  three commands starts rust-analyzer afresh, 10 s in all. A long-lived
+  server session would remove most of that.

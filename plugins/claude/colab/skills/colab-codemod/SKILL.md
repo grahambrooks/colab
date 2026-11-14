@@ -411,6 +411,15 @@ every other format, and any non-TTY stdout, defaults to `--dry-run`.
 `--check` overrides both. So a script run from an agent or a pipe never
 writes unless you pass `--write`.
 
+### Findings and suppressions
+
+Give a lint rule a `message` and `severity` after its action, so CI
+output says what is wrong (`warning: pkg/errors is archived …`), and
+use `severity info` for rules that should report without failing
+`--check`. Leave a deliberate exception in place with a
+`// colab:ignore <script-name>` comment on the line, or on its own line
+above, rather than narrowing the rule.
+
 ## Driving it over MCP
 
 If the colab MCP server is connected, the same loop maps onto tools.

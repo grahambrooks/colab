@@ -353,6 +353,22 @@ pub fn conflict_lines(report: &RunReport) -> Vec<String> {
         .collect()
 }
 
+/// A rule's `message` and `severity`, when it has a message, so a rule
+/// enforced in CI reads as a finding rather than a bare diff.
+fn note_json(r: &crate::report::RuleStat, rule: &mut Value) {
+    if let Some(message) = &r.message {
+        rule["message"] = json!(message);
+        rule["severity"] = json!(r.severity.as_str());
+    }
+}
+
+/// `"warning: <message>"` for a rule with a message.
+pub fn note_text(r: &crate::report::RuleStat) -> Option<String> {
+    r.message
+        .as_ref()
+        .map(|m| format!("{}: {m}", r.severity.as_str()))
+}
+
 /// Per-rule match counts. `files: 0` marks a dead rule.
 pub fn rules_json(report: &RunReport) -> Value {
     Value::Array(
@@ -361,6 +377,7 @@ pub fn rules_json(report: &RunReport) -> Value {
             .iter()
             .map(|r| {
                 let mut rule = json!({"i": r.index, "rule": r.rule, "files": r.files_matched});
+                note_json(r, &mut rule);
                 if !r.near_misses.is_empty() {
                     rule["near"] = Value::Array(
                         r.near_misses
@@ -555,6 +572,7 @@ pub fn find_json(report: &crate::find::FindReport) -> Value {
                 "files": r.files_matched,
                 "matches": report.matches_per_rule[r.index],
             });
+            note_json(r, &mut rule);
             if !r.near_misses.is_empty() {
                 rule["near"] = Value::Array(
                     r.near_misses
@@ -621,13 +639,21 @@ pub fn write_find_human<W: Write>(out: &mut W, report: &crate::find::FindReport)
         } else {
             String::new()
         };
+        let note = report
+            .run
+            .rules
+            .get(hit.rule)
+            .and_then(note_text)
+            .map(|n| format!(" {n} —"))
+            .unwrap_or_default();
         writeln!(
             out,
-            "{}:{}:{}:{} {}",
+            "{}:{}:{}:{}{} {}",
             hit.path.display(),
             hit.located.line,
             hit.located.column,
             tag,
+            note,
             first_line(&hit.located.text)
         )?;
         if report.detail == FindDetail::Detailed {

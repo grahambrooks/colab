@@ -82,10 +82,7 @@ these hold:
   just wrote; feed failures back.
 - MCP resources + `llms-full.txt` generated from `docs/`, including the
   per-backend caveats.
-- `// colab:ignore <rule-or-script-name>`, on the line or the
-  line above, skips that site for find, refactor and check. Rules gain an
-  optional `message` and `severity`, so a rule enforced by the post-edit
-  hook reads as an inspection rather than a bare diff.
+- ✅ Shipped 2026-11-14: `colab:ignore [names]` (after code: that line; on its own line: the line below; names are script names or `<lang>::<module>`) for find, refactor and check, by putting back what a rule changed on covered lines. Rules take `message "…"` and `severity error|warning|info`; `--check` fails only above `info`.
 
 ### M14 — Repo-level config + `colab fix`
 - `colab.toml` schema (roots / excludes / packs / verify / jobs).
@@ -202,6 +199,8 @@ whichever milestone touches the same code.
 | Type constraints in `where` (via the server's hover) | M26 |
 | Compile-time warning when a template re-matches its own pattern | M18 |
 | LSP `WorkDoneProgress` for long previews / applies | M13.5 |
+| A long-lived language-server session, so commands in a row do not each start the server | M23 (eval: extract-function is 0.7× because each of three commands starts rust-analyzer) |
+| `--bisect`: check the starting tree first, and say so when it already fails | M20 (dogfood) |
 | Go-to-definition for `include` in `.codemod` files | M19 |
 | Remote pack registry and publishing | M11 |
 | Moving a section between files: rules act on one file each, so today a move is an `insert` in one file and a `delete` in the other | M28 (dogfood) |

@@ -657,7 +657,7 @@ fn run_script<P: ProgressSink>(
         compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
 
     let started = Instant::now();
-    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut report = refactoring.report();
     let mut collector = ChangeCollector::new(options);
     let mut files_processed: u64 = 0;
 
@@ -721,7 +721,7 @@ fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolErro
     let applied = refactoring.apply_at(&path, &source);
     let change = FileChange::from_outcome(path.clone(), source, applied);
 
-    let mut report = RunReport::with_rules(refactoring.rules.iter().map(|r| r.to_string()));
+    let mut report = refactoring.report();
     report.files_visited = 1;
     report.record(&change);
     colab_core::near_miss::probe(&refactoring.rules, &mut report, |_| {
@@ -787,6 +787,8 @@ fn find(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
         compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
     let rules = &refactoring.rules;
     let mut report = FindReport::new(rules, max_results, detail);
+    refactoring.annotate(&mut report.run);
+    report.script = refactoring.name.clone();
     let selector = Selector { rules };
     for target in &paths {
         let outcome = walker::walk(&selector, target, &mut |change| {

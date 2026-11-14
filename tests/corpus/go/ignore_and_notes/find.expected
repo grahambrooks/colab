@@ -1,0 +1,6 @@
+main.go:6:7: [0] errors.Wrap(err, "one")
+    $E = err
+    $M = "one"
+main.go:10:7: [0] errors.Wrap(err, "four")
+    $E = err
+    $M = "four"
