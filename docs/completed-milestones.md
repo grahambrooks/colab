@@ -17,6 +17,7 @@ work, including every deferral listed here, is in
 | [M24–M27](#closing-the-intellij-gap-m24m27) | Git-aware file operations, code actions, `where` constraints, conflict checks |
 | [M28](#markdown-m28) | Markdown by structure: sections, rows, items, links, front matter, link checks, code fences |
 | [M23](#evaluation-m23) | The agent eval suite: correctness, bytes and budgets in CI; the Rust 2024 pack |
+| [M29](#follow-up-sweep-m29) | The follow-up sweep: what dogfooding tripped over, one engine instead of twelve copies, editor / MCP / review surfaces |
 | [Appendix](#appendix-the-original-design-2026-05-09) | The 2026-05-09 design these milestones implemented |
 
 ---
@@ -787,6 +788,53 @@ Phases 1 to 3 have shipped.
 - **Found:** the release's Linux binaries need glibc 2.39
   (`pidfd_spawnp`, from building on ubuntu-latest), so they fail on
   Ubuntu 22.04, Debian 12 and most CI images (see the follow-ups).
+
+## Follow-up sweep (M29)
+
+### ✅ M29 — Follow-up sweep
+
+Clear the [follow-ups](development-plan.md#follow-ups-from-shipped-milestones) in waves, each
+item made with colab where colab can make it, each wave its own commits.
+An item leaves the follow-ups table when it ships.
+
+**Wave A — what dogfooding tripped over** (small, correctness first) — ✅ all seven shipped 2026-11-14:
+
+1. `--bisect` checks the starting tree first, and says so when it
+   already fails (today it blames a rule for a broken tree).
+2. A rule that skipped some files (`why_unchanged`) says so even when it
+   changed others.
+3. Near misses for Markdown addresses: a section address that names no
+   heading lists the nearest ones.
+4. `markdown::item` placement: `"Section[New] < [Existing]"`, as `row`
+   has.
+5. `markdown::text` inside code fences (`in fences` / `and fences`).
+6. A compile-time warning when a template re-matches its own pattern.
+7. Pack fixtures that fire every rule (the `0`s in their
+   `rules.expected`), and `--script builtin:<pack>`, which `colab pack
+   list` already prints.
+
+**Wave B — one engine, not twelve copies** — ✅ shipped 2026-11-14 (item 9 for JS only: the other nine languages' imports do not bind the qualifier, so a syntactic check there could only guess):
+
+8. One call rewriter in `colab_rewrite` for the seven backends whose
+   `calls.rs` differ only in the call node's kind.
+9. Qualifier conflict checks for the ten backends other than Go and
+   Python.
+10. Per-hunk rule attribution in ndjson file events, so `colab review`
+    counts a shared file's lines per rule.
+
+**Wave C — surfaces** — ✅ shipped 2026-11-14 (item 17 as `colab mv-section`, a generated two-file script, rather than a rule that writes two files):
+
+11. A `colab.mv` MCP tool.
+12. Attribute a `--verify-lsp` error to the rule that caused it.
+13. LSP `WorkDoneProgress` for long previews and applies.
+14. Go-to-definition for `include` in `.codemod` files.
+15. An eval task for `colab fix`.
+16. `--split-pr` stacked mode.
+17. Moving a section between files (`markdown::section … { move_to
+    "<file>#<parent>" }`): the first rule that writes two files, so it
+    needs a cross-file design first.
+
+**Wave D — decide, do not build yet:** moved to [Decisions waiting](development-plan.md#decisions-waiting-from-m29) in the plan.
 
 ## Appendix: the original design (2026-05-09)
 

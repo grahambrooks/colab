@@ -3588,7 +3588,7 @@ fn mv_section_workspace(label: &str, target_dir: &str) -> PathBuf {
     let root = workspace_temp(label);
     write(
         &root.join("docs/plan.md"),
-        "# Plan\n\nSee [the item](#old-item).\n\n## Planned\n\n### Old item\n\nText.\n\n#### Detail\n\nMore.\n\n## Keep\n\nstays\n",
+        "# Plan\n\nSee [the item](#old-item).\n\n## Planned\n\n### Old item\n\nText, as [kept](#keep); [detail](#detail).\n\n#### Detail\n\nMore.\n\n## Keep\n\nstays\n",
     );
     write(
         &root.join(target_dir).join("done.md"),
@@ -3631,8 +3631,12 @@ fn mv_section_moves_a_section_and_its_links() {
         !plan.contains("Old item") && plan.contains("[the item](done.md#old-item)"),
         "{plan}"
     );
+    // Its own links now start from done.md: `#keep` stayed behind, so it
+    // gains the path back; `#detail` moved with it.
     assert!(
-        done.ends_with("### Old item\n\nText.\n\n#### Detail\n\nMore.\n"),
+        done.ends_with(
+            "### Old item\n\nText, as [kept](plan.md#keep); [detail](#detail).\n\n#### Detail\n\nMore.\n"
+        ),
         "{done}"
     );
     assert_eq!(

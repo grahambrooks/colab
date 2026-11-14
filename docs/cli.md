@@ -1036,9 +1036,13 @@ colab mv-section docs/plan.md "Old item" --to docs/done.md --show-script
   it lands at; `#` lines inside code fences stay as they are.
 - Links to it in the source and the target are rewritten, and, when the
   two files share a directory, links from every other file too (only the
-  file name changes). Across directories a link's path differs per
-  linking file, so those are left to the link check: a move that would
-  break one writes nothing and exits 11 (`--allow-conflicts` overrides).
+  file name changes). The section's own links are rebased: an anchor to
+  a section left behind gains the path back to the source, a relative
+  file link is recomputed from the target's directory, and an anchor
+  that moved with it stays. Across directories a link from a third file
+  differs per linking file, so those are left to the link check: a move
+  that would break one writes nothing and exits 11 (`--allow-conflicts`
+  overrides).
 - A target that already has a section with that title there, a heading
   holding ` > ` or ` < `, or a move within one file is refused.
 - Flags: `--write | --dry-run | --check`, `--format`, `--allow-conflicts`,

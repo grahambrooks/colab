@@ -35,6 +35,9 @@ pub struct SectionMove {
     /// Its level in the source and in the target.
     pub old_level: u8,
     pub new_level: u8,
+    /// The anchors of the section and its subsections, which move with it:
+    /// a link to one of them from inside the body still works as `#…`.
+    pub own_slugs: Vec<String>,
 }
 
 /// Plan moving `address` from `source` to `target` at `placement`.
@@ -83,7 +86,13 @@ pub fn plan(
         .find(|h| landed[h.content.clone()].trim() == title)
         .ok_or_else(|| format!("cannot find `{title}` where it would land"))?;
     let delta = i16::from(new.level) - i16::from(section.level);
+    let own_slugs = headings
+        .iter()
+        .filter(|h| h.start >= section.start && h.start < section.end)
+        .map(|h| h.slug.clone())
+        .collect();
     Ok(SectionMove {
+        own_slugs,
         insert_address,
         body: shifted_body(source, section, &headings, delta),
         old_slug: section.slug.clone(),
@@ -91,6 +100,42 @@ pub fn plan(
         old_level: section.level,
         new_level: new.level,
     })
+}
+
+/// `body` with each inline link destination (`](dest)`) passed through
+/// `rebase`, which returns the new destination or `None` to keep it. Code
+/// spans and fences are not parsed, so a `](…)` inside one is rebased
+/// too; it is rare, and the run's link check sees the result.
+pub fn rebase_links(body: &str, rebase: impl Fn(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(at) = rest.find("](") {
+        let (head, tail) = rest.split_at(at + 2);
+        out.push_str(head);
+        let Some(close) = tail.find(')') else {
+            rest = tail;
+            continue;
+        };
+        let dest = &tail[..close];
+        // `dest "title"`: only the destination changes.
+        let (url, title) = match dest.split_once(' ') {
+            Some((u, t)) => (u, Some(t)),
+            None => (dest, None),
+        };
+        match rebase(url) {
+            Some(new) => {
+                out.push_str(&new);
+                if let Some(t) = title {
+                    out.push(' ');
+                    out.push_str(t);
+                }
+            }
+            None => out.push_str(dest),
+        }
+        rest = &tail[close..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `section`'s text below its heading, each ATX subsection heading moved

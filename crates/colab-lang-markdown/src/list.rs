@@ -139,6 +139,23 @@ impl ItemEdit {
                 section.address()
             ));
         }
+        // Not in the list addressed, but in another of the section's: say
+        // which, rather than "matched nothing".
+        if matching.is_empty() && !matches!(self.mode, Mode::Ensure) {
+            let elsewhere = (1..=MAX_LISTS).filter(|&n| n != self.nth).find(|&n| {
+                nth_list(source, own.clone(), n)
+                    .iter()
+                    .any(|i| plain_text(&source[i.text.clone()]).starts_with(&want))
+            });
+            if let Some(n) = elsewhere {
+                return Err(format!(
+                    "no item of list {} of `{}` starts with `{want}`, but list {n} has one: address it as `{}@{n}[{want}]`",
+                    self.nth,
+                    section.address(),
+                    self.section
+                ));
+            }
+        }
         Ok(match (&self.mode, matching.first()) {
             (Mode::Ensure, Some(_)) | (Mode::Delete | Mode::Replace(_), None) => None,
             (Mode::Ensure, None) if self.before.is_some() && !items.is_empty() => {
@@ -286,6 +303,9 @@ fn wrap(text: &str, width: Option<usize>, first: usize, hang: &str) -> String {
 
 /// The marker a new item after one with `marker` gets: the same bullet,
 /// or the next number.
+/// How many of a section's lists the "it is in another list" hint looks at.
+const MAX_LISTS: usize = 20;
+
 fn next_marker(marker: &str) -> String {
     let digits: String = marker.chars().take_while(|c| c.is_ascii_digit()).collect();
     match digits.parse::<u64>() {
@@ -405,6 +425,24 @@ mod tests {
     use super::*;
 
     const DOC: &str = "## Notes\n\n- Raw strings in the DSL\n- Tab re-indent\n  - nested detail\n- Call and type hierarchy\n\n## Steps\n\n1. one\n2. two\n";
+
+    #[test]
+    fn an_item_in_another_list_of_the_section_is_named() {
+        let doc = "## S\n\n- a\n- b\n\nText.\n\n- c\n- target item\n";
+        let op = ItemEdit::delete("S[target]").unwrap();
+        assert_eq!(op.apply(doc), doc);
+        assert!(
+            op.why_unchanged(doc)
+                .unwrap()
+                .contains("address it as `S@2[target]`")
+        );
+        assert!(
+            ItemEdit::delete("S@2[target]")
+                .unwrap()
+                .apply(doc)
+                .ends_with("- c\n")
+        );
+    }
 
     #[test]
     fn ensure_places_a_new_item_before_another_or_first() {

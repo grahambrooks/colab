@@ -447,6 +447,39 @@ struct MvSectionArgs {
     change_dir: PathBuf,
 }
 
+/// Whether any Markdown file under `root` other than `skip` contains
+/// `needle` (hidden directories and `target/` skipped), so a rule that
+/// would match nothing is not generated.
+fn markdown_mentions(root: &Path, needle: &str, skip: &[&Path]) -> bool {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with('.') || name == "target" {
+                continue;
+            }
+            if path.is_dir() {
+                stack.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|e| e == "md" || e == "markdown")
+                && !skip
+                    .iter()
+                    .any(|s| fs::canonicalize(&path).ok().as_deref() == Some(*s))
+                && fs::read_to_string(&path).is_ok_and(|text| text.contains(needle))
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// `path` relative to `base` (a directory), with `..` as needed.
 fn relative_path(base: &Path, path: &Path) -> String {
     let base: Vec<_> = base.components().collect();
@@ -492,7 +525,7 @@ fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
         (None, Some(sibling)) => Placement::Before(sibling),
         (None, None) => Placement::End,
     };
-    let moved = plan(&source, &args.section, &target, placement).map_err(Error::Config)?;
+    let mut moved = plan(&source, &args.section, &target, placement).map_err(Error::Config)?;
 
     let quote = |text: &str| -> Result<String> {
         if text.contains("\"##") {
@@ -505,6 +538,32 @@ fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
     let dir = |p: &Path| p.parent().unwrap_or(Path::new("")).to_path_buf();
     let to_target = relative_path(&dir(&source_path), &target_path);
     let to_source = relative_path(&dir(&target_path), &source_path);
+    // The section's own links start from the target now: an anchor to a
+    // section left behind gains the path back to the source, a relative
+    // file link is recomputed from the target's directory, and an anchor
+    // inside the moved section stays as it is.
+    let same_dir = dir(&source_path) == dir(&target_path);
+    moved.body = colab_lang_markdown::moving::rebase_links(&moved.body, |url| {
+        if url.contains("://") || url.starts_with('/') || url.starts_with("mailto:") {
+            return None;
+        }
+        if let Some(anchor) = url.strip_prefix('#') {
+            return (!moved.own_slugs.iter().any(|s| s == anchor))
+                .then(|| format!("{to_source}{url}"));
+        }
+        if same_dir || url.is_empty() {
+            return None;
+        }
+        let (path, fragment) = match url.split_once('#') {
+            Some((p, f)) => (p, format!("#{f}")),
+            None => (url, String::new()),
+        };
+        let resolved = fs::canonicalize(dir(&source_path).join(path)).ok()?;
+        Some(format!(
+            "{}{fragment}",
+            relative_path(&dir(&target_path), &resolved)
+        ))
+    });
     let mut script = format!(
         "// colab mv-section: `{}` from {source_rel} to {target_rel}.\nrefactor \"mv-section\" {{\n",
         args.section
@@ -537,16 +596,19 @@ fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
     // Links from other files: when the two files share a directory, the
     // file name is all that changes, wherever the link is from. Otherwise
     // the path differs per linking file, and the link check reports them.
-    if dir(&source_path) == dir(&target_path) {
+    if same_dir {
         let (Some(from), Some(to)) = (source_path.file_name(), target_path.file_name()) else {
             return Err(Error::Config("a file without a name".into()));
         };
-        script.push_str(&format!(
-            "    match markdown::link \"{}{old}\" {{ replace \"{}#{}\" }}\n",
-            from.to_string_lossy(),
-            to.to_string_lossy(),
-            moved.new_slug
-        ));
+        let needle = format!("{}{old}", from.to_string_lossy());
+        if markdown_mentions(&cwd, &needle, &[&source_path, &target_path]) {
+            script.push_str(&format!(
+                "    match markdown::link \"{}{old}\" {{ replace \"{}#{}\" }}\n",
+                from.to_string_lossy(),
+                to.to_string_lossy(),
+                moved.new_slug
+            ));
+        }
     }
     script.push_str("}\n");
     if args.show_script {
