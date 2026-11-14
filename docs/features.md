@@ -725,13 +725,15 @@ match markdown::row "Risks@2[Risk=Old]" { delete }
 match markdown::item "Unscheduled[Call and type hierarchy]" { delete }
 match markdown::item "Follow-ups[Raw strings]" { replace "Raw strings (done)" }
 match markdown::item "Conventions[Run `make check` before committing]" in "AGENTS.md" { ensure }
+match markdown::item "Follow-ups[Kept servers] < [Tab re-indent]" { ensure }
+match markdown::item "Steps^[Install colab]" { ensure }
 ```
 
 - An item is named by the start of its text, as a reader sees it; `@N`
   picks the section's Nth list. Only top-level items of a list in the
   section's own text are addressed; nested lists go with their item.
 - `ensure` adds `- <text>` (continuing the list's marker, `-`, `*` or the next number) when no item starts with the text, and starts a list when the section has none. When the list's items wrap, a new one is wrapped to the list's width (backtick spans are never broken); otherwise it stays on one line, like its neighbours. `delete` removes the item with its nested lines. `replace` changes the item's text and keeps its marker and nested list.
-- A prefix that matches two items changes nothing, and says so.
+- `< [start of an item]` puts an `ensure`'s new item just before that item (which must match one), and `^` puts it first; the new item takes its neighbour's marker and indentation. Without either it goes after the last item. A prefix that matches two items changes nothing, and says so.
 - Deleting from a numbered list does not renumber the items after it, since that would touch lines the rule did not name; Markdown renders them in order anyway. `ensure` continues from the last number.
 
 ### `markdown::link` — link destinations

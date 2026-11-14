@@ -39,7 +39,17 @@ pub struct ItemEdit {
     nth: usize,
     /// The item text as written (an `ensure` writes it).
     text: String,
+    /// Where an `ensure` puts a new item: before the item starting with
+    /// this text (`"Notes[New] < [Old]"`), or before the first (`^`).
+    /// `None`: after the last.
+    before: Option<Before>,
     mode: Mode,
+}
+
+#[derive(Debug)]
+enum Before {
+    First,
+    Item(String),
 }
 
 /// One top-level item: its marker, where its first paragraph's text is,
@@ -64,7 +74,14 @@ impl ItemEdit {
     }
 
     fn build(target: &str, mode: Mode) -> Result<Self> {
-        let (section, nth, _, text) = outline::split_target(target).ok_or_else(|| {
+        let (main, before_text) = match target.split_once("] < [") {
+            Some((main, rest)) => (
+                format!("{main}]"),
+                Some(rest.strip_suffix(']').unwrap_or(rest).trim().to_string()),
+            ),
+            None => (target.to_string(), None),
+        };
+        let (section, nth, top, text) = outline::split_target(&main).ok_or_else(|| {
             Error::Config(format!(
                 "markdown::item \"{target}\": give the section and the item's text, e.g. \"Notes[Raw strings]\""
             ))
@@ -74,7 +91,23 @@ impl ItemEdit {
                 "markdown::item \"{target}\": the item text in brackets is empty"
             )));
         }
+        let before = match (before_text, top) {
+            (Some(b), _) if b.is_empty() => {
+                return Err(Error::Config(format!(
+                    "markdown::item \"{target}\": `< [ ]` needs the start of the item to insert before"
+                )));
+            }
+            (Some(b), _) => Some(Before::Item(b)),
+            (None, true) => Some(Before::First),
+            (None, false) => None,
+        };
+        if before.is_some() && !matches!(mode, Mode::Ensure) {
+            return Err(Error::Config(format!(
+                "markdown::item \"{target}\": `< [ … ]` and `^` place a new item, so they go with `ensure` only"
+            )));
+        }
         Ok(Self {
+            before,
             near: outline::near_target(&section),
             target: target.trim().to_string(),
             section,
@@ -108,6 +141,47 @@ impl ItemEdit {
         }
         Ok(match (&self.mode, matching.first()) {
             (Mode::Ensure, Some(_)) | (Mode::Delete | Mode::Replace(_), None) => None,
+            (Mode::Ensure, None) if self.before.is_some() && !items.is_empty() => {
+                let anchor = match self.before.as_ref() {
+                    Some(Before::Item(start)) => {
+                        let start = plain_text(start);
+                        let found: Vec<&Item> = items
+                            .iter()
+                            .filter(|i| plain_text(&source[i.text.clone()]).starts_with(&start))
+                            .collect();
+                        match found.as_slice() {
+                            [one] => *one,
+                            [] => {
+                                return Err(format!(
+                                    "no item of `{}` starts with `{start}` to insert before",
+                                    section.address()
+                                ));
+                            }
+                            many => {
+                                return Err(format!(
+                                    "the item to insert before matches {} items; give more of its text",
+                                    many.len()
+                                ));
+                            }
+                        }
+                    }
+                    _ => &items[0],
+                };
+                // The neighbour's marker and indent; an ordered list keeps
+                // its numbers, which renderers renumber anyway.
+                let at = line_start(source, anchor.span.start);
+                let indent = &source[at..anchor.span.start];
+                let marker = &anchor.marker;
+                let width = wrap_width(source, &items);
+                let hang = format!("{indent}{}", " ".repeat(marker.chars().count()));
+                let mut out = source[..at].to_string();
+                out.push_str(&format!(
+                    "{indent}{marker}{}\n",
+                    wrap(&self.text, width, indent.len() + marker.len(), &hang)
+                ));
+                out.push_str(&source[at..]);
+                Some(out)
+            }
             (Mode::Ensure, None) => Some(match items.last() {
                 Some(last) => {
                     let marker = next_marker(&last.marker);
@@ -331,6 +405,32 @@ mod tests {
     use super::*;
 
     const DOC: &str = "## Notes\n\n- Raw strings in the DSL\n- Tab re-indent\n  - nested detail\n- Call and type hierarchy\n\n## Steps\n\n1. one\n2. two\n";
+
+    #[test]
+    fn ensure_places_a_new_item_before_another_or_first() {
+        let op = ItemEdit::ensure("Notes[Kept servers] < [Tab re-indent]").unwrap();
+        let out = op.apply(DOC);
+        assert!(
+            out.contains(
+                "- Raw strings in the DSL\n- Kept servers\n- Tab re-indent\n  - nested detail\n"
+            ),
+            "{out}"
+        );
+        assert_eq!(op.apply(&out), out, "idempotent");
+        let top = ItemEdit::ensure("Steps^[zero]").unwrap().apply(DOC);
+        assert!(
+            top.ends_with("## Steps\n\n1. zero\n1. one\n2. two\n"),
+            "{top}"
+        );
+        let missing = ItemEdit::ensure("Notes[x] < [Nope]").unwrap();
+        assert!(
+            missing
+                .why_unchanged(DOC)
+                .unwrap()
+                .contains("no item of `Notes` starts with `Nope`")
+        );
+        assert!(ItemEdit::delete("Notes[x] < [Tab]").is_err());
+    }
 
     #[test]
     fn ensure_adds_once_in_the_lists_style() {
