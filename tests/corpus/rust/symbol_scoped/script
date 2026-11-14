@@ -1,0 +1,6 @@
+// Rename the parameter `config` of `other` only. The `Loader` field and
+// the local in `load` share the name and keep it: a plain symbol rename
+// would change all three.
+refactor "scoped-rename" {
+    match rust::symbol "config" where inside 'pub fn other($$$P) -> $R { $$$B }' { replace "limit" }
+}

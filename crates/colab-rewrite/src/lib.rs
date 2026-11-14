@@ -18,6 +18,7 @@
 //! which parses anything, from inheriting a grammar engine.
 
 pub mod pattern;
+pub mod scope;
 
 use tree_sitter::{Node, Tree, TreeCursor};
 

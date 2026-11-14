@@ -581,9 +581,11 @@ dependencies = [
  "ast-grep-core",
  "colab-core",
  "regex",
+ "similar",
  "tree-sitter",
  "tree-sitter-go",
  "tree-sitter-python",
+ "tree-sitter-rust",
 ]
 
 [[package]]

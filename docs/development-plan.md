@@ -21,7 +21,7 @@ millions of lines — when you want to:
 
 ## Where things stand (2026-11-14)
 
-M1–M13.5 (but M10.6), M14, M16, M17–M19, M21, M22–M28 and M20's non-installing parts have shipped
+M1–M13.5 (but M10.6), M14–M19 (but M10.6), M21, M22–M28 and M20's non-installing parts have shipped
 ([details](completed-milestones.md)). colab has 12 source backends and
 3 config backends, structural patterns with `where` constraints, delegated
 rename, move, code actions, references and safe delete through the
@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M15 and M10.6**, while the stable gate is earned; then **M20's install step**, once the gate passes. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats) and M16 (`colab review`, `--split-pr`) have shipped.
+**M20's install step**, now that the stable gate has passed, then **M10.6**. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`) and M15 (`where inside` on `symbol` / `call`) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -40,8 +40,8 @@ what it lets that dogfooding cover.
 
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
-| 1 | M15, M10.6 | Scoped rename (largely superseded by M19); parse-once batching. |
-| 2 | M20 install step | Blocked until the gate's criterion 2 holds for two milestones; its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped 2026-11-14. |
+| 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
+| 2 | M10.6 | Parse-once batching: performance, for the largest repositories. |
 
 ## Stable gate before M20
 
@@ -66,7 +66,7 @@ these hold:
 | Criterion | Status |
 | --------- | ------ |
 | 1. Coverage | Met for code at many sites, renames, Markdown sections, rows, items and links; config keys only in the eval task, not yet on this repo. |
-| 2. No silent failures | **Not met; 1 of 2 clean milestones.** The follow-ups found a row `set` that re-added its row on the next run; M23 found fenced rules adding imports to doc snippets; M14 found patterns matching a node with children they never mention and a rewrite dropping them; after M21, Markdown `row` / `item` / `section` rules skipped files they matched, and `rust::use … { ensure }` put the `use` above `//!` crate docs. All reported success; all are fixed. M16 logged none (its finding, an identity rewrite reflowing code, changed formatting only). One more clean milestone meets it. |
+| 2. No silent failures | **Met: 2 of 2 clean milestones (M16, M15).** Before them, the follow-ups, M23, M14 and the docs review after M21 each found one or two failures that reported success (a row `set` re-adding its row, fenced imports, patterns dropping unmentioned children, Markdown prefilters skipping files, `ensure` above `//!` docs); all are fixed. M16's finding changed formatting only; M15's (a syntactic scope renaming a field's uses but not its declaration) is the documented, positional meaning of the scope, caught by `cargo check` before shipping. |
 | 3. Little hand repair | Met: `--tidy` on `refactor` removed the `cargo fmt` step; one hand edit per milestone (a line inside a shell fence). |
 | 4. Measured benefit | Met: `evals/results.md`, 7 tasks correct, 69% fewer bytes than `Read` + `Edit`, budgets checked in CI. |
 
@@ -80,33 +80,6 @@ these hold:
 - MCP resources + `llms-full.txt` generated from `docs/`, including the
   per-backend caveats.
 - ✅ Shipped 2026-11-14: `colab:ignore [names]` (after code: that line; on its own line: the line below; names are script names or `<lang>::<module>`) for find, refactor and check, by putting back what a rule changed on covered lines. Rules take `message "…"` and `severity error|warning|info`; `--check` fails only above `info`.
-
-### M15 — Scope-bounded symbol rename
-- `--scope <pattern>` filter on `<lang>::symbol` rename, narrowing
-  rewrites to identifiers under a named function / class / impl /
-  module node.
-- Stays syntactic — no type info.
-- Largely superseded by M19: `colab rename` is scope-aware through the
-  language's server. Keep only if a syntactic, server-free narrowing is
-  still wanted.
-
-Design, from the original plan:
-
-Today's `<lang>::symbol` renames every matching identifier in a
-file — fast, but with a non-trivial blast radius at scale. Add
-opt-in narrowing without crossing into whole-program type
-inference:
-
-- **`--scope <pattern>`** restricts the rename to identifiers inside
-  a tree-sitter scope: a function/method by name, a class, an
-  `impl` block, or a module.
-- The pattern language is intentionally limited: identifier text
-  only, no type-relative resolution. Implementation walks the tree,
-  filters byte ranges that fall outside the scope node, then
-  applies the existing edit logic.
-- Documented as "narrows the rename to a syntactic region; still
-  not a semantic rename". Matches IDE rename when there are no
-  shadows; weaker but predictable when there are.
 
 ### M10.6 — Parse-once-per-backend batching (deferred from M10)
 - Add `Operation::lang() -> &'static str` so the composer can
@@ -187,6 +160,6 @@ whichever milestone touches the same code.
 | Mass refactor lands a silent regression on a large repo. | M12: `--verify <command>` runs the project's check after each rule and auto-reverts on failure. `--commit-per-rule` makes each rule individually revertable. `colab fix --check` (M14) gates merges in CI. |
 | The walker is too slow on a 100k-file monorepo. | M10: parallel walker + per-thread parser pool; M10.6 (planned): single-parse multi-rule batching. `criterion` benches under `benches/` track regressions. |
 | Reviewers cannot audit a 5k-file diff produced by one run. | M16: per-rule attribution in JSON output, `colab review` paginated mode, `--split-pr` emits one branch per rule for separate review. |
-| Mass `<lang>::symbol` rename touches more than the user intended. | Today: documented as syntactic and verified with `--format diff`. M15: `--scope <pattern>` narrows the blast radius to a named function / class / module node. |
+| Mass `<lang>::symbol` rename touches more than the user intended. | Documented as syntactic and verified with `--format diff`. Narrowed by path (`in "<glob>"`) and by code (`where inside '<pattern>'`, M15); `colab rename` for a semantic rename. |
 | Walking a vendored / generated tree wastes CPU and risks corrupting third-party code. | M9: default-on `.gitignore` awareness via the `ignore` crate; `--include`/`--exclude` glob filters; `--changed-since` for CI runs. |
 | Long-running `colab.preview` / `colab.apply` MCP calls hang the host. | M13: streaming progress over MCP `notifications/progress` (LSP `$/progress` is a follow-up). `--summary-only` for headless runs that just need the aggregate. |

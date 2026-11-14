@@ -204,7 +204,7 @@ In-file rename of identifier-like tokens.
   matches.
 - **Caveat:** scope-blind. A local variable named `Foo` and a
   top-level `type Foo struct{}` are renamed together. Verify with
-  `--format diff` before `--write`.
+  `--format diff` before `--write`. Narrow it to a function, `impl` or class with `where inside '<pattern>'` ([code scope](dsl.md#code-scope-where-inside-on-symbol-and-call)), or use `colab rename`.
 
 ### `go::struct_tag`
 
@@ -264,7 +264,7 @@ In-file rename of identifier-like tokens.
   also tracks renames of `x`.
 - **Excludes:** macro names, lifetimes, label names, string
   contents.
-- **Caveat:** scope-blind, like every other `<lang>::symbol`.
+- **Caveat:** scope-blind, like every other `<lang>::symbol`. Narrow it to a function, `impl` or class with `where inside '<pattern>'` ([code scope](dsl.md#code-scope-where-inside-on-symbol-and-call)), or use `colab rename`.
 
 ### `rust::crate`
 
@@ -325,7 +325,7 @@ Powered by `tree-sitter-java`.
   the match string. Covers classes, methods, fields, constructors,
   parameters, and locals.
 - **Excludes:** string literals, comments, javadoc.
-- **Caveat:** scope-blind.
+- **Caveat:** scope-blind. Narrow it to a function, `impl` or class with `where inside '<pattern>'` ([code scope](dsl.md#code-scope-where-inside-on-symbol-and-call)), or use `colab rename`.
 
 ---
 
@@ -352,7 +352,7 @@ Powered by `tree-sitter-python`.
   string.
 - **Excludes:** string literals (any kind of quoting), comments.
 - **Caveat:** scope-blind. Local variables that shadow a top-level
-  name are also renamed.
+  name are also renamed. Narrow it to a function, `impl` or class with `where inside '<pattern>'` ([code scope](dsl.md#code-scope-where-inside-on-symbol-and-call)), or use `colab rename`.
 
 ---
 
@@ -381,7 +381,7 @@ rewriting; type-aware operations are out of scope.
   `shorthand_property_identifier`. Covers function names, variable
   names, object keys, JSX component names.
 - **Excludes:** string literals, JSX text, regex literals.
-- **Caveat:** scope-blind.
+- **Caveat:** scope-blind. Narrow it to a function, `impl` or class with `where inside '<pattern>'` ([code scope](dsl.md#code-scope-where-inside-on-symbol-and-call)), or use `colab rename`.
 
 ---
 

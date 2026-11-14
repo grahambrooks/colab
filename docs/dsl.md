@@ -36,7 +36,7 @@ constraint  = [ "not" ] test
 test        = metavar "matches" ( regex | string )
             | metavar "is" ( identifier | string )
             | metavar "count" range
-            | "inside" string
+            | "inside" string           -- the only test on symbol / call: a code scope
             | "has" string
 range       = number | number ".." number | number ".." | ".." number
 metavar     = "$" NAME | "$$$" NAME
@@ -297,8 +297,9 @@ match go::pattern 'errors.Wrap($E, $M)'
 | `has '<pattern>'` | some node within the match matches the pattern |
 | `not <constraint>` | the constraint does not hold |
 
-- Only `<lang>::pattern` takes a `where` clause; any other module rejects
-  it by name.
+- `<lang>::pattern` takes every constraint. `symbol` and `call` take only
+  `inside` / `not inside`, as a [code scope](#code-scope-where-inside-on-symbol-and-call);
+  any other module rejects a `where` clause by name.
 - A constraint must name a metavariable the pattern binds, with the same
   sigil (`$M`, or `$$$ARGS` for `count`). An unknown node kind gets a "did
   you mean". A regex or nested pattern that does not compile fails the
@@ -513,6 +514,8 @@ rename with no scope analysis: without a scope, an identically-named type
 in an unrelated crate is renamed too. Scoping is enforced through the
 rule's relevance check, so a file outside the glob is never parsed by that
 rule — it shows up as a lower `scanned` count, not just a suppressed edit.
+To narrow a rename within a file — one function, one `impl` — add a
+[code scope](#code-scope-where-inside-on-symbol-and-call).
 
 | Pattern | Matches |
 | ------- | ------- |
@@ -578,6 +581,48 @@ So a Go doc comment (`// ParseConfig reads …`) follows the function.
 Only `symbol` rules take it; a code occurrence that is not an
 identifier the rule renames is never touched. Combine it with `and
 fences` to cover the docs as well.
+
+## Code scope: where inside on symbol and call
+
+`in "<glob>"` narrows a rule by path. `where inside '<pattern>'` narrows
+a `symbol` rename or a `call` rewrite by *code*: it changes only what lies
+inside some match of the pattern, and `not inside` only what lies
+outside every match.
+
+```
+// Rename the parameter of one function; same-named fields and locals elsewhere keep it.
+match rust::symbol "config" where inside 'pub fn other($$$P) -> $R { $$$B }' { replace "limit" }
+
+// Everything in one impl block.
+match rust::symbol "cache" where inside 'impl Loader { $$$B }' { replace "store" }
+
+// Move to slog everywhere except in tests.
+match go::call "log.Print" where not inside 'func $F(t *testing.T) { $$$B }' {
+    replace_call "slog.Info($args)"
+    requires import "log/slog"
+}
+```
+
+- The scope is an ordinary [structural pattern](#structural-patterns-langpattern)
+  in the rule's language, so a function, a method, an `impl`, a class or
+  any shape a pattern can name works; write it as the code reads,
+  modifiers included (`pub fn …` does not match as `fn …`). A lone `$$$B`
+  stands for a body's items even where the grammar wants an item
+  (`impl Loader { $$$B }`).
+- Several constraints all hold: `where inside 'impl A { $$$B }', not
+  inside 'fn helper($$$P) { $$$C }'`. Only `inside` and `not inside` are
+  allowed here; the other tests name a metavariable, which only a
+  `pattern` binds.
+- **Still syntactic.** The scope selects identifiers by *position*; it
+  resolves no names. A scope that holds a name's uses but not its
+  declaration (a field read as `self.config` inside an `impl`, declared in
+  the `struct` above it) renames the uses and breaks the code. Scope a
+  rename to where the name lives entirely — a parameter, a local, a
+  private helper — and use [`colab rename`](./cli.md#colab-rename), which
+  asks the language server, when the name crosses the scope.
+- A rule that matched only outside its scope reports "matched no files",
+  saying why; `colab find` lists exactly what `refactor` would change, as
+  for every rule. `in "<glob>"` and `where inside` combine.
 
 ## Idempotency
 
@@ -733,8 +778,6 @@ The DSL is intentionally small. Capabilities being considered:
 - A query namespace (e.g. `go::regex`) for opt-in regex-based
   rewrites where a tree-sitter rule does not suffice.
 - Type constraints (`$X is type T`) via the language server's hover.
-- A scope-aware `<lang>::symbol` mode that respects shadowing.
-  (`in "<glob>"` narrows a rename by *path*; this would narrow it by
-  lexical scope.)
+- A `<lang>::symbol` mode that respects shadowing. (`in "<glob>"` narrows a rename by path and `where inside` by syntactic region; neither resolves names — `colab rename` does, through the language server.)
 
 Track these in [`development-plan.md`](development-plan.md) and the project issue tracker.

@@ -1,0 +1,8 @@
+// Move logging to slog everywhere except in tests, which keep log.Print.
+refactor "slog-outside-tests" {
+    match go::call "log.Print" where not inside 'func $F(t *testing.T) { $$$B }' {
+        replace_call "slog.Info($args)"
+        requires import "log/slog"
+        drops import "log" when unused
+    }
+}

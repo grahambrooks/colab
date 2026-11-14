@@ -234,7 +234,7 @@ fn unbound_constraint() -> Vec<colab_core::Constraint> {
 }
 
 #[test]
-fn only_pattern_modules_take_a_where_clause() {
+fn only_pattern_symbol_and_call_take_a_where_clause() {
     let registry = colab_backends::registry();
     for lang in registry.languages() {
         let backend = registry.get(lang).unwrap();
@@ -248,7 +248,15 @@ fn only_pattern_modules_take_a_where_clause() {
                 .map(|e| e.to_string())
                 .unwrap_or_default();
             let rejected_as_unsupported = err.contains("does not take a `where` clause");
-            if cap.module == "pattern" {
+            if matches!(cap.module, "symbol" | "call") {
+                // A syntactic scope (`inside` / `not inside`) only.
+                assert!(
+                    !rejected_as_unsupported && !err.is_empty(),
+                    "`{lang}::{}` must take `where inside` through \
+                     colab_rewrite::pattern::build_rule_where; got: {err:?}",
+                    cap.module
+                );
+            } else if cap.module == "pattern" {
                 // Reaching the constraint check (or the pattern compiler)
                 // means the backend forwards constraints to the engine.
                 assert!(
@@ -264,6 +272,42 @@ fn only_pattern_modules_take_a_where_clause() {
                 );
             }
         }
+    }
+}
+
+/// `where inside '<pattern>'` narrows a `symbol` rename to the pattern's
+/// matches, in every source backend, and `not inside` to the rest.
+#[test]
+fn a_symbol_rename_takes_a_syntactic_scope() {
+    use colab_core::{Constraint, Test};
+    let registry = colab_backends::registry();
+    let inside = |negated| Constraint {
+        negated,
+        test: Test::Inside("$X".into()),
+    };
+    for lang in registry.languages() {
+        let backend = registry.get(lang).unwrap();
+        if !backend.capabilities().iter().any(|c| c.module == "symbol") {
+            continue;
+        }
+        let spec = || RuleSpec::Replace {
+            target: "old".into(),
+            replacement: "new".into(),
+        };
+        // A lone `$X` matches every node, so `inside` allows every change
+        // and `not inside` none: the scope reaches the engine either way.
+        for negated in [false, true] {
+            let op = backend
+                .build_rule_where("symbol", spec(), &[inside(negated)])
+                .unwrap_or_else(|e| panic!("`{lang}::symbol where inside`: {e}"));
+            assert!(op.to_string().contains("where"), "{lang}: {op}");
+        }
+        let err = backend
+            .build_rule_where("symbol", spec(), &unbound_constraint())
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("takes only `inside"), "{lang}: {err}");
     }
 }
 

@@ -42,6 +42,23 @@ colab refactor --script examples/rust/scoped_rename/scoped.codemod \
     --format diff examples/rust/scoped_rename
 ```
 
+## Narrowing within a file: where inside
+
+`in "<glob>"` picks files. To narrow a rename *within* a file — one
+function, one `impl` — add a code scope:
+
+```sh
+colab refactor --script tests/corpus/rust/symbol_scoped/script \
+    --format diff tests/corpus/rust/symbol_scoped/input
+```
+
+The script renames the parameter `config` of `pub fn other` only, with
+`where inside 'pub fn other($$$P) -> $R { $$$B }'`; the `Loader` field and
+the local in `load` keep the name. The scope is positional, not semantic:
+use it where the name lives entirely inside it. A name declared outside
+the scope (a struct field) and used inside it needs `colab rename`. See
+[`docs/dsl.md`](../../../docs/dsl.md#code-scope-where-inside-on-symbol-and-call).
+
 ## Glob syntax
 
 Matched against the path as the walker yields it — relative to where you

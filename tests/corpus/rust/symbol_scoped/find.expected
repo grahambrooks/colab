@@ -1,0 +1,1 @@
+lib.rs:12:1: [0] pub fn other(config: u32) -> u32 {\n    config * 2

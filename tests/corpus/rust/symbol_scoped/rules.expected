@@ -1,0 +1,1 @@
+1 rust::symbol "config" where inside 'pub fn other($$$P) -> $R { $$$B }' -> "limit"

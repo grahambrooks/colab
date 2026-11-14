@@ -277,6 +277,20 @@ matched against the path as the walker yields it, so where you invoke
 colab (and any `-C`) affects what it sees. Scoping also speeds the run
 up — files outside the glob are never parsed.
 
+Within a file, narrow it by code: `where inside '<pattern>'` keeps only
+the changes inside some match of the pattern (`not inside`: outside all
+of them). It works on `symbol` and `call`:
+
+```
+match rust::symbol "config" where inside 'pub fn load($$$P) -> $R { $$$B }' { replace "settings" }
+match go::call "log.Print" where not inside 'func $F(t *testing.T) { $$$B }' { replace_call "slog.Info($args)" }
+```
+
+It is still positional, not semantic: scope a rename only where the name
+lives entirely (a parameter, a local). A field used inside the scope but
+declared outside it would be renamed at its uses only, breaking the
+build — that is a job for `colab rename`.
+
 Before a symbol rename, check how common the name really is:
 
 ```sh

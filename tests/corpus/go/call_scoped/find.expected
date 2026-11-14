@@ -1,0 +1,2 @@
+main.go:5:1: [0] 
+main.go:9:1: [0] 	log.Print("starting")

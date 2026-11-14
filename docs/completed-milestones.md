@@ -10,6 +10,7 @@ work, including every deferral listed here, is in
 | [M1–M8](#foundation-m1m8) | Workspace, multi-rule scripts, agent-facing CLI, MCP, five backends |
 | [M9–M13.5](#operating-at-scale-m9m135) | Targeting, parallelism, includes, verify / bisect / undo, progress |
 | [M14](#repo-config-m14) | `colab.toml`, `colab fix`, built-in packs for Go, Java, JS and Python, per-extension formatters |
+| [M15](#scoped-rename-m15) | `where inside` / `not inside` on `symbol` and `call`: a syntactic code scope |
 | [M16](#review-m16) | `colab review` of a recorded run by rule; `refactor --split-pr`, one branch per rule |
 | [M17–M19, M22](#agent-of-choice-m17m19-m22) | Inline rules, near misses, structural patterns, LSP both ways, workflow MCP tools |
 | [M21](#distribution-and-ci-formats-m21) | `--format sarif` / `github` for CI annotations and code scanning |
@@ -219,6 +220,27 @@ two-week increments.
   preview/apply requests, the same shape applies.
 
 ---
+
+## Scoped rename (M15)
+
+### ✅ M15 — Scope-bounded symbol rename
+
+- `where inside '<pattern>'` and `not inside '<pattern>'` on `symbol` and
+  `call` rules, in every source backend: the rule runs as usual, then only
+  the changed tokens inside (or outside) the scope pattern's matches are
+  kept (`colab_rewrite::scope::Scoped`). The scope is an ordinary
+  `<lang>::pattern`, so it can be a function, an `impl`, a class, or any
+  shape a pattern names. No CLI flag: the scope is per rule, in the DSL,
+  as the original plan's `--scope` could not be.
+- Still syntactic, as planned: positions, not names. Documented with the
+  case that breaks (a field used inside the scope, declared outside it)
+  and pointed at `colab rename` for it.
+- Patterns gained a placeholder rule: an error node holding nothing but a
+  metavariable is accepted (`impl Loader { $$$B }`, where the grammar
+  wants items), tried only after every wrapper fails to parse cleanly.
+- Contract-tested in all twelve source backends; corpus cases for a Rust
+  rename scoped to one function and a Go call rewrite outside tests, whose
+  outputs compile.
 
 ## Review (M16)
 

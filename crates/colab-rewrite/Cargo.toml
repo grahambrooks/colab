@@ -13,7 +13,9 @@ tree-sitter = { workspace = true }
 ast-grep-core = { workspace = true }
 colab-core = { workspace = true }
 regex = { workspace = true }
+similar = { workspace = true }
 
 [dev-dependencies]
 tree-sitter-go = { workspace = true }
 tree-sitter-python = { workspace = true }
+tree-sitter-rust = { workspace = true }

@@ -203,9 +203,12 @@ impl Shape {
             return Self::Any;
         }
         let mut cursor = node.walk();
+        // An error node holding only a metavariable (a lone `$$$B` in an
+        // item list, see `parse_pattern`) is the placeholder itself, though
+        // tree-sitter marks error nodes as extras.
         Self::Node(
-            node.named_children(&mut cursor)
-                .filter(|c| !c.is_extra() && !c.is_missing())
+            node.children(&mut cursor)
+                .filter(|c| !c.is_missing() && (c.is_error() || (c.is_named() && !c.is_extra())))
                 .map(|c| Self::of(c, source, expando))
                 .collect(),
         )
@@ -269,6 +272,19 @@ impl StructuralPattern {
     /// Compile in the language's contexts, trying the pattern on its own
     /// first when `bare`.
     fn compile_one(language: &PatternLanguage, text: &str, bare: bool) -> Result<Self, String> {
+        // Strictly first, in every wrapper; a placeholder-only error (see
+        // `parse_pattern`) is accepted only when nothing parses cleanly,
+        // so it never displaces a wrapper that fits.
+        Self::compile_with(language, text, bare, false)
+            .or_else(|strict| Self::compile_with(language, text, bare, true).map_err(|_| strict))
+    }
+
+    fn compile_with(
+        language: &PatternLanguage,
+        text: &str,
+        bare: bool,
+        tolerant: bool,
+    ) -> Result<Self, String> {
         if text.trim().is_empty() {
             return Err("a pattern cannot be empty".into());
         }
@@ -300,7 +316,7 @@ impl StructuralPattern {
         let mut attempts = Vec::new();
         // Bare pattern.
         let as_is = if bare {
-            parse_clean(&lang.grammar, &expanded)
+            parse_pattern(&lang.grammar, &expanded, lang.expando, tolerant)
         } else {
             Err("not tried".to_string())
         };
@@ -326,7 +342,8 @@ impl StructuralPattern {
             };
             let filled = context.replacen(PATTERN_SLOT, text, 1);
             let filled_expanded = context.replacen(PATTERN_SLOT, &expanded, 1);
-            let tree = match parse_clean(&lang.grammar, &filled_expanded) {
+            let tree = match parse_pattern(&lang.grammar, &filled_expanded, lang.expando, tolerant)
+            {
                 Ok(tree) => tree,
                 Err(e) => {
                     attempts.push(format!("in `{}`: {e}", context.replace('\n', " ")));
@@ -1008,9 +1025,10 @@ fn named_kinds(grammar: &tree_sitter::Language) -> Vec<&str> {
 
 /// The body of every source backend's
 /// [`LanguageBackend::build_rule_where`]: a block without constraints is
-/// an ordinary [`LanguageBackend::build_rule`]; constraints are accepted
-/// only on `pattern`, with `replace` or `delete`, and are compiled by
-/// `compile` (the backend's own `PatternOp::compile`).
+/// an ordinary [`LanguageBackend::build_rule`]. On `pattern` (with
+/// `replace` or `delete`) constraints are compiled by `compile` (the
+/// backend's own `PatternOp::compile`); on `symbol` and `call` they may
+/// only be `inside` / `not inside`, a syntactic scope ([`crate::scope`]).
 pub fn build_rule_where<B, F>(
     backend: &B,
     module: &str,
@@ -1025,6 +1043,14 @@ where
     if constraints.is_empty() {
         return backend.build_rule(module, spec);
     }
+    // `symbol` and `call` take a syntactic scope: `where inside '<pattern>'`.
+    if matches!(module, "symbol" | "call") {
+        let inner = backend.build_rule(module, spec)?;
+        let scoped = crate::scope::Scoped::new(backend.lang(), module, inner, constraints, |p| {
+            compile_scope(backend, p)
+        })?;
+        return Ok(Box::new(scoped));
+    }
     if module != "pattern" {
         return Err(colab_core::backend::where_unsupported(
             backend.lang(),
@@ -1037,6 +1063,20 @@ where
         _ => return Err(backend.unsupported(module, &spec)),
     };
     compile(spec.target(), action, constraints)
+}
+
+/// A scope pattern, compiled as the backend's own `<lang>::pattern` (with
+/// `delete`, never applied: only its matches are used).
+fn compile_scope<B: LanguageBackend + ?Sized>(
+    backend: &B,
+    pattern: &str,
+) -> colab_core::Result<Box<dyn Operation>> {
+    backend.build_rule(
+        "pattern",
+        RuleSpec::Delete {
+            target: pattern.to_string(),
+        },
+    )
 }
 
 /// What a `<lang>::pattern` rule does with each match.
@@ -1398,6 +1438,51 @@ fn parse_clean(grammar: &tree_sitter::Language, text: &str) -> Result<tree_sitte
     Ok(tree)
 }
 
+/// Parse a pattern (metavariables already expanded). Like [`parse_clean`],
+/// except that an error node holding nothing but a metavariable is
+/// allowed: `$$$B` alone in a Rust `impl` body or a Go struct is not a
+/// valid item to the grammar, but it is a placeholder, not a mistake, and
+/// ast-grep matches it as one. Any other error, or a missing node, still
+/// fails the pattern.
+fn parse_pattern(
+    grammar: &tree_sitter::Language,
+    text: &str,
+    expando: char,
+    tolerant: bool,
+) -> Result<tree_sitter::Tree, String> {
+    if !tolerant {
+        return parse_clean(grammar, text);
+    }
+    let mut parser = Parser::new();
+    parser
+        .set_language(grammar)
+        .map_err(|e| format!("grammar failed to load: {e}"))?;
+    let tree = parser
+        .parse(text, None)
+        .ok_or_else(|| "the parser gave up".to_string())?;
+    if !tree.root_node().has_error() {
+        return Ok(tree);
+    }
+    let placeholder = |node: Node<'_>| {
+        let t = node.utf8_text(text.as_bytes()).unwrap_or("").trim();
+        t.strip_prefix(expando).is_some_and(|rest| {
+            let name = rest.trim_start_matches(expando);
+            !name.is_empty() && name.chars().all(|c| is_var_start(c) || c.is_ascii_digit())
+        })
+    };
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if node.is_missing() || (node.is_error() && !placeholder(node)) {
+            return Err("syntax error".into());
+        }
+        if node.has_error() && !node.is_error() {
+            let mut cursor = node.walk();
+            stack.extend(node.children(&mut cursor));
+        }
+    }
+    Ok(tree)
+}
+
 /// Narrow `span` to exclude surrounding whitespace.
 fn trim_span(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
     let slice = &text[span.clone()];
@@ -1668,6 +1753,28 @@ mod tests {
         let nested = c(false, Test::Inside("func (".into()));
         let err = constrained("errors.Wrap($E, $M)", &[nested]).unwrap_err();
         assert!(err.starts_with("`inside 'func ('`"), "{err}");
+    }
+
+    fn rust() -> PatternLanguage {
+        PatternLanguage {
+            grammar: tree_sitter_rust::LANGUAGE.into(),
+            expando: 'µ',
+            contexts: &["fn f() { @@PATTERN@@ }"],
+            also: &[],
+        }
+    }
+
+    #[test]
+    fn a_lone_sequence_in_an_item_list_is_a_placeholder() {
+        // `$$$B` is not a valid item, but alone in a body it stands for
+        // the items.
+        let p = StructuralPattern::compile(&rust(), "impl Loader { $$$B }").unwrap();
+        let src = "struct Loader;\nimpl Loader {\n    fn load(&self) {}\n}\nimpl Other {}\n";
+        let found = p.find(src);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].text.starts_with("impl Loader"));
+        // Any other syntax error still fails the pattern.
+        assert!(StructuralPattern::compile(&rust(), "impl Loader { fn }").is_err());
     }
 
     #[test]

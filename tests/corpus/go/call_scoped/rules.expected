@@ -1,0 +1,1 @@
+1 go::call "log.Print" where not inside 'func $F(t *testing.T) { $$$B }' -> replace_call "slog.Info($args)" drops import "log" when unused requires import "log/slog"
