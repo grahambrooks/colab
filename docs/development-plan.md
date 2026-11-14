@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20 (its install step once the gate passes)**, then M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite) M14 (`colab.toml` + `colab fix`) and M21 (CI formats, npm / PyPI packages) have shipped.
+**M20 (its install step once the gate passes)**, then M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`) and M21 (CI formats, npm / PyPI packages) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
