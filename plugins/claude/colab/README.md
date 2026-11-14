@@ -10,7 +10,7 @@ codemods as tool calls.
 | Kind | Name | Purpose |
 | ---- | ---- | ------- |
 | Skill | `colab-codemod` | When a change is mechanical and structural, write a `.codemod` script, check the blast radius, and apply it safely. Includes a namespace/match-string reference and a diagnosis guide. |
-| MCP server | `colab` | 18 tools over stdio. Codemods: `colab.preview`, `colab.apply`, `colab.find`, `colab.ast`, `colab.test_rule`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema`. No-script workflows: `colab.move_import`, `colab.set_config_key`, `colab.rename_symbol`. Markdown: `colab.outline`, `colab.section`, `colab.edit_markdown`. Language server: `colab.references`, `colab.rename`, `colab.action`. |
+| MCP server | `colab` | 19 tools over stdio. Codemods: `colab.preview`, `colab.apply`, `colab.find`, `colab.ast`, `colab.test_rule`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema`. No-script workflows: `colab.move_import`, `colab.set_config_key`, `colab.rename_symbol`. Markdown: `colab.outline`, `colab.section`, `colab.edit_markdown`. Language server: `colab.references`, `colab.rename`, `colab.action`, `colab.mv`. |
 
 The skill triggers on mechanical multi-file changes — an import path, a
 dependency rename, a symbol, a Java package, a Go struct tag, a call

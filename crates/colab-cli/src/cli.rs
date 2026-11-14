@@ -2104,93 +2104,33 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
 
 /// `colab mv`: ask the server what the move needs, then make it with git.
 fn run_mv(args: MvArgs) -> Result<i32> {
-    use colab_core::fileops::{ChangeSet, FileOp};
-    use colab_lsp_client::{MoveRequest, ServerCommand};
-
     change_working_dir(&args.change_dir)?;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
-    let from = fs::canonicalize(cwd.join(&args.from)).map_err(|e| Error::io_at(&args.from, e))?;
-    let mut to = cwd.join(&args.to);
-    if to.is_dir() {
-        let name = from
-            .file_name()
-            .ok_or_else(|| Error::Config(format!("cannot move {}", from.display())))?;
-        to = to.join(name);
-    }
-    // Resolve `to` through its parent, so it compares equal to the
-    // canonical paths a server sends back.
-    let to = match to.parent().and_then(|p| fs::canonicalize(p).ok()) {
-        Some(parent) => parent.join(to.file_name().unwrap_or_default()),
-        None => to,
-    };
-    if to.exists() {
-        return Err(Error::Config(format!(
-            "{} already exists; colab does not overwrite files",
-            to.display()
-        )));
-    }
-    let root = match &args.root {
-        Some(root) => fs::canonicalize(root).map_err(|e| Error::io_at(root, e))?,
-        None => project_root(&from).unwrap_or_else(|| cwd.clone()),
-    };
-
-    let server = if args.no_lsp {
-        None
-    } else {
-        match &args.lsp {
-            Some(command) => Some(ServerCommand::parse(command)?),
-            None => ServerCommand::default_for(&from),
-        }
-    };
     let started = Instant::now();
-    let mut warnings = Vec::new();
-    let tidy_root = root.clone();
-    let (changes, label) = match &server {
-        Some(server) => {
-            info!("Moving via `{}` in {}", server.display(), root.display());
-            let outcome = colab_lsp_client::will_rename(
-                server,
-                &MoveRequest {
-                    root,
-                    from: from.clone(),
-                    to: to.clone(),
-                    timeout: std::time::Duration::from_secs(args.timeout),
-                    settle: std::time::Duration::from_millis(500),
-                },
-            )?;
-            if !outcome.references_updated {
-                warnings.push(format!(
-                    "`{}` does not update references when a file moves (no workspace.fileOperations.willRename); only the file was moved",
-                    server.program
-                ));
-            }
-            (outcome.changes, format!("move via {}", server.program))
-        }
-        None => {
-            if !args.no_lsp {
-                warnings.push(format!(
-                    "no default language server for {}; only the file was moved (pass --lsp '<command>' to update references)",
-                    from.display()
-                ));
-            }
-            let set = ChangeSet {
-                ops: vec![FileOp::Move { from, to }],
-                edits: Vec::new(),
-            };
-            (set, "move via git".to_string())
-        }
-    };
-    let tidy = server.as_ref().map(|server| crate::lsp_commands::Tidy {
-        server,
-        root: &tidy_root,
+    let plan = crate::lsp_commands::plan_move(&crate::lsp_commands::MoveSpec {
+        cwd: &cwd,
+        from: &args.from,
+        to: &args.to,
+        lsp: args.lsp.as_deref(),
+        no_lsp: args.no_lsp,
+        root: args.root.as_deref(),
         timeout: args.timeout,
-    });
+    })?;
+    let mut warnings = plan.warnings;
+    let tidy = plan
+        .server
+        .as_ref()
+        .map(|server| crate::lsp_commands::Tidy {
+            server,
+            root: &plan.root,
+            timeout: args.timeout,
+        });
     if args.apply.tidy && tidy.is_none() {
         warnings.push("--tidy needs a language server; nothing was tidied".to_string());
     }
     run_change_set(
-        vec![label.to_string()],
-        changes,
+        vec![plan.label],
+        plan.changes,
         warnings,
         &args.apply,
         &cwd,

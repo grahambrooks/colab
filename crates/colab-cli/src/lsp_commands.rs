@@ -747,7 +747,24 @@ impl colab_mcp::ToolProvider for LspTools {
         action["title"] = json!({"type": "string", "description": "Case-insensitive substring of the action's title."});
         write_properties(&mut action);
 
+        let mut mv = json!({
+            "from": {"type": "string", "description": "The file or directory to move, relative to `cwd`."},
+            "to": {"type": "string", "description": "Where it goes; an existing directory means \"into it\"."},
+            "lsp": {"type": "string", "description": "Language-server command that updates what refers to the file; defaults by extension."},
+            "no_lsp": {"type": "boolean", "default": false, "description": "Move with git only; update no references."},
+            "root": {"type": "string", "description": "Project root for the server; defaults to the nearest project marker."},
+            "cwd": {"type": "string", "description": "Directory paths are relative to; defaults to the server's."},
+            "timeout": {"type": "integer", "description": "Seconds for start-up, indexing, and the answer (default 120)."}
+        });
+        write_properties(&mut mv);
+
         vec![
+            json!({
+                "name": "colab.mv",
+                "description": "Move or rename a file the way an IDE does: the language server updates what refers to it (`mod` declarations, imports, paths — workspace/willRenameFiles) and the move itself is made with `git mv`, so history follows. Never a plain filesystem move. Previews unless `write` is true; writing needs a git work tree with the touched paths clean.",
+                "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false},
+                "inputSchema": {"type": "object", "properties": mv, "required": ["from", "to"], "additionalProperties": false}
+            }),
             json!({
                 "name": "colab.references",
                 "description": "Find every reference to the symbol at a position, as resolved by the language's own server (scope-aware, unlike text search). Read-only. Use before changing or deleting a symbol to see its reach.",
@@ -781,10 +798,149 @@ impl colab_mcp::ToolProvider for LspTools {
             "colab.rename" => mcp_rename,
             "colab.rename_symbol" => mcp_rename_symbol,
             "colab.action" => mcp_action,
+            "colab.mv" => mcp_mv,
             _ => return None,
         };
         Some(run(args))
     }
+}
+
+/// What `colab mv` and `colab.mv` move, and how.
+pub(crate) struct MoveSpec<'a> {
+    pub cwd: &'a Path,
+    pub from: &'a Path,
+    pub to: &'a Path,
+    pub lsp: Option<&'a str>,
+    pub no_lsp: bool,
+    pub root: Option<&'a Path>,
+    pub timeout: u64,
+}
+
+/// A move, worked out but not made: the file operation plus the edits the
+/// server asked for to keep references pointing at it.
+pub(crate) struct MovePlan {
+    pub changes: ChangeSet,
+    pub label: String,
+    pub warnings: Vec<String>,
+    pub server: Option<ServerCommand>,
+    pub root: PathBuf,
+}
+
+/// Plan `spec.from` → `spec.to` (into it, when `to` is a directory): the
+/// server's `workspace/willRenameFiles` edits, or the move alone when
+/// there is no server.
+pub(crate) fn plan_move(spec: &MoveSpec<'_>) -> Result<MovePlan> {
+    use colab_core::fileops::FileOp;
+    use colab_lsp_client::MoveRequest;
+    let from =
+        fs::canonicalize(spec.cwd.join(spec.from)).map_err(|e| Error::io_at(spec.from, e))?;
+    let mut to = spec.cwd.join(spec.to);
+    if to.is_dir() {
+        let name = from
+            .file_name()
+            .ok_or_else(|| Error::Config(format!("cannot move {}", from.display())))?;
+        to = to.join(name);
+    }
+    // Resolve `to` through its parent, so it compares equal to the
+    // canonical paths a server sends back.
+    let to = match to.parent().and_then(|p| fs::canonicalize(p).ok()) {
+        Some(parent) => parent.join(to.file_name().unwrap_or_default()),
+        None => to,
+    };
+    if to.exists() {
+        return Err(Error::Config(format!(
+            "{} already exists; colab does not overwrite files",
+            to.display()
+        )));
+    }
+    let root = match spec.root {
+        Some(root) => fs::canonicalize(spec.cwd.join(root)).map_err(|e| Error::io_at(root, e))?,
+        None => project_root(&from).unwrap_or_else(|| spec.cwd.to_path_buf()),
+    };
+    let server = if spec.no_lsp {
+        None
+    } else {
+        match spec.lsp {
+            Some(command) => Some(ServerCommand::parse(command)?),
+            None => ServerCommand::default_for(&from),
+        }
+    };
+    let mut warnings = Vec::new();
+    let (changes, label) = match &server {
+        Some(server) => {
+            info!("Moving via `{}` in {}", server.display(), root.display());
+            let outcome = colab_lsp_client::will_rename(
+                server,
+                &MoveRequest {
+                    root: root.clone(),
+                    from: from.clone(),
+                    to: to.clone(),
+                    timeout: Duration::from_secs(spec.timeout),
+                    settle: Duration::from_millis(500),
+                },
+            )?;
+            if !outcome.references_updated {
+                warnings.push(format!(
+                    "`{}` does not update references when a file moves (no workspace.fileOperations.willRename); only the file was moved",
+                    server.program
+                ));
+            }
+            (outcome.changes, format!("move via {}", server.program))
+        }
+        None => {
+            if !spec.no_lsp {
+                warnings.push(format!(
+                    "no default language server for {}; only the file was moved (pass `lsp` to update references)",
+                    from.display()
+                ));
+            }
+            let set = ChangeSet {
+                ops: vec![FileOp::Move { from, to }],
+                edits: Vec::new(),
+            };
+            (set, "move via git".to_string())
+        }
+    };
+    Ok(MovePlan {
+        changes,
+        label,
+        warnings,
+        server,
+        root,
+    })
+}
+
+/// `colab.mv`: `colab mv` over MCP.
+fn mcp_mv(args: &Value) -> Result<Value> {
+    let cwd = match arg(args, "cwd") {
+        Some(dir) => fs::canonicalize(dir).map_err(|e| Error::io_at(Path::new(dir), e))?,
+        None => std::env::current_dir().map_err(io_to_error)?,
+    };
+    let from = arg(args, "from").ok_or_else(|| Error::Config("`from` is required".into()))?;
+    let to = arg(args, "to").ok_or_else(|| Error::Config("`to` is required".into()))?;
+    let timeout = args.get("timeout").and_then(Value::as_u64).unwrap_or(120);
+    let plan = plan_move(&MoveSpec {
+        cwd: &cwd,
+        from: Path::new(from),
+        to: Path::new(to),
+        lsp: arg(args, "lsp"),
+        no_lsp: flag(args, "no_lsp"),
+        root: arg(args, "root").map(Path::new),
+        timeout,
+    })?;
+    let tidy = plan.server.as_ref().map(|server| Tidy {
+        server,
+        root: &plan.root,
+        timeout,
+    });
+    change_set_json(
+        vec![plan.label],
+        plan.changes,
+        plan.warnings,
+        args,
+        &cwd,
+        tidy,
+    )
 }
 
 fn arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {

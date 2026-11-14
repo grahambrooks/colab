@@ -516,7 +516,7 @@ the server process started, and `include "..."` does not work at all.
 | read Markdown | `colab.outline {paths, depth?}`, `colab.section {path, section, body?}` |
 | change Markdown | `colab.edit_markdown {module, action, target, value?, paths, cwd}` — previews unless `write: true` |
 
-There is no MCP tool for `colab fix` or `colab mv`; use the CLI for them.
+To move a file over MCP use `colab.mv {from, to, cwd}` (previews unless `write: true`; `git mv` plus the server's reference updates). There is no MCP tool for `colab fix`; use the CLI for it.
 
 **Three common jobs need no script at all.** Each previews unless
 `write: true`, and returns the generated `script` so you can extend it:

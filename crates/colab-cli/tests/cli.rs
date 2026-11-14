@@ -3461,3 +3461,49 @@ fn script_builtin_runs_a_pack_built_into_colab() {
     assert!(String::from_utf8_lossy(&typo.stderr).contains("did you mean `go/1.18-modern`"));
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn mcp_mv_moves_a_file_and_updates_its_references() {
+    let root = git_workspace("mcp-mv", &[("main.rs", RS_MOD), ("util.rs", RS_UTIL)]);
+    let lsp = fake_lsp();
+    let cwd = root.to_str().unwrap();
+    let call = |id: u32, write: bool| {
+        serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": {"name": "colab.mv", "arguments": {
+                "from": "util.rs", "to": "helpers.rs", "lsp": lsp, "root": ".", "cwd": cwd, "write": write}}})
+        .to_string()
+    };
+    let input = format!("{}\n{}\n", call(1, false), call(2, true));
+    let mut child = colab()
+        .arg("mcp")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let text = |i: usize| -> Value {
+        serde_json::from_str(replies[i]["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    };
+    // The preview names the move and the reference edit, and writes nothing.
+    assert_eq!(text(0)["written"], false, "{}", text(0));
+    assert!(text(0).to_string().contains("helpers.rs"), "{}", text(0));
+    assert_eq!(text(1)["written"], true, "{}", text(1));
+    assert_eq!(
+        fs::read_to_string(root.join("main.rs")).unwrap(),
+        "mod helpers;\nfn main() { helpers::go(); }\n"
+    );
+    assert!(git(&root, &["status", "--porcelain"]).contains("R  util.rs -> helpers.rs"));
+    fs::remove_dir_all(&root).ok();
+}
