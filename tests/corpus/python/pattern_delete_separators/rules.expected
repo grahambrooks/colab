@@ -1,0 +1,2 @@
+1 python::pattern 'debug=True' -> delete
+1 python::pattern '"debug": True' -> delete

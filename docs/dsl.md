@@ -226,9 +226,13 @@ identical text: `$A == $A` matches `x == x` but not `x == y`. Any other
 template: `$NAME` and `$$$NAME` (the whole span, separators included).
 **`delete`** removes each match that stands alone on its line(s) — apart
 from indentation and a trailing `;` or `,` — taking the line with it. A
-match nested inside a larger expression (`() => f(x)`, `[f(x), 2]`) is left
-in place, since removing it would leave broken code; `colab find` still
-lists it, and `replace` can rewrite it.
+match inside a line goes with the `,` beside it, so a list stays well
+formed: an argument, element, dict entry or object property takes the
+comma after it (`f(a, b, c)` → `f(a, c)`), and the last one the comma
+before it (`f(a, b)` → `f(a)`). A match with no comma beside it
+(`() => f(x)`, `return f(x)`, a sole argument) is left in place, since
+removing it would leave broken code; `colab find` still lists it, and
+`replace` can rewrite it.
 
 **Never writes broken code.** If a file parsed cleanly and a pattern
 rewrite would leave a syntax error in it — usually a template that is not
@@ -249,6 +253,9 @@ How it matches:
   one text parses as different nodes in different places, both are
   matched: in Python, `Optional[$T]` finds the subscript in
   `cast(Optional[str], x)` and the annotation in `def f(a: Optional[str])`.
+  Text that is code only in such a place compiles there: Python's
+  `debug=True` is also a keyword argument and `"debug": True` a dict
+  entry, and JavaScript's `debug: true` is also an object property.
 - **Whitespace-only rewrites are not made.** A result that differs from
   what it matched only in whitespace outside quotes — `f($$$A)` →
   `f($$$A)` over a call whose arguments span lines — changes no token, so

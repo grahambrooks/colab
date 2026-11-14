@@ -254,14 +254,26 @@ impl StructuralPattern {
     /// names every attempt, so a pattern that is not valid code in this
     /// language says so rather than silently matching nothing.
     pub fn compile(language: &PatternLanguage, text: &str) -> Result<Self, String> {
-        let mut primary = Self::compile_one(language, text, true)?;
-        for context in language.also {
+        let alt_in = |context: &'static &'static str| {
             let only = PatternLanguage {
                 contexts: std::slice::from_ref(context),
                 also: &[],
                 ..language.clone()
             };
-            if let Ok(alt) = Self::compile_one(&only, text, false)
+            Self::compile_one(&only, text, false)
+        };
+        // Text that is code only in an `also` context (a Python keyword
+        // argument, a dict entry) compiles there.
+        let mut primary = match Self::compile_one(language, text, true) {
+            Ok(primary) => primary,
+            Err(e) => language
+                .also
+                .iter()
+                .find_map(|context| alt_in(context).ok())
+                .ok_or(e)?,
+        };
+        for context in language.also {
+            if let Ok(alt) = alt_in(context)
                 && alt.tree != primary.tree
                 && primary.also.iter().all(|a| a.tree != alt.tree)
             {
@@ -602,34 +614,103 @@ impl StructuralPattern {
         apply_edits(source, edits)
     }
 
-    /// Remove every match that stands alone on its line(s) — apart from
-    /// indentation and a trailing `;` or `,` — taking the whole line with
-    /// it. A match nested inside a larger expression (`() => f(x)`,
-    /// `[f(x), 2]`) is left in place: removing it would leave the code
-    /// around it incomplete. Rewrite those with `replace` instead.
+    /// Remove every match. One that stands alone on its line(s) — apart
+    /// from indentation and a trailing `;` or `,` — goes with its whole
+    /// line. One inside a line goes with the `,` beside it, so a list
+    /// element leaves a well-formed list: the following comma and the
+    /// space after it (`f(a, b, c)` → `f(a, c)`), or for the last element
+    /// the preceding one (`f(a, b)` → `f(a)`). A match with no comma beside
+    /// it (`() => f(x)`, `return f(x)`) is left in place: removing it would
+    /// leave the code around it incomplete. Rewrite those with `replace`.
     pub fn delete(&self, source: &str) -> String {
-        let spans: Vec<(usize, usize)> = self
-            .find(source)
-            .into_iter()
-            .filter(|found| {
-                let (line_start, line_end) = line_span(source, found.start, found.end);
-                let before = &source[line_start..found.start];
-                let after = &source[found.end..line_end];
-                before.trim().is_empty()
-                    && after
-                        .trim()
-                        .trim_start_matches([';', ','])
-                        .trim()
-                        .is_empty()
-            })
-            .map(|found| (found.start, found.end))
-            .collect();
-        crate::delete_lines(source, spans)
+        let mut tree = None;
+        let mut spans: Vec<(usize, usize)> = Vec::new();
+        for found in self.find(source) {
+            let (line_start, line_end) = line_span(source, found.start, found.end);
+            let before = &source[line_start..found.start];
+            let after = &source[found.end..line_end];
+            let alone = before.trim().is_empty()
+                && after
+                    .trim()
+                    .trim_start_matches([';', ','])
+                    .trim()
+                    .is_empty();
+            if alone {
+                spans.push((line_start, line_end));
+                continue;
+            }
+            let tree = tree.get_or_insert_with(|| {
+                let mut parser = Parser::new();
+                parser
+                    .set_language(&self.lang.grammar)
+                    .ok()
+                    .and_then(|()| parser.parse(source, None))
+            });
+            if let Some(span) = tree
+                .as_ref()
+                .and_then(|t| with_separator(t, found.start, found.end))
+            {
+                spans.push(span);
+            }
+        }
+        // Outermost first: a span inside one already taken goes with it.
+        spans.sort_by_key(|&(start, end)| (start, std::cmp::Reverse(end)));
+        let mut kept: Vec<(usize, usize)> = Vec::new();
+        for span in spans {
+            if kept.last().is_some_and(|last| span.0 < last.1) {
+                continue;
+            }
+            kept.push(span);
+        }
+        let mut out = source.to_string();
+        for (start, end) in kept.into_iter().rev() {
+            out.replace_range(start..end, "");
+        }
+        out
     }
 
     /// `true` when `source` parses without a syntax error.
     fn parses_cleanly(&self, source: &str) -> bool {
         parse_clean(&self.lang.grammar, source).is_ok()
+    }
+}
+
+/// The bytes to remove for the match at `start..end` with the `,` beside
+/// it: up to the next element when a comma follows and an element after
+/// it, else from the end of the previous element when a comma precedes,
+/// else the match and a trailing comma alone (`f(a,)`). `None` when no
+/// comma is beside it.
+fn with_separator(tree: &tree_sitter::Tree, start: usize, end: usize) -> Option<(usize, usize)> {
+    let mut node = tree.root_node().descendant_for_byte_range(start, end)?;
+    // The widest node over exactly the match: an argument, not its inner
+    // expression.
+    while let Some(parent) = node.parent() {
+        if parent.byte_range() != node.byte_range() {
+            break;
+        }
+        node = parent;
+    }
+    let is_comma = |n: &tree_sitter::Node<'_>| !n.is_named() && n.kind() == ",";
+    let next = node.next_sibling().filter(is_comma);
+    let prev = node.prev_sibling().filter(is_comma);
+    match (next, prev) {
+        (Some(next), _) => match next.next_named_sibling() {
+            Some(element) => Some((node.start_byte(), element.start_byte())),
+            None => match prev {
+                Some(prev) => Some((
+                    prev.prev_named_sibling()
+                        .map_or(prev.start_byte(), |e| e.end_byte()),
+                    node.end_byte(),
+                )),
+                None => Some((node.start_byte(), next.end_byte())),
+            },
+        },
+        (None, Some(prev)) => Some((
+            prev.prev_named_sibling()
+                .map_or(prev.start_byte(), |e| e.end_byte()),
+            node.end_byte(),
+        )),
+        (None, None) => None,
     }
 }
 
@@ -2602,10 +2683,17 @@ mod tests {
     }
 
     #[test]
-    fn delete_leaves_nested_matches_in_place() {
+    fn delete_takes_a_list_elements_comma_and_leaves_other_nested_matches() {
         let p = StructuralPattern::compile(&python(), "print($X)").unwrap();
-        let src = "print(0)\ny = [print(1), 2]\n";
-        assert_eq!(p.delete(src), "y = [print(1), 2]\n");
+        let src = "print(0)\ny = [print(1), 2]\nz = [3, print(4)]\nn = len(print(5))\n";
+        assert_eq!(p.delete(src), "y = [2]\nz = [3]\nn = len(print(5))\n");
+        // Only the trailing comma when it is the sole element; nested
+        // matches inside a removed element go with it.
+        let q = StructuralPattern::compile(&go(), "f($$$A)").unwrap();
+        let go_src = "package p\nfunc g() { h(f(1,), 2); h(f(f(3)), 4) }\n";
+        assert_eq!(q.delete(go_src), "package p\nfunc g() { h(2); h(4) }\n");
+        let sole = "package p\nfunc g() { h(f(1,)) }\n";
+        assert_eq!(q.delete(sole), sole);
     }
 
     #[test]

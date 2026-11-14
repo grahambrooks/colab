@@ -1,0 +1,6 @@
+// The same retired option in JavaScript. `debug: true` alone is a
+// labelled statement; colab also compiles it as an object property, and
+// `delete` takes its comma.
+refactor "drop-debug-flag" {
+    match js::pattern 'debug: true' { delete }
+}

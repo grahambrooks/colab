@@ -19,7 +19,9 @@ pub(crate) fn language() -> PatternLanguage {
         grammar: tree_sitter_javascript::LANGUAGE.into(),
         expando: '$',
         contexts: &["class C {\n@@PATTERN@@\n}\n"],
-        also: &[],
+        // `debug: true` alone is a labelled statement; in an object it is
+        // the property a pattern usually means. Match both.
+        also: &["({@@PATTERN@@});\n"],
     }
 }
 

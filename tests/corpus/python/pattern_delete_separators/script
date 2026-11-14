@@ -1,0 +1,8 @@
+// A retired option goes from every call and config dict: `delete` takes
+// the comma beside an argument or entry, so each list stays well formed.
+// `debug=True` is an assignment on its own; colab also compiles it as a
+// keyword argument, and `"debug": True` as a dict entry.
+refactor "drop-debug-flag" {
+    match python::pattern 'debug=True' { delete }
+    match python::pattern '"debug": True' { delete }
+}

@@ -113,7 +113,7 @@ types.
   patterns (one rule for two shapes), `follows` / `precedes`, `nth`,
   `field` (which child a match sits in), and `stopBy` for `inside` / `has`.
   ast-grep-core implements most of it; constraints still only narrow.
-- **Deletes and rewrites that take their separator**: removing an
+- **Deletes and rewrites that take their separator** (shipped for `delete`: a match inside a line goes with the comma beside it, and Python keyword arguments, dict entries and JS object properties are patterns now; a rewrite keeps its separators as they are): removing an
   argument, list element or key also removes its comma or blank line, as
   ast-grep's `expandStart` / `expandEnd` do. Today a deletion inside a
   list is refused or leaves a dangling comma.

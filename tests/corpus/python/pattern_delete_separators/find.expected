@@ -1,0 +1,5 @@
+app.py:3:30: [1] "debug": True
+app.py:4:31: [1] "debug": True
+app.py:8:19: [0] debug=True
+app.py:9:18: [0] debug=True
+app.py:12:9: [0] debug=True

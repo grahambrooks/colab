@@ -20,8 +20,14 @@ pub(crate) fn language() -> PatternLanguage {
         expando: 'µ',
         contexts: &["def _():\n    @@PATTERN@@\n"],
         // In an annotation `Optional[str]` is a `generic_type`, not the
-        // `subscript` it is as an expression; match both.
-        also: &["def _(x: @@PATTERN@@): pass\n"],
+        // `subscript` it is as an expression; match both. `debug=True` is
+        // an assignment on its own but a keyword argument in a call, and
+        // `"k": v` is code only as a dict entry.
+        also: &[
+            "def _(x: @@PATTERN@@): pass\n",
+            "f(@@PATTERN@@)\n",
+            "{@@PATTERN@@}\n",
+        ],
     }
 }
 

@@ -1,0 +1,8 @@
+// A retired `debug` option goes from every call and config, in Python and
+// JavaScript. `delete` takes the comma beside each argument, entry or
+// property, so every list stays well formed.
+refactor "drop-debug-flag" {
+    match python::pattern 'debug=True' { delete }
+    match python::pattern '"debug": True' { delete }
+    match js::pattern 'debug: true' { delete }
+}

@@ -206,8 +206,9 @@ match js::pattern 'console.log($$$ARGS)' { delete }
   `drops import "github.com/pkg/errors" when unused` (Go only). These touch
   only the files the rule rewrote. A separate unconditional
   `go::import "fmt" { ensure }` would add `fmt` to every file.
-- `delete` removes only matches standing alone on their line; nested ones
-  stay. A rewrite that would leave a syntax error is not applied to that
+- `delete` removes a match standing alone on its line with the line, and
+  a list element (argument, entry, property) with its comma; anything else
+  nested stays. A rewrite that would leave a syntax error is not applied to that
   file — if `find` shows matches that `refactor` left alone, the template
   is the problem.
 
