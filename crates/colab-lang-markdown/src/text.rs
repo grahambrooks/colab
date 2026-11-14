@@ -107,6 +107,17 @@ impl TextEdit {
             .map(|r| own.start + r.start..own.start + r.end)
             .filter(|r| !fences.iter().any(|f| f.start <= r.start && r.end <= f.end))
             .collect();
+        // A replacement that contains the phrase (`[a]` → `[a] [b]`) would
+        // match again on the next run: an occurrence already standing where
+        // the replacement puts it is done.
+        if let Mode::Replace(with) = &self.mode {
+            let inner = self.occurrences(with);
+            hits.retain(|hit| {
+                !inner.iter().any(|k| {
+                    hit.start >= k.start && source[hit.start - k.start..].starts_with(with.as_str())
+                })
+            });
+        }
         if hits.is_empty() {
             return Ok(None);
         }
@@ -184,6 +195,14 @@ mod tests {
             out.ends_with("### Detail\n\nM28 has shipped.\n"),
             "the subsection is not own text"
         );
+        assert_eq!(op.apply(&out), out);
+    }
+
+    #[test]
+    fn a_replacement_containing_the_phrase_is_idempotent() {
+        let op = TextEdit::replace("Order[then M14.]", "then M14. Then M21.").unwrap();
+        let out = op.apply(DOC);
+        assert!(out.contains("then M14. Then M21. M28"), "{out}");
         assert_eq!(op.apply(&out), out);
     }
 

@@ -18,7 +18,7 @@ one name. Packs ship as plain DSL files; run them with
 
 | Path | Status | Summary |
 | --- | --- | --- |
-| `rust/edition-2021-to-2024.codemod` | placeholder | Extension point for project-specific renames that ship alongside an edition migration. |
+| `rust/edition-2021-to-2024.codemod` | ready (mechanical subset) | `unsafe extern`, `#[unsafe(…)]` attributes, `unsafe { set_var / remove_var }`, `gen` → `r#gen`. See [`rust/README.md`](rust/README.md) for what it leaves to `cargo fix --edition`. |
 
 Adding a new pack:
 

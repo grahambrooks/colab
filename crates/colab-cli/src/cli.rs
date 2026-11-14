@@ -838,7 +838,14 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
     let backends = default_backends();
     let refactoring = args.script.compile(&backends)?;
-    info!("Running script: {}", refactoring);
+    // The rules are in every report; the log names the script, so an
+    // agent does not read each rule twice.
+    info!(
+        "Running `{}` ({} rule(s))",
+        refactoring.name,
+        refactoring.rules.len()
+    );
+    log::debug!("Rules: {}", refactoring);
 
     let targets = if args.paths.is_empty() {
         vec![PathBuf::from(".")]
@@ -1387,7 +1394,14 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
     }
     let backends = default_backends();
     let refactoring = args.script.compile(&backends)?;
-    info!("Running script: {}", refactoring);
+    // The rules are in every report; the log names the script, so an
+    // agent does not read each rule twice.
+    info!(
+        "Running `{}` ({} rule(s))",
+        refactoring.name,
+        refactoring.rules.len()
+    );
+    log::debug!("Rules: {}", refactoring);
 
     let mut source = String::new();
     io::stdin()

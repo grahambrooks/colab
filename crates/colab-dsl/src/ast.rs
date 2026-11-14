@@ -37,6 +37,9 @@ pub struct Match {
     /// `in fences` / `and fences`: the rule also, or only, runs inside
     /// Markdown code fences of its language.
     pub fences: Option<Fences>,
+    /// `and prose`: a `symbol` rename also renames whole-word matches in
+    /// comments and string contents.
+    pub prose: bool,
     /// Constraints from a `where` clause, in order. Empty without one.
     pub constraints: Vec<colab_core::Constraint>,
     pub action: Action,
@@ -62,15 +65,18 @@ pub enum Fences {
 pub enum Location {
     Glob(String),
     Fences(Fences),
+    Prose,
 }
 
 /// Fold a rule's location clauses, refusing one given twice.
 pub(crate) fn locations(
     locations: Vec<Location>,
-) -> Result<(Option<String>, Option<Fences>), &'static str> {
-    let (mut glob, mut fences) = (None, None);
+) -> Result<(Option<String>, Option<Fences>, bool), &'static str> {
+    let (mut glob, mut fences, mut prose) = (None, None, false);
     for location in locations {
         match location {
+            Location::Prose if !prose => prose = true,
+            Location::Prose => return Err("a rule takes one `and prose` clause"),
             Location::Glob(g) if glob.is_none() => glob = Some(g),
             Location::Fences(f) if fences.is_none() => fences = Some(f),
             Location::Glob(_) => return Err("a rule takes one `in \"<glob>\"` clause"),
@@ -79,7 +85,7 @@ pub(crate) fn locations(
             }
         }
     }
-    Ok((glob, fences))
+    Ok((glob, fences, prose))
 }
 
 /// An import clause on a rule, run only on the files the rule changed.

@@ -114,6 +114,18 @@ fn expand(query: &str, expando: char) -> String {
     out
 }
 
+/// `$X` or `$_`: one single-node metavariable and nothing else.
+fn is_lone_metavariable(text: &str) -> bool {
+    let Some(name) = text.strip_prefix('$') else {
+        return false;
+    };
+    !name.is_empty()
+        && !name.starts_with('$')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
 fn is_var_start(c: char) -> bool {
     c.is_ascii_uppercase() || c == '_'
 }
@@ -174,6 +186,16 @@ impl StructuralPattern {
             expando: language.expando,
         };
         let expanded = expand(text, lang.expando);
+
+        // A lone metavariable (`$X`) has no shape of its own, so it matches
+        // any node; a `where $X is <kind>` then picks the kind. Built
+        // without a context, which would pin it to the wrapper's node kind.
+        if is_lone_metavariable(text.trim())
+            && let Ok(pattern) = Pattern::try_new(text.trim(), lang.clone())
+        {
+            let printed = format!("{} (any node)", text.trim());
+            return Ok(Self::finish(lang, pattern, text, None, None, printed));
+        }
 
         let mut attempts = Vec::new();
         // Bare pattern.

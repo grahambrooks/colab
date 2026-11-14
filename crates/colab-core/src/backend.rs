@@ -230,6 +230,13 @@ pub trait LanguageBackend: Send + Sync {
         None
     }
 
+    /// [`prose_ranges`](LanguageBackend::prose_ranges) as a plain function,
+    /// for an operation that must outlive the registry (`and prose`).
+    /// Source backends return `Some(|source| Self.prose_ranges(source))`.
+    fn prose_locator(&self) -> Option<crate::ProseLocator> {
+        None
+    }
+
     /// The info-string names a Markdown code fence of this language uses:
     /// `go` and `golang`, `rust` and `rs`. A rule with `in fences` or
     /// `and fences` runs inside them. Empty rejects those clauses.

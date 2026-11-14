@@ -105,6 +105,10 @@ impl LanguageBackend for PythonBackend {
         crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
     }
 
+    fn prose_locator(&self) -> Option<colab_core::ProseLocator> {
+        Some(|source| Self.prose_ranges(source))
+    }
+
     fn build_rule_where(
         &self,
         module: &str,

@@ -1,0 +1,4 @@
+{
+  "name": "admin",
+  "engines": { "node": ">=18" }
+}

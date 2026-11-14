@@ -127,6 +127,10 @@ impl LanguageBackend for GoBackend {
         crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
     }
 
+    fn prose_locator(&self) -> Option<colab_core::ProseLocator> {
+        Some(|source| Self.prose_ranges(source))
+    }
+
     fn drop_unused_import(&self, target: &str) -> Result<Box<dyn Operation>> {
         Ok(Box::new(imports::ImportDropUnused {
             target: target.to_string(),

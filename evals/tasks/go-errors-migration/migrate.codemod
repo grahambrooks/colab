@@ -1,0 +1,9 @@
+refactor "pkg-errors-to-fmt" {
+    match go::pattern 'errors.Wrap($E, $M)' and fences
+        where $M matches /^"/, not inside 'func $F(t *testing.T) { $$$ }'
+    {
+        replace 'fmt.Errorf($M+": %w", $E)'
+        requires import "fmt"
+        drops import "github.com/pkg/errors" when unused
+    }
+}

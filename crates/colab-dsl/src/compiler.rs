@@ -20,7 +20,7 @@ use crate::model::Refactoring;
 use colab_core::suggest;
 use colab_core::{
     BackendRegistry, Error, FencedOperation, Followup, LanguageBackend, Operation, ParseDetail,
-    Result, RuleSpec, ScopedOperation, WithFollowups,
+    ProseRename, Result, RuleSpec, ScopedOperation, WithFollowups,
 };
 
 lalrpop_mod!(grammar, "/codemod.rs");
@@ -274,6 +274,7 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
         match_string,
         scope,
         fences,
+        prose,
         constraints,
         action,
         imports,
@@ -312,17 +313,45 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
             value,
         },
     };
-    let build = || -> Result<Box<dyn Operation>> {
+    // Import clauses apply to source files only: a code snippet in the
+    // docs seldom shows its imports, and adding them would be noise.
+    let build = |with_imports: bool| -> Result<Box<dyn Operation>> {
         let operation = if constraints.is_empty() {
             backend.build_rule(namespace.module.as_str(), spec.clone())?
         } else {
             backend.build_rule_where(namespace.module.as_str(), spec.clone(), &constraints)?
         };
-        with_import_clauses(operation, &imports, backend)
+        if with_imports {
+            with_import_clauses(operation, &imports, backend)
+        } else {
+            Ok(operation)
+        }
     };
     let mut operations = Vec::new();
     if fences != Some(Fences::Only) {
-        operations.push(build()?);
+        let mut operation = build(true)?;
+        if prose {
+            let (from, to) = match &spec {
+                RuleSpec::Replace {
+                    target,
+                    replacement,
+                } if namespace.module == "symbol" => (target.clone(), replacement.clone()),
+                _ => {
+                    return Err(Error::UnsupportedOperation(format!(
+                        "`and prose` goes with a `symbol` rename (`match {}::symbol \"Old\" and prose {{ replace \"New\" }}`)",
+                        namespace.lang
+                    )));
+                }
+            };
+            let locate = backend.prose_locator().ok_or_else(|| {
+                Error::UnsupportedOperation(format!(
+                    "`{}` cannot tell its comments and strings apart, so `and prose` is not supported",
+                    namespace.lang
+                ))
+            })?;
+            operation = Box::new(ProseRename::new(operation, &from, &to, locate));
+        }
+        operations.push(operation);
     }
     if fences.is_some() {
         let names = backend.fence_names();
@@ -340,7 +369,7 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
                     "`in fences` needs the Markdown backend, which is not registered".into(),
                 )
             })?;
-        operations.push(Box::new(FencedOperation::new(build()?, names, locate)));
+        operations.push(Box::new(FencedOperation::new(build(false)?, names, locate)));
     }
     // The glob is validated here, at compile time, so a typo fails the
     // script rather than silently matching nothing at runtime. It narrows
@@ -544,6 +573,7 @@ mod tests {
                 match_string: "a.b.c".to_string(),
                 scope: None,
                 fences: None,
+                prose: false,
                 constraints: Vec::new(),
                 action: Action::Replace("d.e.f".to_string()),
                 imports: Vec::new(),
@@ -793,6 +823,35 @@ import (
         assert!(twice.unwrap_err().to_string().contains("once"));
         // `fences` and `and` still spell namespaces.
         assert!(crate::parse(r#"refactor "r" { match x::fences "a" { delete } }"#).is_ok());
+    }
+
+    #[test]
+    fn and_prose_renames_in_comments_and_strings_too() {
+        let backends = colab_backends::registry();
+        let r = compile(
+            r#"refactor "r" { match go::symbol "ParseConfig" and prose { replace "LoadConfig" } }"#,
+            &backends,
+        )
+        .unwrap();
+        let src = "package c\n\n// ParseConfig reads; see ParseConfigs.\nfunc ParseConfig() { log(\"ParseConfig\") }\n";
+        assert_eq!(
+            r.rules[0].apply(src),
+            "package c\n\n// LoadConfig reads; see ParseConfigs.\nfunc LoadConfig() { log(\"LoadConfig\") }\n"
+        );
+        assert_eq!(
+            r.rules[0].to_string(),
+            r#"go::symbol "ParseConfig" -> "LoadConfig" and prose"#
+        );
+        let wrong = compile(
+            r#"refactor "r" { match go::import "a" and prose { replace "b" } }"#,
+            &backends,
+        );
+        assert!(
+            wrong
+                .unwrap_err()
+                .to_string()
+                .contains("goes with a `symbol` rename")
+        );
     }
 
     #[test]

@@ -38,9 +38,9 @@ pub Item: Item = {
 // clauses after the action run only on the files the rule changed.
 pub Match: Match = {
     <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <constraints: Where?> "{" <action: Action> <imports: ImportClause*> "}" <end: @R> =>? {
-        let (scope, fences) = crate::ast::locations(locations)
+        let (scope, fences, prose) = crate::ast::locations(locations)
             .map_err(|error| ParseError::User { error })?;
-        Ok(Match { namespace, match_string: string, scope, fences, constraints: constraints.unwrap_or_default(), action, imports, span: Span { start, end } })
+        Ok(Match { namespace, match_string: string, scope, fences, prose, constraints: constraints.unwrap_or_default(), action, imports, span: Span { start, end } })
     }
 };
 
@@ -51,6 +51,7 @@ Location: Location = {
     "in" <glob: StringLiteral> => Location::Glob(glob),
     "in" "fences" => Location::Fences(Fences::Only),
     "and" "fences" => Location::Fences(Fences::Also),
+    "and" "prose" => Location::Prose,
 };
 
 Where: Vec<Constraint> = {
@@ -144,6 +145,7 @@ pub Identifier: String = {
     "when" => "when".to_string(),
     "unused" => "unused".to_string(),
     "fences" => "fences".to_string(),
+    "prose" => "prose".to_string(),
     "and" => "and".to_string(),
 };
 

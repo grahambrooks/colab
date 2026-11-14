@@ -1,0 +1,1 @@
+colab refactor --format json --detail counts --write -e 'match go::symbol "ParseConfig" and prose and fences { replace "LoadConfig" }' -e 'match markdown::text "Configuration[ParseConfig]" { replace "LoadConfig" }' .

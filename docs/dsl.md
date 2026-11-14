@@ -326,6 +326,20 @@ match go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ {
   nothing and exits 11. A later rule in the same script that adds the
   import (`match go::import "fmt" { ensure }`) also clears it.
 
+### A lone metavariable
+
+A pattern that is only a metavariable, `$X`, matches any node, so a
+`where $X is <kind>` picks nodes by kind alone:
+
+```
+match rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ {
+    replace 'unsafe $X'
+}
+```
+
+This is how the Rust 2024 pack finds `extern` blocks, whose item list a
+`$$$` cannot stand for.
+
 ## Inline rules
 
 The `refactor "<name>" { … }` wrapper is optional on the command line.
@@ -487,6 +501,22 @@ match rust::use "old_crate::Thing" in "docs/**" in fences { replace "new_crate::
   preview with `--format diff`.
 - Each of `in "<glob>"`, `in fences` and `and fences` may appear once;
   the two fence clauses exclude each other.
+- Import clauses (`requires import`, `drops import`) apply to the rule's own files, not to fences: a snippet in the docs seldom shows its imports.
+
+### Comments and strings: `and prose`
+
+A `symbol` rename renames identifiers. `and prose` also renames the old
+name where it appears as a whole word in comments and string contents,
+which the backend finds with its own grammar:
+
+```
+match go::symbol "ParseConfig" and prose { replace "LoadConfig" }
+```
+
+So a Go doc comment (`// ParseConfig reads …`) follows the function.
+Only `symbol` rules take it; a code occurrence that is not an
+identifier the rule renames is never touched. Combine it with `and
+fences` to cover the docs as well.
 
 ## Idempotency
 

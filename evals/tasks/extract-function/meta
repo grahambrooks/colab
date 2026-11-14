@@ -1,0 +1,2 @@
+budget = 2300
+requires = rust-analyzer

@@ -12,6 +12,7 @@ work, including every deferral listed here, is in
 | [M17–M19, M22](#agent-of-choice-m17m19-m22) | Inline rules, near misses, structural patterns, LSP both ways, workflow MCP tools |
 | [M24–M27](#closing-the-intellij-gap-m24m27) | Git-aware file operations, code actions, `where` constraints, conflict checks |
 | [M28](#markdown-m28) | Markdown by structure: sections, rows, items, links, front matter, link checks, code fences |
+| [M23](#evaluation-m23) | The agent eval suite: correctness, bytes and budgets in CI; the Rust 2024 pack |
 | [Appendix](#appendix-the-original-design-2026-05-09) | The 2026-05-09 design these milestones implemented |
 
 ---
@@ -649,6 +650,39 @@ Phases 1 to 3 have shipped.
   `colab find` locations mapped back into the file; and `"New < Sibling"`
   places a new section before an existing one. Dogfooding it brought the
   fenced API in `docs/architecture.md` back in line with the code.
+
+## Evaluation (M23)
+
+### ✅ M23 — Agent eval suite
+
+- `evals/tasks/<name>/`: a request (`task.md`), the files before and the
+  files that must change, and the colab commands that make it.
+  `cargo test -p colab-cli --test evals` runs each in a temporary git
+  repository, checks the result exactly (moved files keep their
+  history), measures colab's cost in bytes (commands, scripts written,
+  everything printed), and prices the same diff as `Read` + `Edit`.
+  Each task has a byte budget, so output that grows fails CI. Results
+  are in `evals/results.md`.
+- Seven tasks: config rollout, docs upkeep, a Go API migration with
+  imports, a rename across code and docs, the Rust 2021→2024 edition
+  pack, and (with rust-analyzer) extract-then-rename and a file move
+  that keeps its history. 70% fewer bytes than the model over all of
+  them, from 81% on the rename and the edition pack to −3% on the
+  one-site extract.
+- The Rust 2021→2024 pack (`examples/packs/rust/`) covers `unsafe
+  extern`, `#[unsafe(…)]` attributes, `unsafe { set_var }` and `gen` →
+  `r#gen`; on its sample, `cargo check` as edition 2024 goes from 7
+  errors to none. Its README lists what is left to `cargo fix
+  --edition`.
+- **Found by the tasks, and fixed:** fenced twins (`and fences`) ran
+  `requires import` inside doc snippets; a Go doc comment escaped a
+  `symbol` rename, so `and prose` now renames in comments and strings
+  too; a lone `$X` pattern matched only identifiers, so it now matches
+  any node (with `where $X is <kind>`); and the `Running script` log
+  repeated every rule, a third of what an agent read, so it now names
+  the script (70% saved, from 62%).
+- Not done: running real agents on the tasks, colab against `Edit`; the
+  suite measures the scripted half.
 
 ## Appendix: the original design (2026-05-09)
 

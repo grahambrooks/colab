@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M23 (eval, the stable gate) → M20 (install into Claude)**, then M14, M21, M16, M15 and M10.6. M28 (Markdown by structure) and the dogfood follow-ups have shipped.
+**M20 (its install step once the gate passes)**, then M14, M21, M16, M15 and M10.6. M28 (Markdown by structure), the dogfood follow-ups and M23 (the eval suite) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -40,11 +40,10 @@ what it lets that dogfooding cover.
 
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
-| 1 | M23 Agent eval suite | Turns the dogfood token figures into a repeatable, CI-run measurement: the evidence the stable gate needs. |
-| 2 | M20 Agent install & guardrails | Only after the gate. `// colab:ignore` and rule `message` / `severity` can land earlier; they do not install anything. |
-| 3 | M14 `colab.toml` + `colab fix` | Repo-declared migrations; M20's post-edit hook and M25's per-language formatters build on it. |
-| 4 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
-| 5 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
+| 1 | M20 Agent install & guardrails | Its parts that install nothing (`// colab:ignore`, rule `message` / `severity`) go first; the install itself waits for the gate's second criterion. |
+| 2 | M14 `colab.toml` + `colab fix` | Repo-declared migrations; M20's post-edit hook and M25's per-language formatters build on it. |
+| 3 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
+| 4 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
 
 ## Stable gate before M20
 
@@ -64,6 +63,15 @@ these hold:
    `Read` + `Edit` and cheaper in tokens on its tasks, in CI.
 
 ---
+
+### Status (2026-11-14)
+
+| Criterion | Status |
+| --------- | ------ |
+| 1. Coverage | Met for code at many sites, renames, Markdown sections, rows, items and links; config keys only in the eval task, not yet on this repo. |
+| 2. No silent failures | **Not met.** The follow-ups found a row `set` that re-added its row on the next run; M23 found fenced rules adding imports to doc snippets. Both reported success. Both are fixed; the next two milestones must log none. |
+| 3. Little hand repair | Met: `--tidy` on `refactor` removed the `cargo fmt` step; one hand edit per milestone (a line inside a shell fence). |
+| 4. Measured benefit | Met: `evals/results.md`, 7 tasks correct, 70% fewer bytes than `Read` + `Edit`, budgets checked in CI. |
 
 ## Planned milestones
 
@@ -117,18 +125,6 @@ have CI / pre-commit / agents pick them up:
 - npm (`npx colab`) and PyPI (`uvx colab`) wrappers around the release
   binaries, for sandboxes with no Rust toolchain.
 - `--format sarif` and `--format github` for `--check` annotations.
-
-### M23 — Agent eval suite
-- Scripted tasks (repo-wide rename, API migration, config rollout)
-  scored on correctness, tool calls, and tokens for colab vs `Edit`/`sed`;
-  run in CI to keep output sizes honest.
-- Add IntelliJ-shaped tasks ("extract this function", "move
-  this type to its own file, history intact") so the gap closing is
-  measured, not assumed.
-- Start from `scripts/price-edits.py` and the token table in
-  [`dogfood-log.md`](dogfood-log.md#token-cost-m27--m22), which already
-  price a change as colab calls versus `Read` + `Edit`.
-- A real migration task: the mechanical subset of the Rust 2021→2024 edition pack (`examples/packs/rust/edition-2021-to-2024.codemod`), built here with a README of what it does not cover, and run as a task. It is also dogfooding on code that is not colab's own.
 
 ### M16 — Diff review aggregation
 - Rule attribution in `--format json` / `ndjson` has shipped (`rules[]`,

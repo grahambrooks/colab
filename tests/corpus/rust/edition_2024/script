@@ -1,0 +1,37 @@
+// Rust 2021 → 2024: the changes that are pure syntax.
+//
+// Run it, then set `edition = "2024"` in Cargo.toml and build. It does
+// what `cargo fix --edition` would for these items, as a reviewable diff;
+// what it does not cover is listed in README.md beside it.
+refactor "rust-edition-2021-to-2024" {
+    // `extern` blocks must be `unsafe extern` (RFC 3484). The pattern is a
+    // single metavariable narrowed to the node kind; `not … matches`
+    // leaves blocks that are already `unsafe`, so the rule is idempotent.
+    match rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ {
+        replace 'unsafe $X'
+    }
+
+    // Attributes that can make code unsound are written `#[unsafe(…)]`.
+    match rust::pattern '#[no_mangle]' { replace '#[unsafe(no_mangle)]' }
+    match rust::pattern '#[export_name = $N]' { replace '#[unsafe(export_name = $N)]' }
+    match rust::pattern '#[link_section = $N]' { replace '#[unsafe(link_section = $N)]' }
+
+    // `std::env::set_var` and `remove_var` are `unsafe fn` in 2024. Each
+    // call gets its own `unsafe` block, unless it is already in one.
+    match rust::pattern 'std::env::set_var($K, $V)' where not inside 'unsafe { $$$ }' {
+        replace 'unsafe { std::env::set_var($K, $V) }'
+    }
+    match rust::pattern 'env::set_var($K, $V)' where not inside 'unsafe { $$$ }' {
+        replace 'unsafe { env::set_var($K, $V) }'
+    }
+    match rust::pattern 'std::env::remove_var($K)' where not inside 'unsafe { $$$ }' {
+        replace 'unsafe { std::env::remove_var($K) }'
+    }
+    match rust::pattern 'env::remove_var($K)' where not inside 'unsafe { $$$ }' {
+        replace 'unsafe { env::remove_var($K) }'
+    }
+
+    // `gen` is a reserved keyword; identifiers named `gen` (including
+    // `rng.gen()`) are written `r#gen`.
+    match rust::symbol "gen" { replace "r#gen" }
+}

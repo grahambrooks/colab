@@ -1,0 +1,8 @@
+refactor "release docs" {
+    match markdown::row "Changelog[Version=1.4.0] < [Version=1.3.0]" in "CHANGELOG.md" { insert "Date=2026-11-14
+Summary=Faster startup" }
+    match markdown::item "Next[Faster startup]" in "docs/roadmap.md" { replace "Faster startup (done)" }
+    match markdown::section "Install" in "docs/guide.md" { replace "Installation" }
+    match markdown::link "guide.md#install" { replace "guide.md#installation" }
+    match markdown::link "#install" in "docs/guide.md" { replace "#installation" }
+}

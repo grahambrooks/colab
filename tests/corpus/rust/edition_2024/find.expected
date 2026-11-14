@@ -1,0 +1,14 @@
+src/lib.rs:3:1: [0] extern "C" {\n    fn abs(x: i32) -> i32;\n}
+    $X = extern "C" {\n    fn abs(x: i32) -> i32;\n}
+src/lib.rs:11:1: [1] #[no_mangle]
+src/lib.rs:16:1: [2] #[export_name = "renamed"]
+    $N = "renamed"
+src/lib.rs:19:1: [8] pub fn configure(gen: u32) {
+src/lib.rs:20:5: [5] env::set_var("MODE", "fast")
+    $K = "MODE"
+    $V = "fast"
+src/lib.rs:21:5: [6] std::env::remove_var("OLD")
+    $K = "OLD"
+src/lib.rs:25:1: [8]     let _ = gen;
+src/lib.rs:29:1: [8]     pub gen: u64,
+src/lib.rs:33:1: [8]     s.gen
