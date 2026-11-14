@@ -1,0 +1,5 @@
+// House style: the non-deprecated spellings.
+refactor "house-style" {
+    match python::pattern 'logging.warn($$$A)' { replace 'logging.warning($$$A)' }
+    match python::pattern 'self.assertEquals($A, $B)' { replace 'self.assertEqual($A, $B)' }
+}

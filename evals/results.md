@@ -6,11 +6,12 @@ Bytes are what the agent sent and read (tokens ≈ bytes / 4). Time is modelled:
 
 | Task | colab calls | bytes | run | time | Read + Edit calls | bytes | time | Bytes saved | Faster |
 | ---- | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: | ----: |
-| Roll out a minimum toolchain (config-rollout) | 1 | 698 | 0.8 s | 3.8 s | 9 | 3092 | 25.0 s | 78% | 6.6× |
+| Roll out a minimum toolchain (config-rollout) | 1 | 698 | 0.8 s | 3.8 s | 9 | 3092 | 25.0 s | 78% | 6.5× |
 | Docs upkeep after a release (docs-upkeep) | 2 | 1654 | 0.0 s | 7.3 s | 11 | 4096 | 30.9 s | 60% | 4.3× |
-| Extract the total into a function (extract-function) | 3 | 1563 | 4.7 s | 12.0 s | 4 | 1507 | 11.3 s | -3% | 0.9× |
+| Extract the total into a function (extract-function) | 3 | 1563 | 5.2 s | 12.5 s | 4 | 1507 | 11.3 s | -3% | 0.9× |
 | Migrate from github.com/pkg/errors to fmt (go-errors-migration) | 2 | 1310 | 0.0 s | 6.4 s | 11 | 4825 | 31.8 s | 73% | 5.0× |
-| Rename the util module to helpers (move-file-with-history) | 1 | 516 | 3.3 s | 5.7 s | 5 | 1407 | 13.4 s | 64% | 2.3× |
+| Rename the util module to helpers (move-file-with-history) | 1 | 516 | 3.6 s | 6.0 s | 5 | 1407 | 13.4 s | 64% | 2.2× |
 | Rename ParseConfig to LoadConfig (rename-across-code-and-docs) | 1 | 714 | 0.0 s | 3.0 s | 9 | 3746 | 26.2 s | 81% | 8.8× |
-| Move the crate to Rust 2024 (rust-edition-2024) | 2 | 988 | 0.0 s | 5.2 s | 11 | 4964 | 31.7 s | 81% | 6.1× |
-| **Total** | 12 | 7443 | 8.9 s | 43.3 s | 60 | 23637 | 170.2 s | 69% | 3.9× |
+| Apply the repository's conventions (repo-conventions-fix) | 1 | 717 | 0.0 s | 2.3 s | 12 | 6245 | 36.7 s | 89% | 15.7× |
+| Move the crate to Rust 2024 (rust-edition-2024) | 2 | 989 | 0.0 s | 5.2 s | 11 | 4964 | 31.7 s | 81% | 6.1× |
+| **Total** | 13 | 8161 | 9.8 s | 46.5 s | 72 | 29882 | 206.9 s | 73% | 4.5× |
