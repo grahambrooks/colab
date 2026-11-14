@@ -40,6 +40,8 @@ enum Value {
 /// One `markdown::row` rule.
 #[derive(Debug)]
 pub struct RowEdit {
+    /// The address in the form near misses compare (`outline::near_target`).
+    near: String,
     target: String,
     section: String,
     nth: usize,
@@ -111,6 +113,7 @@ impl RowEdit {
             ));
         }
         Ok(Self {
+            near: outline::near_target(&section),
             target: target.trim().to_string(),
             section,
             nth: nth.unwrap_or(1),
@@ -541,6 +544,16 @@ impl Operation for RowEdit {
     // Markdown parses cheaply.
     fn prefilter(&self) -> Option<&str> {
         None
+    }
+
+    /// The section named by the address: a rule whose section exists
+    /// nowhere lists the nearest headings.
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.near)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        crate::outline::observed_addresses(source, &self.section)
     }
 
     fn why_unchanged(&self, source: &str) -> Option<String> {

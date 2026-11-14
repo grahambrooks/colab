@@ -24,6 +24,8 @@ enum Mode {
 /// One `markdown::text` rule.
 #[derive(Debug)]
 pub struct TextEdit {
+    /// The address in the form near misses compare (`outline::near_target`).
+    near: String,
     target: String,
     section: String,
     words: Vec<String>,
@@ -52,6 +54,7 @@ impl TextEdit {
             )));
         }
         Ok(Self {
+            near: outline::near_target(&section),
             target: target.trim().to_string(),
             section,
             words,
@@ -171,6 +174,16 @@ impl Operation for TextEdit {
             .map(String::as_str)
     }
 
+    /// The section named by the address: a rule whose section exists
+    /// nowhere lists the nearest headings.
+    fn near_miss_target(&self) -> Option<&str> {
+        Some(&self.near)
+    }
+
+    fn observed_targets(&self, source: &str) -> Vec<String> {
+        crate::outline::observed_addresses(source, &self.section)
+    }
+
     fn why_unchanged(&self, source: &str) -> Option<String> {
         self.edit(source).err()
     }
@@ -181,6 +194,17 @@ mod tests {
     use super::*;
 
     const DOC: &str = "## Order\n\n**M28 → M23 → M20**, then M14. M28 has\nshipped.\n\n```sh\nM28 has shipped.\n```\n\n### Detail\n\nM28 has shipped.\n";
+
+    #[test]
+    fn a_missing_section_is_a_near_miss_target() {
+        // Compared as the matcher compares: the last segment against
+        // heading texts, an anchor against slugs.
+        let op = TextEdit::replace("Top > Ordr[M28 has shipped.]", "x").unwrap();
+        assert_eq!(op.near_miss_target(), Some("Ordr"));
+        assert_eq!(op.observed_targets(DOC), ["Order", "Detail"]);
+        let anchor = TextEdit::replace("#ordr[M28 has shipped.]", "x").unwrap();
+        assert_eq!(anchor.observed_targets(DOC), ["#order", "#detail"]);
+    }
 
     #[test]
     fn a_wrapped_phrase_matches_and_fences_and_subsections_are_left() {

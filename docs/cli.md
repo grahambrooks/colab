@@ -200,7 +200,8 @@ generate-codemod | colab refactor --script - --format json .
 
 A rule that changed nothing is reported with `files: 0` and a warning.
 When its module saw values that resemble the target — import paths, call
-names, identifiers — the closest few are attached as `near` (JSON) and
+names, identifiers, and for a Markdown rule the headings (the last segment
+of `Parent > Child`, or an `#anchor`) — the closest few are attached as `near` (JSON) and
 appended to the warning:
 
 ```json
@@ -213,9 +214,12 @@ warning: matched no files: go::import "github.com/acme/log" -> "x"; nearest seen
 ```
 
 A value is "near" when it is a small edit away, contains or is contained
-by the target, or shares its last path segment. Probing only runs for dead
-rules and reads at most 500 of the scanned files, so a live run pays
-nothing for it.
+by the target, or shares its last path segment. Probing for near misses
+runs only for dead rules and reads at most 500 of the scanned files:
+
+```
+warning: matched no files: markdown::row "Follow-ups from shiped milestones[Item=x]" -> delete; nearest seen: `Follow-ups from shipped milestones` (1 file(s))
+```
 
 #### Unchanged matches
 

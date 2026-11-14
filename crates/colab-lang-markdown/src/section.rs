@@ -27,6 +27,8 @@ pub(crate) const ALREADY: &str = colab_core::ALREADY;
 /// One `markdown::section` rule.
 #[derive(Debug)]
 pub struct SectionEdit {
+    /// The address in the form near misses compare (`outline::near_target`).
+    near: String,
     address: String,
     /// `"New < Sibling"`: an insert goes just before `Sibling`, at its
     /// level, instead of at the end of the parent.
@@ -84,6 +86,7 @@ impl SectionEdit {
             ));
         }
         Ok(Self {
+            near: outline::near_target(&address),
             address,
             before,
             mode,
@@ -275,21 +278,12 @@ impl Operation for SectionEdit {
     fn near_miss_target(&self) -> Option<&str> {
         match self.mode {
             Mode::Set(_) | Mode::Insert(_) => None,
-            _ => Some(&self.address),
+            _ => Some(&self.near),
         }
     }
 
     fn observed_targets(&self, source: &str) -> Vec<String> {
-        outline::headings(source)
-            .iter()
-            .map(|h| {
-                if self.address.starts_with('#') {
-                    format!("#{}", h.slug)
-                } else {
-                    h.address()
-                }
-            })
-            .collect()
+        outline::observed_addresses(source, &self.address)
     }
 
     fn why_unchanged(&self, source: &str) -> Option<String> {

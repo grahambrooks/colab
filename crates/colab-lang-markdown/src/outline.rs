@@ -211,6 +211,32 @@ pub fn resolve<'h>(headings: &'h [Heading], address: &str) -> Result<&'h Heading
     }
 }
 
+/// What a dead rule's `address` is compared with for near misses, in the
+/// form the matcher compares: the anchor itself, or the last segment of a
+/// heading path as a reader sees it.
+pub fn near_target(address: &str) -> String {
+    if address.starts_with('#') {
+        address.to_string()
+    } else {
+        segments(address).pop().unwrap_or_default()
+    }
+}
+
+/// Every heading of `source` in the form of [`near_target`]: `#slug` for
+/// an anchor address, the heading's text otherwise.
+pub fn observed_addresses(source: &str, address: &str) -> Vec<String> {
+    headings(source)
+        .iter()
+        .map(|h| {
+            if address.starts_with('#') {
+                format!("#{}", h.slug)
+            } else {
+                h.text.clone()
+            }
+        })
+        .collect()
+}
+
 /// Every heading `address` names. `#slug` matches an anchor; otherwise
 /// the segments of `A > B > C` must be the heading's text and, in order,
 /// texts of headings enclosing it (not necessarily its direct parents).
