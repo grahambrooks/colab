@@ -161,7 +161,6 @@ whichever milestone touches the same code.
 | Qualifier conflict checks (`imported_names`) for the ten source backends other than Go and Python | M27 |
 | Attribute a `--verify-lsp` error to the rule that caused it | M27 |
 | Type constraints in `where` (via the server's hover) | M26 |
-| Compile-time warning when a template re-matches its own pattern | M18 |
 | LSP `WorkDoneProgress` for long previews / applies | M13.5 |
 | Go-to-definition for `include` in `.codemod` files | M19 |
 | Remote pack registry and publishing | M11 |

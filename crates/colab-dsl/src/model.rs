@@ -29,6 +29,9 @@ pub struct RuleNote {
     /// The script the rule came from, when it differs from the
     /// refactoring's own name (`colab fix` combines several packs).
     pub script: Option<String>,
+    /// What the rule compiles to but probably should not
+    /// ([`colab_core::Operation::advice`]), reported as warnings.
+    pub advice: Vec<String>,
 }
 
 impl Refactoring {
@@ -37,6 +40,15 @@ impl Refactoring {
         let mut report =
             colab_core::RunReport::with_rules(self.rules.iter().map(|r| r.to_string()));
         self.annotate(&mut report);
+        // Each block's advice once, though `and fences` makes two rules.
+        let mut seen = std::collections::BTreeSet::new();
+        for (rule, note) in self.rules.iter().zip(&self.notes) {
+            for advice in &note.advice {
+                if seen.insert(advice.clone()) {
+                    report.warnings.push(format!("{advice} — {rule}"));
+                }
+            }
+        }
         report
     }
 

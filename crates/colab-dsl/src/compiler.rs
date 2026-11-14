@@ -162,12 +162,14 @@ fn compile_inner(
     let mut rules: Vec<Box<dyn Operation>> = Vec::with_capacity(matches.len());
     let mut notes = Vec::with_capacity(matches.len());
     for m in matches {
-        let note = crate::model::RuleNote {
+        let mut note = crate::model::RuleNote {
             message: m.message.clone(),
             severity: m.severity.unwrap_or_default(),
             script: None,
+            advice: Vec::new(),
         };
-        let lowered = lower_match(m, backends)?;
+        let (lowered, advice) = lower_match(m, backends)?;
+        note.advice = advice;
         // `and fences` lowers to two rules; both carry the note.
         notes.extend(std::iter::repeat_n(note, lowered.len()));
         rules.extend(lowered);
@@ -192,6 +194,9 @@ pub struct RuleCheck {
     /// The descriptions of the rules the block lowers to (two for `and
     /// fences`, else one), or why it could not be lowered.
     pub outcome: Result<Vec<String>>,
+    /// What the rule compiles to but probably should not
+    /// ([`Operation::advice`]): editors show these as warnings.
+    pub advice: Vec<String>,
 }
 
 /// Lower each `match` block of `text` independently, so one bad rule does
@@ -216,13 +221,15 @@ pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
             let span = m.span;
             let namespace = format!("{}::{}", m.namespace.lang, m.namespace.module);
             let action = m.action.keyword();
-            let outcome =
-                lower_match(m, backends).map(|ops| ops.iter().map(|op| op.to_string()).collect());
+            let lowered = lower_match(m, backends);
+            let advice = lowered.as_ref().map(|(_, a)| a.clone()).unwrap_or_default();
+            let outcome = lowered.map(|(ops, _)| ops.iter().map(|op| op.to_string()).collect());
             RuleCheck {
                 span,
                 namespace,
                 action,
                 outcome,
+                advice,
             }
         })
         .collect())
@@ -277,8 +284,23 @@ fn resolve_include_path(relative: &str, base_path: Option<&Path>) -> Result<Path
 
 /// Lower one `match` block. Usually one operation; `and fences` makes two,
 /// the rule for its own files and the same rule for Markdown code fences,
-/// so the report attributes each.
-fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Operation>>> {
+/// so the report attributes each. Also returns the block's advice: what
+/// it compiles to but probably should not, such as a rewrite that matches
+/// its own output.
+/// The rules a `match` block lowers to, and its advice.
+type Lowered = (Vec<Box<dyn Operation>>, Vec<String>);
+
+fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Lowered> {
+    let mut advice = Vec::new();
+    let ops = lower_match_ops(m, backends, &mut advice)?;
+    Ok((ops, advice))
+}
+
+fn lower_match_ops(
+    m: Match,
+    backends: &BackendRegistry,
+    advice: &mut Vec<String>,
+) -> Result<Vec<Box<dyn Operation>>> {
     let Match {
         namespace,
         match_string,
@@ -325,6 +347,18 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
             value,
         },
     };
+    // A call template that keeps the function's name (`f(ctx, $args)` for
+    // `f`) matches its own output, so every run wraps the call again.
+    if let RuleSpec::ReplaceCall { target, template } = &spec
+        && template.trim_start().starts_with(&format!("{target}("))
+    {
+        advice.push(format!(
+            "the template still calls `{target}`, so every run rewrites its own output again; apply it once (`--write`, then remove the rule), or rename the function in the template"
+        ));
+    }
+    // The rule's own advice, from the first operation built (a fenced twin
+    // would only repeat it).
+    let collected: std::cell::RefCell<Option<Vec<String>>> = std::cell::RefCell::new(None);
     // Import clauses apply to source files only: a code snippet in the
     // docs seldom shows its imports, and adding them would be noise.
     let build = |with_imports: bool| -> Result<Box<dyn Operation>> {
@@ -333,6 +367,9 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
         } else {
             backend.build_rule_where(namespace.module.as_str(), spec.clone(), &constraints)?
         };
+        collected
+            .borrow_mut()
+            .get_or_insert_with(|| operation.advice());
         if with_imports {
             with_import_clauses(operation, &imports, backend)
         } else {
@@ -347,6 +384,7 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
             backend.build_rule_in_fences(&namespace.module, spec.clone(), mode == Fences::Also)
     {
         let operation = operation?;
+        advice.extend(operation.advice());
         return match scope {
             Some(pattern) => Ok(vec![Box::new(ScopedOperation::new(operation, &pattern)?)]),
             None => Ok(vec![operation]),
@@ -401,6 +439,7 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Opera
             })?;
         operations.push(Box::new(FencedOperation::new(build(false)?, names, locate)));
     }
+    advice.extend(collected.into_inner().unwrap_or_default());
     // The glob is validated here, at compile time, so a typo fails the
     // script rather than silently matching nothing at runtime. It narrows
     // fence rules too, by the Markdown file's path.
@@ -905,6 +944,20 @@ import (
                 .to_string()
                 .contains("goes with a `symbol` rename")
         );
+    }
+
+    #[test]
+    fn a_rewrite_that_matches_its_own_output_is_advised_once() {
+        let backends = colab_backends::registry();
+        let r = compile(
+            r#"refactor "r" { match go::call "f" and fences { replace_call "f(ctx, $args)" } match go::call "f" { replace_call "g($args)" } }"#,
+            &backends,
+        )
+        .unwrap();
+        let warnings = r.report().warnings;
+        // Two rules from `and fences`, one warning; the rename needs none.
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("still calls `f`"), "{warnings:?}");
     }
 
     #[test]

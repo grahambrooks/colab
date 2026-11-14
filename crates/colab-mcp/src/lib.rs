@@ -499,12 +499,17 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
             let refactoring =
                 compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
             let rules: Vec<String> = refactoring.rules.iter().map(|r| r.to_string()).collect();
-            Ok(json!({
+            let mut doc = json!({
                 "ok": true,
                 "name": refactoring.name,
                 "rule_count": refactoring.len(),
                 "rules": rules,
-            }))
+            });
+            let warnings = refactoring.report().warnings;
+            if !warnings.is_empty() {
+                doc["warnings"] = json!(warnings);
+            }
+            Ok(doc)
         }
         "colab.test_rule" => test_rule(args, backends),
         "colab.find" => find(args, backends),

@@ -892,7 +892,7 @@ MCP-aware host) can call them directly:
 | `colab.list_languages` | — | The registered backends, by name. Start here — it is far smaller than the full schema. |
 | `colab.list_rules` | `lang` | One backend's modules and actions. |
 | `colab.schema` | `lang?` | Full capability schema, or one language's slice of it. |
-| `colab.lint_script` | `script`, `cwd?` | `{ok: true, name, rule_count, rules[]}`. |
+| `colab.lint_script` | `script`, `cwd?` | `{ok: true, name, rule_count, rules[], warnings?}`; `warnings` lists rules that would rewrite their own output again. |
 | `colab.test_rule` | `script`, `source`, `path`, `expected?`, `cwd?` | Runs the script over one in-memory snippet; `path` is only a filename hint. `{changed, output, rules[], diff?, matches_expected?, expected_diff?, warnings?}`. Nothing on disk is read or written. |
 | `colab.find` | `script`, `paths[]`, `cwd?`, `detail?` (`concise`/`detailed`), `max_results?` | Read-only search; same document as `colab find --format json`. Paths are reported relative to `cwd`. |
 | `colab.ast` | `lang`, one of `pattern` / `source` | A pattern's tree as compiled (with `context` and `prefilter`), or a snippet's (with `has_error`). |

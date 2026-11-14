@@ -444,6 +444,17 @@ impl StructuralPattern {
         Ok(self)
     }
 
+    /// Whether `template`, as code with its metavariables in place, holds
+    /// a match of this pattern (in the wrapper the pattern compiled in).
+    pub fn rematches(&self, template: &str) -> bool {
+        let expanded = expand(template, self.lang.expando);
+        let source = match &self.context {
+            Some(context) => context.replacen(PATTERN_SLOT, &expanded, 1),
+            None => expanded,
+        };
+        !self.find(&source).is_empty()
+    }
+
     /// The `where` constraints, as written.
     pub fn constraints(&self) -> &[Constraint] {
         &self.constraints
@@ -1161,6 +1172,25 @@ impl PatternRule {
 
     /// Why [`apply`](PatternRule::apply) leaves `source` unchanged although
     /// the pattern matches there: the rewritten file would not parse.
+    /// A warning when the template, read as code with its metavariables
+    /// in place, is itself a match: every run would rewrite its own output
+    /// again (`f($A)` → `f(g($A))`). An identity template is a no-op and
+    /// is not flagged.
+    pub fn advice(&self) -> Vec<String> {
+        let PatternAction::Replace(template) = &self.action else {
+            return Vec::new();
+        };
+        if template.trim() == self.pattern.text().trim() || !self.pattern.rematches(template) {
+            return Vec::new();
+        }
+        vec![
+            "the template matches the pattern again, so every run rewrites its own output once \
+             more; narrow the pattern (a `where` clause, or a name the template changes), or apply \
+             it once and remove the rule"
+                .into(),
+        ]
+    }
+
     pub fn why_unchanged(&self, source: &str) -> Option<String> {
         let PatternAction::Replace(template) = &self.action else {
             return None;

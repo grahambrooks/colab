@@ -648,6 +648,14 @@ The standard ways to achieve idempotency in your own scripts:
 - **`replace_call`** — *change the function name*, or accept that the
   rule is single-pass and apply it once.
 
+colab warns when it can tell, before anything runs: a `replace_call`
+template that still calls the function (`f(ctx, $args)` for `f`), and a
+`pattern` template that is itself a match of its pattern (`f($A)` →
+`f(g($A))`). The warning is on every run's report (`the template matches
+the pattern again, so every run rewrites its own output once more`), in
+`colab.lint_script`'s `warnings`, and on the rule in a `.codemod` editor.
+It is a warning, not an error: a wrap applied once on purpose is fine.
+
 ## Conflicts
 
 Some mistakes are visible in the file a rule just changed, and colab

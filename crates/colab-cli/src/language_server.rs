@@ -134,6 +134,17 @@ impl Backend {
                 Some(diagnostic(span_range(text, check), err))
             })
             .collect();
+        // Advice (a rewrite that matches its own output) is a warning: the
+        // rule compiles, but probably does not do what was meant.
+        out.extend(checks.iter().flat_map(|check| {
+            check.advice.iter().map(|advice| Diagnostic {
+                range: span_range(text, check),
+                severity: Some(DiagnosticSeverity::WARNING),
+                source: Some("colab".into()),
+                message: advice.clone(),
+                ..Default::default()
+            })
+        }));
         if out.is_empty() && text.contains("include") {
             let whole = match path {
                 Some(path) => compile_at_source(text, path, &self.backends),
@@ -833,6 +844,19 @@ mod tests {
         let diags =
             backend.diagnose("refactor \"x\" { match go::import \"old\" { replace \"new\" } }");
         assert!(diags.is_empty(), "got: {:?}", diags);
+    }
+
+    #[tokio::test]
+    async fn diagnose_warns_about_a_rewrite_that_matches_its_own_output() {
+        let (service, _) = LspService::new(|client| Backend::new(client, registry()));
+        let backend = service.inner();
+        let diags = backend.diagnose(
+            "refactor \"x\" {\n    match go::pattern 'f($A)' { replace 'f(g($A))' }\n}\n",
+        );
+        assert_eq!(diags.len(), 1, "{diags:?}");
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::WARNING));
+        assert!(diags[0].message.contains("matches the pattern again"));
+        assert_eq!(diags[0].range.start.line, 1, "on the rule's line");
     }
 
     #[tokio::test]

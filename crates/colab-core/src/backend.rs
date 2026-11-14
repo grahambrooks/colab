@@ -84,6 +84,14 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
         Vec::new()
     }
 
+    /// What this rule compiles to but probably should not, known before it
+    /// runs: a rewrite whose output matches it again, so a second run
+    /// changes the code once more. Shown as a warning on every run, and by
+    /// `lint_script` and the `.codemod` editor. The default has none.
+    fn advice(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Why this rule leaves `source` unchanged although it matches there,
     /// e.g. a template whose output would not parse. Only called for a
     /// rule that changed no file, on a bounded sample, so it may parse.

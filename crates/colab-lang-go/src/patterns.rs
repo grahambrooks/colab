@@ -102,6 +102,10 @@ impl Operation for PatternOp {
     fn why_unchanged(&self, source: &str) -> Option<String> {
         self.0.why_unchanged(source)
     }
+
+    fn advice(&self) -> Vec<String> {
+        self.0.advice()
+    }
 }
 
 #[cfg(test)]
