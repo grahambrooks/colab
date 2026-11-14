@@ -132,9 +132,9 @@ jobs:
           venv/bin/colab --version
           venv/bin/colab-codemod --version
           venv/bin/python -m colab_codemod list-languages > /dev/null
-          echo 'def f(a: Optional[int]): pass' |
-            venv/bin/colab refactor -e "match python::pattern 'Optional[\$T]' { replace '\$T | None' }" --stdin --path x.py |
-            grep -q 'int | None'
+          # A script file, not `-e`: any release must pass this.
+          printf '%s\n' 'refactor "t" {' '  match python::import "os" { replace "posix" }' '}' > t.codemod
+          echo 'import os' | venv/bin/colab refactor --script t.codemod --stdin --path x.py | grep -qx 'import posix'
           uvx --no-index --find-links out/pypi colab-codemod --version
       - name: npm and npx
         run: |
