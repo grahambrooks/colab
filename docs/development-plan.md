@@ -85,6 +85,7 @@ these hold:
 - Pack discovery shared with M11.
 - Per-language formatter commands (`gofmt -w`, `rustfmt`,
   `prettier --write`) for `--tidy`, deferred from M25.
+- The remaining idiom packs (Go 1.18 generics, Java 8→21, Python 3.12 typing, JS/TS ESM), each with a README of what it does not cover, discovered through `colab.toml`: before `colab fix`, a pack is a script nobody finds.
 
 Design, from the original plan:
 
@@ -127,6 +128,7 @@ have CI / pre-commit / agents pick them up:
 - Start from `scripts/price-edits.py` and the token table in
   [`dogfood-log.md`](dogfood-log.md#token-cost-m27--m22), which already
   price a change as colab calls versus `Read` + `Edit`.
+- A real migration task: the mechanical subset of the Rust 2021→2024 edition pack (`examples/packs/rust/edition-2021-to-2024.codemod`), built here with a README of what it does not cover, and run as a task. It is also dogfooding on code that is not colab's own.
 
 ### M16 — Diff review aggregation
 - Rule attribution in `--format json` / `ndjson` has shipped (`rules[]`,
@@ -210,17 +212,11 @@ whichever milestone touches the same code.
 
 ## Unscheduled
 
-- Idiom packs populated end-to-end (Go 1.18 generics, Java 8→21
-  full, Python 3.12 typing, JS/TS ESM migration, Rust edition
-  2021→2024). Each pack ships a README of what it does *not* cover.
-- Call and type hierarchy (`callHierarchy` / `typeHierarchy` on the
-  language-server client), the last IntelliJ navigation gap.
+- Call and type hierarchy (`callHierarchy` / `typeHierarchy` on the language-server client), the last IntelliJ navigation gap. Read-only, and `colab references` covers most of the need; schedule it if M23 shows agents need caller trees. Cheap then: the client already makes this kind of request.
 - Property tests (`proptest`) for the DSL parser and tree-sitter edit
   application: random byte ranges must never produce invalid UTF-8
   boundaries ([Goal 4](completed-milestones.md#goal-4--operational-concerns)).
 - Signed multi-platform release pipeline ([Goal 4](completed-milestones.md#goal-4--operational-concerns)).
-- Dynamic plugin loading (`libloading` / WASM), only if external
-  contributors want to ship out-of-tree backends.
 
 ---
 
@@ -236,6 +232,7 @@ whichever milestone touches the same code.
   ordered and sequential; there is no "merge" semantic.
 - Plugin marketplace. Premature until the workspace + capability registry
   have shipped and stabilised.
+- Dynamic plugin loading (`libloading` / WASM). No one has asked to ship an out-of-tree backend, adding one in the workspace is cheap, and the cross-backend contract tests rely on every backend being in it. Revisit only if external contributors ask.
 
 ---
 
