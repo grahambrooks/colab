@@ -46,9 +46,9 @@ pub Match: Match = {
     <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <constraints: Where?> "{" <lets: Let*> <action: Action> <clauses: Clause*> "}" <end: @R> =>? {
         let (scope, fences, prose) = crate::ast::locations(locations)
             .map_err(|error| ParseError::User { error })?;
-        let (imports, message, severity) = crate::ast::clauses(clauses)
+        let crate::ast::Clauses { imports, message, severity, id, url } = crate::ast::clauses(clauses)
             .map_err(|error| ParseError::User { error })?;
-        Ok(Match { namespace, match_string: string, scope, fences, prose, message, severity, constraints: constraints.unwrap_or_default(), lets, action, imports, span: Span { start, end } })
+        Ok(Match { namespace, match_string: string, scope, fences, prose, message, severity, id, url, constraints: constraints.unwrap_or_default(), lets, action, imports, span: Span { start, end } })
     }
 };
 
@@ -169,6 +169,8 @@ Clause: Clause = {
     <ImportClause> => Clause::Import(<>),
     "message" <text: StringLiteral> => Clause::Message(text),
     "severity" <level: Identifier> => Clause::Severity(level),
+    "id" <id: StringLiteral> => Clause::Id(id),
+    "url" <url: StringLiteral> => Clause::Url(url),
 };
 
 ImportClause: ImportClause = {
@@ -232,6 +234,8 @@ pub Identifier: String = {
     "field" => "field".to_string(),
     "pattern" => "pattern".to_string(),
     "rewriter" => "rewriter".to_string(),
+    "id" => "id".to_string(),
+    "url" => "url".to_string(),
 };
 
 // Three spellings, none with escapes. A double-quoted string cannot

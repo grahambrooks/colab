@@ -9,5 +9,7 @@ refactor "colab-hygiene" {
     match rust::pattern 'dbg!($$$A)' in "crates/*/src/**" where not inside tests {
         delete
         message "a `dbg!` left in library code"
+        id "no-dbg"
+        url "https://github.com/grahambrooks/colab/blob/main/CLAUDE.md#error-handling"
     }
 }

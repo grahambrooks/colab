@@ -380,6 +380,29 @@ path = ".colab/packs/house-style.codemod"
   last four as for `refactor`. `fix` takes no `--script`, `-e` or paths:
   the packs and `[run] paths` come from `colab.toml`.
 
+### Selecting rules: --only, --off, --severity
+
+`refactor`, `find` and `fix` run a subset of a script's rules, or change
+how much one matters, without editing it:
+
+```sh
+colab fix --check --only no-dbg              # just this rule
+colab fix --check --off 'legacy-*'           # all but these
+colab fix --check --severity no-dbg=warning  # report it, still fail --check (info would not)
+colab refactor --script s.codemod --only 2   # the second rule, by number
+```
+
+- A selector is a rule's `id`, a glob over ids (`*` is any run of
+  characters), or its number in the script, from 1. Each flag repeats.
+- `--only` keeps the rules any of its selectors select (all, without it);
+  `--off` then drops what its selectors select. For `fix`, the numbers
+  run across the packs in `colab.toml` order.
+- `--severity <selector>=<level>` sets `error`, `warning` or `info`; when
+  several apply to a rule, the last wins.
+- A selector that selects no rule is an error naming the ids (with a "did
+  you mean"), and so is a selection that leaves no rule, so a typo never
+  quietly runs everything or nothing.
+
 ### colab test
 
 Check a repository's packs against cases kept beside them, the way

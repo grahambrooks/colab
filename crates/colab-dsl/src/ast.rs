@@ -61,6 +61,11 @@ pub struct Match {
     pub message: Option<String>,
     /// `severity error | warning | info`; `None` means `error`.
     pub severity: Option<colab_core::Severity>,
+    /// `id "<name>"`: what `--only` / `--off` / `--severity` select it by.
+    pub id: Option<String>,
+    /// `url "<link>"`: where the rule's rationale lives, for SARIF and
+    /// GitHub annotations.
+    pub url: Option<String>,
     /// Constraints from a `where` clause, in order. Empty without one.
     pub constraints: Vec<colab_core::Constraint>,
     /// `let $NEW = $FROM | step …` clauses before the action, in order.
@@ -91,7 +96,6 @@ pub enum Location {
     Prose,
 }
 
-/// One clause after a rule's action.
 /// `let $NEW = $FROM | step | …`: a value derived from a binding for a
 /// `<lang>::pattern` `replace` template. Steps are `(name, args)` as
 /// written; the compiler checks them ([`colab_core::Transform::parse`]).
@@ -116,30 +120,56 @@ impl std::fmt::Display for Let {
     }
 }
 
+/// One clause after a rule's action.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Clause {
     Import(ImportClause),
     Message(String),
     Severity(String),
+    Id(String),
+    Url(String),
 }
 
-/// The clauses after an action: imports in order, then the one message
-/// and severity, refusing either given twice or an unknown severity.
-pub(crate) type Clauses = (
-    Vec<ImportClause>,
-    Option<String>,
-    Option<colab_core::Severity>,
-);
+/// The clauses after an action: imports in order, then at most one of
+/// each of the others.
+#[derive(Debug, Default)]
+pub(crate) struct Clauses {
+    pub imports: Vec<ImportClause>,
+    pub message: Option<String>,
+    pub severity: Option<colab_core::Severity>,
+    pub id: Option<String>,
+    pub url: Option<String>,
+}
+
+/// `true` for a rule id: letters, digits, and `-` `_` `.` `/`, not empty.
+pub fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'))
+}
 
 pub(crate) fn clauses(clauses: Vec<Clause>) -> Result<Clauses, &'static str> {
-    let (mut imports, mut message, mut severity) = (Vec::new(), None, None);
+    let mut out = Clauses::default();
+    let (imports, message, severity) = (&mut out.imports, &mut out.message, &mut out.severity);
     for clause in clauses {
         match clause {
+            Clause::Id(id) if out.id.is_none() => {
+                if !valid_id(&id) {
+                    return Err(
+                        "an `id` is letters, digits and `-` `_` `.` `/`, e.g. `id \"no-dbg\"`",
+                    );
+                }
+                out.id = Some(id);
+            }
+            Clause::Id(_) => return Err("a rule takes one `id`"),
+            Clause::Url(url) if out.url.is_none() => out.url = Some(url),
+            Clause::Url(_) => return Err("a rule takes one `url`"),
             Clause::Import(i) => imports.push(i),
-            Clause::Message(m) if message.is_none() => message = Some(m),
+            Clause::Message(m) if message.is_none() => *message = Some(m),
             Clause::Message(_) => return Err("a rule takes one `message`"),
             Clause::Severity(s) if severity.is_none() => {
-                severity = Some(
+                *severity = Some(
                     colab_core::Severity::parse(&s)
                         .ok_or("`severity` is `error`, `warning` or `info`")?,
                 );
@@ -147,7 +177,7 @@ pub(crate) fn clauses(clauses: Vec<Clause>) -> Result<Clauses, &'static str> {
             Clause::Severity(_) => return Err("a rule takes one `severity`"),
         }
     }
-    Ok((imports, message, severity))
+    Ok(out)
 }
 
 /// Fold a rule's location clauses, refusing one given twice.

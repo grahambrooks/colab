@@ -112,7 +112,7 @@ What a team needs to gate a repository on its packs.
   metavariable bindings, as CSV / NDJSON, with `--group-by $X` counts —
   "how many call sites, which shapes" before a migration. OpenRewrite
   data tables, Moderne `query_datatable`.
-- **Rule selection from the command line**: `--rule <name|regex>`,
+- **Rule selection from the command line** (shipped as `--only` / `--off` / `--severity`, since `-e/--rule` already gives an inline rule; selectors are `id` globs or numbers; `id` and `url` clauses): `--rule <name|regex>`,
   `--off <name>`, `--severity <name>=<level>`, and a `url` per rule
   carried into SARIF and GitHub annotations. ast-grep `scan`.
 - **A Windows build** in the release archives (no package managers; see

@@ -131,8 +131,12 @@ fn sarif_level(severity: Severity) -> &'static str {
     }
 }
 
-fn rule_id(index: usize) -> String {
-    format!("colab/rule-{}", index + 1)
+/// A rule's SARIF id: its own `id`, or its number.
+fn rule_id(report: &RunReport, index: usize) -> String {
+    match report.rules.get(index).and_then(|r| r.id.as_deref()) {
+        Some(id) => format!("colab/{id}"),
+        None => format!("colab/rule-{}", index + 1),
+    }
 }
 
 /// A SARIF region covering `start..=end` whole lines (an empty region at
@@ -152,13 +156,16 @@ impl SarifReporter {
             .iter()
             .map(|r| {
                 let mut rule = json!({
-                    "id": rule_id(r.index),
+                    "id": rule_id(report, r.index),
                     "name": r.rule.split_whitespace().next().unwrap_or(""),
                     "shortDescription": {"text": r.rule},
                     "defaultConfiguration": {"level": sarif_level(r.severity)},
                 });
                 if let Some(message) = &r.message {
                     rule["fullDescription"] = json!({"text": message});
+                }
+                if let Some(url) = &r.url {
+                    rule["helpUri"] = json!(url);
                 }
                 rule
             })
@@ -177,7 +184,7 @@ impl SarifReporter {
                     "endLine": finding.end_line.max(finding.start_line),
                 });
                 results.push(json!({
-                    "ruleId": rule_id(first),
+                    "ruleId": rule_id(report, first),
                     "ruleIndex": first,
                     "level": sarif_level(finding.severity),
                     "message": {"text": format!("{}. {}", message(report, &finding, self.mode), suggestion(&finding))},
@@ -200,7 +207,7 @@ impl SarifReporter {
         }
         for conflict in &report.conflicts {
             let mut result = json!({
-                "ruleId": conflict.rule.map(rule_id).unwrap_or_else(|| "colab/conflict".into()),
+                "ruleId": conflict.rule.map(|i| rule_id(report, i)).unwrap_or_else(|| "colab/conflict".into()),
                 "level": "error",
                 "message": {"text": format!("conflict: {}", conflict.message)},
                 "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri(&conflict.path)}}}],
@@ -295,17 +302,21 @@ impl GithubReporter {
             let file = escape_property(&uri(&change.path));
             for finding in render::findings(change, report) {
                 let end = finding.end_line.max(finding.start_line);
-                let title = lead(report, &finding)
-                    .and_then(|i| report.rules.get(i))
-                    .map(|r| format!("colab: {}", r.rule))
+                let lead_rule = lead(report, &finding).and_then(|i| report.rules.get(i));
+                let title = lead_rule
+                    .map(|r| format!("colab: {}", r.id.as_deref().unwrap_or(&r.rule)))
                     .unwrap_or_else(|| "colab".into());
+                let see = lead_rule
+                    .and_then(|r| r.url.as_deref())
+                    .map(|url| format!(" See {url}"))
+                    .unwrap_or_default();
                 out.push(format!(
                     "::{} file={file},line={},endLine={end},title={}::{}",
                     github_level(finding.severity),
                     finding.start_line,
                     escape_property(&title),
                     escape_data(&format!(
-                        "{}. {}",
+                        "{}. {}{see}",
                         message(report, &finding, self.mode),
                         suggestion(&finding)
                     )),
@@ -372,6 +383,30 @@ mod tests {
             conflicts: Vec::new(),
         };
         (report, change)
+    }
+
+    #[test]
+    fn a_rule_id_and_url_name_the_finding_in_both_formats() {
+        let (mut report, change) = run();
+        report.rules[0].id = Some("no-a".into());
+        report.rules[0].url = Some("https://example.test/no-a".into());
+        let mut github = GithubReporter::new(ExecMode::Check);
+        github.report(&change).unwrap();
+        let line = &github.lines(&report)[0];
+        assert!(line.contains("title=colab%3A no-a::"), "{line}");
+        assert!(line.ends_with(" See https://example.test/no-a"), "{line}");
+        let mut sarif = SarifReporter::new(ExecMode::Check, "test");
+        sarif.report(&change).unwrap();
+        let doc = sarif.document(&report);
+        let rule = &doc["runs"][0]["tool"]["driver"]["rules"][0];
+        assert_eq!(rule["id"], "colab/no-a");
+        assert_eq!(rule["helpUri"], "https://example.test/no-a");
+        assert_eq!(doc["runs"][0]["results"][0]["ruleId"], "colab/no-a");
+        // A rule without an id keeps its number.
+        assert_eq!(
+            doc["runs"][0]["tool"]["driver"]["rules"][1]["id"],
+            "colab/rule-2"
+        );
     }
 
     #[test]

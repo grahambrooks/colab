@@ -55,6 +55,7 @@ arg         = string | regex | [ "-" ] number | identifier   -- a rewriter's nam
 metavar     = "$" NAME | "$$$" NAME
 regex       = "/" ( any-char-except-slash-or-newline | "\" any-char )+ "/"
 clause      = import | "message" string | "severity" ( "error" | "warning" | "info" )
+            | "id" string | "url" string
 import      = "requires" "import" string
             | "drops" "import" string "when" "unused"
 namespace   = identifier "::" identifier
@@ -509,7 +510,7 @@ match rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ 
 This is how the Rust 2024 pack finds `extern` blocks, whose item list a
 `$$$` cannot stand for.
 
-## Findings: `message` and `severity`
+## Findings: `message`, `severity`, `id` and `url`
 
 A rule can say what its finding means, after the action:
 
@@ -529,6 +530,12 @@ match go::pattern 'errors.Wrap($E, $M)' {
 - `severity` is `error` (the default), `warning` or `info`. `--check`
   exits 10 only when a rule above `info` would change something, so an
   `info` rule reports without failing the check.
+- `id "<name>"` names the rule (letters, digits, `-` `_` `.` `/`; unique
+  in a script and its includes). It is what `--only`, `--off` and
+  `--severity` select by, the SARIF rule id (`colab/<id>`), and the title
+  of a GitHub annotation.
+- `url "<link>"` says where the rule's rationale lives: SARIF `helpUri`,
+  and "See <url>" after a GitHub annotation's message.
 - Each may appear once per rule, in any order with the import clauses.
 
 ## Suppressing a site: `colab:ignore`
@@ -899,7 +906,7 @@ The grammar keywords are:
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
 `count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `requires`, `import`, `drops`, `when`,
-`unused`; `let` for derived values; and for finding clauses `message`, `severity` (`error`,
+`unused`; `let` for derived values; and for finding clauses `message`, `severity`, `id`, `url` (`error`,
 `warning` and `info` are ordinary identifiers).
 
 `::` is the namespace separator. `//` starts a line comment.

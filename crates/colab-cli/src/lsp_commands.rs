@@ -209,6 +209,8 @@ fn tidy_rule(index: usize, by: &str) -> colab_core::RuleStat {
         unchanged: None,
         message: None,
         severity: colab_core::Severity::Info,
+        id: None,
+        url: None,
     }
 }
 

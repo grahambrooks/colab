@@ -44,6 +44,10 @@ pub struct RuleStat {
     pub message: Option<String>,
     /// The rule's `severity`, `Error` unless it says otherwise.
     pub severity: Severity,
+    /// The rule's `id "…"`, if it has one.
+    pub id: Option<String>,
+    /// The rule's `url "…"`, where its rationale lives.
+    pub url: Option<String>,
 }
 
 /// How much a rule's finding matters. `--check` fails only on `Error` and
@@ -230,6 +234,8 @@ impl RunReport {
                     unchanged: None,
                     message: None,
                     severity: Severity::Error,
+                    id: None,
+                    url: None,
                 })
                 .collect(),
             ..Default::default()

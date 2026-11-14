@@ -162,6 +162,14 @@ fn compile_inner(
     for m in &mut matches {
         resolve_names(m, &defs, None)?;
     }
+    let mut ids = HashSet::new();
+    for id in matches.iter().filter_map(|m| m.id.as_deref()) {
+        if !ids.insert(id) {
+            return Err(Error::Config(format!(
+                "two rules have `id \"{id}\"`; an id names one rule"
+            )));
+        }
+    }
 
     let mut rules: Vec<Box<dyn Operation>> = Vec::with_capacity(matches.len());
     let mut notes = Vec::with_capacity(matches.len());
@@ -169,6 +177,8 @@ fn compile_inner(
         let mut note = crate::model::RuleNote {
             message: m.message.clone(),
             severity: m.severity.unwrap_or_default(),
+            id: m.id.clone(),
+            url: m.url.clone(),
             script: None,
             advice: Vec::new(),
         };
@@ -491,6 +501,8 @@ fn lower_match_ops(
         prose,
         message: _,
         severity: _,
+        id: _,
+        url: _,
         mut constraints,
         lets,
         action,
@@ -831,6 +843,8 @@ mod tests {
                 prose: false,
                 message: None,
                 severity: None,
+                id: None,
+                url: None,
                 constraints: Vec::new(),
                 lets: Vec::new(),
                 action: Action::Replace("d.e.f".to_string()),
@@ -1392,6 +1406,30 @@ import (
             r#"refactor "t" { match go::pattern 'f($$$A)' { let $N = $$$A | rewrite("wrap") replace 'ff($N)' } }"#,
         );
         assert!(e.contains("takes the names of rewriters"), "{e}");
+    }
+
+    #[test]
+    fn a_rule_takes_one_id_and_url_and_ids_are_unique() {
+        let m = one_match(
+            r#"match go::import "a" { replace "b" id "no-a" url "https://example.test" message "m" }"#,
+        );
+        assert_eq!(
+            (m.id.as_deref(), m.url.as_deref()),
+            (Some("no-a"), Some("https://example.test"))
+        );
+        let err = |script: &str| compile(script, &registry()).err().unwrap().to_string();
+        assert!(
+            err(r#"refactor "t" { match go::import "a" { replace "b" id "x" id "y" } }"#)
+                .contains("one `id`")
+        );
+        assert!(
+            err(r#"refactor "t" { match go::import "a" { replace "b" id "no a" } }"#)
+                .contains("letters, digits")
+        );
+        let e = err(
+            r#"refactor "t" { match go::import "a" { replace "b" id "x" } match go::import "c" { replace "d" id "x" } }"#,
+        );
+        assert!(e.contains(r#"two rules have `id "x"`"#), "{e}");
     }
 
     #[test]

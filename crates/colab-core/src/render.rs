@@ -393,6 +393,12 @@ pub fn rules_json(report: &RunReport) -> Value {
             .iter()
             .map(|r| {
                 let mut rule = json!({"i": r.index, "rule": r.rule, "files": r.files_matched});
+                if let Some(id) = &r.id {
+                    rule["id"] = json!(id);
+                }
+                if let Some(url) = &r.url {
+                    rule["url"] = json!(url);
+                }
                 note_json(r, &mut rule);
                 if !r.near_misses.is_empty() {
                     rule["near"] = Value::Array(

@@ -26,6 +26,10 @@ pub struct Refactoring {
 pub struct RuleNote {
     pub message: Option<String>,
     pub severity: colab_core::Severity,
+    /// `id "<name>"`, for `--only` / `--off` / `--severity`.
+    pub id: Option<String>,
+    /// `url "<link>"`, the rule's rationale.
+    pub url: Option<String>,
     /// The script the rule came from, when it differs from the
     /// refactoring's own name (`colab fix` combines several packs).
     pub script: Option<String>,
@@ -86,11 +90,134 @@ impl Refactoring {
         for (stat, note) in report.rules.iter_mut().zip(&self.notes) {
             stat.message = note.message.clone();
             stat.severity = note.severity;
+            stat.id = note.id.clone();
+            stat.url = note.url.clone();
         }
     }
 }
 
+/// Which rules a run keeps, and severities it overrides, from the
+/// command line. A selector is a rule's `id`, a glob over ids (`no-*`),
+/// or its number in the script (from 1).
+#[derive(Debug, Clone, Default)]
+pub struct Selection {
+    /// `--only`: keep just the rules these select (all, when empty).
+    pub only: Vec<String>,
+    /// `--off`: drop the rules these select.
+    pub off: Vec<String>,
+    /// `--severity <selector>=<level>`.
+    pub severity: Vec<(String, colab_core::Severity)>,
+}
+
+impl Selection {
+    pub fn is_empty(&self) -> bool {
+        self.only.is_empty() && self.off.is_empty() && self.severity.is_empty()
+    }
+}
+
+/// Whether `selector` names rule `index` (zero-based) with `note`.
+fn selects(selector: &str, index: usize, note: &RuleNote) -> bool {
+    if let Ok(n) = selector.parse::<usize>() {
+        return n == index + 1;
+    }
+    note.id.as_deref().is_some_and(|id| glob(selector, id))
+}
+
+/// `pattern` with `*` for any run of characters, against all of `text`.
+fn glob(pattern: &str, text: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 1 {
+        return pattern == text;
+    }
+    let (first, last) = (parts[0], parts[parts.len() - 1]);
+    if !text.starts_with(first) || !text[first.len()..].ends_with(last) {
+        return false;
+    }
+    let mut rest = &text[first.len()..text.len() - last.len()];
+    for part in &parts[1..parts.len() - 1] {
+        match rest.find(part) {
+            Some(at) => rest = &rest[at + part.len()..],
+            None => return false,
+        }
+    }
+    true
+}
+
 impl Refactoring {
+    /// Apply `selection`: drop the rules it leaves out and override the
+    /// severities it names. A selector that selects no rule is an error
+    /// naming the ids there are, so a typo never silently runs everything.
+    pub fn select(&mut self, selection: &Selection) -> colab_core::Result<()> {
+        let all: Vec<&String> = selection
+            .only
+            .iter()
+            .chain(&selection.off)
+            .chain(selection.severity.iter().map(|(s, _)| s))
+            .collect();
+        for selector in all {
+            if !self
+                .notes
+                .iter()
+                .enumerate()
+                .any(|(i, n)| selects(selector, i, n))
+            {
+                let ids: Vec<&str> = self.notes.iter().filter_map(|n| n.id.as_deref()).collect();
+                let hint = colab_core::suggest::closest(selector, ids.iter().copied())
+                    .map(|id| format!(" (did you mean `{id}`?)"))
+                    .unwrap_or_default();
+                let known = if ids.is_empty() {
+                    "no rule has an `id`; select by number (1 to {n}) or give rules `id \"…\"`"
+                        .replace("{n}", &self.rules.len().to_string())
+                } else {
+                    format!(
+                        "the ids are {}, and rules are numbered 1 to {}",
+                        ids.iter()
+                            .map(|i| format!("`{i}`"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        self.rules.len()
+                    )
+                };
+                return Err(colab_core::Error::Config(format!(
+                    "`{selector}` selects no rule{hint}; {known}"
+                )));
+            }
+        }
+        for (i, note) in self.notes.iter_mut().enumerate() {
+            if let Some((_, level)) = selection
+                .severity
+                .iter()
+                .rev()
+                .find(|(s, _)| selects(s, i, note))
+            {
+                note.severity = *level;
+            }
+        }
+        let keep: Vec<bool> = self
+            .notes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                (selection.only.is_empty() || selection.only.iter().any(|s| selects(s, i, n)))
+                    && !selection.off.iter().any(|s| selects(s, i, n))
+            })
+            .collect();
+        let rules = std::mem::take(&mut self.rules);
+        let notes = std::mem::take(&mut self.notes);
+        for ((rule, note), kept) in rules.into_iter().zip(notes).zip(keep) {
+            if kept {
+                self.rules.push(rule);
+                self.notes.push(note);
+            }
+        }
+        if self.rules.is_empty() {
+            return Err(colab_core::Error::Config(
+                "`--only` / `--off` leave no rule to run".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Returns `true` if the script contains no rules.
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()

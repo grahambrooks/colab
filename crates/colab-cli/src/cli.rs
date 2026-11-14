@@ -229,6 +229,9 @@ struct ServerArgs {
 #[derive(Parser, Debug)]
 struct RefactorArgs {
     #[command(flatten)]
+    select: SelectArgs,
+
+    #[command(flatten)]
     script: ScriptArgs,
 
     /// Change to this working directory before resolving paths.
@@ -651,6 +654,9 @@ fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
 /// `colab fix`: the packs `colab.toml` declares.
 #[derive(Parser, Debug)]
 struct FixArgs {
+    #[command(flatten)]
+    select: SelectArgs,
+
     /// Exit 10 if any pack would change a file (at a severity above
     /// `info`); write nothing. For CI.
     #[arg(long, conflicts_with_all = ["write", "dry_run"])]
@@ -695,6 +701,9 @@ struct FixArgs {
 
 #[derive(Parser, Debug)]
 struct FindArgs {
+    #[command(flatten)]
+    select: SelectArgs,
+
     #[command(flatten)]
     script: ScriptArgs,
 
@@ -908,6 +917,43 @@ struct AstArgs {
 struct ExplainArgs {
     #[command(flatten)]
     script: ScriptArgs,
+}
+
+/// Which rules run, by `id`, id glob (`no-*`) or number (from 1).
+#[derive(clap::Args, Debug, Default)]
+struct SelectArgs {
+    /// Run only the rules this selects: a rule's `id`, a glob over ids
+    /// (`no-*`), or its number in the script. Repeatable.
+    #[arg(long = "only", value_name = "SELECTOR")]
+    only: Vec<String>,
+
+    /// Leave out the rules this selects. Repeatable.
+    #[arg(long = "off", value_name = "SELECTOR")]
+    off: Vec<String>,
+
+    /// Override the severity of the rules a selector selects:
+    /// `--severity no-dbg=warning`. Repeatable; the last that applies wins.
+    #[arg(long = "severity", value_name = "SELECTOR=LEVEL", value_parser = parse_severity)]
+    severity: Vec<(String, colab_core::Severity)>,
+}
+
+fn parse_severity(text: &str) -> std::result::Result<(String, colab_core::Severity), String> {
+    let (selector, level) = text
+        .rsplit_once('=')
+        .ok_or_else(|| format!("`{text}`: write `<selector>=<level>`, e.g. `no-dbg=warning`"))?;
+    let level = colab_core::Severity::parse(level)
+        .ok_or_else(|| format!("`{level}`: a severity is `error`, `warning` or `info`"))?;
+    Ok((selector.to_string(), level))
+}
+
+impl SelectArgs {
+    fn apply(&self, refactoring: &mut codemod::Refactoring) -> Result<()> {
+        refactoring.select(&codemod::Selection {
+            only: self.only.clone(),
+            off: self.off.clone(),
+            severity: self.severity.clone(),
+        })
+    }
 }
 
 /// Where the codemod script comes from: a file, stdin, or inline rules.
@@ -1239,7 +1285,8 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     change_working_dir(&args.change_dir)?;
 
     let backends = default_backends();
-    let refactoring = args.script.compile(&backends)?;
+    let mut refactoring = args.script.compile(&backends)?;
+    args.select.apply(&mut refactoring)?;
     run_compiled(&refactoring, &args)
 }
 
@@ -1291,7 +1338,8 @@ fn run_fix(args: FixArgs) -> Result<i32> {
             }
         });
     }
-    let refactoring = codemod::Refactoring::combine("fix", parts);
+    let mut refactoring = codemod::Refactoring::combine("fix", parts);
+    args.select.apply(&mut refactoring)?;
 
     // The rest is `refactor` with the config's settings as its flags.
     let format = clap::ValueEnum::to_possible_value(&args.format)
@@ -2216,7 +2264,8 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
         ));
     }
     let backends = default_backends();
-    let refactoring = args.script.compile(&backends)?;
+    let mut refactoring = args.script.compile(&backends)?;
+    args.select.apply(&mut refactoring)?;
     // The rules are in every report; the log names the script, so an
     // agent does not read each rule twice.
     info!(
@@ -2279,7 +2328,8 @@ fn run_find(args: FindArgs) -> Result<i32> {
 
     change_working_dir(&args.change_dir)?;
     let backends = default_backends();
-    let refactoring = args.script.compile(&backends)?;
+    let mut refactoring = args.script.compile(&backends)?;
+    args.select.apply(&mut refactoring)?;
     let rules = &refactoring.rules;
     let detail = match args.detail {
         FindDetailArg::Concise => FindDetail::Concise,
