@@ -1,0 +1,21 @@
+// Constraints on where a match sits, not only what it is.
+refactor "go-test-hygiene" {
+    // t.Fatal from a goroutine stops only that goroutine (staticcheck
+    // SA2002). `any` covers both shapes a goroutine takes here: a closure
+    // with no parameters, and one handed the test's `*testing.T`.
+    match go::pattern '$T.Fatal($$$A)'
+        where any(inside 'go func() { $$$B }()', inside 'go func($P $Q) { $$$B }($E)')
+    {
+        replace '$T.Error($$$A)'
+    }
+    // An entry trace log that opens a function body: the first statement only.
+    match go::pattern 'log.Println($S)' where $S matches /^"enter/, nth 1 { delete }
+    // A bare `return err` right after an `os.Stat`: wrap it. `follows …
+    // directly` ties the check to the call; a check further down is left
+    // alone. (The `where` pattern's `$V` / `$P` are its own: the template
+    // cannot use them, and colab refuses one that tries.)
+    match go::pattern 'if err != nil { return err }' where follows '$V, err := os.Stat($P)' directly {
+        replace 'if err != nil { return fmt.Errorf("stat: %w", err) }'
+        requires import "fmt"
+    }
+}

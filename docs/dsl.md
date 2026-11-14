@@ -36,8 +36,15 @@ constraint  = [ "not" ] test
 test        = metavar "matches" ( regex | string )
             | metavar "is" ( identifier | string )
             | metavar "count" range
-            | "inside" string           -- the only test on symbol / call: a code scope
-            | "has" string
+            | "inside" string [ stop ]  -- without a stop, the only test on symbol / call: a code scope
+            | "has" string [ stop ]
+            | "follows" string [ stop ]
+            | "precedes" string [ stop ]
+            | "any" "(" constraint ( "," constraint )* ")"
+            | "all" "(" constraint ( "," constraint )* ")"
+            | "nth" [ "-" ] number
+            | "field" identifier
+stop        = "directly" | "until" string
 range       = number | number ".." number | number ".." | ".." number
 let         = "let" metavar "=" metavar ( "|" step )+   -- before the action; pattern only
 step        = identifier [ "(" [ arg ( "," arg )* ] ")" ]
@@ -305,6 +312,13 @@ match go::pattern 'errors.Wrap($E, $M)'
 | `$$$X count n..m` | the sequence binds between `n` and `m` nodes, separators not counted. `count 2`, `count 1..`, `count ..3` also work. |
 | `inside '<pattern>'` | some enclosing node matches the pattern |
 | `has '<pattern>'` | some node within the match matches the pattern |
+| `follows '<pattern>'` | some earlier sibling matches the pattern. The match counts as the largest node spanning the same text, so a matched call is its statement and its siblings are the statements around it. |
+| `precedes '<pattern>'` | some later sibling matches the pattern |
+| `… directly` | after `inside` / `has` / `follows` / `precedes`: look at the nearest one only (the enclosing node, a direct child, the adjacent sibling; comments are skipped) |
+| `… until '<pattern>'` | after the same four: look no further than a node matching this pattern (`inside 'for $$$ { $$$ }' until 'func() { $$$ }'`: in a loop, not across a closure) |
+| `nth n` | the match is its parent's `n`th named child, from 1; `nth -1` is the last |
+| `field <name>` | the match is the child in that field of its parent (`function` of a call, `body` of a loop; an unknown field gets a "did you mean") |
+| `any(c, …)` | at least one of the constraints holds: one rule for two shapes. `all(c, …)` groups constraints that must all hold, under `not` or `any` (at the top level a comma does the same). |
 | `not <constraint>` | the constraint does not hold |
 
 - `<lang>::pattern` takes every constraint. `symbol` and `call` take only
@@ -314,9 +328,11 @@ match go::pattern 'errors.Wrap($E, $M)'
   sigil (`$M`, or `$$$ARGS` for `count`). An unknown node kind gets a "did
   you mean". A regex or nested pattern that does not compile fails the
   script. All of these are caught at compile time, not mid-run.
-- The metavariables inside an `inside` / `has` pattern are its own. `$F`
+- The metavariables inside a nested pattern (`inside`, `has`, `follows`, `precedes`, `until`) are its own. `$F`
   above matches any test function; it is not compared with the outer
-  pattern's bindings.
+  pattern's bindings, and a template cannot use them: a template metavariable
+  the pattern does not bind (nor a `let`) fails the script, rather than
+  being filled with nothing.
 - Constraints only remove matches, so the prefilter stays sound, and
   `colab find` lists exactly what `refactor` would change.
 
@@ -803,7 +819,7 @@ The grammar keywords are:
 `refactor`, `match`, `in`, `include`, `replace`, `delete`, `ensure`,
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
-`count`, `inside`, `has`, `requires`, `import`, `drops`, `when`,
+`count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `requires`, `import`, `drops`, `when`,
 `unused`; `let` for derived values; and for finding clauses `message`, `severity` (`error`,
 `warning` and `info` are ordinary identifiers).
 

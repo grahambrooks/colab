@@ -67,8 +67,8 @@ impl fmt::Display for Scoped {
 pub fn unsupported(lang: &str, module: &str, constraint: &Constraint) -> String {
     format!(
         "`{lang}::{module}` takes only `inside '<pattern>'` and `not inside '<pattern>'` in its `where` \
-         clause (the scope it may change); `{constraint}` needs a metavariable, which only \
-         `{lang}::pattern` binds"
+         clause (the scope it may change); `{constraint}` tests a match, and only \
+         `{lang}::pattern` has one"
     )
 }
 

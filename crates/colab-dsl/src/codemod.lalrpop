@@ -6,7 +6,7 @@ use crate::ast::Action;
 use crate::ast::Span;
 use crate::ast::ImportClause;
 use crate::ast::{Clause, Fences, Location};
-use colab_core::{Constraint, Test, TransformArg, Var};
+use colab_core::{Constraint, Relation, Stop, Test, TransformArg, Var};
 use crate::ast::Let;
 use lalrpop_util::ParseError;
 
@@ -78,6 +78,29 @@ Test: Test = {
     <var: Metavar> "count" <range: CountRange> => Test::Count { var, min: range.0, max: range.1 },
     "inside" <pattern: StringLiteral> => Test::Inside(pattern),
     "has" <pattern: StringLiteral> => Test::Has(pattern),
+    "inside" <pattern: StringLiteral> <stop: StopClause> => Test::Related { relation: Relation::Inside, pattern, stop },
+    "has" <pattern: StringLiteral> <stop: StopClause> => Test::Related { relation: Relation::Has, pattern, stop },
+    "follows" <pattern: StringLiteral> <stop: StopClause?> => Test::Related { relation: Relation::Follows, pattern, stop: stop.unwrap_or(Stop::Anywhere) },
+    "precedes" <pattern: StringLiteral> <stop: StopClause?> => Test::Related { relation: Relation::Precedes, pattern, stop: stop.unwrap_or(Stop::Anywhere) },
+    "any" "(" <all: Constraints> ")" => Test::Any(all),
+    "all" "(" <all: Constraints> ")" => Test::All(all),
+    "nth" <n: Number> => Test::Nth(i64::try_from(n).unwrap_or(i64::MAX)),
+    "nth" "-" <n: Number> => Test::Nth(-i64::try_from(n).unwrap_or(i64::MAX)),
+    "field" <name: Identifier> => Test::Field(name),
+};
+
+// How far `inside` / `has` / `follows` / `precedes` look.
+StopClause: Stop = {
+    "directly" => Stop::Directly,
+    "until" <pattern: StringLiteral> => Stop::Until(pattern),
+};
+
+Constraints: Vec<Constraint> = {
+    <first: Constraint> <rest: ("," <Constraint>)*> => {
+        let mut all = vec![first];
+        all.extend(rest);
+        all
+    }
 };
 
 // `let $NAME = $F | strip_prefix("Get") | snake`: a value for the
@@ -187,6 +210,14 @@ pub Identifier: String = {
     "severity" => "severity".to_string(),
     "and" => "and".to_string(),
     "let" => "let".to_string(),
+    "follows" => "follows".to_string(),
+    "precedes" => "precedes".to_string(),
+    "directly" => "directly".to_string(),
+    "until" => "until".to_string(),
+    "any" => "any".to_string(),
+    "all" => "all".to_string(),
+    "nth" => "nth".to_string(),
+    "field" => "field".to_string(),
 };
 
 // Three spellings, none with escapes. A double-quoted string cannot

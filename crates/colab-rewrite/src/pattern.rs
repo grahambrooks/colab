@@ -26,7 +26,7 @@ use ast_grep_core::meta_var::MetaVariable;
 use ast_grep_core::replacer::TemplateFix;
 use ast_grep_core::tree_sitter::{LanguageExt, StrDoc, TSLanguage};
 use ast_grep_core::{NodeMatch, Pattern, PatternError};
-use colab_core::{Constraint, LanguageBackend, Operation, RuleSpec, Test, Var};
+use colab_core::{Constraint, LanguageBackend, Operation, Relation, RuleSpec, Stop, Test, Var};
 use tree_sitter::{Node, Parser};
 
 use crate::{Edit, apply_edits, line_span};
@@ -789,8 +789,8 @@ impl Rewriter<'_, '_> {
 /// `func ($R $T) $F() { $$$B }` → `func ($R $T) $NAME() { $$$B }` would
 /// put a many-line body on one line. Tokens are aligned (quoted text is
 /// one token, so a string's spaces are never mixed): an unchanged token
-/// keeps the whitespace before it in `old`, unless it follows a change or
-/// the template breaks the line there; a new one keeps the whitespace
+/// keeps the whitespace before it in `old`, unless it follows a change on
+/// the same line, or the template breaks the line there; a new one keeps the whitespace
 /// before it in `new`. A rewrite then changes what it changes and leaves
 /// the layout around it, as a layout-only rewrite is not made at all
 /// ([`same_but_whitespace`]).
@@ -810,11 +810,14 @@ fn keep_layout(old: &str, new: &str) -> String {
             for (k, ((old_space, token), (new_space, _))) in
                 a[o.clone()].iter().zip(&b[n]).enumerate()
             {
-                // The template's own whitespace next to a change (so two
-                // tokens never fuse) and where it breaks the line (so a
-                // template that re-indents a block still does).
+                // Next to a change the original's spaces belonged to a
+                // token that is gone, so the template's are used, unless
+                // the original broke the line there (a closing brace keeps
+                // its own line). Where the template breaks the line, its
+                // indentation stands, so a re-indented block stays so.
                 let next_to_change = k == 0 && (o.start != 0 || new_start != 0);
-                let space = if next_to_change || new_space.contains('\n') {
+                let renewed = next_to_change && !old_space.contains('\n');
+                let space = if renewed || new_space.contains('\n') {
                     new_space
                 } else {
                     old_space
@@ -987,6 +990,42 @@ fn metavariables(pattern: &str) -> Vec<Var> {
     out
 }
 
+/// A template metavariable the pattern does not bind (nor a `let`) would
+/// be filled with nothing; refuse it. A `where` pattern's metavariables
+/// are its own, so `$F` from `follows '$V, err := $F($$$A)'` is not one.
+fn unbound_in_template(
+    pattern: &str,
+    template: &str,
+    constraints: &[Constraint],
+) -> Result<(), String> {
+    let bound = metavariables(pattern);
+    let lets: Vec<&str> = constraints
+        .iter()
+        .filter_map(|c| match &c.test {
+            Test::Let { var, .. } => Some(var.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    let (_, names) = transformable_template(template);
+    let Some(name) = names
+        .iter()
+        .find(|n| !bound.iter().any(|b| b.name == **n) && !lets.contains(&n.as_str()))
+    else {
+        return Ok(());
+    };
+    let mut known: Vec<String> = bound.iter().map(ToString::to_string).collect();
+    known.extend(lets.iter().map(|l| format!("${l}")));
+    let binds = if known.is_empty() {
+        "binds none".to_string()
+    } else {
+        format!("binds {}", known.join(", "))
+    };
+    Err(format!(
+        "the template uses `${name}`, which the pattern does not bind ({binds}), so it would be \
+         filled with nothing; a `where` pattern's metavariables are its own"
+    ))
+}
+
 /// One compiled `let`: `var` is `from`'s text through `steps`.
 #[derive(Debug)]
 struct Derived {
@@ -1064,6 +1103,137 @@ enum CheckKind {
     },
     Inside(Pattern),
     Has(Pattern),
+    Related {
+        relation: Relation,
+        pattern: Pattern,
+        stop: StopAt,
+    },
+    Any(Vec<Check>),
+    All(Vec<Check>),
+    Nth(i64),
+    Field(String),
+}
+
+/// A compiled [`Stop`].
+enum StopAt {
+    Anywhere,
+    Directly,
+    Until(Pattern),
+}
+
+type TsNode<'t> = ast_grep_core::Node<'t, StrDoc<TsLang>>;
+
+/// `node`, or the outermost ancestor spanning exactly the same text: a
+/// matched call is also its expression statement, so its siblings are the
+/// statements around it.
+fn widest<'t>(node: &TsNode<'t>) -> TsNode<'t> {
+    let mut n = node.clone();
+    while let Some(parent) = n.parent() {
+        if parent.range() != n.range() {
+            break;
+        }
+        n = parent;
+    }
+    n
+}
+
+/// `node` and each ancestor spanning the same text, innermost first.
+fn same_span<'t>(node: &TsNode<'t>) -> Vec<TsNode<'t>> {
+    let mut out = vec![node.clone()];
+    while let Some(parent) = out.last().and_then(|n| n.parent()) {
+        if parent.range() != node.range() {
+            break;
+        }
+        out.push(parent);
+    }
+    out
+}
+
+/// Whether some node related to `node` matches `pattern`, searched
+/// nearest first and no further than `stop`.
+fn related(node: &TsNode<'_>, relation: Relation, pattern: &Pattern, stop: &StopAt) -> bool {
+    // Candidates nearest first, and whether each is the last `directly`
+    // allows.
+    let search = |candidates: &mut dyn Iterator<Item = TsNode<'_>>,
+                  last: &dyn Fn(&TsNode<'_>) -> bool| {
+        for c in candidates {
+            if c.matches(pattern) {
+                return true;
+            }
+            match stop {
+                StopAt::Anywhere => {}
+                StopAt::Directly if last(&c) => return false,
+                StopAt::Directly => {}
+                StopAt::Until(until) if c.matches(until) => return false,
+                StopAt::Until(_) => {}
+            }
+        }
+        false
+    };
+    let real = |n: &TsNode<'_>| n.is_named() && !n.is_extra();
+    match relation {
+        // `directly`: up to the first enclosing node that is larger than
+        // the match (wrappers over the same text do not count).
+        Relation::Inside => search(&mut node.ancestors(), &|a: &TsNode<'_>| {
+            a.range() != node.range()
+        }),
+        Relation::Has => match stop {
+            StopAt::Directly => node.children().any(|c| c.matches(pattern)),
+            StopAt::Anywhere => node.has(pattern),
+            // Depth first, not descending into a node matching `until`.
+            StopAt::Until(until) => {
+                let mut stack: Vec<TsNode<'_>> = node.children().collect();
+                while let Some(n) = stack.pop() {
+                    if n.matches(pattern) {
+                        return true;
+                    }
+                    if !n.matches(until) {
+                        stack.extend(n.children());
+                    }
+                }
+                false
+            }
+        },
+        Relation::Follows => {
+            let base = widest(node);
+            search(&mut base.prev_all().filter(real), &|_: &TsNode<'_>| true)
+        }
+        Relation::Precedes => {
+            let base = widest(node);
+            search(&mut base.next_all().filter(real), &|_: &TsNode<'_>| true)
+        }
+    }
+}
+
+/// Whether `node` is its parent's `n`th named child (negative: from the end).
+fn is_nth(node: &TsNode<'_>, n: i64) -> bool {
+    let base = widest(node);
+    let Some(parent) = base.parent() else {
+        return false;
+    };
+    let siblings: Vec<_> = parent
+        .children()
+        .filter(|c| c.is_named() && !c.is_extra())
+        .map(|c| c.range())
+        .collect();
+    let Some(at) = siblings.iter().position(|r| *r == base.range()) else {
+        return false;
+    };
+    let len = siblings.len() as i64;
+    let at = at as i64;
+    if n > 0 { at + 1 == n } else { len - at == -n }
+}
+
+/// Whether `node` (or a node spanning the same text) is its parent's
+/// child in field `name`.
+fn in_field(node: &TsNode<'_>, name: &str) -> bool {
+    same_span(node).iter().any(|c| {
+        c.parent().is_some_and(|parent| {
+            parent
+                .field_children(name)
+                .any(|f| f.range() == c.range() && f.kind() == c.kind())
+        })
+    })
 }
 
 impl Check {
@@ -1124,6 +1294,53 @@ impl Check {
             }
             Test::Inside(text) => CheckKind::Inside(nested(language, "inside", text)?),
             Test::Has(text) => CheckKind::Has(nested(language, "has", text)?),
+            Test::Related {
+                relation,
+                pattern,
+                stop,
+            } => CheckKind::Related {
+                relation: *relation,
+                pattern: nested(language, relation.keyword(), pattern)?,
+                stop: match stop {
+                    Stop::Anywhere => StopAt::Anywhere,
+                    Stop::Directly => StopAt::Directly,
+                    Stop::Until(until) => StopAt::Until(nested(language, "until", until)?),
+                },
+            },
+            Test::Any(all) | Test::All(all) => {
+                if all.is_empty() {
+                    return Err(format!("`{constraint}` needs at least one constraint"));
+                }
+                let checks = all
+                    .iter()
+                    .map(|c| Self::compile(language, bound, c))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if matches!(constraint.test, Test::Any(_)) {
+                    CheckKind::Any(checks)
+                } else {
+                    CheckKind::All(checks)
+                }
+            }
+            Test::Nth(0) => {
+                return Err(format!(
+                    "`{constraint}`: positions count from 1 (`nth 1` is the first, `nth -1` the last)"
+                ));
+            }
+            Test::Nth(n) => CheckKind::Nth(*n),
+            Test::Field(name) => {
+                if language.grammar.field_id_for_name(name).is_none() {
+                    let fields: Vec<&str> = (1..=language.grammar.field_count() as u16)
+                        .filter_map(|id| language.grammar.field_name_for_id(id))
+                        .collect();
+                    let hint = colab_core::suggest::closest(name, fields.iter().copied())
+                        .map(|f| format!(" (did you mean `{f}`?)"))
+                        .unwrap_or_default();
+                    return Err(format!(
+                        "`{constraint}`: the grammar has no field `{name}`{hint}; `colab ast` shows the fields in a snippet"
+                    ));
+                }
+                CheckKind::Field(name.clone())
+            }
             Test::Let { .. } => unreachable!("`let` is compiled by `Derived`"),
         };
         Ok(Self {
@@ -1165,6 +1382,15 @@ impl Check {
             }
             CheckKind::Inside(pattern) => m.get_node().inside(pattern),
             CheckKind::Has(pattern) => m.get_node().has(pattern),
+            CheckKind::Related {
+                relation,
+                pattern,
+                stop,
+            } => related(m.get_node(), *relation, pattern, stop),
+            CheckKind::Any(checks) => checks.iter().any(|c| c.holds(m, source)),
+            CheckKind::All(checks) => checks.iter().all(|c| c.holds(m, source)),
+            CheckKind::Nth(n) => is_nth(m.get_node(), *n),
+            CheckKind::Field(name) => in_field(m.get_node(), name),
         };
         result != self.negated
     }
@@ -1337,6 +1563,9 @@ impl PatternRule {
             return Err(format!(
                 "`{c}`: a `let` derives a value for the `replace` template, and `delete` has none"
             ));
+        }
+        if let PatternAction::Replace(template) = &action {
+            unbound_in_template(text, template, constraints)?;
         }
         Ok(Self {
             pattern: StructuralPattern::compile(language, text)?
@@ -1832,8 +2061,134 @@ mod tests {
             keep_layout("if c:\n    a()", "if c:\n    with l:\n        a()"),
             "if c:\n    with l:\n        a()"
         );
+        // After a deletion, the template's spacing; a closing brace on its
+        // own line stays there.
+        assert_eq!(keep_layout("w(err, \"m\")", "f(\"m\")"), "f(\"m\")");
+        assert_eq!(
+            keep_layout("if e {\n\treturn e\n}", "if e { return g(e) }"),
+            "if e {\n\treturn g(e)\n}"
+        );
         // A string is one token: its spaces are never taken from the old.
         assert_eq!(keep_layout("f(\"a  b\")", "f(\"a b\")"), "f(\"a b\")");
+    }
+
+    // ---------- relations, positions, any / all ---------------------------
+
+    const REL_SRC: &str = "package p\nfunc f() error {\n\tf, err := os.Open(\"x\")\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer f.Close()\n\tg(1, 2, 3)\n\tgo func() {\n\t\tfor _, x := range xs {\n\t\t\tuse(x)\n\t\t}\n\t}()\n\tfor _, y := range ys {\n\t\tgo func() { use(y) }()\n\t}\n\treturn nil\n}\n";
+
+    fn texts(pattern: &str, constraints: &[Constraint]) -> Vec<String> {
+        constrained(pattern, constraints)
+            .unwrap()
+            .find(REL_SRC)
+            .into_iter()
+            .map(|f| f.text)
+            .collect()
+    }
+
+    fn rel(relation: colab_core::Relation, pattern: &str, stop: colab_core::Stop) -> Test {
+        Test::Related {
+            relation,
+            pattern: pattern.into(),
+            stop,
+        }
+    }
+
+    #[test]
+    fn sibling_relations_look_past_or_only_at_the_neighbour() {
+        use colab_core::{Relation::*, Stop::*};
+        let defer = "defer $X.Close()";
+        let after_if = rel(Follows, "if err != nil { $$$ }", Directly);
+        assert_eq!(texts(defer, &[c(false, after_if)]), ["defer f.Close()"]);
+        let after_open = |stop| rel(Follows, "$A, err := $$$B", stop);
+        assert!(texts(defer, &[c(false, after_open(Directly))]).is_empty());
+        assert_eq!(texts(defer, &[c(false, after_open(Anywhere))]).len(), 1);
+        // `until` stops at a sibling matching it.
+        let past_if = after_open(Until("if $C { $$$ }".into()));
+        assert!(texts(defer, &[c(false, past_if)]).is_empty());
+        // A matched call is its statement: its siblings are statements.
+        let before_return = rel(Precedes, "return nil", Anywhere);
+        assert_eq!(texts("g($$$A)", &[c(false, before_return)]), ["g(1, 2, 3)"]);
+    }
+
+    #[test]
+    fn inside_and_has_take_a_stop() {
+        use colab_core::{Relation::*, Stop::*};
+        let use_ = "use($X)";
+        let in_loop = |stop| c(false, rel(Inside, "for $$$ { $$$ }", stop));
+        assert_eq!(texts(use_, &[in_loop(Anywhere)]).len(), 2);
+        // The loop variable captured by a closure: `y`, not `x`.
+        let closure = in_loop(Until("func() { $$$ }".into()));
+        assert_eq!(texts(use_, &[closure]), ["use(x)"]);
+        // `directly`: the nearest larger enclosing node only.
+        let call = c(false, rel(Inside, "use($$$)", Directly));
+        assert_eq!(
+            texts(
+                "$X",
+                &[
+                    c(
+                        false,
+                        Test::Is {
+                            var: var("$X"),
+                            kind: "argument_list".into()
+                        }
+                    ),
+                    call
+                ]
+            )
+            .len(),
+            2
+        );
+        let has_call = |stop| c(false, rel(Has, "use($$$)", stop));
+        let funcs = "func() { $$$B }";
+        assert_eq!(texts(funcs, &[has_call(Anywhere)]).len(), 2);
+        assert!(texts(funcs, &[has_call(Until("for $$$ { $$$ }".into()))]).len() == 1);
+        assert!(texts(funcs, &[has_call(Directly)]).is_empty());
+    }
+
+    #[test]
+    fn positions_fields_and_groups() {
+        let int = || {
+            c(
+                false,
+                Test::Is {
+                    var: var("$X"),
+                    kind: "int_literal".into(),
+                },
+            )
+        };
+        assert_eq!(texts("$X", &[int(), c(false, Test::Nth(-1))]), ["3"]);
+        assert_eq!(texts("$X", &[int(), c(false, Test::Nth(2))]), ["2"]);
+        let either = Test::Any(vec![c(false, Test::Nth(1)), c(false, Test::Nth(3))]);
+        assert_eq!(texts("$X", &[int(), c(false, either)]), ["1", "3"]);
+        let both = Test::All(vec![c(false, Test::Nth(1)), c(false, Test::Nth(-1))]);
+        assert!(texts("$X", &[int(), c(false, both.clone())]).is_empty());
+        assert_eq!(texts("$X", &[int(), c(true, both)]).len(), 3);
+        let ident = || {
+            c(
+                false,
+                Test::Is {
+                    var: var("$F"),
+                    kind: "identifier".into(),
+                },
+            )
+        };
+        let called = texts("$F", &[ident(), c(false, Test::Field("function".into()))]);
+        assert_eq!(called, ["g", "use", "use"]);
+        let e = constrained("$F", &[c(false, Test::Field("functon".into()))]).unwrap_err();
+        assert!(e.contains("did you mean `function`"), "{e}");
+        let e = constrained("$F", &[c(false, Test::Nth(0))]).unwrap_err();
+        assert!(e.contains("count from 1"), "{e}");
+        let e = constrained("$F", &[c(false, Test::Any(Vec::new()))]).unwrap_err();
+        assert!(e.contains("at least one"), "{e}");
+        // A group checks its members like the top level does.
+        let unbound = Test::Any(vec![c(
+            false,
+            Test::Is {
+                var: var("$Q"),
+                kind: "identifier".into(),
+            },
+        )]);
+        assert!(constrained("$F", &[c(false, unbound)]).is_err());
     }
 
     // ---------- let ------------------------------------------------------

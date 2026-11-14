@@ -70,6 +70,25 @@ pub enum Test {
     Inside(String),
     /// `has '<pattern>'`: some descendant of the match matches it.
     Has(String),
+    /// `inside` / `has` with a stop, and `follows` / `precedes`: some
+    /// node in that relation to the match matches `pattern`, looking no
+    /// further than `stop` allows.
+    Related {
+        relation: Relation,
+        pattern: String,
+        stop: Stop,
+    },
+    /// `any(c, …)`: at least one of the constraints holds.
+    Any(Vec<Constraint>),
+    /// `all(c, …)`: every one holds (a comma does the same at the top
+    /// level; `all` groups them under `not` or `any`).
+    All(Vec<Constraint>),
+    /// `nth n`: the match is its parent's `n`th named child, from 1; a
+    /// negative `n` counts from the end (`nth -1` is the last).
+    Nth(i64),
+    /// `field <name>`: the match is its parent's child in that field
+    /// (`function` of a call, `body` of a loop, …).
+    Field(String),
     /// `let $NEW = $FROM | step | …` in a rule's action block: not a
     /// test but a value derived from a binding, for the `replace`
     /// template. It narrows nothing, so it is carried with the
@@ -79,6 +98,42 @@ pub enum Test {
         from: Var,
         steps: Vec<Transform>,
     },
+}
+
+/// Where a [`Test::Related`] pattern is looked for, relative to the match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Relation {
+    /// An enclosing node.
+    Inside,
+    /// A node within the match.
+    Has,
+    /// A sibling before the match.
+    Follows,
+    /// A sibling after the match.
+    Precedes,
+}
+
+impl Relation {
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Inside => "inside",
+            Self::Has => "has",
+            Self::Follows => "follows",
+            Self::Precedes => "precedes",
+        }
+    }
+}
+
+/// How far a [`Test::Related`] search goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stop {
+    /// As far as the tree goes: every ancestor, descendant or sibling.
+    Anywhere,
+    /// `directly`: the nearest one only (the enclosing node, a child, the
+    /// adjacent sibling).
+    Directly,
+    /// `until '<pattern>'`: up to, not past, a node matching it.
+    Until(String),
 }
 
 /// One step of a `let` pipeline: what it does to the text it is given.
@@ -270,6 +325,29 @@ impl fmt::Display for Constraint {
             },
             Test::Inside(pattern) => write!(f, "inside '{pattern}'"),
             Test::Has(pattern) => write!(f, "has '{pattern}'"),
+            Test::Related {
+                relation,
+                pattern,
+                stop,
+            } => {
+                write!(f, "{} '{pattern}'", relation.keyword())?;
+                match stop {
+                    Stop::Anywhere => Ok(()),
+                    Stop::Directly => f.write_str(" directly"),
+                    Stop::Until(until) => write!(f, " until '{until}'"),
+                }
+            }
+            Test::Any(all) | Test::All(all) => {
+                let name = if matches!(self.test, Test::Any(_)) {
+                    "any"
+                } else {
+                    "all"
+                };
+                let parts: Vec<String> = all.iter().map(ToString::to_string).collect();
+                write!(f, "{name}({})", parts.join(", "))
+            }
+            Test::Nth(n) => write!(f, "nth {n}"),
+            Test::Field(name) => write!(f, "field {name}"),
             Test::Let { var, from, steps } => {
                 write!(f, "let {var} = {from}")?;
                 for step in steps {

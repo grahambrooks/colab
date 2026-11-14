@@ -190,7 +190,10 @@ match js::pattern 'console.log($$$ARGS)' { delete }
 - **Narrow with `where`** instead of writing a cleverer pattern:
   `where $M matches /^"/, not inside 'func $F(t *testing.T) { $$$ }'`.
   The forms are `$X matches /re/`, `$X is <node-kind>`, `$$$X count 1..3`,
-  `inside '…'` and `has '…'`, each optionally preceded by `not`. Only
+  `follows '…'` / `precedes '…'` (siblings), `nth 1` / `nth -1`,
+  `field function`, `any(…)` / `all(…)`, `inside '…'` / `has '…'` (each
+  of the four relations may end `directly` or `until '…'`),
+  each optionally preceded by `not`. Only
   `pattern` takes them.
 - **Derive part of a name with `let`.** A metavariable is a whole node,
   so `Get$N` cannot match; bind the whole name and transform it before

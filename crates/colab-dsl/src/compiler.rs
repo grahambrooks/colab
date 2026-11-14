@@ -1152,6 +1152,27 @@ import (
     }
 
     #[test]
+    fn parses_relations_positions_and_groups() {
+        let m = one_match(
+            r#"match go::pattern 'defer $X.Close()' where follows 'if $C { $$$ }' directly, precedes 'return nil', inside 'for $$$ { $$$ }' until 'func() { $$$ }', has 'f()' directly, not any(nth 1, nth -1, all(field body, $X is identifier)) { delete }"#,
+        );
+        let shown: Vec<String> = m.constraints.iter().map(|c| c.to_string()).collect();
+        assert_eq!(
+            shown,
+            [
+                "follows 'if $C { $$$ }' directly",
+                "precedes 'return nil'",
+                "inside 'for $$$ { $$$ }' until 'func() { $$$ }'",
+                "has 'f()' directly",
+                "not any(nth 1, nth -1, all(field body, $X is identifier))",
+            ]
+        );
+        // The keywords stay usable where an identifier goes.
+        let m = one_match(r#"match go::pattern '$X' where $X is field { delete }"#);
+        assert_eq!(m.constraints[0].to_string(), "$X is field");
+    }
+
+    #[test]
     fn a_let_parses_every_step_form_and_reaches_the_template() {
         let m = one_match(
             r#"match go::pattern '$X.$F()' { let $N = $F | strip_prefix("Get") | replace(/^(a)/, "b") | substring(1, -1) | snake let $M = $N | upper replace '$X.$M()' }"#,

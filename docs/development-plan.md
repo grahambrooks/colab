@@ -109,7 +109,7 @@ types.
   (`$N | snake`, `camel`, `pascal`, `kebab`, `upper`, `lower`), regex
   replace and substring. Convention renames (`getFoo` → `foo`) are
   impossible today. ast-grep `transform`, Grit functions, Comby.
-- **Composition and neighbour constraints** in `where`: `any` / `all` of
+- **Composition and neighbour constraints** in `where` (shipped: `any` / `all`, `follows` / `precedes`, `nth`, `field`, and `directly` / `until '…'` as the stop for all four relations; see [`dsl.md`](dsl.md#constraints-where)): `any` / `all` of
   patterns (one rule for two shapes), `follows` / `precedes`, `nth`,
   `field` (which child a match sits in), and `stopBy` for `inside` / `has`.
   ast-grep-core implements most of it; constraints still only narrow.

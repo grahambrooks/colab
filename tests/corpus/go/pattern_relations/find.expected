@@ -1,0 +1,9 @@
+check.go:7:2: [2] if err != nil {\n		return err\n	}
+files_test.go:10:2: [1] log.Println("enter TestOpen")
+    $S = "enter TestOpen"
+files_test.go:20:4: [0] t.Fatal(err)
+    $A = err
+    $T = t
+files_test.go:24:3: [0] tt.Fatal("never")
+    $A = "never"
+    $T = tt

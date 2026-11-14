@@ -23,6 +23,12 @@ colab refactor --script examples/patterns/go-where/migrate.codemod --format diff
 # (`Getaway` is left: not a getter); a many-line body keeps its layout.
 colab refactor --script examples/patterns/go-let/getters.codemod --format diff examples/patterns/go-let
 
+# M30: where a match sits. `any` of two goroutine shapes, `nth 1` (a
+# function's first statement), `follows … directly` (the check right after
+# its call; the one further down is left).
+colab find --script examples/patterns/go-relations/hygiene.codemod --detail detailed examples/patterns/go-relations
+colab refactor --script examples/patterns/go-relations/hygiene.codemod --format diff examples/patterns/go-relations
+
 # Why does (or doesn't) a pattern match? Compare the trees.
 colab ast --lang go --pattern 'errors.Wrap($ERR, $MSG)'
 colab ast --lang go --stdin < examples/patterns/go/main.go
@@ -35,3 +41,4 @@ colab ast --lang go --stdin < examples/patterns/go/main.go
 | `go-where/` | `where $M matches /^"/` and `not inside 'func $F(t *testing.T) { $$$ }'` narrow the matches; `requires import "fmt"` and `drops import … when unused` edit imports only in the files the rule rewrote. |
 | `js/` | `delete` removes standalone statements only: the `console.log` inside an arrow body is left (deleting it would leave `() => )`), and `colab find` still lists it. |
 | `go-let/` | `let $NAME = $F \| strip_prefix("Get")` builds a new name from a whole-identifier capture, for a method and its call sites; `where $F matches /^Get[A-Z]/` picks the getters. |
+| `go-relations/` | `any(inside '…', inside '…')` for two shapes of goroutine; `nth 1` for a function's first statement; `follows '$V, err := os.Stat($P)' directly` for the error check right after its call. |
