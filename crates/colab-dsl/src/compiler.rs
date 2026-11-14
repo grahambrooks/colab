@@ -15,12 +15,12 @@ use std::path::{Path, PathBuf};
 use lalrpop_util::ParseError;
 use lalrpop_util::lalrpop_mod;
 
-use crate::ast::{Action, Command, ImportClause, Item, Match};
+use crate::ast::{Action, Command, Fences, ImportClause, Item, Match};
 use crate::model::Refactoring;
 use colab_core::suggest;
 use colab_core::{
-    BackendRegistry, Error, Followup, LanguageBackend, Operation, ParseDetail, Result, RuleSpec,
-    ScopedOperation, WithFollowups,
+    BackendRegistry, Error, FencedOperation, Followup, LanguageBackend, Operation, ParseDetail,
+    Result, RuleSpec, ScopedOperation, WithFollowups,
 };
 
 lalrpop_mod!(grammar, "/codemod.rs");
@@ -41,6 +41,15 @@ pub fn parse(text: &str) -> Result<Command> {
 /// quotes, a raw string shown in documentation). Say where it closed.
 fn raw_string_hint(source: &str, detail: &ParseDetail) -> Option<String> {
     let offset = detail.offset.min(source.len());
+    // `\"` just before the error: an escape the DSL does not have.
+    let line_start = source[..offset].rfind('\n').map_or(0, |i| i + 1);
+    if source[line_start..offset].contains("\\\"") {
+        return Some(
+            "; DSL strings have no escapes, so `\\\"` ends the string. Quote text that holds `\"` \
+             with '…', or r#\"…\"# when it holds both quotes"
+                .into(),
+        );
+    }
     let open = source[..offset].rfind("r#\"")?;
     if source[..open].ends_with('#') || source[open..].starts_with("r##") {
         return None;
@@ -152,7 +161,7 @@ fn compile_inner(
 
     let mut rules: Vec<Box<dyn Operation>> = Vec::with_capacity(matches.len());
     for m in matches {
-        rules.push(lower_match(m, backends)?);
+        rules.extend(lower_match(m, backends)?);
     }
     Ok(Refactoring {
         name: command.refactor_name,
@@ -170,8 +179,9 @@ pub struct RuleCheck {
     pub namespace: String,
     /// The action keyword as written (`replace`, `delete`, …).
     pub action: &'static str,
-    /// The lowered rule's description, or why it could not be lowered.
-    pub outcome: Result<String>,
+    /// The descriptions of the rules the block lowers to (two for `and
+    /// fences`, else one), or why it could not be lowered.
+    pub outcome: Result<Vec<String>>,
 }
 
 /// Lower each `match` block of `text` independently, so one bad rule does
@@ -196,7 +206,8 @@ pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
             let span = m.span;
             let namespace = format!("{}::{}", m.namespace.lang, m.namespace.module);
             let action = m.action.keyword();
-            let outcome = lower_match(m, backends).map(|op| op.to_string());
+            let outcome =
+                lower_match(m, backends).map(|ops| ops.iter().map(|op| op.to_string()).collect());
             RuleCheck {
                 span,
                 namespace,
@@ -254,11 +265,15 @@ fn resolve_include_path(relative: &str, base_path: Option<&Path>) -> Result<Path
     Ok(parent.join(relative))
 }
 
-fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Box<dyn Operation>> {
+/// Lower one `match` block. Usually one operation; `and fences` makes two,
+/// the rule for its own files and the same rule for Markdown code fences,
+/// so the report attributes each.
+fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Vec<Box<dyn Operation>>> {
     let Match {
         namespace,
         match_string,
         scope,
+        fences,
         constraints,
         action,
         imports,
@@ -297,17 +312,45 @@ fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Box<dyn Operation
             value,
         },
     };
-    let operation = if constraints.is_empty() {
-        backend.build_rule(namespace.module.as_str(), spec)?
-    } else {
-        backend.build_rule_where(namespace.module.as_str(), spec, &constraints)?
+    let build = || -> Result<Box<dyn Operation>> {
+        let operation = if constraints.is_empty() {
+            backend.build_rule(namespace.module.as_str(), spec.clone())?
+        } else {
+            backend.build_rule_where(namespace.module.as_str(), spec.clone(), &constraints)?
+        };
+        with_import_clauses(operation, &imports, backend)
     };
-    let operation = with_import_clauses(operation, &imports, backend)?;
+    let mut operations = Vec::new();
+    if fences != Some(Fences::Only) {
+        operations.push(build()?);
+    }
+    if fences.is_some() {
+        let names = backend.fence_names();
+        if names.is_empty() {
+            return Err(Error::UnsupportedOperation(format!(
+                "`{}` rules cannot run in Markdown code fences",
+                namespace.lang
+            )));
+        }
+        let locate = backends
+            .get("markdown")
+            .and_then(|md| md.fence_locator())
+            .ok_or_else(|| {
+                Error::UnsupportedOperation(
+                    "`in fences` needs the Markdown backend, which is not registered".into(),
+                )
+            })?;
+        operations.push(Box::new(FencedOperation::new(build()?, names, locate)));
+    }
+    // The glob is validated here, at compile time, so a typo fails the
+    // script rather than silently matching nothing at runtime. It narrows
+    // fence rules too, by the Markdown file's path.
     match scope {
-        // The glob is validated here, at compile time, so a typo fails
-        // the script rather than silently matching nothing at runtime.
-        Some(pattern) => Ok(Box::new(ScopedOperation::new(operation, &pattern)?)),
-        None => Ok(operation),
+        Some(pattern) => operations
+            .into_iter()
+            .map(|op| Ok(Box::new(ScopedOperation::new(op, &pattern)?) as Box<dyn Operation>))
+            .collect(),
+        None => Ok(operations),
     }
 }
 
@@ -500,6 +543,7 @@ mod tests {
                 },
                 match_string: "a.b.c".to_string(),
                 scope: None,
+                fences: None,
                 constraints: Vec::new(),
                 action: Action::Replace("d.e.f".to_string()),
                 imports: Vec::new(),
@@ -734,6 +778,63 @@ import (
             Some(Item::Match(m)) => m,
             other => panic!("expected a match, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn fence_clauses_parse_once_and_combine_with_a_glob() {
+        let m = one_match(r#"match go::import "a" in "docs/**" and fences { replace "b" }"#);
+        assert_eq!(m.scope.as_deref(), Some("docs/**"));
+        assert_eq!(m.fences, Some(crate::ast::Fences::Also));
+        let m = one_match(r#"match go::import "a" in fences { replace "b" }"#);
+        assert_eq!((m.scope, m.fences), (None, Some(crate::ast::Fences::Only)));
+        let twice = crate::parse(
+            r#"refactor "r" { match go::import "a" in fences and fences { delete } }"#,
+        );
+        assert!(twice.unwrap_err().to_string().contains("once"));
+        // `fences` and `and` still spell namespaces.
+        assert!(crate::parse(r#"refactor "r" { match x::fences "a" { delete } }"#).is_ok());
+    }
+
+    #[test]
+    fn and_fences_lowers_to_the_rule_and_its_fenced_twin() {
+        let backends = colab_backends::registry();
+        let both = compile(
+            r#"refactor "r" { match go::import "a/b" and fences { replace "c/d" } }"#,
+            &backends,
+        )
+        .unwrap();
+        let shown: Vec<String> = both.rules.iter().map(|r| r.to_string()).collect();
+        assert_eq!(
+            shown,
+            [
+                r#"go::import "a/b" -> "c/d""#,
+                r#"go::import "a/b" -> "c/d" in fences"#
+            ]
+        );
+        let only = compile(
+            r#"refactor "r" { match go::import "a/b" in "docs/**" in fences { delete } }"#,
+            &backends,
+        )
+        .unwrap();
+        assert_eq!(only.rules.len(), 1);
+        assert!(only.rules[0].is_file_relevant(Path::new("docs/x.md")));
+        assert!(!only.rules[0].is_file_relevant(Path::new("README.md")));
+        let none = compile(
+            r#"refactor "r" { match markdown::section "A" in fences { delete } }"#,
+            &backends,
+        );
+        assert!(
+            none.unwrap_err()
+                .to_string()
+                .contains("cannot run in Markdown code fences")
+        );
+    }
+
+    #[test]
+    fn an_escaped_quote_says_the_dsl_has_no_escapes() {
+        let script = "refactor \"r\" { match markdown::section \"a \\\"b\\\" c\" { delete } }";
+        let err = crate::parse(script).unwrap_err().to_string();
+        assert!(err.contains("DSL strings have no escapes"), "{err}");
     }
 
     #[test]

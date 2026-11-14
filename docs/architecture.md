@@ -179,6 +179,8 @@ pub enum RuleSpec {
     Delete  { target: String },
     Ensure  { target: String },
     ReplaceCall { target: String, template: String },
+    Set { target: String, value: String },
+    Insert { target: String, value: String },
 }
 ```
 
@@ -209,6 +211,7 @@ pub struct FileChange {
     pub before: String,
     pub after: String,
     pub rules_fired: Vec<usize>,
+    pub conflicts: Vec<RuleConflict>,
 }
 let outcome: WalkOutcome = walker::walk(transformer, path, &mut |change| { … })?;
 ```

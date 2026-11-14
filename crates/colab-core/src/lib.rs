@@ -8,6 +8,7 @@
 pub mod backend;
 pub mod constraint;
 pub mod error;
+pub mod fences;
 pub mod fileops;
 pub mod find;
 pub mod followup;
@@ -26,6 +27,7 @@ pub use backend::{
 };
 pub use constraint::{Constraint, Test, Var};
 pub use error::{Error, ParseDetail, Result};
+pub use fences::{Fence, FenceLocator, FencedOperation};
 pub use followup::{Followup, WithFollowups};
 pub use render::{ChangeCollector, Detail, RenderOptions, write_unified_diff};
 pub use report::{Conflict, RuleStat, RunReport, SkippedFile};

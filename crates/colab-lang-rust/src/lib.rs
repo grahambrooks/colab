@@ -113,6 +113,10 @@ impl LanguageBackend for RustBackend {
         Some("use")
     }
 
+    fn fence_names(&self) -> Vec<&'static str> {
+        vec!["rust", "rs"]
+    }
+
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
         let kinds = ["line_comment", "block_comment", "string_content"];
         crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))

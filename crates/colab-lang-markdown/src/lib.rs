@@ -70,6 +70,52 @@ pub(crate) fn nodes<'t>(
     out
 }
 
+/// Every fenced code block in `source`: its language (the info string's
+/// first word, lowercased), the lines between its fences, and the opening
+/// fence's indentation. The `colab_core::FenceLocator` behind `in fences`.
+pub fn fences(source: &str) -> Vec<colab_core::Fence> {
+    let Some(tree) = parse(source) else {
+        return Vec::new();
+    };
+    let line_start = |at: usize| source[..at].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = |at: usize| source[at..].find('\n').map_or(source.len(), |i| at + i + 1);
+    let mut out = Vec::new();
+    for node in nodes(&tree, |n| n.kind() == "fenced_code_block") {
+        let mut cursor = node.walk();
+        let children: Vec<_> = node.children(&mut cursor).collect();
+        let delimiters: Vec<_> = children
+            .iter()
+            .filter(|n| n.kind() == "fenced_code_block_delimiter")
+            .collect();
+        let Some(open) = delimiters.first() else {
+            continue;
+        };
+        let lang = children
+            .iter()
+            .find(|n| n.kind() == "info_string")
+            .and_then(|info| {
+                source[info.byte_range()]
+                    .split_whitespace()
+                    .next()
+                    .map(|w| w.trim_matches(['{', '}', '.']).to_lowercase())
+            })
+            .unwrap_or_default();
+        let start = line_end(open.start_byte());
+        let end = match delimiters.get(1) {
+            Some(close) => line_start(close.start_byte()),
+            None => node.end_byte(),
+        }
+        .max(start);
+        let indent = source[line_start(open.start_byte())..open.start_byte()].to_string();
+        out.push(colab_core::Fence {
+            lang,
+            content: start..end,
+            indent,
+        });
+    }
+    out
+}
+
 /// Parse one inline span (a paragraph's or a heading's text) with the
 /// inline grammar: links, images, code spans.
 pub(crate) fn parse_inline(text: &str) -> Option<tree_sitter::Tree> {
@@ -219,6 +265,15 @@ impl LanguageBackend for MarkdownBackend {
         CAPABILITIES
     }
 
+    /// Markdown fences inside Markdown are not supported.
+    fn fence_names(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+
+    fn fence_locator(&self) -> Option<colab_core::FenceLocator> {
+        Some(fences)
+    }
+
     fn syntax_tree(&self, input: colab_core::AstInput<'_>) -> Result<colab_core::SyntaxTree> {
         let colab_core::AstInput::Source(text) = input else {
             return Err(colab_core::Error::UnsupportedOperation(
@@ -301,5 +356,26 @@ impl LanguageBackend for MarkdownBackend {
             }
             (other, spec) => Err(self.unsupported(other, &spec)),
         }
+    }
+}
+
+#[cfg(test)]
+mod fence_tests {
+    #[test]
+    fn fences_report_language_body_and_indent() {
+        let doc = "# T\n\n```Go title=x\nfoo()\n```\n\n- item\n\n  ```rust\n  let x = 1;\n  ```\n\n````\nbare\n````\n";
+        let found = super::fences(doc);
+        let shown: Vec<(&str, &str, &str)> = found
+            .iter()
+            .map(|f| (f.lang.as_str(), &doc[f.content.clone()], f.indent.as_str()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("go", "foo()\n", ""),
+                ("rust", "  let x = 1;\n", "  "),
+                ("", "bare\n", "")
+            ]
+        );
     }
 }

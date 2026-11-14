@@ -346,3 +346,26 @@ fn prose_ranges_cover_comments_and_strings_but_not_code() {
         );
     }
 }
+
+/// Every source backend (one with an import module) names the fences its
+/// rules run in under `in fences`, its own namespace among them.
+#[test]
+fn source_backends_name_their_code_fences() {
+    let registry = colab_backends::registry();
+    let mut checked = 0;
+    for lang in registry.languages() {
+        let backend = registry.get(lang).unwrap();
+        if backend.import_module().is_none() {
+            continue;
+        }
+        let names = backend.fence_names();
+        assert!(names.contains(&lang), "{lang} fences: {names:?}");
+        assert!(
+            names.iter().all(|n| *n == n.to_lowercase()),
+            "{lang}: fence names are lowercase"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 12);
+    assert!(registry.get("markdown").unwrap().fence_locator().is_some());
+}

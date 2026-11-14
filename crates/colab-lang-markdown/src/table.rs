@@ -96,11 +96,17 @@ impl RowEdit {
                 "an empty selector `[]` needs a whole row (`| a | b |`) as the value",
             ));
         }
+        // Cells are compared as a reader sees them, so the literal is a
+        // word of that text: markup around it may differ from the file's.
         let literal = selector
             .iter()
-            .map(|(_, v)| v.clone())
-            .max_by_key(String::len)
-            .filter(|v| !v.is_empty());
+            .flat_map(|(_, v)| {
+                outline::plain_text(v)
+                    .split_whitespace()
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .max_by_key(String::len);
         Ok(Self {
             target: target.trim().to_string(),
             section,
@@ -188,11 +194,13 @@ impl RowEdit {
                     for (name, v) in named {
                         cells[column(name)?] = v.clone();
                     }
-                    // A new row also carries the selector's values.
+                    // A new row also carries the selector's values, as
+                    // written (markup included).
                     if base.is_none() {
-                        for (i, v) in &wanted {
-                            if cells[*i].is_empty() {
-                                cells[*i] = v.clone();
+                        for (name, v) in &self.selector {
+                            let i = column(name)?;
+                            if cells[i].is_empty() {
+                                cells[i] = v.clone();
                             }
                         }
                     }
@@ -523,6 +531,18 @@ mod tests {
             out.contains("| ------- |\n| 2026-11-14 | c | new |\n| 2026-11-13"),
             "{out}"
         );
+    }
+
+    #[test]
+    fn a_new_rows_selector_cells_keep_their_markup() {
+        let op = RowEdit::insert("Log[Task=`raw` strings]", "Outcome=done").unwrap();
+        let out = op.apply(LOG);
+        assert!(out.contains("|  | `raw` strings | done |"), "{out}");
+        // Matched by the text a reader sees, so a delete without the
+        // backticks finds it, and the prefilter does not skip the file.
+        let delete = RowEdit::delete("Log[Task=raw strings]").unwrap();
+        assert_eq!(delete.prefilter(), Some("strings"));
+        assert!(!delete.apply(&out).contains("raw"));
     }
 
     #[test]

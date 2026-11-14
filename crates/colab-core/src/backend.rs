@@ -226,6 +226,19 @@ pub trait LanguageBackend: Send + Sync {
         None
     }
 
+    /// The info-string names a Markdown code fence of this language uses:
+    /// `go` and `golang`, `rust` and `rs`. A rule with `in fences` or
+    /// `and fences` runs inside them. Empty rejects those clauses.
+    fn fence_names(&self) -> Vec<&'static str> {
+        vec![self.lang()]
+    }
+
+    /// How to find the code fences in a Markdown file. Only the Markdown
+    /// backend provides one; `colab-core` links no Markdown parser.
+    fn fence_locator(&self) -> Option<crate::FenceLocator> {
+        None
+    }
+
     /// The operation behind `drops import "<target>" when unused`: delete
     /// the import, but only when nothing in the file still uses it. A
     /// backend that cannot tell whether an import is used keeps this

@@ -25,8 +25,10 @@ Whitespace is insignificant outside string literals.
 
 ```ebnf
 program     = "refactor" string "{" match* "}"
-match       = "match" namespace string [ scope ] [ where ] "{" action import* "}"
-scope       = "in" string
+match       = "match" namespace string location* [ where ] "{" action import* "}"
+location    = "in" string                -- path scope, at most once
+            | "in" "fences"              -- only inside Markdown code fences
+            | "and" "fences"             -- the rule's files, and fences
 where       = "where" constraint ( "," constraint )*
 constraint  = [ "not" ] test
 test        = metavar "matches" ( regex | string )
@@ -458,6 +460,34 @@ when one rule in a multi-rule script needs a tighter boundary than the
 rest. See [`examples/rust/scoped_rename`](../examples/rust/scoped_rename/)
 for a worked example.
 
+### Code fences: `in fences` and `and fences`
+
+A source rule can also run on the code examples in Markdown files:
+
+```
+match go::pattern 'errors.Wrap($E, $M)' and fences { replace 'fmt.Errorf($M+": %w", $E)' }
+match rust::use "old_crate::Thing" in "docs/**" in fences { replace "new_crate::Thing" }
+```
+
+- `and fences` keeps the rule for its own files and adds a second rule,
+  reported as `… in fences`, for the fences of its language in Markdown
+  files. `in fences` keeps only the second.
+- A fence belongs to a language by the first word of its info string,
+  compared case-insensitively: ```` ```go ```` and ```` ```golang ````
+  for Go, ```` ```ts ```` for `js`, and so on (each backend lists its
+  names). Other fences, and the prose around them, are left alone.
+- Each fence is rewritten on its own. One indented inside a list item is
+  dedented for the rule and re-indented after.
+- An `in "<glob>"` clause narrows the Markdown files by path.
+- `colab find` lists matches in fences at their place in the Markdown
+  file.
+- A snippet need not be a whole file: a Go fence without a `package`
+  clause still matches. A template that leaves a snippet unparsable is
+  not caught, since a snippet seldom parses cleanly to begin with;
+  preview with `--format diff`.
+- Each of `in "<glob>"`, `in fences` and `and fences` may appear once;
+  the two fence clauses exclude each other.
+
 ## Idempotency
 
 Every transform must satisfy: applying it twice produces the same
@@ -608,8 +638,6 @@ The DSL is intentionally small. Capabilities being considered:
   `replace_call "f(ctx, $args)"` pattern.
 - A query namespace (e.g. `go::regex`) for opt-in regex-based
   rewrites where a tree-sitter rule does not suffice.
-- Raw strings, for patterns that need both `'` and `"` (a Rust lifetime
-  and a string literal); see [`dogfood-log.md`](dogfood-log.md).
 - Type constraints (`$X has type T`) via the language server's hover.
 - A scope-aware `<lang>::symbol` mode that respects shadowing.
   (`in "<glob>"` narrows a rename by *path*; this would narrow it by

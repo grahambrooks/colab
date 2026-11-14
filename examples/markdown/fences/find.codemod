@@ -1,0 +1,3 @@
+refactor "find in fences" {
+    match go::pattern 'errors.Wrap($E, $M)' in fences { delete }
+}

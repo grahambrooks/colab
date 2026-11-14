@@ -120,6 +120,10 @@ impl LanguageBackend for RubyBackend {
         Some("require")
     }
 
+    fn fence_names(&self) -> Vec<&'static str> {
+        vec!["ruby", "rb"]
+    }
+
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
         let kinds = ["comment", "string_content", "heredoc_content"];
         crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))

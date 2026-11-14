@@ -120,6 +120,10 @@ impl LanguageBackend for CSharpBackend {
         Some("using")
     }
 
+    fn fence_names(&self) -> Vec<&'static str> {
+        vec!["csharp", "cs", "c#"]
+    }
+
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
         let kinds = [
             "comment",

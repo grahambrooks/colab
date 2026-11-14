@@ -114,6 +114,10 @@ impl LanguageBackend for CBackend {
         Some("include")
     }
 
+    fn fence_names(&self) -> Vec<&'static str> {
+        vec!["c", "h"]
+    }
+
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
         let kinds = ["comment", "string_content"];
         crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))

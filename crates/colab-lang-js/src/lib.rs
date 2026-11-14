@@ -101,6 +101,19 @@ impl LanguageBackend for JsBackend {
         Some("import")
     }
 
+    fn fence_names(&self) -> Vec<&'static str> {
+        vec![
+            "js",
+            "javascript",
+            "jsx",
+            "mjs",
+            "cjs",
+            "ts",
+            "typescript",
+            "tsx",
+        ]
+    }
+
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
         let kinds = ["comment", "string_fragment"];
         crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))

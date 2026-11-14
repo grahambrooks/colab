@@ -328,7 +328,13 @@ impl LanguageServer for Backend {
             .enumerate()
             .find(|(_, c)| c.span.start <= offset && offset <= c.span.end)
         {
-            let description = check.outcome.as_ref().map(String::as_str).unwrap_or("");
+            let description = check
+                .outcome
+                .as_ref()
+                .ok()
+                .and_then(|rules| rules.first())
+                .map(String::as_str)
+                .unwrap_or("");
             actions.push(self.workspace_action(
                 format!("colab: apply `{description}` to the workspace"),
                 &uri,
@@ -424,11 +430,19 @@ impl Backend {
             .unwrap_or_else(|_| PathBuf::from("script.codemod"));
         let mut refactoring = compile_at_source(text, &base, &self.backends)?;
         if let Some(index) = rule {
-            if index >= refactoring.rules.len() {
+            // `rule` is a block; a block can lower to more than one rule
+            // (`and fences`), so keep that block's range of rules.
+            let checks = colab_dsl::check(text, &self.backends)?;
+            let count = |c: &colab_dsl::RuleCheck| c.outcome.as_ref().map_or(0, Vec::len);
+            let Some(block) = checks.get(index) else {
+                return Err(Error::Config(format!("the script has no rule {index}")));
+            };
+            let start: usize = checks[..index].iter().map(count).sum();
+            let end = start + count(block);
+            if end > refactoring.rules.len() {
                 return Err(Error::Config(format!("the script has no rule {index}")));
             }
-            let only = refactoring.rules.swap_remove(index);
-            refactoring.rules = vec![only];
+            refactoring.rules = refactoring.rules.drain(start..end).collect();
         }
         let mut roots = self.roots.lock().await.clone();
         if roots.is_empty()

@@ -142,6 +142,13 @@ analysis.
 
 ---
 
+### Rules inside Markdown code fences
+
+Every source and config backend's rules can also run inside Markdown
+code fences of their language, with `and fences` (both) or `in fences`
+(only the fences), so a migration updates README and docs examples in the
+same run. See [Code fences](./dsl.md#code-fences-in-fences-and-and-fences).
+
 ## Go (`colab-lang-go`)
 
 Powered by `tree-sitter-go`.

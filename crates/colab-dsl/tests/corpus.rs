@@ -213,7 +213,9 @@ fn check_matches_compile(script_path: &Path, refactoring: &Refactoring) -> Resul
     if !text.lines().any(|l| l.trim_start().starts_with("include")) {
         let checked: Vec<&str> = checks
             .iter()
-            .filter_map(|c| c.outcome.as_deref().ok())
+            .filter_map(|c| c.outcome.as_ref().ok())
+            .flatten()
+            .map(String::as_str)
             .collect();
         let compiled: Vec<String> = refactoring.rules.iter().map(|r| r.to_string()).collect();
         if checked != compiled {

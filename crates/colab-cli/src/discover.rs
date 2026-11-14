@@ -115,6 +115,12 @@ fn explain_command(cmd: &ast::Command) -> Value {
                 if !m.imports.is_empty() {
                     out["imports"] = m.imports.iter().map(|c| c.to_string()).collect();
                 }
+                if let Some(fences) = m.fences {
+                    out["fences"] = json!(match fences {
+                        ast::Fences::Only => "only",
+                        ast::Fences::Also => "also",
+                    });
+                }
                 out
             }
             ast::Item::Include(path) => json!({

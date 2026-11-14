@@ -28,6 +28,9 @@ pub(crate) const ALREADY: &str = "already as the rule asks";
 #[derive(Debug)]
 pub struct SectionEdit {
     address: String,
+    /// `"New < Sibling"`: an insert goes just before `Sibling`, at its
+    /// level, instead of at the end of the parent.
+    before: Option<String>,
     /// The longest word of the heading text, which survives inline markup
     /// and so must appear in any file whose section this rule changes.
     literal: Option<String>,
@@ -63,7 +66,15 @@ impl SectionEdit {
     }
 
     fn build(address: &str, mode: Mode) -> Result<Self> {
-        let address = address.trim().to_string();
+        let (address, before) = match address.rsplit_once(" < ") {
+            Some((new, sibling)) => (new.trim().to_string(), Some(sibling.trim().to_string())),
+            None => (address.trim().to_string(), None),
+        };
+        if before.is_some() && !matches!(mode, Mode::Set(_) | Mode::Insert(_)) {
+            return Err(Error::Config(format!(
+                "markdown::section \"{address} < …\": `< Sibling` places a new section, so it goes with `set` or `insert` only"
+            )));
+        }
         let literal = if let Some(slug) = address.strip_prefix('#') {
             if slug.is_empty() {
                 return Err(Error::Config(
@@ -84,6 +95,7 @@ impl SectionEdit {
         };
         Ok(Self {
             address,
+            before,
             literal,
             mode,
         })
@@ -142,7 +154,11 @@ impl SectionEdit {
             .unwrap_or(&self.address)
             .trim()
             .to_string();
-        let (at, level) = if segments.is_empty() {
+        let (at, level) = if let Some(sibling) = &self.before {
+            let sibling = outline::resolve(headings, sibling)
+                .map_err(|e| format!("cannot insert `{}` before it: {e}", self.address))?;
+            (sibling.start, sibling.level)
+        } else if segments.is_empty() {
             // Top level: under a lone leading `#` title, else at the level
             // of the file's first heading.
             let level = match headings {
@@ -340,6 +356,18 @@ mod tests {
         assert_eq!(code.apply(&out), out, "found again by its plain text");
         let first = SectionEdit::insert("Intro", "hi").unwrap().apply("");
         assert_eq!(first, "# Intro\n\nhi\n");
+    }
+
+    #[test]
+    fn insert_before_a_sibling_takes_its_place_and_level() {
+        let op = SectionEdit::insert("Scope < Risks", "in scope").unwrap();
+        let out = op.apply(DOC);
+        assert!(
+            out.contains("more\n\n## Scope\n\nin scope\n\n## Risks\n"),
+            "{out}"
+        );
+        assert_eq!(op.apply(&out), out);
+        assert!(SectionEdit::delete("A < B").is_err());
     }
 
     #[test]

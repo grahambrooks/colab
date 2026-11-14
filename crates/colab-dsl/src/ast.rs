@@ -34,6 +34,9 @@ pub struct Match {
     /// rule applies wherever its language backend considers a file
     /// relevant.
     pub scope: Option<String>,
+    /// `in fences` / `and fences`: the rule also, or only, runs inside
+    /// Markdown code fences of its language.
+    pub fences: Option<Fences>,
     /// Constraints from a `where` clause, in order. Empty without one.
     pub constraints: Vec<colab_core::Constraint>,
     pub action: Action,
@@ -43,6 +46,40 @@ pub struct Match {
     /// Byte range of the whole block in the script, `match` to `}`.
     /// Lets the LSP place a diagnostic on the rule that caused it.
     pub span: Span,
+}
+
+/// Where a rule runs relative to Markdown code fences.
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum Fences {
+    /// `in fences`: only inside fences, in Markdown files.
+    Only,
+    /// `and fences`: the rule's own files, and fences.
+    Also,
+}
+
+/// One location clause, before they are folded into a [`Match`].
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum Location {
+    Glob(String),
+    Fences(Fences),
+}
+
+/// Fold a rule's location clauses, refusing one given twice.
+pub(crate) fn locations(
+    locations: Vec<Location>,
+) -> Result<(Option<String>, Option<Fences>), &'static str> {
+    let (mut glob, mut fences) = (None, None);
+    for location in locations {
+        match location {
+            Location::Glob(g) if glob.is_none() => glob = Some(g),
+            Location::Fences(f) if fences.is_none() => fences = Some(f),
+            Location::Glob(_) => return Err("a rule takes one `in \"<glob>\"` clause"),
+            Location::Fences(_) => {
+                return Err("a rule takes one of `in fences` or `and fences`, once");
+            }
+        }
+    }
+    Ok((glob, fences))
 }
 
 /// An import clause on a rule, run only on the files the rule changed.

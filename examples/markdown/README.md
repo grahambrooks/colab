@@ -40,3 +40,15 @@ colab links examples/markdown docs
 # A heading rename that another file links to is refused (exit 11),
 # naming the link; a markdown::link rule in the same run clears it.
 ```
+
+## Code in fences
+
+```sh
+# A Go migration that also rewrites the ```go examples in the docs, and a
+# Rust rule that only touches the docs (`in fences`). The indented fence
+# in a list item is handled; the shell fence is left alone.
+colab refactor --script examples/markdown/fences/migrate.codemod --format diff examples/markdown/fences
+
+# Where a pattern matches in the docs' fences, at its place in the file.
+colab find --script examples/markdown/fences/find.codemod examples/markdown/fences
+```

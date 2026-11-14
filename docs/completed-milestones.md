@@ -11,6 +11,7 @@ work, including every deferral listed here, is in
 | [M9–M13.5](#operating-at-scale-m9m135) | Targeting, parallelism, includes, verify / bisect / undo, progress |
 | [M17–M19, M22](#agent-of-choice-m17m19-m22) | Inline rules, near misses, structural patterns, LSP both ways, workflow MCP tools |
 | [M24–M27](#closing-the-intellij-gap-m24m27) | Git-aware file operations, code actions, `where` constraints, conflict checks |
+| [M28](#markdown-m28) | Markdown by structure: sections, rows, items, links, front matter, link checks, code fences |
 | [Appendix](#appendix-the-original-design-2026-05-09) | The 2026-05-09 design these milestones implemented |
 
 ---
@@ -563,6 +564,91 @@ templates are not checked for qualifiers yet), and attribution of a
 `--verify-lsp` error to the rule that caused it.
 
 ---
+
+## Markdown (M28)
+
+### ✅ M28 — Markdown structure
+
+Address markdown by its structure, as the config backends address TOML
+and JSON by key, instead of by text an agent has to quote exactly.
+Parser: `tree-sitter-md` 0.5 (tree-sitter 0.27, as the workspace),
+whose block grammar has `section` (a heading and its body),
+`pipe_table_row`, `list_item`, `minus_metadata` (front matter) and
+`fenced_code_block`, and whose inline grammar has links and code spans.
+That keeps `colab-rewrite`'s helpers, `colab ast --lang markdown` and
+byte-range edits, like every other backend.
+
+**Addresses.** A section is a heading path, `"Order of work"` or
+`"M28 — Markdown structure > Phase 1"`, compared with inline formatting
+stripped; `#slug` (GitHub's anchor rules) also works. An ambiguous or
+missing address is an error that lists the candidates, never a guess.
+A table is addressed under its section, and a row by cell values,
+reusing TOML's selector syntax: `"Dogfood log > table[Date=2026-11-13]"`.
+
+**Modules** (extending `markdown`, beside `block`):
+
+| Module | Target | Actions |
+| ------ | ------ | ------- |
+| `section` | heading path | `set` (replace the body, keep the heading), `insert` (create under its parent if missing), `delete`, `replace "<new heading>"` |
+| `row` | table + cell selector | `set`, `insert` (with `first` for newest-first tables like the dogfood log), `delete`; cells given as `Col=value` pairs or a `\| … \|` line, padded to match an aligned table |
+| `item` | section (+ list index) | `ensure` (add a bullet when no equal one exists), `delete`, `replace` |
+| `link` | destination, file or `file#anchor` | `replace`, `delete`. A file match keeps the anchor; code spans and fences are not links |
+| `frontmatter` | top-level YAML key | `set`, `insert`, `delete`, compared by meaning (skill `name` / `description`, page `updated` / `status`) |
+
+**Reading by structure** saves the most tokens, because an agent reads
+far more markdown than it writes:
+
+- `colab outline FILE.md`: the heading tree with line spans and sizes,
+  and counts of tables, lists and fences; MCP `colab.outline`.
+- `colab section FILE.md "<path>"`: print one section; MCP
+  `colab.section`.
+
+Splitting this plan needed a 1,118-line read. An outline plus the
+sections that moved is a fraction of that. A `grep '^#'` outline is
+also wrong: it counts a `# comment` inside a shell fence as a heading,
+as one did in `docs/cli.md`.
+
+**Checks**, in the M27 style. A link whose file or anchor does not exist
+after the run is a conflict. Renaming a heading lists every file that
+links to its old anchor, and a `link` rule in the same script clears
+those conflicts. Since links cross files, this is a run-level pass over
+the changed files and the files that link to them, as `--verify-lsp` is.
+
+**Code fences as source** (phase 3). With `in fences`, a source rule
+also runs inside ` ```<lang> ` fences in markdown files, with edits
+mapped back by offset. An API migration then updates README and docs
+examples in the same run, and `colab find` lists them.
+
+**Invariants.** Untouched text is never reflowed. `set` is a no-op when
+the content is equal after whitespace normalisation. Every action is
+idempotent. A prefilter is the heading text, cell value or link target.
+An edit that overlaps a parse error is refused.
+
+**Phases**, each dogfooded on this repo's docs before the next:
+
+1. Parser, `outline` / `section` (CLI and MCP), `section` and
+   `frontmatter` edits, `colab ast --lang markdown`.
+2. `row`, `item` and `link`, with the dead-link and heading-rename
+   checks; a `colab.set_config_key`-style MCP tool for sections and rows.
+3. Code fences as source.
+
+#### Status
+
+Phases 1 to 3 have shipped.
+
+- Phase 1: `tree-sitter-md`, `colab outline` / `colab section` and their
+  MCP tools, `markdown::section`, `markdown::frontmatter`, `colab ast
+  --lang markdown`, and DSL raw strings (`r#"…"#`, and a two-hash form).
+- Phase 2: `markdown::row`, `markdown::item` and `markdown::link`; the
+  run-level link check (a run that would break a link is refused, so a
+  heading rename names every file linking to it); `colab links`; and MCP
+  `colab.edit_markdown`. Dogfooding it found and fixed 10 broken links in
+  this repo's docs.
+- Phase 3: `in fences` / `and fences` run any source or config rule in
+  the matching Markdown code fences (dedenting indented ones), with
+  `colab find` locations mapped back into the file; and `"New < Sibling"`
+  places a new section before an existing one. Dogfooding it brought the
+  fenced API in `docs/architecture.md` back in line with the code.
 
 ## Appendix: the original design (2026-05-09)
 

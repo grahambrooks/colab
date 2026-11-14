@@ -1,0 +1,11 @@
+// Source rules inside Markdown code fences.
+// - `and fences`: the rule runs on Go files, and again (as its own rule,
+//   reported separately) inside ```go / ```golang fences in Markdown.
+// - `in fences`: only the fences; the Rust file is not touched.
+// - A fence indented in a list item is dedented for the rule and
+//   re-indented after. Other languages' fences and prose stay as written.
+refactor "code-fences" {
+    match go::pattern 'errors.Wrap($E, $M)' and fences { replace 'fmt.Errorf($M+": %w", $E)' }
+    match go::import "github.com/pkg/errors" and fences { delete }
+    match rust::use "old_crate::Thing" in fences { replace "new_crate::Thing" }
+}

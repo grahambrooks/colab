@@ -30,9 +30,9 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M28 (markdown structure) → dogfood follow-ups → M23 (eval, the
-stable gate) → M20 (install into Claude)**, then M14, M21, M16, M15 and
-M10.6.
+**Dogfood follow-ups → M23 (eval, the stable gate) → M20 (install into
+Claude)**, then M14, M21, M16, M15 and M10.6. M28 (Markdown by
+structure) has shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -42,13 +42,12 @@ what it lets that dogfooding cover.
 
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
-| 1 | M28 Markdown structure | Most of an agent's edits are to markdown. In the M27/M22 session, 54 of them (188 KB of tool input) were string-replace scripts on this repo's docs: 29 rewrote a section, 15 added a table row, 19 touched links. None could use colab. This repo's docs are the test bed. |
-| 2 | Dogfood follow-ups | The friction already logged (raw strings, tab re-indent, shorthand fields, `--tidy` on `refactor`) is what a Claude user would hit first. |
-| 3 | M23 Agent eval suite | Turns the dogfood token figures into a repeatable, CI-run measurement: the evidence the stable gate needs. |
-| 4 | M20 Agent install & guardrails | Only after the gate. `// colab:ignore` and rule `message` / `severity` can land earlier; they do not install anything. |
-| 5 | M14 `colab.toml` + `colab fix` | Repo-declared migrations; M20's post-edit hook and M25's per-language formatters build on it. |
-| 6 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
-| 7 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
+| 1 | Dogfood follow-ups | The friction already logged (tab re-indent, shorthand fields, `--tidy` on `refactor`, item wrapping) is what a Claude user would hit first. Raw strings and insert-before have shipped. |
+| 2 | M23 Agent eval suite | Turns the dogfood token figures into a repeatable, CI-run measurement: the evidence the stable gate needs. |
+| 3 | M20 Agent install & guardrails | Only after the gate. `// colab:ignore` and rule `message` / `severity` can land earlier; they do not install anything. |
+| 4 | M14 `colab.toml` + `colab fix` | Repo-declared migrations; M20's post-edit hook and M25's per-language formatters build on it. |
+| 5 | M21 Distribution & CI formats | Sandboxes with no Rust toolchain; CI annotations. |
+| 6 | M16, M15, M10.6 | Review aggregation; scoped rename (largely superseded by M19); parse-once batching. |
 
 ## Stable gate before M20
 
@@ -70,86 +69,6 @@ these hold:
 ---
 
 ## Planned milestones
-
-### M28 — Markdown structure
-
-Address markdown by its structure, as the config backends address TOML
-and JSON by key, instead of by text an agent has to quote exactly.
-Parser: `tree-sitter-md` 0.5 (tree-sitter 0.27, as the workspace),
-whose block grammar has `section` (a heading and its body),
-`pipe_table_row`, `list_item`, `minus_metadata` (front matter) and
-`fenced_code_block`, and whose inline grammar has links and code spans.
-That keeps `colab-rewrite`'s helpers, `colab ast --lang markdown` and
-byte-range edits, like every other backend.
-
-**Addresses.** A section is a heading path, `"Order of work"` or
-`"M28 — Markdown structure > Phase 1"`, compared with inline formatting
-stripped; `#slug` (GitHub's anchor rules) also works. An ambiguous or
-missing address is an error that lists the candidates, never a guess.
-A table is addressed under its section, and a row by cell values,
-reusing TOML's selector syntax: `"Dogfood log > table[Date=2026-11-13]"`.
-
-**Modules** (extending `markdown`, beside `block`):
-
-| Module | Target | Actions |
-| ------ | ------ | ------- |
-| `section` | heading path | `set` (replace the body, keep the heading), `insert` (create under its parent if missing), `delete`, `replace "<new heading>"` |
-| `row` | table + cell selector | `set`, `insert` (with `first` for newest-first tables like the dogfood log), `delete`; cells given as `Col=value` pairs or a `\| … \|` line, padded to match an aligned table |
-| `item` | section (+ list index) | `ensure` (add a bullet when no equal one exists), `delete`, `replace` |
-| `link` | destination, file or `file#anchor` | `replace`, `delete`. A file match keeps the anchor; code spans and fences are not links |
-| `frontmatter` | top-level YAML key | `set`, `insert`, `delete`, compared by meaning (skill `name` / `description`, page `updated` / `status`) |
-
-**Reading by structure** saves the most tokens, because an agent reads
-far more markdown than it writes:
-
-- `colab outline FILE.md`: the heading tree with line spans and sizes,
-  and counts of tables, lists and fences; MCP `colab.outline`.
-- `colab section FILE.md "<path>"`: print one section; MCP
-  `colab.section`.
-
-Splitting this plan needed a 1,118-line read. An outline plus the
-sections that moved is a fraction of that. A `grep '^#'` outline is
-also wrong: it counts a `# comment` inside a shell fence as a heading,
-as one did in `docs/cli.md`.
-
-**Checks**, in the M27 style. A link whose file or anchor does not exist
-after the run is a conflict. Renaming a heading lists every file that
-links to its old anchor, and a `link` rule in the same script clears
-those conflicts. Since links cross files, this is a run-level pass over
-the changed files and the files that link to them, as `--verify-lsp` is.
-
-**Code fences as source** (phase 3). With `in fences`, a source rule
-also runs inside ` ```<lang> ` fences in markdown files, with edits
-mapped back by offset. An API migration then updates README and docs
-examples in the same run, and `colab find` lists them.
-
-**Invariants.** Untouched text is never reflowed. `set` is a no-op when
-the content is equal after whitespace normalisation. Every action is
-idempotent. A prefilter is the heading text, cell value or link target.
-An edit that overlaps a parse error is refused.
-
-**Phases**, each dogfooded on this repo's docs before the next:
-
-1. Parser, `outline` / `section` (CLI and MCP), `section` and
-   `frontmatter` edits, `colab ast --lang markdown`.
-2. `row`, `item` and `link`, with the dead-link and heading-rename
-   checks; a `colab.set_config_key`-style MCP tool for sections and rows.
-3. Code fences as source.
-
-#### Status
-
-Phases 1 and 2 have shipped.
-
-- Phase 1: `tree-sitter-md`, `colab outline` / `colab section` and their
-  MCP tools, `markdown::section`, `markdown::frontmatter`, `colab ast
-  --lang markdown`, and DSL raw strings (`r#"…"#`, and a two-hash form).
-- Phase 2: `markdown::row`, `markdown::item` and `markdown::link`; the
-  run-level link check (a run that would break a link is refused, so a
-  heading rename names every file linking to it); `colab links`; and MCP
-  `colab.edit_markdown`. Dogfooding it found and fixed 10 broken links in
-  this repo's docs.
-
-Next: phase 3, code fences as source.
 
 ### M20 — Agent install & guardrails
 - `colab agent install` detects Claude Code / Cursor / Codex and wires
@@ -295,9 +214,12 @@ whichever milestone touches the same code.
 | Re-indent a template's later lines in tab-indented source (Go) | dogfood |
 | Suggest `--bisect` when `--verify` fails on rule 1 | dogfood |
 | Let `field: $X` match Rust's shorthand field `field`; a struct-field context for nested patterns | dogfood |
-| insert before a sibling | M28 (dogfood: placing a heading above existing content) |
 | Share parsed anchors across files in the link check | M28 |
 | Wrap a new list item or table cell to the file's line width | M28 |
+| `$$$` in a Rust struct field list | M28 (dogfood) |
+| A row position (before a row) and moving a section between files | M28 (dogfood) |
+| A paragraph-level edit, or `replace` on text within a section | M28 (dogfood) |
+| LSP completion for `in fences` / `and fences` (completion is only offered inside the braces) | M28 |
 
 ## Unscheduled
 

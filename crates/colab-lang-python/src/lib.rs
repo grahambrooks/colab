@@ -96,6 +96,10 @@ impl LanguageBackend for PythonBackend {
         Some("import")
     }
 
+    fn fence_names(&self) -> Vec<&'static str> {
+        vec!["python", "py", "python3"]
+    }
+
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
         let kinds = ["comment", "string_content"];
         crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))

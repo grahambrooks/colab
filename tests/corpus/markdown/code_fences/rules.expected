@@ -1,0 +1,5 @@
+1 go::pattern 'errors.Wrap($E, $M)' -> 'fmt.Errorf($M+": %w", $E)'
+1 go::pattern 'errors.Wrap($E, $M)' -> 'fmt.Errorf($M+": %w", $E)' in fences
+1 go::import "github.com/pkg/errors" -> delete
+1 go::import "github.com/pkg/errors" -> delete in fences
+1 rust::use "old_crate::Thing" -> "new_crate::Thing" in fences

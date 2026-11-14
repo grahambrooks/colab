@@ -114,6 +114,10 @@ impl LanguageBackend for GoBackend {
         Some("import")
     }
 
+    fn fence_names(&self) -> Vec<&'static str> {
+        vec!["go", "golang"]
+    }
+
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
         let kinds = [
             "comment",

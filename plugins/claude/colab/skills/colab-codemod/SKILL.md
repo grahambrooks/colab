@@ -54,6 +54,7 @@ MCP](#driving-it-over-mcp). The workflow is identical.
 - a config convention rolls out across repos — a `Cargo.toml` key, a
   `.claude/settings.json` entry, a managed block in `AGENTS.md`
 - **Markdown, by structure**: read with `colab outline` / `colab section`; change a section, table row, list item, link or front-matter key with the `markdown::` modules, and every run refuses to break a link
+- **Docs examples too**: add `and fences` to a code rule and it also rewrites the matching ```` ```go ```` / ```` ```rust ```` / … fences in Markdown files
 
 **Do not use colab when** the change needs meaning rather than shape:
 type-directed edits, resolving overloads, moving a symbol to another

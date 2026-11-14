@@ -5,7 +5,9 @@ use crate::ast::Namespace;
 use crate::ast::Action;
 use crate::ast::Span;
 use crate::ast::ImportClause;
+use crate::ast::{Fences, Location};
 use colab_core::{Constraint, Test, Var};
+use lalrpop_util::ParseError;
 
 grammar;
 
@@ -35,11 +37,20 @@ pub Item: Item = {
 // The optional `where` clause narrows a `<lang>::pattern` match; import
 // clauses after the action run only on the files the rule changed.
 pub Match: Match = {
-    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <scope: Scope?> <constraints: Where?> "{" <action: Action> <imports: ImportClause*> "}" <end: @R> => Match { namespace, match_string: string, scope, constraints: constraints.unwrap_or_default(), action, imports, span: Span { start, end } }
+    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <constraints: Where?> "{" <action: Action> <imports: ImportClause*> "}" <end: @R> =>? {
+        let (scope, fences) = crate::ast::locations(locations)
+            .map_err(|error| ParseError::User { error })?;
+        Ok(Match { namespace, match_string: string, scope, fences, constraints: constraints.unwrap_or_default(), action, imports, span: Span { start, end } })
+    }
 };
 
-pub Scope: String = {
-    "in" <glob: StringLiteral> => glob
+// Where a rule applies: `in "<glob>"` narrows it by path; `in fences`
+// moves it into the matching Markdown code fences, and `and fences` adds
+// them to the rule's own files. Each may appear once.
+Location: Location = {
+    "in" <glob: StringLiteral> => Location::Glob(glob),
+    "in" "fences" => Location::Fences(Fences::Only),
+    "and" "fences" => Location::Fences(Fences::Also),
 };
 
 Where: Vec<Constraint> = {
@@ -132,6 +143,8 @@ pub Identifier: String = {
     "drops" => "drops".to_string(),
     "when" => "when".to_string(),
     "unused" => "unused".to_string(),
+    "fences" => "fences".to_string(),
+    "and" => "and".to_string(),
 };
 
 // Three spellings, none with escapes. A double-quoted string cannot
