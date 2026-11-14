@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then **M10.6**. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`) and M15 (`where inside` on `symbol` / `call`) have shipped.
+**M20's install step**, now that the stable gate has passed, then **M29** (the follow-up sweep, wave A first) and **M10.6**. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`) and M15 (`where inside` on `symbol` / `call`) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -41,7 +41,8 @@ what it lets that dogfooding cover.
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
 | 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
-| 2 | M10.6 | Parse-once batching: performance, for the largest repositories. |
+| 2 | M29 Follow-up sweep | Clears what dogfooding tripped over (wave A) before the install puts colab in front of every session. |
+| 3 | M10.6 | Parse-once batching: performance, for the largest repositories. |
 
 ## Stable gate before M20
 
@@ -80,6 +81,60 @@ these hold:
 - MCP resources + `llms-full.txt` generated from `docs/`, including the
   per-backend caveats.
 - ✅ Shipped 2026-11-14: `colab:ignore [names]` (after code: that line; on its own line: the line below; names are script names or `<lang>::<module>`) for find, refactor and check, by putting back what a rule changed on covered lines. Rules take `message "…"` and `severity error|warning|info`; `--check` fails only above `info`.
+
+### M29 — Follow-up sweep
+
+Clear the [follow-ups](#follow-ups-from-shipped-milestones) in waves, each
+item made with colab where colab can make it, each wave its own commits.
+An item leaves the follow-ups table when it ships.
+
+**Wave A — what dogfooding tripped over** (small, correctness first):
+
+1. `--bisect` checks the starting tree first, and says so when it
+   already fails (today it blames a rule for a broken tree).
+2. A rule that skipped some files (`why_unchanged`) says so even when it
+   changed others.
+3. Near misses for Markdown addresses: a section address that names no
+   heading lists the nearest ones.
+4. `markdown::item` placement: `"Section[New] < [Existing]"`, as `row`
+   has.
+5. `markdown::text` inside code fences (`in fences` / `and fences`).
+6. A compile-time warning when a template re-matches its own pattern.
+7. Pack fixtures that fire every rule (the `0`s in their
+   `rules.expected`), and `--script builtin:<pack>`, which `colab pack
+   list` already prints.
+
+**Wave B — one engine, not twelve copies:**
+
+8. One call rewriter in `colab_rewrite` for the seven backends whose
+   `calls.rs` differ only in the call node's kind.
+9. Qualifier conflict checks for the ten backends other than Go and
+   Python.
+10. Per-hunk rule attribution in ndjson file events, so `colab review`
+    counts a shared file's lines per rule.
+
+**Wave C — surfaces:**
+
+11. A `colab.mv` MCP tool.
+12. Attribute a `--verify-lsp` error to the rule that caused it.
+13. LSP `WorkDoneProgress` for long previews and applies.
+14. Go-to-definition for `include` in `.codemod` files.
+15. An eval task for `colab fix`.
+16. `--split-pr` stacked mode.
+17. Moving a section between files (`markdown::section … { move_to
+    "<file>#<parent>" }`): the first rule that writes two files, so it
+    needs a cross-file design first.
+
+**Wave D — decide, do not build yet:**
+
+- Static Linux release binaries (musl via release-kit's
+  `EXTRA_TARGETS`): changes what every release ships, so it waits for
+  a go-ahead.
+- Type constraints in `where` via the server's hover: research spike
+  first; it is the first semantic constraint.
+- A remote pack registry: proposed for Non-goals, since packs are
+  distributed with the binary and colab is not published to package
+  registries.
 
 ### M10.6 — Parse-once-per-backend batching (deferred from M10)
 - Add `Operation::lang() -> &'static str` so the composer can
