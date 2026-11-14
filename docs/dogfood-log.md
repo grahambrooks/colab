@@ -5,6 +5,7 @@ What got in the way when using colab to develop colab. See
 
 | Date | Task | Command | Friction | Outcome |
 | ---- | ---- | ------- | -------- | ------- |
+| 2026-11-13 | re-pin after a commit | `scripts/dogfood.sh` | The pinned binary reported the previous commit: `build.rs` embedded `git rev-parse HEAD` but never asked to re-run when HEAD moved. | Fixed: `rerun-if-changed` on `HEAD`, the branch ref and `packed-refs`. |
 | 2026-11-13 | M27: add a `conflicts` field to 12 `FileChange` literals | `refactor` with `rust::pattern 'FileChange { $$$F }'` | The template `{ $$$F, conflicts: … }` doubled the trailing comma (`$$$F` keeps it), so every rewrite failed to parse and was skipped. The run said only "matched no files", although `find` listed 12 matches. | Fixed: `Operation::why_unchanged`; the dead rule now reports `unchanged: the rewritten code would not parse…`. |
 | 2026-11-13 | same | same | One literal sat inside `vec![…]`. A macro body is a token tree to tree-sitter, so no pattern matches inside it. | Open (by design of the grammar). Hand-edited; worth a note in the pattern docs. |
 | 2026-11-13 | same | `where not has 'conflicts: $C'` | A nested pattern cannot be a struct-field fragment: Rust has no context in which `conflicts: $C` parses. | Open. Candidate: a struct-literal context in `rust::pattern`. |
