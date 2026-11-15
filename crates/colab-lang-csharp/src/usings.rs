@@ -28,10 +28,7 @@ fn using_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str)
         return None;
     }
     let mut found = None;
-    for i in 0..node.named_child_count() {
-        let Some(child) = node.named_child(i as u32) else {
-            break;
-        };
+    for child in node.named_children(&mut node.walk()) {
         if matches!(child.kind(), "qualified_name" | "identifier")
             && let Ok(text) = child.utf8_text(source.as_bytes())
         {
@@ -216,10 +213,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 
     let mut insert_at = 0usize;
     let root = tree.root_node();
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         if child.kind() == "using_directive" {
             let end = child.end_byte();
             insert_at = source_code[end..]

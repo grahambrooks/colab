@@ -139,10 +139,7 @@ fn collect(
 
 fn collect_args<'a>(arg_list: Node<'a>, source: &'a str) -> Vec<String> {
     let mut out = Vec::new();
-    for i in 0..arg_list.named_child_count() {
-        let Some(child) = arg_list.named_child(i as u32) else {
-            break;
-        };
+    for child in arg_list.named_children(&mut arg_list.walk()) {
         if let Ok(text) = child.utf8_text(source.as_bytes()) {
             out.push(text.to_string());
         }

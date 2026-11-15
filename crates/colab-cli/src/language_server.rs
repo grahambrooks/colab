@@ -27,16 +27,18 @@
 //! Diagnostics are per rule: [`colab_dsl::check`] lowers each block on its
 //! own, so every bad rule — an unknown module, a `pattern` that is not
 //! valid code — is underlined where it is written.
+use colab_lsp_client::edit::lsp_u32;
 use std::fmt::Write as _;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::sync::Mutex as AsyncMutex;
-use tower_lsp::jsonrpc::Result as LspResult;
-use tower_lsp::lsp_types::*;
-use tower_lsp::{Client, LanguageServer, LspService, Server};
+use tower_lsp_server::jsonrpc::Result as LspResult;
+use tower_lsp_server::ls_types::*;
+use tower_lsp_server::{Client, LanguageServer, LspService, Server};
 
 use colab_core::walker::{self, WalkOptions};
 use colab_core::{BackendRegistry, Error};
@@ -51,8 +53,8 @@ use colab_dsl::{RuleCheck, compile, compile_at_source};
 fn error_range(err: &Error) -> Range {
     match err {
         Error::Parse(detail) => {
-            let line = detail.line.saturating_sub(1) as u32;
-            let character = detail.column.saturating_sub(1) as u32;
+            let line = lsp_u32(detail.line.saturating_sub(1));
+            let character = lsp_u32(detail.column.saturating_sub(1));
             Range::new(
                 Position::new(line, character),
                 Position::new(line, character + 1),
@@ -75,7 +77,7 @@ const STATIC_ACTIONS: &[(&str, &str)] = &[
 /// registry the diagnostics + completion handlers consult.
 struct Backend {
     client: Client,
-    documents: AsyncMutex<HashMap<Url, String>>,
+    documents: AsyncMutex<HashMap<Uri, String>>,
     backends: BackendRegistry,
     /// Workspace roots from `initialize`; what the code actions rewrite.
     roots: AsyncMutex<Vec<PathBuf>>,
@@ -138,7 +140,7 @@ fn diagnostic(range: Range, err: &Error) -> Diagnostic {
     Diagnostic {
         range,
         severity: Some(DiagnosticSeverity::ERROR),
-        code: Some(NumberOrString::Number(err.exit_code())),
+        code: Some(NumberOrString::Number(i32::from(err.exit_code()))),
         source: Some("colab".into()),
         message: format!("{err}"),
         related_information: None,
@@ -218,7 +220,7 @@ impl Backend {
         out
     }
 
-    async fn refresh_diagnostics(&self, uri: Url, version: Option<i32>, text: String) {
+    async fn refresh_diagnostics(&self, uri: Uri, version: Option<i32>, text: String) {
         // Only diagnose `.colab` files; ignore everything else so
         // editors that route arbitrary buffers here don't pollute
         // the diagnostics panel.
@@ -226,7 +228,7 @@ impl Backend {
             self.documents.lock().await.insert(uri, text);
             return;
         }
-        let path = uri.to_file_path().ok();
+        let path = uri.to_file_path();
         let diagnostics = self.diagnose_at(path.as_deref(), &text);
         self.documents.lock().await.insert(uri.clone(), text);
         self.client
@@ -235,22 +237,23 @@ impl Backend {
     }
 }
 
-fn is_codemod_uri(uri: &Url) -> bool {
-    colab_core::script_file::is_script(std::path::Path::new(uri.path()))
+fn is_codemod_uri(uri: &Uri) -> bool {
+    colab_core::script_file::is_script(Path::new(uri.path().as_str()))
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, params: InitializeParams) -> LspResult<InitializeResult> {
         let mut roots: Vec<PathBuf> = params
             .workspace_folders
             .unwrap_or_default()
             .iter()
-            .filter_map(|f| f.uri.to_file_path().ok())
+            .filter_map(|f| f.uri.to_file_path().map(Cow::into_owned))
             .collect();
         #[allow(deprecated)] // `root_uri` is still what many clients send
         if roots.is_empty()
-            && let Some(root) = params.root_uri.and_then(|u| u.to_file_path().ok())
+            && let Some(root) = params
+                .root_uri
+                .and_then(|u| u.to_file_path().map(Cow::into_owned))
         {
             roots.push(root);
         }
@@ -295,6 +298,8 @@ impl LanguageServer for Backend {
                 )),
                 ..Default::default()
             },
+            // clangd's UTF-8 offsets extension; positions here are UTF-16.
+            offset_encoding: None,
         })
     }
 
@@ -372,15 +377,14 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
         let offset = offset_at(text, position.position);
-        let (Some(target), Ok(here)) = (include_at(text, offset), uri.to_file_path()) else {
+        let (Some(target), Some(here)) = (include_at(text, offset), uri.to_file_path()) else {
             return Ok(None);
         };
         let path = here.parent().unwrap_or(Path::new(".")).join(target);
         if !path.is_file() {
             return Ok(None);
         }
-        Ok(Url::from_file_path(&path)
-            .ok()
+        Ok(Uri::from_file_path(&path)
             .map(|target| GotoDefinitionResponse::Scalar(Location::new(target, Range::default()))))
     }
 
@@ -470,7 +474,7 @@ impl LanguageServer for Backend {
         let Some(uri) = data
             .get("uri")
             .and_then(|u| u.as_str())
-            .and_then(|u| Url::parse(u).ok())
+            .and_then(|u| u.parse::<Uri>().ok())
         else {
             return Ok(action);
         };
@@ -494,17 +498,17 @@ fn action_rule(action: &CodeAction) -> Option<usize> {
         .as_ref()
         .and_then(|d| d.get("rule"))
         .and_then(serde_json::Value::as_u64)
-        .map(|r| r as usize)
+        .and_then(|r| usize::try_from(r).ok())
 }
 
-fn lsp_error(err: Error) -> tower_lsp::jsonrpc::Error {
-    let mut out = tower_lsp::jsonrpc::Error::internal_error();
+fn lsp_error(err: Error) -> tower_lsp_server::jsonrpc::Error {
+    let mut out = tower_lsp_server::jsonrpc::Error::internal_error();
     out.message = err.to_string().into();
     out
 }
 
 impl Backend {
-    fn workspace_action(&self, title: String, uri: &Url, rule: Option<usize>) -> CodeAction {
+    fn workspace_action(&self, title: String, uri: &Uri, rule: Option<usize>) -> CodeAction {
         CodeAction {
             title,
             kind: Some(CodeActionKind::REFACTOR_REWRITE),
@@ -519,13 +523,13 @@ impl Backend {
     /// whatever preview it offers.
     async fn workspace_edit(
         &self,
-        uri: &Url,
+        uri: &Uri,
         text: &str,
         rule: Option<usize>,
     ) -> colab_core::Result<WorkspaceEdit> {
         let base = uri
             .to_file_path()
-            .unwrap_or_else(|_| PathBuf::from("script.colab"));
+            .map_or_else(|| PathBuf::from("script.colab"), Cow::into_owned);
         let mut refactoring = compile_at_source(text, &base, &self.backends)?;
         if let Some(index) = rule {
             // `rule` is a block; a block can lower to more than one rule
@@ -555,7 +559,7 @@ impl Backend {
         let mut seen = 0usize;
         let mut changing = 0usize;
         let changes = tokio::task::block_in_place(|| {
-            let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+            let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
             for root in &roots {
                 walker::walk_with(&refactoring, root, &WalkOptions::default(), &mut |change| {
                     seen += 1;
@@ -569,7 +573,7 @@ impl Backend {
                         ));
                     }
                     if change.changed()
-                        && let Ok(url) = Url::from_file_path(&change.path)
+                        && let Some(url) = Uri::from_file_path(&change.path)
                     {
                         let end = position_at(&change.before, change.before.len());
                         changes.insert(
@@ -741,9 +745,9 @@ fn word_at(text: &str, offset: usize) -> Option<&str> {
 fn position_at(text: &str, offset: usize) -> Position {
     let offset = offset.min(text.len());
     let before = &text[..offset];
-    let line = before.matches('\n').count() as u32;
+    let line = lsp_u32(before.matches('\n').count());
     let line_start = before.rfind('\n').map_or(0, |i| i + 1);
-    let character = text[line_start..offset].encode_utf16().count() as u32;
+    let character = lsp_u32(text[line_start..offset].encode_utf16().count());
     Position::new(line, character)
 }
 
@@ -764,7 +768,7 @@ fn offset_at(text: &str, position: Position) -> usize {
         if units >= position.character {
             return line_start + i;
         }
-        units += c.len_utf16() as u32;
+        units += lsp_u32(c.len_utf16());
     }
     line_end
 }
@@ -998,9 +1002,11 @@ mod tests {
 
     #[test]
     fn is_codemod_uri_recognises_extension() {
-        assert!(is_codemod_uri(&Url::parse("file:///x/y.colab").unwrap()));
-        assert!(is_codemod_uri(&Url::parse("file:///x/y.codemod").unwrap()));
-        assert!(!is_codemod_uri(&Url::parse("file:///x/y.go").unwrap()));
+        assert!(is_codemod_uri(&"file:///x/y.colab".parse::<Uri>().unwrap()));
+        assert!(is_codemod_uri(
+            &"file:///x/y.codemod".parse::<Uri>().unwrap()
+        ));
+        assert!(!is_codemod_uri(&"file:///x/y.go".parse::<Uri>().unwrap()));
     }
 
     fn registry() -> BackendRegistry {
@@ -1039,7 +1045,7 @@ mod tests {
         std::fs::write(&main, text).unwrap();
         let (service, _) = LspService::new(|client| Backend::new(client, registry()));
         let backend = service.inner();
-        let uri = Url::from_file_path(&main).unwrap();
+        let uri = Uri::from_file_path(&main).unwrap();
         backend
             .documents
             .lock()
@@ -1058,7 +1064,7 @@ mod tests {
             panic!("no definition: {found:?}");
         };
         assert!(
-            location.uri.path().ends_with("/packs/a.colab"),
+            location.uri.path().as_str().ends_with("/packs/a.colab"),
             "{location:?}"
         );
         // A file that does not exist goes nowhere.
@@ -1262,7 +1268,7 @@ mod tests {
                     .push(format!("{} {kind}", request.method()));
                 if let Some(id) = request.id().cloned() {
                     let _ = responses
-                        .send(tower_lsp::jsonrpc::Response::from_ok(
+                        .send(tower_lsp_server::jsonrpc::Response::from_ok(
                             id,
                             serde_json::Value::Null,
                         ))
@@ -1273,10 +1279,10 @@ mod tests {
         // A real handshake: the client sends nothing to the server's
         // client until the session is initialized.
         let mut service = service;
-        let initialize = tower_lsp::jsonrpc::Request::build("initialize")
+        let initialize = tower_lsp_server::jsonrpc::Request::build("initialize")
             .params(serde_json::json!({
                 "capabilities": {"window": {"workDoneProgress": true}},
-                "rootUri": Url::from_file_path(&root).unwrap(),
+                "rootUri": Uri::from_file_path(&root).unwrap(),
             }))
             .id(1)
             .finish();
@@ -1284,7 +1290,7 @@ mod tests {
         tower::Service::call(&mut service, initialize)
             .await
             .unwrap();
-        let initialized = tower_lsp::jsonrpc::Request::build("initialized")
+        let initialized = tower_lsp_server::jsonrpc::Request::build("initialized")
             .params(serde_json::json!({}))
             .finish();
         tower::Service::call(&mut service, initialized)
@@ -1295,7 +1301,7 @@ mod tests {
             backend.progress.load(Ordering::Relaxed),
             "read from initialize"
         );
-        let uri = Url::from_file_path(root.join("fix.colab")).unwrap();
+        let uri = Uri::from_file_path(root.join("fix.colab")).unwrap();
         let text = "refactor \"x\" { match go::import \"a\" { replace \"b\" } }\n";
         let edit = backend.workspace_edit(&uri, text, None).await.unwrap();
         assert_eq!(edit.changes.unwrap().len(), PROGRESS_EVERY + 5);
@@ -1332,12 +1338,12 @@ mod tests {
         let (service, _) = LspService::new(|client| Backend::new(client, registry()));
         let backend = service.inner();
         *backend.roots.lock().await = vec![root.clone()];
-        let uri = Url::from_file_path(root.join("fix.colab")).unwrap();
+        let uri = Uri::from_file_path(root.join("fix.colab")).unwrap();
         let text = "refactor \"x\" {\n  match go::import \"a\" { replace \"b\" }\n  match go::import \"c\" { replace \"d\" }\n}\n";
 
         let all = backend.workspace_edit(&uri, text, None).await.unwrap();
         let only_second = backend.workspace_edit(&uri, text, Some(1)).await.unwrap();
-        let file_uri = Url::from_file_path(&file).unwrap();
+        let file_uri = Uri::from_file_path(&file).unwrap();
         let after_all = &all.changes.as_ref().unwrap()[&file_uri][0];
         assert_eq!(
             after_all.new_text,

@@ -141,7 +141,7 @@ fn parse(text: &str) -> Result<Log> {
                         .map(|a| {
                             a.iter()
                                 .filter_map(serde_json::Value::as_u64)
-                                .map(|v| v as usize)
+                                .filter_map(|v| usize::try_from(v).ok())
                                 .collect()
                         })
                         .unwrap_or_default(),
@@ -152,9 +152,10 @@ fn parse(text: &str) -> Result<Log> {
                         lines
                             .iter()
                             .filter_map(|l| {
-                                let rule = l["rule"].as_u64()? as usize;
-                                let added = l["added"].as_u64()? as usize;
-                                let removed = l["removed"].as_u64()? as usize;
+                                let count = |key: &str| usize::try_from(l[key].as_u64()?).ok();
+                                let rule = count("rule")?;
+                                let added = count("added")?;
+                                let removed = count("removed")?;
                                 Some((rule, (added, removed)))
                             })
                             .collect()
@@ -164,8 +165,9 @@ fn parse(text: &str) -> Result<Log> {
             Some("summary") => {
                 summary = true;
                 for rule in event["rules"].as_array().into_iter().flatten() {
-                    if let (Some(i), Some(label)) = (rule["i"].as_u64(), rule["rule"].as_str()) {
-                        log.rules.insert(i as usize, label.to_string());
+                    let i = rule["i"].as_u64().and_then(|i| usize::try_from(i).ok());
+                    if let (Some(i), Some(label)) = (i, rule["rule"].as_str()) {
+                        log.rules.insert(i, label.to_string());
                     }
                 }
             }
@@ -389,7 +391,7 @@ fn human(doc: &Value, log_name: &str, out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
-pub fn run(args: ReviewArgs) -> Result<i32> {
+pub fn run(args: ReviewArgs) -> Result<u8> {
     let text = if args.log.as_os_str() == "-" {
         let mut text = String::new();
         io::stdin()

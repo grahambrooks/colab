@@ -121,6 +121,8 @@ jobs:
           features: ${{ needs.plan.outputs.features }}
           manifest-path: ${{ needs.plan.outputs.manifest_path }}
           target: ${{ matrix.target }}
+          # Cargo.toml's [profile.dist]: release + fat LTO, one codegen unit.
+          profile: dist
           locked: ${{ needs.plan.outputs.locked }}
           archive: ${{ needs.plan.outputs.archive }}
           tar: unix

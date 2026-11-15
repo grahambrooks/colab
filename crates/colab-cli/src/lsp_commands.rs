@@ -401,7 +401,7 @@ pub struct ActionArgs {
     apply: ApplyFlags,
 }
 
-pub fn run_action(args: ActionArgs) -> Result<i32> {
+pub fn run_action(args: ActionArgs) -> Result<u8> {
     change_working_dir(&args.change_dir)?;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
     let place = resolve_place(Some(&args.at), None, None, &cwd)?;
@@ -536,7 +536,7 @@ pub struct ReferencesArgs {
     timeout: u64,
 }
 
-pub fn run_references(args: ReferencesArgs) -> Result<i32> {
+pub fn run_references(args: ReferencesArgs) -> Result<u8> {
     change_working_dir(&args.change_dir)?;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
     let place = resolve_place(
@@ -642,7 +642,7 @@ pub struct SafeDeleteArgs {
     apply: ApplyFlags,
 }
 
-pub fn run_safe_delete(args: SafeDeleteArgs) -> Result<i32> {
+pub fn run_safe_delete(args: SafeDeleteArgs) -> Result<u8> {
     change_working_dir(&args.change_dir)?;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
     let place = resolve_place(
@@ -1074,7 +1074,9 @@ fn mcp_references(args: &Value) -> Result<Value> {
     let max = args
         .get("max_results")
         .and_then(Value::as_u64)
-        .map_or(colab_core::find::DEFAULT_MAX_RESULTS, |n| n as usize);
+        .map_or(colab_core::find::DEFAULT_MAX_RESULTS, |n| {
+            usize::try_from(n).unwrap_or(usize::MAX)
+        });
     Ok(references_json(&found, &cwd, max))
 }
 

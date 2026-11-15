@@ -603,10 +603,8 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // partial Go file fragment), fall back to prepending.
     let root = tree.root_node();
     let mut insert_at: Option<usize> = None;
-    for i in 0..root.named_child_count() {
-        if let Some(child) = root.named_child(i as u32)
-            && child.kind() == "package_clause"
-        {
+    for child in root.named_children(&mut root.walk()) {
+        if child.kind() == "package_clause" {
             let end = child.end_byte();
             insert_at = Some(source_code[end..].find('\n').map_or(end, |p| end + p + 1));
             break;

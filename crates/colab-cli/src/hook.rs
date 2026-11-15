@@ -42,7 +42,7 @@ enum HookEvent {
     },
 }
 
-pub fn run(args: HookArgs, backends: &BackendRegistry) -> Result<i32> {
+pub fn run(args: HookArgs, backends: &BackendRegistry) -> Result<u8> {
     let HookEvent::PostEdit { file } = args.event;
     if let Some(file) = file {
         return match check(&file, backends)? {

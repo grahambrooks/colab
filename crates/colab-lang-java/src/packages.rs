@@ -52,9 +52,8 @@ fn package_names(source: &str) -> Vec<String> {
         if node.kind() != "package_declaration" {
             return;
         }
-        for i in 0..node.named_child_count() {
-            if let Some(child) = node.named_child(i as u32)
-                && matches!(child.kind(), "scoped_identifier" | "identifier")
+        for child in node.named_children(&mut node.walk()) {
+            if matches!(child.kind(), "scoped_identifier" | "identifier")
                 && let Ok(text) = child.utf8_text(source.as_bytes())
             {
                 out.push(text.to_string());
@@ -69,18 +68,12 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         return source_code.to_string();
     };
     let root = tree.root_node();
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         if child.kind() != "package_declaration" {
             continue;
         }
         // Find the dotted name child.
-        for j in 0..child.named_child_count() {
-            let Some(name_node) = child.named_child(j as u32) else {
-                break;
-            };
+        for name_node in child.named_children(&mut child.walk()) {
             if !matches!(name_node.kind(), "scoped_identifier" | "identifier") {
                 continue;
             }

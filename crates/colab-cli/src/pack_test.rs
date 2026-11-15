@@ -31,7 +31,7 @@ use colab_core::{BackendRegistry, CodeTransformer, Error, Result};
 use serde_json::{Value, json};
 
 /// Exit code when a case fails.
-pub const FAILED: i32 = 12;
+pub const FAILED: u8 = 12;
 
 #[derive(Parser, Debug)]
 pub struct TestArgs {
@@ -80,13 +80,13 @@ struct PackResult {
     untested: Vec<(usize, String)>,
 }
 
-pub fn run(args: TestArgs, backends: &BackendRegistry) -> Result<i32> {
+pub fn run(args: TestArgs, backends: &BackendRegistry) -> Result<u8> {
     let bless = args.bless || std::env::var("COLAB_BLESS").is_ok_and(|v| v == "1");
     let packs = discover(&args.paths)?;
     if packs.is_empty() {
         return Err(Error::Config(
             "no pack with tests found: put cases in `<pack>.tests/<case>/input/` beside a \
-             `.colab` file (and `expected/` beside `input/`), or name the packs to test"
+         `.colab` file (and `expected/` beside `input/`), or name the packs to test"
                 .into(),
         ));
     }

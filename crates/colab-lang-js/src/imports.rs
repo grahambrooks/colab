@@ -145,10 +145,7 @@ fn string_inner_bytes<'a>(
     // tree-sitter-javascript wraps the inner text in either
     // `string_fragment` children or matches the literal directly. The
     // safest approach: look for a `string_fragment` named child.
-    for i in 0..string_node.named_child_count() {
-        let Some(child) = string_node.named_child(i as u32) else {
-            break;
-        };
+    for child in string_node.named_children(&mut string_node.walk()) {
         if child.kind() == "string_fragment"
             && let Ok(text) = child.utf8_text(source.as_bytes())
         {
@@ -411,10 +408,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 
     let root = tree.root_node();
     let mut insert_at = 0usize;
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         if child.kind() == "import_statement" {
             let end = child.end_byte();
             insert_at = source_code[end..]

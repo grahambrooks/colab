@@ -156,7 +156,8 @@ fn shifted_body(source: &str, section: &Heading, headings: &[Heading], delta: i1
             if hashes == 0 {
                 continue;
             }
-            let level = (hashes as i16 + delta).clamp(1, 6) as usize;
+            let hashes_i16 = i16::try_from(hashes).unwrap_or(i16::MAX);
+            let level = usize::from(hashes_i16.saturating_add(delta).clamp(1, 6).unsigned_abs());
             body.replace_range(at..at + hashes, &"#".repeat(level));
         }
     }

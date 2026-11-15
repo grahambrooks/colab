@@ -1602,7 +1602,8 @@ impl Check {
             }
             Test::Field(name) => {
                 if language.grammar.field_id_for_name(name).is_none() {
-                    let fields: Vec<&str> = (1..=language.grammar.field_count() as u16)
+                    let fields: Vec<&str> = (1..=u16::try_from(language.grammar.field_count())
+                        .unwrap_or(u16::MAX))
                         .filter_map(|id| language.grammar.field_name_for_id(id))
                         .collect();
                     let hint = colab_core::suggest::closest(name, fields.iter().copied())
@@ -1730,7 +1731,7 @@ fn nested(language: &PatternLanguage, keyword: &str, text: &str) -> Result<Forms
 
 /// Every visible named node kind the grammar defines.
 fn named_kinds(grammar: &tree_sitter::Language) -> Vec<&str> {
-    let mut kinds: Vec<&str> = (0..grammar.node_kind_count() as u16)
+    let mut kinds: Vec<&str> = (0..u16::try_from(grammar.node_kind_count()).unwrap_or(u16::MAX))
         .filter(|&id| grammar.node_kind_is_named(id) && grammar.node_kind_is_visible(id))
         .filter_map(|id| grammar.node_kind_for_id(id))
         .collect();
@@ -2250,8 +2251,8 @@ fn deepest_covering(root: Node<'_>, span: std::ops::Range<usize>) -> Option<Node
     // Descend through single-child wrappers that cover the same span
     // (`expression_statement` → `call_expression`).
     loop {
-        let child = (0..node.named_child_count())
-            .filter_map(|i| node.named_child(i as u32))
+        let child = node
+            .named_children(&mut node.walk())
             .find(|c| c.byte_range() == span);
         match child {
             Some(c) => node = c,

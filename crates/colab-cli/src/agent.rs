@@ -505,7 +505,7 @@ fn status(e: &FileEdit) -> &'static str {
     }
 }
 
-pub fn run(args: AgentArgs) -> Result<i32> {
+pub fn run(args: AgentArgs) -> Result<u8> {
     let (t, install) = match &args.action {
         AgentAction::Install(t) => (t, true),
         AgentAction::Uninstall(t) => (t, false),

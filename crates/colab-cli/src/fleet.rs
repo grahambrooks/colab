@@ -504,7 +504,7 @@ fn try_one(manifest: &Manifest, repo: &Repo, write: bool, pr: bool) -> Result<Ou
     Ok(outcome)
 }
 
-pub fn run(args: FleetArgs) -> Result<i32> {
+pub fn run(args: FleetArgs) -> Result<u8> {
     if let Some(FleetCommand::Status { manifest, format }) = args.command {
         return status(&manifest, format);
     }
@@ -592,7 +592,7 @@ pub fn run(args: FleetArgs) -> Result<i32> {
     Ok(if failed { 1 } else { 0 })
 }
 
-fn status(path: &Path, format: FleetFormat) -> Result<i32> {
+fn status(path: &Path, format: FleetFormat) -> Result<u8> {
     let text = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
     let manifest = parse(path, &text)?;
     let mut rows = Vec::new();

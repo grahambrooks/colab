@@ -87,8 +87,7 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
 
 /// The `value_arguments` child of a call, if it has one.
 fn value_arguments(node: Node<'_>) -> Option<Node<'_>> {
-    (0..node.named_child_count())
-        .filter_map(|i| node.named_child(i as u32))
+    node.named_children(&mut node.walk())
         .find(|c| c.kind() == "value_arguments")
 }
 
@@ -124,10 +123,7 @@ fn collect(
 
 fn collect_args<'a>(arg_list: Node<'a>, source: &'a str) -> Vec<String> {
     let mut out = Vec::new();
-    for i in 0..arg_list.named_child_count() {
-        let Some(child) = arg_list.named_child(i as u32) else {
-            break;
-        };
+    for child in arg_list.named_children(&mut arg_list.walk()) {
         if let Ok(text) = child.utf8_text(source.as_bytes()) {
             out.push(text.to_string());
         }

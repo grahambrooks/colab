@@ -189,7 +189,7 @@ struct LspDaemonArgs {
 }
 
 #[cfg(not(unix))]
-fn run_lsp_daemon(args: LspDaemonArgs) -> Result<i32> {
+fn run_lsp_daemon(args: LspDaemonArgs) -> Result<u8> {
     if args.stop {
         println!("stopped 0 kept language server(s)");
         return Ok(0);
@@ -201,7 +201,7 @@ fn run_lsp_daemon(args: LspDaemonArgs) -> Result<i32> {
 }
 
 #[cfg(unix)]
-fn run_lsp_daemon(args: LspDaemonArgs) -> Result<i32> {
+fn run_lsp_daemon(args: LspDaemonArgs) -> Result<u8> {
     if args.stop {
         let root = args
             .root
@@ -552,7 +552,7 @@ fn relative_path(base: &Path, path: &Path) -> String {
 /// `colab mv-section`: a section moved between files, as a generated
 /// script — an insert in the target, a delete in the source, and link
 /// rewrites — run like `refactor`, so conflicts and the link check apply.
-fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
+fn run_mv_section(args: MvSectionArgs) -> Result<u8> {
     use colab_lang_markdown::moving::{Placement, plan};
     change_working_dir(&args.change_dir)?;
     let cwd = fs::canonicalize(".").map_err(io_to_error)?;
@@ -1297,7 +1297,7 @@ struct ListRulesArgs {
 
 /// Parse CLI arguments and dispatch to the requested subcommand.
 /// Returns the success exit code (0 or 10).
-pub async fn run() -> Result<i32> {
+pub async fn run() -> Result<u8> {
     let argv: Vec<String> = std::env::args().collect();
     if let Some(value) = crate::help_json::requested(&Args::command(), &argv) {
         print_json(&value)?;
@@ -1364,7 +1364,7 @@ pub async fn run() -> Result<i32> {
 
 /// colab's own license, then every third-party one the binary carries:
 /// a release archive holds only the binary, so their notices travel in it.
-fn print_licenses() -> Result<i32> {
+fn print_licenses() -> Result<u8> {
     const OWN: &str = include_str!("../../../LICENSE");
     const THIRD_PARTY: &str = include_str!("../../../THIRD-PARTY-LICENSES.txt");
     let mut out = io::stdout().lock();
@@ -1375,7 +1375,7 @@ fn print_licenses() -> Result<i32> {
     }
 }
 
-fn print_json(value: &serde_json::Value) -> Result<i32> {
+fn print_json(value: &serde_json::Value) -> Result<u8> {
     let pretty = serde_json::to_string_pretty(value).expect("serialize JSON");
     let mut out = io::stdout().lock();
     writeln!(out, "{pretty}").map_err(io_to_error)?;
@@ -1545,7 +1545,7 @@ fn resolve_jobs(flag: Option<usize>) -> Option<usize> {
         .and_then(|s| s.trim().parse::<usize>().ok())
 }
 
-fn run_refactor(args: RefactorArgs) -> Result<i32> {
+fn run_refactor(args: RefactorArgs) -> Result<u8> {
     if args.stdin {
         return run_stdin(args);
     }
@@ -1561,7 +1561,7 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
 
 /// `colab fix`: compile every pack `colab.toml` names into one script and
 /// run it with the file's `[run]` settings, from the file's directory.
-fn run_fix(args: FixArgs) -> Result<i32> {
+fn run_fix(args: FixArgs) -> Result<u8> {
     change_working_dir(&args.change_dir)?;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
     let path = match &args.config {
@@ -1569,8 +1569,8 @@ fn run_fix(args: FixArgs) -> Result<i32> {
         None => crate::config::find_from(&cwd).ok_or_else(|| {
             Error::Config(format!(
                 "no {} at or above {} (up to the repository root); create one with a \
-                 `[[packs]]` table per pack, e.g. `pack = \"go/1.18-modern\"` \
-                 (`colab pack list` names them)",
+             `[[packs]]` table per pack, e.g. `pack = \"go/1.18-modern\"` \
+             (`colab pack list` names them)",
                 crate::config::FILE,
                 cwd.display()
             ))
@@ -1580,7 +1580,7 @@ fn run_fix(args: FixArgs) -> Result<i32> {
     if config.packs.is_empty() {
         return Err(Error::Config(format!(
             "{} declares no packs; add a `[[packs]]` table with `pack = \"<built-in>\"` \
-             or `path = \"<file>.colab\"`",
+         or `path = \"<file>.colab\"`",
             path.display()
         )));
     }
@@ -1663,7 +1663,7 @@ fn formatters() -> Result<std::collections::BTreeMap<String, String>> {
 
 /// Run an already compiled script as `refactor` would, from the working
 /// directory.
-fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Result<i32> {
+fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Result<u8> {
     // The rules are in every report; the log names the script, so an
     // agent does not read each rule twice.
     info!(
@@ -1815,7 +1815,7 @@ fn run_split(
     args: &RefactorArgs,
     targets: &[PathBuf],
     prefix: &str,
-) -> Result<i32> {
+) -> Result<u8> {
     use std::collections::BTreeSet;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
     let repo = crate::git::Repo::discover(&cwd).ok_or_else(|| {
@@ -2054,7 +2054,7 @@ fn attribute_lines(
 }
 
 /// Exit code for a `--write` run that found conflicts and wrote nothing.
-const CONFLICT_EXIT: i32 = 11;
+const CONFLICT_EXIT: u8 = 11;
 
 /// `true` (and a warning on the report) when the run found conflicts and
 /// `--allow-conflicts` was not given, so nothing may be written.
@@ -2129,7 +2129,7 @@ fn run_refactor_per_rule(
     refactoring: &codemod::Refactoring,
     args: &RefactorArgs,
     targets: &[PathBuf],
-) -> Result<i32> {
+) -> Result<u8> {
     let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
     let mut report = refactoring.report();
@@ -2178,7 +2178,7 @@ fn run_refactor_per_rule(
             if idx > 0 {
                 report.warnings.push(format!(
                     "rules 1–{idx} passed and were written before rule {} conflicted; \
-                     `colab undo` needs --backup",
+                 `colab undo` needs --backup",
                     idx + 1
                 ));
             }
@@ -2215,7 +2215,7 @@ fn run_refactor_per_rule(
                 // build together, which `--verify` cannot check.
                 let hint = if idx == 0 && refactoring.rules.len() > 1 {
                     "; `--verify` checks after each rule, so if the rules only build together \
-                     (a new parameter and its callers), use `--bisect`, which checks once after all"
+                 (a new parameter and its callers), use `--bisect`, which checks once after all"
                 } else {
                     ""
                 };
@@ -2311,7 +2311,7 @@ fn run_refactor_bisect(
     args: &RefactorArgs,
     targets: &[PathBuf],
     verify_cmd: &str,
-) -> Result<i32> {
+) -> Result<u8> {
     if refactoring.rules.is_empty() {
         info!("No rules to bisect");
         return Ok(0);
@@ -2322,7 +2322,7 @@ fn run_refactor_bisect(
     if !run_verify(verify_cmd)? {
         return Err(Error::Config(format!(
             "the starting tree already fails `{verify_cmd}`, before any rule ran; fix it \
-             (or choose a check that passes now) and rerun. Nothing was changed"
+         (or choose a check that passes now) and rerun. Nothing was changed"
         )));
     }
 
@@ -2485,7 +2485,7 @@ fn backup_target(backup_dir: &Path, file: &Path) -> Result<PathBuf> {
 
 /// Restore every file under `from` to the corresponding location
 /// in the filesystem (mirroring the backup-target layout).
-fn run_undo(from: &Path) -> Result<i32> {
+fn run_undo(from: &Path) -> Result<u8> {
     if !from.is_dir() {
         return Err(Error::Config(format!(
             "backup directory does not exist or is not a directory: {}",
@@ -2552,7 +2552,7 @@ fn resolve_exec_mode(
     }
 }
 
-fn run_stdin(args: RefactorArgs) -> Result<i32> {
+fn run_stdin(args: RefactorArgs) -> Result<u8> {
     let path = args
         .stdin_path
         .as_ref()
@@ -2628,7 +2628,7 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
     })
 }
 
-fn run_find(args: FindArgs) -> Result<i32> {
+fn run_find(args: FindArgs) -> Result<u8> {
     use colab_core::find::{FindDetail, FindReport, Selector};
 
     change_working_dir(&args.change_dir)?;
@@ -2761,7 +2761,7 @@ pub(crate) fn project_root(file: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-fn run_rename(args: RenameArgs) -> Result<i32> {
+fn run_rename(args: RenameArgs) -> Result<u8> {
     use colab_lsp_client::RenameRequest;
 
     change_working_dir(&args.change_dir)?;
@@ -2835,7 +2835,7 @@ fn run_rename(args: RenameArgs) -> Result<i32> {
 }
 
 /// `colab mv`: ask the server what the move needs, then make it with git.
-fn run_mv(args: MvArgs) -> Result<i32> {
+fn run_mv(args: MvArgs) -> Result<u8> {
     change_working_dir(&args.change_dir)?;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
     let started = Instant::now();
@@ -2882,7 +2882,7 @@ pub(crate) fn run_change_set(
     cwd: &Path,
     started: Instant,
     tidy: Option<crate::lsp_commands::Tidy<'_>>,
-) -> Result<i32> {
+) -> Result<u8> {
     let exec_mode = if flags.verify.is_some() {
         ExecMode::Write
     } else {
@@ -2976,7 +2976,7 @@ pub(crate) fn run_change_set(
     })
 }
 
-fn run_ast(args: AstArgs) -> Result<i32> {
+fn run_ast(args: AstArgs) -> Result<u8> {
     let backends = default_backends();
     let value = match (&args.pattern, args.stdin) {
         (Some(pattern), _) => discover::ast_of_pattern(&backends, &args.lang, pattern)?,

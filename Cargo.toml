@@ -85,13 +85,13 @@ tree-sitter-rust = "0.24"
 tree-sitter-swift = "0.7.3"
 tree-sitter-toml = "0.20.0"
 toml_edit = "0.25"
-tower-lsp = "0.20.0"
 tokio = { version = "1.35.0", features = ["full"] }
 log = "0.4"
 env_logger = "0.11.6"
 colored = "3.0.0"
 lalrpop = "0.23.0"
 lalrpop-util = { version = "0.23.0", features = ["lexer", "unicode"] }
+tower-lsp-server = "0.23.0"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -101,3 +101,14 @@ uninlined_format_args = "warn"
 redundant_closure_for_method_calls = "warn"
 map_unwrap_or = "warn"
 format_push_string = "warn"
+cast_possible_truncation = "warn"
+
+# What the release workflow ships (`profile: dist` in release.yml): one
+# codegen unit and fat LTO make the binary ~16% smaller than `release`
+# (33.0 MB vs 39.5 MB on aarch64-apple-darwin, 2026-11-15) for about three
+# times the build. Local `--release` builds keep the faster defaults.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

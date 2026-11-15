@@ -58,9 +58,8 @@ fn package_names(source: &str) -> Vec<String> {
         if node.kind() != "package_header" {
             return;
         }
-        for i in 0..node.named_child_count() {
-            if let Some(child) = node.named_child(i as u32)
-                && matches!(child.kind(), "qualified_identifier")
+        for child in node.named_children(&mut node.walk()) {
+            if matches!(child.kind(), "qualified_identifier")
                 && let Ok(text) = child.utf8_text(source.as_bytes())
             {
                 out.push(text.to_string());
@@ -87,10 +86,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
 
 fn collect(node: Node<'_>, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
     if node.kind() == "package_header" {
-        for i in 0..node.named_child_count() {
-            let Some(child) = node.named_child(i as u32) else {
-                break;
-            };
+        for child in node.named_children(&mut node.walk()) {
             if child.kind() == "qualified_identifier"
                 && let Ok(text) = child.utf8_text(source.as_bytes())
                 && text == from

@@ -247,10 +247,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // Prefer to sit with the other includes.
     let mut insert_at = 0usize;
     let root = tree.root_node();
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         if child.kind() == "preproc_include" {
             let end = child.end_byte();
             // A `preproc_include` node already spans its terminating

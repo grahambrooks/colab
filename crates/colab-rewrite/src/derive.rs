@@ -68,8 +68,11 @@ fn apply(step: &Transform, text: &str) -> String {
         Transform::StripSuffix(s) => text.strip_suffix(s.as_str()).unwrap_or(text).to_string(),
         Transform::Substring { start, end } => {
             let chars: Vec<char> = text.chars().collect();
-            let len = chars.len() as i64;
-            let at = |i: i64| (if i < 0 { len + i } else { i }).clamp(0, len) as usize;
+            let len = i64::try_from(chars.len()).unwrap_or(i64::MAX);
+            let at = |i: i64| {
+                let clamped = (if i < 0 { len.saturating_add(i) } else { i }).clamp(0, len);
+                usize::try_from(clamped).unwrap_or(0)
+            };
             let (from, to) = (at(*start), end.map_or(chars.len(), at));
             if from >= to {
                 String::new()

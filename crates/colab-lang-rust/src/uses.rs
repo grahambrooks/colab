@@ -232,10 +232,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // none, insert at byte 0.
     let root = tree.root_node();
     let mut insert_at = 0usize;
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         let comment = matches!(child.kind(), "line_comment" | "block_comment");
         let inner = child.kind() == "inner_attribute_item"
             || (comment && child.child_by_field_name("inner").is_some());

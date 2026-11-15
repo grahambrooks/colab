@@ -46,8 +46,8 @@ fn require_path<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a st
         return None;
     }
     // `string` wraps the quotes; `string_content` is the path itself.
-    let content = (0..first.named_child_count())
-        .filter_map(|i| first.named_child(i as u32))
+    let content = first
+        .named_children(&mut first.walk())
         .find(|c| c.kind() == "string_content")?;
     let text = content.utf8_text(source.as_bytes()).ok()?;
     Some((content, text))
@@ -230,10 +230,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 
     let root = tree.root_node();
     let mut insert_at = None;
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         if require_path(child, source_code).is_some() {
             let end = child.end_byte();
             insert_at = Some(

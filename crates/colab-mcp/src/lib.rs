@@ -938,7 +938,7 @@ fn arg_usize(args: &Value, key: &str, default: usize) -> Result<usize, ToolError
         None | Some(Value::Null) => Ok(default),
         Some(value) => value
             .as_u64()
-            .map(|n| n as usize)
+            .map(|n| usize::try_from(n).unwrap_or(usize::MAX))
             .ok_or_else(|| ToolError::protocol(format!("argument `{key}` must be a number"))),
     }
 }

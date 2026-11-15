@@ -22,10 +22,7 @@ fn clause_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str
     if node.kind() != "namespace_use_clause" {
         return None;
     }
-    for i in 0..node.named_child_count() {
-        let Some(child) = node.named_child(i as u32) else {
-            break;
-        };
+    for child in node.named_children(&mut node.walk()) {
         if matches!(child.kind(), "qualified_name" | "name")
             && let Ok(text) = child.utf8_text(source.as_bytes())
         {
@@ -46,15 +43,11 @@ where
     colab_rewrite::visit_all(tree, |node| {
         if node.kind() == "namespace_use_declaration" {
             // A declaration containing a group is left alone entirely.
-            let has_group = (0..node.named_child_count()).any(|i| {
-                node.named_child(i as u32)
-                    .is_some_and(|c| c.kind() == "namespace_use_group")
-            });
+            let has_group = node
+                .named_children(&mut node.walk())
+                .any(|c| c.kind() == "namespace_use_group");
             if !has_group {
-                for i in 0..node.named_child_count() {
-                    let Some(clause) = node.named_child(i as u32) else {
-                        break;
-                    };
+                for clause in node.named_children(&mut node.walk()) {
                     if let Some((name_node, text)) = clause_name(clause, source) {
                         visit(node, name_node, text);
                     }
@@ -240,10 +233,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // source order and would otherwise win.
     let root = tree.root_node();
     let (mut after_use, mut after_namespace, mut after_tag) = (None, None, None);
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         let end = child.end_byte();
         let line_end = source_code[end..]
             .find('\n')

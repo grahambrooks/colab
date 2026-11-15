@@ -16,10 +16,7 @@ fn import_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str
     if node.kind() != "import_declaration" {
         return None;
     }
-    for i in 0..node.named_child_count() {
-        let Some(child) = node.named_child(i as u32) else {
-            break;
-        };
+    for child in node.named_children(&mut node.walk()) {
         if child.kind() == "identifier"
             && let Ok(text) = child.utf8_text(source.as_bytes())
         {
@@ -204,10 +201,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 
     let root = tree.root_node();
     let mut after_import = None;
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         let end = child.end_byte();
         let line_end = source_code[end..]
             .find('\n')

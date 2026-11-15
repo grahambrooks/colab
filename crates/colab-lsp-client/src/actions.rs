@@ -17,7 +17,9 @@ use colab_core::walker::FileChange;
 use colab_core::{Error, Result};
 use serde_json::{Value, json};
 
-use crate::edit::{self, Encoding, Files, offset_of, path_to_uri, position_of, uri_to_path};
+use crate::edit::{
+    self, Encoding, Files, lsp_u32, offset_of, path_to_uri, position_of, uri_to_path,
+};
 use crate::session::Session;
 use crate::{ServerCommand, as_document_changes};
 
@@ -419,7 +421,7 @@ fn byte_range(text: &str, range: &Value, encoding: Encoding) -> Result<(usize, u
             .pointer(&format!("/{field}/character"))
             .and_then(Value::as_u64);
         match (line, character) {
-            (Some(l), Some(c)) => offset_of(text, l as u32, c as u32, encoding),
+            (Some(l), Some(c)) => offset_of(text, lsp_u32(l), lsp_u32(c), encoding),
             _ => Err(Error::Config(
                 "language server sent a range without positions".into(),
             )),

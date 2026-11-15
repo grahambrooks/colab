@@ -249,8 +249,7 @@ pub fn field_texts(
 /// Used by every `replace_call` implementation to build the `$1`/`$args`
 /// substitution list from an argument-list node.
 pub fn named_child_texts<'a>(node: Node<'a>, source: &'a str) -> Vec<String> {
-    (0..node.named_child_count())
-        .filter_map(|i| node.named_child(i as u32))
+    node.named_children(&mut node.walk())
         .filter_map(|child| child.utf8_text(source.as_bytes()).ok())
         .map(str::to_string)
         .collect()
@@ -262,8 +261,7 @@ pub fn first_child_of_kind<'a>(
     source: &'a str,
     kinds: &[&str],
 ) -> Option<(Node<'a>, &'a str)> {
-    (0..node.named_child_count())
-        .filter_map(|i| node.named_child(i as u32))
+    node.named_children(&mut node.walk())
         .filter(|child| kinds.contains(&child.kind()))
         .find_map(|child| child.utf8_text(source.as_bytes()).ok().map(|t| (child, t)))
 }
@@ -279,10 +277,7 @@ pub fn last_child_of_kind<'a>(
     kinds: &[&str],
 ) -> Option<(Node<'a>, &'a str)> {
     let mut found = None;
-    for i in 0..node.named_child_count() {
-        let Some(child) = node.named_child(i as u32) else {
-            break;
-        };
+    for child in node.named_children(&mut node.walk()) {
         if kinds.contains(&child.kind())
             && let Ok(text) = child.utf8_text(source.as_bytes())
         {

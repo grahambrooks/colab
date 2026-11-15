@@ -40,10 +40,10 @@ async fn main() -> ExitCode {
     initialize_logging();
 
     match cli::run().await {
-        Ok(code) => ExitCode::from(code as u8),
+        Ok(code) => ExitCode::from(code),
         Err(err) => {
             error!("{err}");
-            ExitCode::from(err.exit_code() as u8)
+            ExitCode::from(err.exit_code())
         }
     }
 }

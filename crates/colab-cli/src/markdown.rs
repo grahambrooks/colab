@@ -145,7 +145,7 @@ fn outline_human(path: &Path, source: &str, depth: Option<u8>) -> String {
     out
 }
 
-pub fn run_outline(args: OutlineArgs) -> Result<i32> {
+pub fn run_outline(args: OutlineArgs) -> Result<u8> {
     let files = markdown_files(&args.paths)?;
     if files.is_empty() {
         return Err(Error::Config(
@@ -194,7 +194,7 @@ pub fn section_json(path: &Path, source: &str, address: &str, body: bool) -> Res
     }))
 }
 
-pub fn run_section(args: SectionArgs) -> Result<i32> {
+pub fn run_section(args: SectionArgs) -> Result<u8> {
     let source = fs::read_to_string(&args.file).map_err(|e| Error::io_at(&args.file, e))?;
     let value = section_json(&args.file, &source, &args.address, args.body)?;
     match args.format {
@@ -264,7 +264,7 @@ fn all_broken(paths: &[PathBuf]) -> Result<Vec<Value>> {
 }
 
 /// `colab links`: exit 10 when any link is broken.
-pub fn run_links(args: LinksArgs) -> Result<i32> {
+pub fn run_links(args: LinksArgs) -> Result<u8> {
     let broken = all_broken(&args.paths)?;
     match args.format {
         Format::Json => println!("{}", json!({ "broken": broken })),
@@ -409,7 +409,10 @@ fn mcp_outline(args: &Value) -> Result<Value> {
         .filter_map(Value::as_str)
         .map(|p| cwd.join(p))
         .collect();
-    let depth = args.get("depth").and_then(Value::as_u64).map(|d| d as u8);
+    let depth = args
+        .get("depth")
+        .and_then(Value::as_u64)
+        .map(|d| u8::try_from(d).unwrap_or(u8::MAX));
     let files: Vec<Value> = markdown_files(&paths)?
         .iter()
         .map(|(p, s)| outline_json(p.strip_prefix(&cwd).unwrap_or(p), s, depth))

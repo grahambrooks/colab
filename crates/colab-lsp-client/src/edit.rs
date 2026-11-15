@@ -37,8 +37,8 @@ impl Encoding {
 
     fn units(self, c: char) -> u32 {
         match self {
-            Self::Utf8 => c.len_utf8() as u32,
-            Self::Utf16 => c.len_utf16() as u32,
+            Self::Utf8 => lsp_u32(c.len_utf8()),
+            Self::Utf16 => lsp_u32(c.len_utf16()),
             Self::Utf32 => 1,
         }
     }
@@ -73,10 +73,17 @@ pub fn offset_of(text: &str, line: u32, character: u32, encoding: Encoding) -> R
 /// 0-based LSP `(line, character)` of byte `offset`.
 pub fn position_of(text: &str, offset: usize, encoding: Encoding) -> (u32, u32) {
     let before = &text[..offset.min(text.len())];
-    let line = before.matches('\n').count() as u32;
+    let line = lsp_u32(before.matches('\n').count());
     let start = before.rfind('\n').map_or(0, |i| i + 1);
     let character = before[start..].chars().map(|c| encoding.units(c)).sum();
     (line, character)
+}
+
+/// A count, or an LSP `line` / `character` read from JSON, as the `u32`
+/// LSP positions use, saturating: a value past `u32::MAX` lands at the
+/// end of the text rather than wrapping to its start.
+pub fn lsp_u32(n: impl TryInto<u32>) -> u32 {
+    n.try_into().unwrap_or(u32::MAX)
 }
 
 /// `file://` URI for `path` (which must be absolute).
@@ -328,7 +335,7 @@ impl Vfs<'_> {
                     .pointer(&format!("/range/{field}/character"))
                     .and_then(Value::as_u64);
                 match (line, character) {
-                    (Some(l), Some(c)) => offset_of(text, l as u32, c as u32, encoding),
+                    (Some(l), Some(c)) => offset_of(text, lsp_u32(l), lsp_u32(c), encoding),
                     _ => Err(Error::Config("text edit without a range".into())),
                 }
             };

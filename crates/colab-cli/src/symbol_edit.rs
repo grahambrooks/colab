@@ -206,7 +206,7 @@ pub fn plan(
     ))
 }
 
-pub fn run(args: EditArgs, backends: &BackendRegistry) -> Result<i32> {
+pub fn run(args: EditArgs, backends: &BackendRegistry) -> Result<u8> {
     crate::cli::change_working_dir(&args.change_dir)?;
     let cwd = std::env::current_dir().map_err(io_to_error)?;
     if args.list {

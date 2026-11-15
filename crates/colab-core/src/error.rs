@@ -108,7 +108,7 @@ impl Error {
     /// Codes are stable: tools and CI rely on them. See `--help` for
     /// the full table (exit code 10 — `--check` would-have-changed —
     /// is reported by the CLI directly, not via an `Error`).
-    pub fn exit_code(&self) -> i32 {
+    pub fn exit_code(&self) -> u8 {
         match self {
             Error::Parse(_) => 2,
             Error::UnsupportedOperation(_) => 3,

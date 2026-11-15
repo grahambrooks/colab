@@ -133,9 +133,9 @@ pub fn parse(path: &Path, text: &str) -> Result<Config> {
                         "jobs" => {
                             config.jobs = Some(
                                 item.as_integer()
+                                    .and_then(|n| usize::try_from(n).ok())
                                     .filter(|n| *n > 0)
-                                    .ok_or_else(|| bad(path, "`run.jobs` is a positive number"))?
-                                    as usize,
+                                    .ok_or_else(|| bad(path, "`run.jobs` is a positive number"))?,
                             )
                         }
                         "check" => {

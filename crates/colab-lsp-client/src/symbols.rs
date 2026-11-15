@@ -14,7 +14,7 @@ use colab_core::{Error, Result};
 use serde_json::{Value, json};
 
 use crate::ServerCommand;
-use crate::edit::{Encoding, offset_of, path_to_uri};
+use crate::edit::{Encoding, lsp_u32, offset_of, path_to_uri};
 use crate::session::Session;
 
 /// The declarations in `file` (whose text is `text`), from `server`
@@ -118,7 +118,7 @@ fn offset(text: &str, position: &Value, encoding: Encoding) -> Result<usize> {
     let line = position["line"].as_u64();
     let character = position["character"].as_u64();
     match (line, character) {
-        (Some(l), Some(c)) => offset_of(text, l as u32, c as u32, encoding),
+        (Some(l), Some(c)) => offset_of(text, lsp_u32(l), lsp_u32(c), encoding),
         _ => Err(Error::Config(
             "language server sent a symbol without a range".into(),
         )),

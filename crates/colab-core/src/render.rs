@@ -237,7 +237,7 @@ pub fn summary_json(report: &RunReport) -> Value {
         "skipped": report.skipped.len(),
         "bytes_before": report.bytes_before,
         "bytes_after": report.bytes_after,
-        "elapsed_ms": report.elapsed.as_millis() as u64,
+        "elapsed_ms": u64::try_from(report.elapsed.as_millis()).unwrap_or(u64::MAX),
     });
     if !report.file_ops.is_empty() {
         let count =

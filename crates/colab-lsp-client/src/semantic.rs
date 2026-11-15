@@ -310,8 +310,8 @@ fn first_location(answer: &Value) -> Option<(String, u32, u32)> {
     };
     Some((
         uri.as_str()?.to_string(),
-        range.pointer("/start/line")?.as_u64()? as u32,
-        range.pointer("/start/character")?.as_u64()? as u32,
+        u32::try_from(range.pointer("/start/line")?.as_u64()?).ok()?,
+        u32::try_from(range.pointer("/start/character")?.as_u64()?).ok()?,
     ))
 }
 

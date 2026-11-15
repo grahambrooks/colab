@@ -73,13 +73,13 @@ fn uri_path(uri: &str) -> PathBuf {
 fn offset(text: &str, line: u64, character: u64) -> usize {
     let start: usize = text
         .split_inclusive('\n')
-        .take(line as usize)
+        .take(usize::try_from(line).unwrap_or(usize::MAX))
         .map(str::len)
         .sum();
     let line_text = &text[start..];
     let mut units = 0;
     for (i, c) in line_text.char_indices() {
-        if units >= character as usize || c == '\n' {
+        if units >= usize::try_from(character).unwrap_or(usize::MAX) || c == '\n' {
             return start + i;
         }
         units += c.len_utf16();
@@ -316,8 +316,8 @@ fn main() {
                 let edits = match data["op"].as_str().unwrap() {
                     "extract" => {
                         let (s, e) = (
-                            data["start"].as_u64().unwrap() as usize,
-                            data["end"].as_u64().unwrap() as usize,
+                            usize::try_from(data["start"].as_u64().unwrap()).unwrap(),
+                            usize::try_from(data["end"].as_u64().unwrap()).unwrap(),
                         );
                         let line_start = text[..s].rfind('\n').map_or(0, |i| i + 1);
                         let indent: String = text[line_start..]

@@ -91,11 +91,11 @@ pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
 /// The `value_arguments` node of a call, which Swift nests inside a
 /// `call_suffix`.
 fn value_arguments(node: Node<'_>) -> Option<Node<'_>> {
-    let suffix = (0..node.named_child_count())
-        .filter_map(|i| node.named_child(i as u32))
+    let suffix = node
+        .named_children(&mut node.walk())
         .find(|c| c.kind() == "call_suffix")?;
-    (0..suffix.named_child_count())
-        .filter_map(|i| suffix.named_child(i as u32))
+    suffix
+        .named_children(&mut suffix.walk())
         .find(|c| c.kind() == "value_arguments")
 }
 
@@ -131,10 +131,7 @@ fn collect(
 
 fn collect_args<'a>(arg_list: Node<'a>, source: &'a str) -> Vec<String> {
     let mut out = Vec::new();
-    for i in 0..arg_list.named_child_count() {
-        let Some(child) = arg_list.named_child(i as u32) else {
-            break;
-        };
+    for child in arg_list.named_children(&mut arg_list.walk()) {
         if let Ok(text) = child.utf8_text(source.as_bytes()) {
             out.push(text.to_string());
         }

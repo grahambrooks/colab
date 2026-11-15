@@ -108,10 +108,7 @@ where
     F: FnMut(Node<'a>, Node<'a>, &'a str),
 {
     // `import_statement` has multiple `name` children.
-    for i in 0..node.named_child_count() {
-        let Some(child) = node.named_child(i as u32) else {
-            break;
-        };
+    for child in node.named_children(&mut node.walk()) {
         let dotted = match child.kind() {
             "dotted_name" => child,
             "aliased_import" => match child.child_by_field_name("name") {
@@ -306,10 +303,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 fn leading_header_end(tree: &Tree, source: &str) -> usize {
     let root = tree.root_node();
     let mut last_end = 0usize;
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         let is_header = match child.kind() {
             "expression_statement" => {
                 // Module docstring: a single string literal as the

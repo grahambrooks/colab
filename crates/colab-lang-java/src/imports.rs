@@ -19,8 +19,7 @@ fn import_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, String)
     // children — it can be `scoped_identifier`, `identifier`, or
     // `asterisk` after `import com.x.*;`. We want a dotted name; for
     // `*` we return None so it never matches a literal target.
-    for i in 0..node.named_child_count() {
-        let child = node.named_child(i as u32)?;
+    for child in node.named_children(&mut node.walk()) {
         match child.kind() {
             "scoped_identifier" | "identifier" => {
                 if let Ok(text) = child.utf8_text(source.as_bytes()) {
@@ -208,10 +207,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // Insert after the package_declaration if any; otherwise prepend.
     let root = tree.root_node();
     let mut insert_at: Option<usize> = None;
-    for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i as u32) else {
-            break;
-        };
+    for child in root.named_children(&mut root.walk()) {
         if child.kind() == "package_declaration" {
             let end = child.end_byte();
             insert_at = Some(source_code[end..].find('\n').map_or(end, |p| end + p + 1));
