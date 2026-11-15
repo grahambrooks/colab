@@ -101,8 +101,11 @@ Cursor or Codex, whichever it finds; `colab agent uninstall` takes it out
 again. Claude Code users can install the plugin instead:
 `/plugin marketplace add grahambrooks/colab`, `/plugin install colab@colab`.
 
-Prebuilt archives for macOS, Linux and Windows (x86_64, a `.zip`) are on the
-[releases page](https://github.com/grahambrooks/colab/releases).
+Prebuilt archives for macOS and Linux (and, from 2026.11.4, Windows) are on the
+[releases page](https://github.com/grahambrooks/colab/releases). The Linux
+builds need glibc 2.39 or later; elsewhere, build from source.
+[`docs/operations.md`](docs/operations.md) covers install, agents, CI,
+caches, upgrading and uninstalling.
 
 ## Quick start
 
@@ -188,6 +191,30 @@ Built-in packs: `go/1.18-modern`, `java/8-to-21`, `js/esm`,
 in [`examples/packs/`](examples/packs/README.md) says what it leaves
 alone. See [`docs/cli.md`](docs/cli.md#colab-fix).
 
+## Does it help?
+
+An eval suite of eight changes an agent is typically given
+([`evals/`](evals/README.md)) checks each one is made exactly right, and
+prices it against making the same change with `Read` + `Edit`:
+
+| | colab | `Read` + `Edit` |
+| --- | ---: | ---: |
+| Tool calls | 13 | 72 |
+| Bytes sent and read (≈ 4 bytes a token) | 8,161 | 29,882 |
+| Modelled agent time | 46.5 s | 206.9 s |
+
+That is 73% fewer bytes and 4.5× faster overall. colab wins wherever a
+change repeats across sites or files: renaming a symbol across code and
+docs is 81% cheaper, applying a repository's conventions 89%. It loses
+one task, a single extract-function in one file, which `Read` + `Edit`
+does as cheaply. Per-task results are in
+[`evals/results.md`](evals/results.md), and their byte budgets are
+checked in CI.
+
+On speed: on 5,000 Rust files (55 MB), one thread, a nine-rule pack
+(`rust/edition-2021-to-2024`) runs in 8.0 s, and consecutive rules share
+one parse of a file ([`docs/operations.md`](docs/operations.md#performance)).
+
 ## Beyond scripts
 
 - `colab find` — read-only structural search (`path:line:col`), the same
@@ -204,6 +231,14 @@ alone. See [`docs/cli.md`](docs/cli.md#colab-fix).
 - `colab outline` / `section` / `links` — read Markdown by structure, and
   find broken links; `colab mv-section` moves a section to another file,
   links and all.
+- `colab edit --symbol Config/load --in f.rs --replace-body …` — a one-off
+  edit to one declaration, by name, previewed like any run.
+- `colab test` — a repository's packs checked against the cases beside
+  them; `colab fleet` — one migration across many repositories, a branch
+  and pull request each.
+- `colab agent install` / `uninstall` and `colab hook post-edit` — colab
+  in front of Claude Code, Cursor or Codex, and the repository's
+  conventions checked on every file an agent writes.
 - `colab undo --from <dir>` — restore a run made with `--backup <dir>`.
 
 ## Output formats
@@ -248,6 +283,8 @@ for the workspace layout and an extension walk-through.
 
 ## Documentation
 
+- [`docs/operations.md`](docs/operations.md) — installing, agents, CI,
+  performance, caches, upgrading and uninstalling, troubleshooting.
 - [`docs/dsl.md`](docs/dsl.md) — codemod script language reference.
 - [`docs/features.md`](docs/features.md) — what each backend can do,
   with caveats.
@@ -263,22 +300,18 @@ for the workspace layout and an extension walk-through.
 
 ### Agent skills
 
-The repo ships [Claude Code](https://claude.com/claude-code) skills in
-[`.claude/skills/`](.claude/skills/). They are picked up automatically
-when working in this repo:
+The [`colab-codemod`](plugins/claude/colab/skills/colab-codemod/SKILL.md)
+skill teaches an agent when colab fits a change, how to write the
+script, check its reach and apply it safely. Install it, with the MCP
+server and the post-edit hook, through the Claude Code plugin
+(`/plugin marketplace add grahambrooks/colab`, then
+`/plugin install colab@colab`) or `colab agent install` (Claude Code,
+Cursor, Codex; `colab agent uninstall` takes it out).
 
-- **`colab-codemod`** — deciding whether colab fits a change, writing
-  the script, checking blast radius before applying, and diagnosing a
-  run. Includes per-namespace recipes and troubleshooting.
-- **`colab-extend`** — adding a backend, namespace, or action to colab
-  itself, with the invariants a change must not break.
-
-To use `colab-codemod` in *other* repos, copy it into your user skills
-directory:
-
-```sh
-cp -r .claude/skills/colab-codemod ~/.claude/skills/
-```
+Working in this repository, Claude Code also picks up
+[`.claude/skills/`](.claude/skills/): `colab-codemod`, and
+`colab-extend` for changing colab itself (a backend, a module, an
+action) without breaking its invariants.
 
 ## Development
 
@@ -338,13 +371,11 @@ add a corpus case.
 
 ## Contributing
 
-PRs welcome. Before opening one:
-
-- `cargo test --workspace` is green.
-- `cargo clippy --workspace --all-targets -- -D warnings` is clean.
-- New capabilities have at least one corpus case under
-  `tests/corpus/<lang>/<case>/`.
-- Public surface changes are reflected in `docs/`.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md): setup, the `make check` gate (what CI
+runs), the tests and docs a change brings, developing colab with colab,
+and how issues and pull requests are labelled. Report vulnerabilities
+privately ([`SECURITY.md`](SECURITY.md)); everyone follows the
+[code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

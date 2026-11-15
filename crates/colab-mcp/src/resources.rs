@@ -41,6 +41,13 @@ pub const DOCS: &[Doc] = &[
         text: include_str!("../../../docs/features.md"),
     },
     Doc {
+        uri: "colab://docs/operations.md",
+        path: "docs/operations.md",
+        name: "Installing and operating colab",
+        description: "Install, agents (plugin, agent install / uninstall, the post-edit hook), colab.toml and CI, performance, the evaluation results, caches, upgrading, troubleshooting.",
+        text: include_str!("../../../docs/operations.md"),
+    },
+    Doc {
         uri: "colab://README.md",
         path: "README.md",
         name: "What colab is",

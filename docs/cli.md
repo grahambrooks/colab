@@ -1435,7 +1435,13 @@ colab refactor --script s.codemod --write --verify "cargo check --quiet" --commi
 - `NO_COLOR` — when set, ANSI colour is disabled in `human` output.
 - `RUST_LOG` — standard `env_logger` filter; set to `debug` to see
   per-file "no changes" lines and tree-sitter parse hints.
+- `COLAB_JOBS` — worker threads when `--jobs` is not given.
 - `COLAB_KEEP_SERVER` — `0` gives each command its own language server instead of the kept one (the default); see [Kept language servers](#kept-language-servers).
+- `COLAB_CACHE_DIR` — where packs from git and fleet clones are kept;
+  default `$XDG_CACHE_HOME/colab`, else `~/.cache/colab`.
+- `HOME` — also where `colab agent install --codex` finds `~/.codex`.
+- `COLAB_BLESS` — `1` makes the tests (and `colab test`) rewrite their
+  expected output: corpus, evals, `llms-full.txt`, a pack's cases.
 
 ## See also
 

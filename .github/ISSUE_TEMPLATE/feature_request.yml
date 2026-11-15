@@ -1,0 +1,20 @@
+name: Feature request
+description: A new command, flag, output, or way of working with colab.
+labels: ["enhancement", "needs triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The task, and where colab gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: A sketch of the command, rule or output you have in mind, if you have one.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today

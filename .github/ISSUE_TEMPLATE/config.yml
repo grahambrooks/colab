@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability (privately)
+    url: https://github.com/grahambrooks/colab/security/advisories/new
+    about: Please do not open a public issue for a security problem; see SECURITY.md.
+  - name: Documentation
+    url: https://github.com/grahambrooks/colab/blob/main/docs/README.md
+    about: The DSL, the CLI, per-backend caveats, and installing and operating colab.

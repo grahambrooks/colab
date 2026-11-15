@@ -5,6 +5,7 @@ high-level overview, start at the project [`README.md`](../README.md).
 
 | Document                                            | What it covers |
 |-----------------------------------------------------| -------------- |
+| [`operations.md`](operations.md) | Installing (Homebrew, archives, source), putting colab in front of Claude Code, Cursor or Codex (plugin, `colab agent install` / `uninstall`, the post-edit hook, MCP), `colab.toml` and CI, making a change safely, performance, the evaluation results, caches and files colab writes, upgrading and uninstalling, environment variables, troubleshooting. |
 | [`dsl.md`](dsl.md)                                  | The codemod script language. Grammar, actions (`replace`/`delete`/`ensure`/`replace_call`/`set`/`insert`), structural patterns and `where`, import and finding clauses, template placeholders, idempotency rules, worked examples. |
 | [`features.md`](features.md)                        | What every backend can do. Capability matrix, per-namespace caveats, file-extension routing, explicit non-goals. |
 | [`cli.md`](cli.md)                                  | Every subcommand and flag, `colab fix` and `colab.toml`, exit codes, `--format` shapes (including SARIF and GitHub annotations), `--stdin` pipeline, the MCP server, environment variables. |

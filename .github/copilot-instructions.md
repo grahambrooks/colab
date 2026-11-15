@@ -7,4 +7,4 @@ This project is a command line application that performs large scale refactoring
 - Idiomatic module conventions.
 - Use idiomatic Rust coding standards.
 - Prefer `Result`-returning APIs over `panic!` / `expect` outside tests.
-- See [ARCHITECTURE.md](../ARCHITECTURE.md) for the module layout and data flow.
+- See [ARCHITECTURE.md](../docs/architecture.md) for the module layout and data flow.

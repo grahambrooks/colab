@@ -1,0 +1,35 @@
+# Labels a pull request by the paths it touches (actions/labeler, .github/workflows/labeler.yml).
+# The labels themselves are defined in .github/labels.json.
+area/dsl:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/colab-dsl/**", "docs/dsl.md"]
+area/engine:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/colab-core/**", "crates/colab-rewrite/**"]
+area/backends:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/colab-lang-*/**", "crates/colab-backends/**", "tests/corpus/**", "examples/packs/**"]
+area/markdown:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/colab-lang-markdown/**", "crates/colab-cli/src/markdown.rs"]
+area/cli:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/colab-cli/**"]
+area/mcp:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/colab-mcp/**"]
+area/lsp:
+  - changed-files:
+      - any-glob-to-any-file: ["crates/colab-lsp-client/**", "crates/colab-cli/src/lsp_commands.rs"]
+area/agents:
+  - changed-files:
+      - any-glob-to-any-file: ["plugins/**", ".claude-plugin/**", "crates/colab-cli/src/agent.rs", "crates/colab-cli/src/hook.rs", "renovate/**"]
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "*.md", "llms-full.txt", "examples/**/*.md"]
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/**", "Makefile", "release.mk", "prek.toml", ".release.env", "scripts/**"]
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ["Cargo.lock", "**/Cargo.toml", "rust-toolchain.toml"]

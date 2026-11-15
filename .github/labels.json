@@ -1,0 +1,19 @@
+[
+  {"name": "bug", "color": "d73a4a", "description": "Something isn't working"},
+  {"name": "enhancement", "color": "a2eeef", "description": "New feature or request"},
+  {"name": "gap", "color": "c5def5", "description": "A change colab cannot express yet"},
+  {"name": "needs triage", "color": "fbca04", "description": "New: not yet looked at"},
+  {"name": "question", "color": "d876e3", "description": "Further information requested"},
+  {"name": "documentation", "color": "0075ca", "description": "Documentation change"},
+  {"name": "security", "color": "d73a4a", "description": "Security-relevant fix or advisory"},
+  {"name": "ci", "color": "fbca04", "description": "Build / CI / tooling"},
+  {"name": "dependencies", "color": "0366d6", "description": "Dependency updates (Renovate)"},
+  {"name": "area/dsl", "color": "1d76db", "description": "The codemod language: grammar, compiler, docs/dsl.md"},
+  {"name": "area/engine", "color": "1d76db", "description": "colab-core and colab-rewrite: walker, pattern engine, constraints"},
+  {"name": "area/backends", "color": "1d76db", "description": "A language or config backend, and the corpus"},
+  {"name": "area/markdown", "color": "1d76db", "description": "Markdown by structure"},
+  {"name": "area/cli", "color": "1d76db", "description": "The colab binary: commands, flags, output"},
+  {"name": "area/mcp", "color": "1d76db", "description": "The MCP server"},
+  {"name": "area/lsp", "color": "1d76db", "description": "colab as a language-server client: rename, mv, actions, semantic constraints"},
+  {"name": "area/agents", "color": "1d76db", "description": "The Claude Code plugin, agent install, the post-edit hook"}
+]

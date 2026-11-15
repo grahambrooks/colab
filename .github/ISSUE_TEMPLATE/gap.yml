@@ -1,0 +1,33 @@
+name: A change colab cannot express
+description: A language construct or kind of edit that sent you back to editing by hand or to sed.
+labels: ["gap", "enhancement", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These reports shape the roadmap. Describe the change you wanted, not only the feature you think it needs.
+  - type: input
+    id: language
+    attributes:
+      label: Language or file type
+      placeholder: Go, Python, TOML, Markdown, …
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: The change you wanted to make
+      description: Before and after, on a small example.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you tried in colab
+      description: The rules you wrote and what they did (or the error). `colab ast --lang <l> --pattern '<p>'` output helps for patterns.
+      render: text
+  - type: textarea
+    id: scale
+    attributes:
+      label: How often it comes up
+      description: One file, or hundreds of sites across repositories?

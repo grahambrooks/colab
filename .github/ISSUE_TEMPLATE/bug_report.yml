@@ -1,0 +1,57 @@
+name: Bug report
+description: colab did the wrong thing, or failed when it should not have.
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A small script and input that show it are worth more than anything else here.
+        A vulnerability? Please report it privately instead (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: colab version
+      description: The output of `colab --version`.
+      placeholder: colab-cli 2026.11.3.266b50e
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - colab refactor / find / fix (a script or pack)
+        - colab rename / mv / action / references / safe-delete / edit (a language server)
+        - colab mcp (the MCP server)
+        - colab server (the .codemod editor support)
+        - colab agent / hook (agent install, post-edit hook)
+        - colab fleet / test / review / other command
+        - Install or release archive
+    validations:
+      required: true
+  - type: textarea
+    id: script
+    attributes:
+      label: Script or command
+      description: The `.codemod` script, or the inline rules and command line.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: A small input that shows it
+      description: The file (or files) colab ran over, cut down as far as it still shows the problem.
+      render: text
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+      description: Include the output; `--format json` (and `--detail diff`) says most about a run.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15 (arm64), Ubuntu 24.04, Windows 11
