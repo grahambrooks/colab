@@ -767,7 +767,25 @@ impl colab_mcp::ToolProvider for LspTools {
         });
         write_properties(&mut mv);
 
+        let mut edit = json!({
+            "symbol": {"type": "string", "description": "The declaration's name path: `load`, or `Config/load` (`/` between a container and what it holds)."},
+            "in": {"type": "string", "description": "The file it is declared in, relative to `cwd`."},
+            "edit": {"type": "string", "enum": ["replace_body", "insert_before", "insert_after"], "description": "Replace the whole declaration (doc comments and attributes too), or insert beside it."},
+            "text": {"type": "string", "description": "The new text; it is re-indented to the declaration's indentation."},
+            "lsp": {"type": "string", "description": "Find the declaration with this language server's documentSymbol instead of tree-sitter."},
+            "list": {"type": "boolean", "default": false, "description": "List the file's declarations (name paths and lines) instead of editing."},
+            "cwd": {"type": "string", "description": "Directory paths are relative to; defaults to the server's."},
+            "timeout": {"type": "integer", "description": "Seconds for a language server's start-up (default 120)."}
+        });
+        write_properties(&mut edit);
+
         vec![
+            json!({
+                "name": "colab.edit_symbol",
+                "description": "Edit one declaration by name path instead of by exact text: replace a function, method or class whole, or insert code before or after it. Cheaper and safer than a string match: the declaration is found by tree-sitter (or the language server with `lsp`), an ambiguous name lists the candidates, and the result is a colab report (diff, conflicts). Call with `list: true` to see a file's name paths. Previews unless `write` is true.",
+                "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false},
+                "inputSchema": {"type": "object", "properties": edit, "required": ["in"], "additionalProperties": false}
+            }),
             json!({
                 "name": "colab.mv",
                 "description": "Move or rename a file the way an IDE does: the language server updates what refers to it (`mod` declarations, imports, paths — workspace/willRenameFiles) and the move itself is made with `git mv`, so history follows. Never a plain filesystem move. Previews unless `write` is true; writing needs a git work tree with the touched paths clean.",
@@ -808,6 +826,7 @@ impl colab_mcp::ToolProvider for LspTools {
             "colab.rename_symbol" => mcp_rename_symbol,
             "colab.action" => mcp_action,
             "colab.mv" => mcp_mv,
+            "colab.edit_symbol" => mcp_edit_symbol,
             _ => return None,
         };
         Some(run(args))
@@ -949,6 +968,65 @@ fn mcp_mv(args: &Value) -> Result<Value> {
         args,
         &cwd,
         tidy,
+    )
+}
+
+fn mcp_edit_symbol(args: &Value) -> Result<Value> {
+    use colab_core::symbols::SymbolEdit;
+    let cwd = match arg(args, "cwd") {
+        Some(dir) => fs::canonicalize(dir).map_err(|e| Error::io_at(Path::new(dir), e))?,
+        None => std::env::current_dir().map_err(io_to_error)?,
+    };
+    let file = cwd.join(arg(args, "in").ok_or_else(|| Error::Config("`in` is required".into()))?);
+    let timeout = args.get("timeout").and_then(Value::as_u64).unwrap_or(120);
+    let backends = colab_backends::registry();
+    if flag(args, "list") {
+        let source = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
+        let (decls, by) = crate::symbol_edit::declarations_of(
+            &backends,
+            &file,
+            &source,
+            arg(args, "lsp"),
+            timeout,
+        )?;
+        let rows: Vec<Value> = colab_core::symbols::flatten(&decls)
+            .iter()
+            .map(|f| {
+                let line = source[..f.declaration.range.start].matches('\n').count() + 1;
+                json!({"path": f.path.join("/"), "kind": f.declaration.kind, "line": line})
+            })
+            .collect();
+        return Ok(json!({"declarations": rows, "by": by}));
+    }
+    let symbol = arg(args, "symbol")
+        .ok_or_else(|| Error::Config("`symbol` is required (or `list: true`)".into()))?;
+    let text = arg(args, "text").ok_or_else(|| Error::Config("`text` is required".into()))?;
+    let edit = match arg(args, "edit") {
+        Some("replace_body") => SymbolEdit::ReplaceBody,
+        Some("insert_before") => SymbolEdit::InsertBefore,
+        Some("insert_after") => SymbolEdit::InsertAfter,
+        other => {
+            return Err(Error::Config(format!(
+                "`edit` is `replace_body`, `insert_before` or `insert_after`, not {other:?}"
+            )));
+        }
+    };
+    let (change, label) = crate::symbol_edit::plan(
+        &backends,
+        &file,
+        symbol,
+        edit,
+        text,
+        arg(args, "lsp"),
+        timeout,
+    )?;
+    change_set_json(
+        vec![label],
+        ChangeSet::from_edits(vec![change]),
+        Vec::new(),
+        args,
+        &cwd,
+        None,
     )
 }
 

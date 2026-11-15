@@ -4033,3 +4033,93 @@ fn a_fleet_runs_each_repository_in_a_worktree_canary_first() {
     assert_eq!(a["repos"][1]["status"], "skipped");
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn edit_finds_a_declaration_by_name_path_and_previews_like_any_run() {
+    let root = workspace_temp("edit-symbol");
+    let file = root.join("lib.rs");
+    write(
+        &file,
+        "struct A;\nimpl A {\n    /// Loads.\n    fn load(&self) {}\n}\nstruct B;\nimpl B {\n    fn load(&self) {}\n}\n",
+    );
+    let edit = |args: &[&str]| {
+        colab()
+            .current_dir(&root)
+            .args(["edit", "--in", "lib.rs"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    // The file's name paths.
+    let listed = edit(&["--list", "--format", "json"]);
+    let doc: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let paths: Vec<&str> = doc["declarations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(paths, ["A", "A", "A/load", "B", "B", "B/load"]);
+    // `load` alone is ambiguous: the candidates are listed.
+    let ambiguous = edit(&[
+        "--symbol",
+        "load",
+        "--replace-body",
+        "--text",
+        "fn load() {}",
+    ]);
+    assert!(!ambiguous.status.success());
+    let err = String::from_utf8_lossy(&ambiguous.stderr);
+    assert!(
+        err.contains("`A/load` (line 3)") && err.contains("`B/load` (line 8)"),
+        "{err}"
+    );
+    // A preview changes nothing on disk.
+    let preview = edit(&[
+        "--symbol",
+        "B/load",
+        "--replace-body",
+        "--text",
+        "fn load(&self) {\n    todo!()\n}",
+        "--format",
+        "diff",
+    ]);
+    assert!(
+        preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    let diff = String::from_utf8_lossy(&preview.stdout);
+    assert!(diff.contains("+        todo!()"), "{diff}");
+    assert!(!fs::read_to_string(&file).unwrap().contains("todo!"));
+    // Written: the doc comment goes with A/load when it is replaced.
+    let wrote = edit(&[
+        "--symbol",
+        "A/load",
+        "--replace-body",
+        "--text",
+        "fn load(&self) -> u8 { 1 }",
+        "--write",
+    ]);
+    assert!(wrote.status.success());
+    let after = fs::read_to_string(&file).unwrap();
+    assert!(
+        after.contains("impl A {\n    fn load(&self) -> u8 { 1 }\n}"),
+        "{after}"
+    );
+    let inserted = edit(&[
+        "--symbol",
+        "B/load",
+        "--insert-after",
+        "--text",
+        "fn save(&self) {}",
+        "--write",
+    ]);
+    assert!(inserted.status.success());
+    let after = fs::read_to_string(&file).unwrap();
+    assert!(
+        after.contains("    fn load(&self) {}\n\n    fn save(&self) {}\n}"),
+        "{after}"
+    );
+    fs::remove_dir_all(&root).ok();
+}

@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then **M10.6**, **M34**, **M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints) and M33 (fleet runs, packs from git) have shipped.
+**M20's install step**, now that the stable gate has passed, then **M10.6**, **M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints), M33 (fleet runs, packs from git) and M34 (symbol-addressed edits) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -42,8 +42,7 @@ what it lets that dogfooding cover.
 | ---- | --------- | ------- |
 | 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
 | 2 | M10.6 | Parse-once batching: performance, for the largest repositories. |
-| 3 | M34 Symbol-addressed edits | One-off agent edits by symbol, not exact strings. |
-| 4 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
+| 3 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
 
 ## Stable gate before M20
 
@@ -92,18 +91,6 @@ Wave D of the M29 follow-up sweep: decide before building.
 - Static Linux release binaries (musl via release-kit's
   `EXTRA_TARGETS`): changes what every release ships, so it waits for
   a go-ahead.
-
-### M34 — Symbol-addressed edits
-
-For the one-off edits an agent makes that are not codemods, cheaper and
-safer than `Edit`'s exact-string match. Serena's symbolic tools.
-
-- `colab edit --symbol <name path> --in <file>` with `--replace-body`,
-  `--insert-before`, `--insert-after`, and MCP `colab.edit_symbol`. The
-  symbol is found by `documentSymbol` from the language server when one
-  runs, else by tree-sitter declarations; an ambiguous name path is an
-  error that lists the candidates.
-- Reported, previewed and conflict-checked like any colab run.
 
 ### M35 — Rules that work across files in one pass
 

@@ -29,6 +29,7 @@ pub mod diagnostics;
 pub mod edit;
 pub mod semantic;
 pub mod session;
+pub mod symbols;
 pub mod transport;
 
 use std::path::{Path, PathBuf};

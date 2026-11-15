@@ -137,6 +137,9 @@ enum Commands {
     ListLanguages,
     /// List the modules and actions a backend supports.
     ListRules(ListRulesArgs),
+    /// Edit one declaration by name path (`Config/load`): replace it, or
+    /// insert text before or after it, previewed like any run.
+    Edit(crate::symbol_edit::EditArgs),
     /// Manage discoverable codemod packs.
     Pack(PackArgs),
     /// Run one migration across many repositories (a `fleet.toml`): a
@@ -1179,6 +1182,7 @@ pub async fn run() -> Result<i32> {
         Some(Commands::Review(review_args)) => crate::review::run(review_args),
         Some(Commands::Test(args)) => crate::pack_test::run(args, &default_backends()),
         Some(Commands::Fleet(args)) => crate::fleet::run(args),
+        Some(Commands::Edit(args)) => crate::symbol_edit::run(args, &default_backends()),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);
             language_server::run(default_backends()).await;

@@ -132,6 +132,13 @@ impl LanguageBackend for PythonBackend {
         patterns::syntax_tree(input)
     }
 
+    fn declarations(&self, source: &str) -> Option<Vec<colab_core::symbols::Declaration>> {
+        Some(colab_rewrite::declarations(
+            &patterns::language().grammar,
+            source,
+        ))
+    }
+
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>> {
         match (module, spec) {
             (

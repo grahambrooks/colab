@@ -816,6 +816,38 @@ $ colab action --at src/main.rs:11:16-11:25 --kind refactor.extract --title func
   (`workspace/applyEdit`) becomes the result — accepted only in that
   window, and written only through colab's report.
 
+### colab edit
+
+A one-off edit an agent would make with an exact-string match, addressed
+by declaration instead:
+
+```sh
+colab edit --in src/config.rs --list                  # the file's name paths
+colab edit --symbol Config/load --in src/config.rs --replace-body --text-file new.rs
+colab edit --symbol main --in main.go --insert-before --text 'func helper() {}'
+colab edit --symbol A/m --in a.py --insert-after --text-file - --write < method.py
+```
+
+- A **name path** is the end of a declaration's full path: `load` finds
+  every `load`, `Config/load` only the one in `Config`. One that names
+  several is an error listing each, with its line; one that names none
+  lists the file's paths, with a "did you mean".
+- **Declarations** come from tree-sitter for every source language: a
+  Rust `impl` is named by its type (`impl Display for Config` is
+  `Config`), a Go method sits under its receiver type, a C or C++
+  function is named by its declarator. A declaration includes the doc
+  comments and attributes directly above it, and a decorator or `export`
+  around it. With `--lsp '<command>'`, or when a kept server for the
+  file is already running, the language server's `documentSymbol`
+  answers instead.
+- `--replace-body` replaces the whole declaration, doc comments
+  included; `--insert-before` / `--insert-after` add the text, with a
+  blank line, before or after it. The text is re-indented to the
+  declaration's indentation, so it can be written flush-left.
+- The result is an ordinary report: `--format diff` / `json` preview it,
+  `--write` (or `--check`, `--backup`, `--verify`) as for `colab rename`.
+- MCP: `colab.edit_symbol`.
+
 ### `colab references`
 
 ```
@@ -1118,6 +1150,7 @@ MCP-aware host) can call them directly:
 | `colab.action` | `at` (position or `FILE:L:C-L:C` selection), `list?`, `kind?`, `title?`, `write?`, `tidy?`, … | With `list: true`, `{actions: [{title, kind, preferred, disabled?}]}`; otherwise runs the one matching action and returns the report. |
 | `colab.mv` | `from`, `to`, `lsp?`, `no_lsp?`, `root?`, `cwd?`, `write?`, `tidy?`, `detail?` | `colab mv`: the move through `git mv` plus the server's reference edits (`workspace/willRenameFiles`); the `colab.preview` report plus `written`. |
 | `colab.rename_symbol` | as `colab.rename`, plus `include_text?` | The server's rename, plus the old name's text occurrences the server leaves alone: comments and string contents in source files, and anywhere in config/docs files (TOML, JSON, YAML, Markdown, text) in the git work tree. Listed under `text: {files, lines, included, sample[]}`; changed as a second rule only with `include_text: true`. |
+| `colab.edit_symbol` | `in`, `symbol`, `edit` (`replace_body`, `insert_before`, `insert_after`), `text`, `list?`, `lsp?`, `cwd?`, `write?`, `detail?` | `colab edit`: the declaration found by name path, the edit as the `colab.preview` report plus `written`; with `list: true`, `{declarations: [{path, kind, line}], by}`. |
 | `colab.outline` | `paths[]`, `depth?`, `cwd?` | Each Markdown file's headings: `address`, `anchor`, `level`, `line` / `end_line`, and counts of tables, lists and fences. Read-only. |
 | `colab.section` | `path`, `section`, `body?`, `cwd?` | One section's `text`, by heading path or `#anchor`. Read-only. |
 | `colab.edit_markdown` | `module` (section, row, item, link, frontmatter, block), `action`, `target`, `value?`, `paths[]`, `write?`, … | No DSL needed: one `markdown::` rule, quoted as the value needs (raw strings included). Returns the preview / apply report with the `script`, and conflicts for any link it would break. |

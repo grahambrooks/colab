@@ -23,6 +23,7 @@ mod markdown;
 mod pack_test;
 mod packs;
 mod review;
+mod symbol_edit;
 mod table;
 
 use std::io::Write;

@@ -18,6 +18,8 @@
 //! which parses anything, from inheriting a grammar engine.
 
 pub mod calls;
+pub mod declarations;
+pub use declarations::declarations;
 mod derive;
 pub mod pattern;
 pub mod scope;

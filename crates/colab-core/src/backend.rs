@@ -283,6 +283,14 @@ pub trait LanguageBackend: Send + Sync {
         )))
     }
 
+    /// The declarations in `source`, nested, for `colab edit --symbol`
+    /// when no language server answers (`colab_rewrite::declarations`).
+    /// `None`: this backend cannot say (config formats, Markdown, whose
+    /// sections are addressed by `markdown::section`).
+    fn declarations(&self, _source: &str) -> Option<Vec<crate::symbols::Declaration>> {
+        None
+    }
+
     /// Debugging aid behind `colab ast`: the printed syntax tree of a
     /// snippet ([`AstInput::Source`]) or of a compiled `pattern`
     /// ([`AstInput::Pattern`]). Backends without a source grammar keep the

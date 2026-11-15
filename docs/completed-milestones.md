@@ -934,6 +934,20 @@ ordinary colab run.
   Replaces the remote-registry question: packs are shared as git
   sources, never published to a hosted registry.
 
+## Symbol-addressed edits (M34)
+
+### ✅ M34 — Symbol-addressed edits
+
+Shipped 2026-11-14: `colab edit` and MCP `colab.edit_symbol` (see [`cli.md`](cli.md#colab-edit)). For the one-off edits an agent makes that are not codemods, cheaper and
+safer than `Edit`'s exact-string match. Serena's symbolic tools.
+
+- `colab edit --symbol <name path> --in <file>` with `--replace-body`,
+  `--insert-before`, `--insert-after`, and MCP `colab.edit_symbol`. The
+  symbol is found by `documentSymbol` from the language server when one
+  runs, else by tree-sitter declarations; an ambiguous name path is an
+  error that lists the candidates.
+- Reported, previewed and conflict-checked like any colab run.
+
 ## Appendix: the original design (2026-05-09)
 
 The plan as first written, goal by goal. Almost all of it has shipped

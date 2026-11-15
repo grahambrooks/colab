@@ -413,3 +413,47 @@ fn source_backends_name_their_code_fences() {
     assert_eq!(checked, 12);
     assert!(registry.get("markdown").unwrap().fence_locator().is_some());
 }
+
+/// Every source backend lists the declarations in a file of its language,
+/// for `colab edit --symbol`, nested where the language nests them.
+#[test]
+fn every_source_backend_lists_declarations() {
+    let cases: &[(&str, &str, &str)] = &[
+        ("c", "int f(void) { return 0; }\n", "f"),
+        (
+            "cpp",
+            "namespace n {\nclass A {\n  void m() {}\n};\n}\n",
+            "n/A/m",
+        ),
+        ("csharp", "class A {\n  void M() {}\n}\n", "A/M"),
+        (
+            "go",
+            "package p\n\ntype T struct{}\n\nfunc (t *T) M() {}\n",
+            "T/M",
+        ),
+        ("java", "class A {\n  void m() {}\n}\n", "A/m"),
+        ("js", "class A {\n  m() {}\n}\nfunction f() {}\n", "A/m"),
+        ("kotlin", "class A {\n  fun m() {}\n}\n", "A/m"),
+        ("php", "<?php\nclass A {\n  function m() {}\n}\n", "A/m"),
+        (
+            "python",
+            "class A:\n    def m(self):\n        pass\n",
+            "A/m",
+        ),
+        ("ruby", "class A\n  def m\n  end\nend\n", "A/m"),
+        ("rust", "struct S;\nimpl S {\n    fn m() {}\n}\n", "S/m"),
+        ("swift", "class A {\n  func m() {}\n}\n", "A/m"),
+    ];
+    let registry = colab_backends::registry();
+    let mut missing = Vec::new();
+    for (lang, source, path) in cases {
+        let backend = registry.get(lang).unwrap();
+        let decls = backend
+            .declarations(source)
+            .unwrap_or_else(|| panic!("{lang} lists no declarations"));
+        if let Err(why) = colab_core::symbols::resolve(&decls, path, source) {
+            missing.push(format!("{lang}: {why}"));
+        }
+    }
+    assert!(missing.is_empty(), "{}", missing.join("\n"));
+}

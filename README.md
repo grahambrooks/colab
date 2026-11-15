@@ -84,7 +84,7 @@ colab schema           # full JSON capability schema
 colab list-languages   # backends registered in this build
 colab list-rules go    # modules and actions for one backend
 colab server           # LSP for .codemod files: diagnostics, hover, completion, code actions
-colab mcp              # MCP server: 19 tools (preview, apply, find, ast, test_rule, rename, outline, …)
+colab mcp              # MCP server: 20 tools (preview, apply, find, ast, test_rule, rename, outline, …)
 ```
 
 ## Install
@@ -308,7 +308,7 @@ crates/
   colab-lang-markdown/  # Markdown by structure (sections, rows, items, links, …)
   colab-lang-toml/    # TOML (key by dotted path)
   colab-lsp-client/   # colab as an LSP client: rename, mv, action, references, tidy, lsp-daemon
-  colab-mcp/          # MCP server (19 tools; see docs/cli.md#colab-mcp)
+    colab-mcp/          # MCP server (20 tools; see docs/cli.md#colab-mcp)
   colab-cli/          # The `colab` binary: commands, colab fix, LSP server, `colab mcp`
 ```
 
