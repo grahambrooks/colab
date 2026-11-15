@@ -1,0 +1,9 @@
+# A crate of its own, for `colab find` / `refactor` with rust-analyzer;
+# not part of colab's workspace.
+[package]
+name = "semantic-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]

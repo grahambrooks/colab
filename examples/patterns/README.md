@@ -40,6 +40,10 @@ colab refactor --script examples/patterns/named/hygiene.codemod --format diff ex
 # M30: one rule renames a call; rewriters rename each option inside it.
 colab refactor --script examples/patterns/rewriters/client-v2.codemod --format diff examples/patterns/rewriters
 
+# M32: constraints rust-analyzer answers (needs rust-analyzer on PATH;
+# run from the example, a crate of its own).
+cd examples/patterns/rust-semantic && colab refactor --script semantic.codemod --format diff .
+
 # Why does (or doesn't) a pattern match? Compare the trees.
 colab ast --lang go --pattern 'errors.Wrap($ERR, $MSG)'
 colab ast --lang go --stdin < examples/patterns/go/main.go
@@ -56,3 +60,4 @@ colab ast --lang go --stdin < examples/patterns/go/main.go
 | `delete-separators/` | `delete` of a keyword argument, a dict entry (Python) and an object property (JavaScript) with the comma beside it, first, middle or last, and of a line in a multi-line call. |
 | `named/` | `pattern goroutine = '…'` in `shared.codemod`, brought in by `include`, and a local `pattern cleanup`; `where inside test_func, not any(inside goroutine, inside cleanup)`. |
 | `rewriters/` | `rewriter timeout = '…' -> '…'` and `let $NEW = $$$OPTS \| rewrite(timeout, retries)`: options renamed in place on one line and on many; `not has 'legacy: true'` (a property, found in every form the pattern compiles to) skips a call. |
+| `rust-semantic/` | `where $X type "Option"` changes the `Option` unwrap and not the `Result` one; `where $F resolves "std::fs::read"` changes `std::fs::read` and not the local `mine::read`. |

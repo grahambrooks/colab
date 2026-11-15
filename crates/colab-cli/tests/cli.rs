@@ -3765,3 +3765,97 @@ fn the_renovate_preset_runs_colab_fix_once_per_branch() {
     let help = colab().args(["fix", "--write", "--help"]).output().unwrap();
     assert!(help.status.success());
 }
+
+/// Two packages with a `Print` each, and a file using both.
+fn semantic_workspace(label: &str) -> PathBuf {
+    let root = workspace_temp(label);
+    write(
+        &root.join("alog/log.go"),
+        "package alog\n\nfunc Print(s string) {}\n",
+    );
+    write(
+        &root.join("blog/log.go"),
+        "package blog\n\nfunc Print(s string) {}\n",
+    );
+    write(
+        &root.join("main.go"),
+        "package main\n\nvar r io.Reader\nvar f *os.File\n\nfunc main() {\n\talog.Print(\"a\")\n\tblog.Print(\"b\")\n\tr.Close()\n\tf.Close()\n}\n",
+    );
+    root
+}
+
+#[test]
+fn type_and_resolves_constraints_are_answered_by_the_server() {
+    let root = semantic_workspace("semantic");
+    let rules = [
+        "-e",
+        r#"match go::pattern '$F($$$A)' where $F resolves "alog.Print" { replace 'logx.Print($$$A)' }"#,
+        "-e",
+        r#"match go::pattern '$X.Close()' where $X type "*os.File" { replace 'closeFile($X)' }"#,
+    ];
+    let run = |extra: &[&str]| {
+        colab()
+            .current_dir(&root)
+            .args(["refactor"])
+            .args(rules)
+            .args(["--lsp", &fake_lsp(), "--format", "diff"])
+            .args(extra)
+            .arg("main.go")
+            .output()
+            .unwrap()
+    };
+    let out = run(&[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let diff = String::from_utf8_lossy(&out.stdout);
+    assert!(diff.contains("+\tlogx.Print(\"a\")"), "{diff}");
+    assert!(
+        !diff.contains("-\tblog.Print"),
+        "blog.Print is not alog's: {diff}"
+    );
+    assert!(diff.contains("+\tcloseFile(f)"), "{diff}");
+    assert!(
+        !diff.contains("-\tr.Close()"),
+        "an io.Reader is not an *os.File: {diff}"
+    );
+    // `find` agrees.
+    let found = colab()
+        .current_dir(&root)
+        .args(["find"])
+        .args(rules)
+        .args(["--lsp", &fake_lsp(), "main.go"])
+        .output()
+        .unwrap();
+    let found = String::from_utf8_lossy(&found.stdout);
+    assert!(
+        found.contains("main.go:7:2") && found.contains("main.go:10:2"),
+        "{found}"
+    );
+    assert!(
+        !found.contains("main.go:8:") && !found.contains("main.go:9:"),
+        "{found}"
+    );
+    // No server: the run fails, and says why; nothing is written.
+    let failed = colab()
+        .current_dir(&root)
+        .args(["refactor"])
+        .args(rules)
+        .args(["--lsp", "no-such-language-server", "--write", "main.go"])
+        .output()
+        .unwrap();
+    assert!(!failed.status.success());
+    assert!(
+        String::from_utf8_lossy(&failed.stderr).contains("no-such-language-server"),
+        "{}",
+        String::from_utf8_lossy(&failed.stderr)
+    );
+    assert!(
+        fs::read_to_string(root.join("main.go"))
+            .unwrap()
+            .contains("alog.Print")
+    );
+    fs::remove_dir_all(&root).ok();
+}

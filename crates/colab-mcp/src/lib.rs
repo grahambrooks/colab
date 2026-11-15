@@ -587,12 +587,21 @@ fn compile_script(
     cwd: Option<&Path>,
     backends: &BackendRegistry,
 ) -> Result<colab_dsl::Refactoring, colab_core::Error> {
-    match cwd {
+    let refactoring = match cwd {
         // `compile_at_path` resolves includes against the file's parent,
         // so point it at a notional script inside `cwd`.
         Some(dir) => colab_dsl::compile_at_source(script, &dir.join("<script>"), backends),
         None => compile(script, backends),
+    }?;
+    // The MCP server starts no language server, so it cannot answer them.
+    if refactoring.needs_oracle() {
+        return Err(colab_core::Error::UnsupportedOperation(
+            "`type` and `resolves` constraints are answered by a language server, which the MCP \
+             server does not run; run the script with the colab CLI (`colab refactor` / `colab find`)"
+                .into(),
+        ));
     }
+    Ok(refactoring)
 }
 
 /// Where per-file progress goes while a script runs.
@@ -1011,6 +1020,19 @@ mod tests {
 
     fn registry() -> BackendRegistry {
         colab_backends::registry()
+    }
+
+    #[test]
+    fn a_rule_that_needs_a_language_server_is_refused() {
+        let script = r#"refactor "t" { match go::pattern '$F($$$A)' where $F resolves "alog.Print" { delete } }"#;
+        let e = compile_script(script, None, &registry())
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(
+            e.contains("language server") && e.contains("colab CLI"),
+            "{e}"
+        );
     }
 
     #[test]

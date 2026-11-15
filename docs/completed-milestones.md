@@ -896,6 +896,25 @@ What a team needs to gate a repository on its packs. All six shipped on 2026-11-
   dependency bump and the code it breaks land in one PR; packs may name
   the dependency range they apply to.
 
+## Type and name constraints (M32)
+
+### ✅ M32 — Type and name constraints, delegated
+
+The main correctness gap against OpenRewrite, rust-analyzer SSR,
+IntelliJ, Rector and LibCST: telling apart same-named APIs from (shipped 2026-11-14: `type` / `resolves`, see [`dsl.md`](dsl.md#asking-the-language-server-type-and-resolves))
+different libraries. Was a decision waiting from M29.
+
+- `where $X type "io.Reader"` and `where $F resolves "pkg.Func"`,
+  answered by the language server (`textDocument/hover`, `definition`,
+  `typeDefinition`) through the kept daemon, for each match the syntactic
+  pattern already found. colab still computes nothing semantic.
+- A filter only: it narrows matches, so the prefilter stays sound and
+  `find` agrees with `refactor`.
+- No server, or one still indexing at the timeout, fails the rule
+  loudly; it never silently matches everything or nothing.
+- Starts with a research spike on latency (one hover per match) and on
+  how each server spells types; batching by file first.
+
 ## Appendix: the original design (2026-05-09)
 
 The plan as first written, goal by goal. Almost all of it has shipped

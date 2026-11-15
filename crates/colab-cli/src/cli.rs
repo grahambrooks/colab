@@ -244,6 +244,15 @@ struct RefactorArgs {
     #[command(flatten)]
     select: SelectArgs,
 
+    /// The language server that answers `type` / `resolves` constraints,
+    /// instead of each language's usual one (`gopls`, `rust-analyzer`, …).
+    #[arg(long = "lsp", value_name = "COMMAND")]
+    lsp: Option<String>,
+
+    /// Seconds to wait for that server to start and index.
+    #[arg(long = "lsp-timeout", value_name = "SECS", default_value_t = 120)]
+    lsp_timeout: u64,
+
     #[command(flatten)]
     script: ScriptArgs,
 
@@ -727,6 +736,15 @@ struct FindArgs {
     #[command(flatten)]
     select: SelectArgs,
 
+    /// The language server that answers `type` / `resolves` constraints,
+    /// instead of each language's usual one (`gopls`, `rust-analyzer`, …).
+    #[arg(long = "lsp", value_name = "COMMAND")]
+    lsp: Option<String>,
+
+    /// Seconds to wait for that server to start and index.
+    #[arg(long = "lsp-timeout", value_name = "SECS", default_value_t = 120)]
+    lsp_timeout: u64,
+
     #[command(flatten)]
     script: ScriptArgs,
 
@@ -952,6 +970,52 @@ struct AstArgs {
 struct ExplainArgs {
     #[command(flatten)]
     script: ScriptArgs,
+}
+
+/// The language-server oracle for a run whose rules ask one (`type`,
+/// `resolves`), installed while it lives.
+struct OracleGuard(Option<std::sync::Arc<colab_lsp_client::semantic::LspOracle>>);
+
+impl OracleGuard {
+    fn install(
+        refactoring: &codemod::Refactoring,
+        lsp: Option<&str>,
+        timeout: u64,
+    ) -> Result<Self> {
+        if !refactoring.needs_oracle() {
+            return Ok(Self(None));
+        }
+        let server = lsp
+            .map(colab_lsp_client::ServerCommand::parse)
+            .transpose()?;
+        let root = std::env::current_dir().map_err(io_to_error)?;
+        let oracle = std::sync::Arc::new(colab_lsp_client::semantic::LspOracle::new(
+            &root,
+            server,
+            std::time::Duration::from_secs(timeout),
+        ));
+        colab_core::semantic::install(oracle.clone());
+        Ok(Self(Some(oracle)))
+    }
+}
+
+impl Drop for OracleGuard {
+    fn drop(&mut self) {
+        if let Some(oracle) = self.0.take() {
+            colab_core::semantic::uninstall();
+            colab_core::semantic::take_failure();
+            oracle.shutdown();
+        }
+    }
+}
+
+/// A question a rule's `type` / `resolves` constraint could not have
+/// answered fails the run, before anything is written.
+fn semantic_failure() -> Result<()> {
+    match colab_core::semantic::take_failure() {
+        Some(why) => Err(Error::Config(why)),
+        None => Ok(()),
+    }
 }
 
 /// Which rules run, by `id`, id glob (`no-*`) or number (from 1).
@@ -1247,7 +1311,7 @@ where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
 {
-    if let Some(ref_) = args.changed_since.as_deref() {
+    let outcome = if let Some(ref_) = args.changed_since.as_deref() {
         let files = git_changed_since(ref_)?;
         run_against_paths(transformer, &files, visit)
     } else if args.staged {
@@ -1255,7 +1319,9 @@ where
         run_against_paths(transformer, &files, visit)
     } else {
         walk_targets(transformer, args, targets, visit)
-    }
+    }?;
+    semantic_failure()?;
+    Ok(outcome)
 }
 
 fn git_changed_since(reference: &str) -> Result<Vec<PathBuf>> {
@@ -1336,6 +1402,7 @@ fn run_refactor(args: RefactorArgs) -> Result<i32> {
     let backends = default_backends();
     let mut refactoring = args.script.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
+    let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
     run_compiled(&refactoring, &args)
 }
 
@@ -1389,6 +1456,7 @@ fn run_fix(args: FixArgs) -> Result<i32> {
     }
     let mut refactoring = codemod::Refactoring::combine("fix", parts);
     args.select.apply(&mut refactoring)?;
+    let _oracle = OracleGuard::install(&refactoring, None, 120)?;
 
     // The rest is `refactor` with the config's settings as its flags.
     let format = clap::ValueEnum::to_possible_value(&args.format)
@@ -2360,6 +2428,7 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
     let backends = default_backends();
     let mut refactoring = args.script.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
+    let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
     // The rules are in every report; the log names the script, so an
     // agent does not read each rule twice.
     info!(
@@ -2375,6 +2444,7 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
         .map_err(io_to_error)?;
 
     let applied = refactoring.apply_at(&path, &source);
+    semantic_failure()?;
 
     let change = FileChange::from_outcome(path, source, applied);
 
@@ -2424,6 +2494,7 @@ fn run_find(args: FindArgs) -> Result<i32> {
     let backends = default_backends();
     let mut refactoring = args.script.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
+    let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
     let rules = &refactoring.rules;
     let detail = match args.detail {
         FindDetailArg::Concise => FindDetail::Concise,
@@ -2458,6 +2529,7 @@ fn run_find(args: FindArgs) -> Result<i32> {
         })?;
         report.run.record_walk(outcome);
     }
+    semantic_failure()?;
     colab_core::near_miss::probe_disk(rules, &mut report.run);
 
     if let Some(format) = args.table {

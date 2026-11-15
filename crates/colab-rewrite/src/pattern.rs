@@ -452,6 +452,10 @@ impl StructuralPattern {
             .filter(|c| !c.is_let())
             .map(|c| Check::compile(language, &bound, c))
             .collect::<Result<_, _>>()?;
+        // A language server's answer costs a round trip; ask it only about
+        // matches the other constraints keep.
+        self.checks
+            .sort_by_key(|c| matches!(c.kind, CheckKind::Semantic { .. }));
         self.lets = Derived::compile_all(language, &bound, constraints)?;
         self.constraints = constraints.to_vec();
         self.also = std::mem::take(&mut self.also)
@@ -1339,6 +1343,11 @@ enum CheckKind {
     All(Vec<Check>),
     Nth(i64),
     Field(String),
+    /// Asked of the language server, through `colab_core::semantic`.
+    Semantic {
+        var: Var,
+        query: colab_core::semantic::Query,
+    },
 }
 
 /// A compiled [`Stop`].
@@ -1565,6 +1574,13 @@ impl Check {
                 ));
             }
             Test::Nth(n) => CheckKind::Nth(*n),
+            Test::Semantic { var, query } => {
+                require_bound(bound, var)?;
+                CheckKind::Semantic {
+                    var: var.clone(),
+                    query: query.clone(),
+                }
+            }
             Test::Field(name) => {
                 if language.grammar.field_id_for_name(name).is_none() {
                     let fields: Vec<&str> = (1..=language.grammar.field_count() as u16)
@@ -1629,6 +1645,19 @@ impl Check {
             CheckKind::All(checks) => checks.iter().all(|c| c.holds(m, source)),
             CheckKind::Nth(n) => is_nth(m.get_node(), *n),
             CheckKind::Field(name) => in_field(m.get_node(), name),
+            CheckKind::Semantic { var, query } => {
+                let span = if var.multi {
+                    let nodes = env.get_multiple_matches(&var.name);
+                    match (nodes.first(), nodes.last()) {
+                        (Some(first), Some(last)) => Some(first.range().start..last.range().end),
+                        _ => None,
+                    }
+                } else {
+                    env.get_match(&var.name).map(|n| n.range())
+                };
+                // An empty sequence has no code to ask about.
+                span.is_some_and(|span| colab_core::semantic::ask(source, span, query))
+            }
         };
         result != self.negated
     }

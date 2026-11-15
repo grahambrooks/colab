@@ -80,6 +80,8 @@ Test: Test = {
     <var: Metavar> "matches" <regex: StringLiteral> => Test::Matches { var, regex },
     <var: Metavar> "is" <kind: Identifier> => Test::Is { var, kind },
     <var: Metavar> "is" <kind: StringLiteral> => Test::Is { var, kind },
+    <var: Metavar> "type" <ty: StringLiteral> => Test::Semantic { var, query: colab_core::semantic::Query::Type(ty) },
+    <var: Metavar> "resolves" <target: StringLiteral> => Test::Semantic { var, query: colab_core::semantic::Query::Resolves(target) },
     <var: Metavar> "count" <range: CountRange> => Test::Count { var, min: range.0, max: range.1 },
     "inside" <pattern: PatternArg> => Test::Inside(pattern),
     "has" <pattern: PatternArg> => Test::Has(pattern),
@@ -236,6 +238,8 @@ pub Identifier: String = {
     "rewriter" => "rewriter".to_string(),
     "id" => "id".to_string(),
     "url" => "url".to_string(),
+    "type" => "type".to_string(),
+    "resolves" => "resolves".to_string(),
 };
 
 // Three spellings, none with escapes. A double-quoted string cannot

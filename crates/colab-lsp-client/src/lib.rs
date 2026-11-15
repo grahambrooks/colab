@@ -27,6 +27,7 @@ pub mod actions;
 pub mod daemon;
 pub mod diagnostics;
 pub mod edit;
+pub mod semantic;
 pub mod session;
 pub mod transport;
 

@@ -83,6 +83,12 @@ pub enum Test {
     /// `all(c, …)`: every one holds (a comma does the same at the top
     /// level; `all` groups them under `not` or `any`).
     All(Vec<Constraint>),
+    /// `$X type "io.Reader"` / `$F resolves "pkg.Func"`: answered by the
+    /// language server, through [`crate::semantic`].
+    Semantic {
+        var: Var,
+        query: crate::semantic::Query,
+    },
     /// `nth n`: the match is its parent's `n`th named child, from 1; a
     /// negative `n` counts from the end (`nth -1` is the last).
     Nth(i64),
@@ -128,6 +134,16 @@ impl fmt::Display for Shown<'_> {
 }
 
 impl Test {
+    /// `true` when this test, or one grouped in it, needs a language
+    /// server ([`Test::Semantic`]).
+    pub fn is_semantic(&self) -> bool {
+        match self {
+            Test::Semantic { .. } => true,
+            Test::Any(all) | Test::All(all) => all.iter().any(|c| c.test.is_semantic()),
+            _ => false,
+        }
+    }
+
     /// Every pattern text this test holds, nested groups included, for
     /// the compiler to resolve named references in place.
     pub fn patterns_mut(&mut self) -> Vec<&mut String> {
@@ -437,6 +453,7 @@ impl fmt::Display for Constraint {
                 write!(f, "{name}({})", parts.join(", "))
             }
             Test::Nth(n) => write!(f, "nth {n}"),
+            Test::Semantic { var, query } => write!(f, "{var} {query}"),
             Test::Field(name) => write!(f, "field {name}"),
             Test::Let { var, from, steps } => {
                 write!(f, "let {var} = {from}")?;

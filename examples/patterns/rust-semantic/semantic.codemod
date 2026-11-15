@@ -1,0 +1,11 @@
+// Constraints a syntax tree cannot answer, asked of rust-analyzer.
+refactor "semantic" {
+    // `.unwrap()` on an Option only, not on the Result beside it.
+    match rust::pattern '$X.unwrap()' where $X type "Option" {
+        replace '$X.expect("checked above")'
+    }
+    // Two functions named `read`: only the standard library's.
+    match rust::pattern '$F($$$A)' where $F resolves "std::fs::read" {
+        replace 'std::fs::read_to_string($$$A)'
+    }
+}

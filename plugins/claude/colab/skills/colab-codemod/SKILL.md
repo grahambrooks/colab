@@ -194,7 +194,9 @@ match js::pattern 'console.log($$$ARGS)' { delete }
   `field function`, `any(…)` / `all(…)`, `inside '…'` / `has '…'` (each
   of the four relations may end `directly` or `until '…'`; name a
   repeated one with `pattern test_func = '…'` and write `inside test_func`),
-  each optionally preceded by `not`. Only
+  each optionally preceded by `not`. To tell same-named APIs apart, ask
+  the language server: `$F resolves "github.com/pkg/errors.Wrap"`,
+  `$X type "*os.File"` (CLI only; a missing server fails the run). Only
   `pattern` takes them.
 - **Rewrite inside a binding with `rewriter`.** `rewriter t = 'timeout: $V' -> 'timeoutMs: $V'`
   at the top, then `let $NEW = $$$OPTS | rewrite(t, …)` before the

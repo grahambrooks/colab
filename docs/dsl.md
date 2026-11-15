@@ -38,6 +38,8 @@ constraint  = [ "not" ] test
 test        = metavar "matches" ( regex | string )
             | metavar "is" ( identifier | string )
             | metavar "count" range
+            | metavar "type" string     -- answered by the language server
+            | metavar "resolves" string -- answered by the language server
             | "inside" pattern [ stop ]  -- without a stop, the only test on symbol / call: a code scope
             | "has" pattern [ stop ]
             | "follows" pattern [ stop ]
@@ -330,6 +332,8 @@ match go::pattern 'errors.Wrap($E, $M)'
 | `nth n` | the match is its parent's `n`th named child, from 1; `nth -1` is the last |
 | `field <name>` | the match is the child in that field of its parent (`function` of a call, `body` of a loop; an unknown field gets a "did you mean") |
 | `any(c, …)` | at least one of the constraints holds: one rule for two shapes. `all(c, …)` groups constraints that must all hold, under `not` or `any` (at the top level a comma does the same). |
+| `$X type "<type>"` | the language server says `$X` has this type (see [Asking the language server](#asking-the-language-server-type-and-resolves)) |
+| `$F resolves "<path>.<name>"` | the language server says `$F` refers to that declaration |
 | `not <constraint>` | the constraint does not hold |
 
 - `<lang>::pattern` takes every constraint. `symbol` and `call` take only
@@ -381,6 +385,56 @@ refactor "test-hygiene" {
 - A named pattern's metavariables are its own, as in any nested pattern.
 - `colab explain` lists the definitions; a rule's description shows the
   code the name stands for.
+
+### Asking the language server: `type` and `resolves`
+
+Two libraries can both have a `read` or a `Wrap`, and a variable named
+`r` can be any type. A syntax tree cannot tell them apart; the language's
+own server can, and colab asks it:
+
+```
+match go::pattern '$F($E, $M)' where $F resolves "github.com/pkg/errors.Wrap" {
+    replace 'fmt.Errorf("%s: %w", $M, $E)'
+}
+match rust::pattern '$X.unwrap()' where $X type "Option" {
+    replace '$X.expect("checked above")'
+}
+```
+
+- **Only a filter.** The pattern and its other constraints find the
+  matches first; the server is asked only about those, so the prefilter
+  stays sound and `colab find` agrees with `refactor`. colab still
+  computes nothing semantic.
+- **Where it asks.** At the binding's last identifier, or, for a binding
+  that ends in a call (`fs::create_dir_all(p)`), at its callee.
+  `--lsp '<command>'` picks the server; without it, each language's usual
+  one (`gopls`, `rust-analyzer`, `pyright-langserver --stdio`, …).
+  `--lsp-timeout` (default 120 s) bounds its start-up and indexing.
+- **`type "<text>"`** holds when the server's hover there contains
+  `<text>` with no identifier character on either side, so `io.Reader`
+  does not match `io.ReaderAt`. For a call it is the callee's return type
+  (the text after its signature's `->`). The spelling is the server's:
+  gopls writes `*os.File`, rust-analyzer `Option<u32>`, pyright
+  `list[str]`. `colab find` with the constraint is the quickest way to see
+  what matches.
+- **`resolves "<path>.<name>"`** (or `::` between segments) holds when
+  the server's definition there is named `<name>`, and its file's path
+  holds each segment of `<path>`, in order (a module cache's `@v1.2.3`
+  ignored), or the server's hover names the qualifier, as for a module
+  that is not a file of its own (Rust's inline `mod`).
+- **The text it asks about is the run's.** Each file is sent to the
+  server as the run has it, so a rule sees the types after earlier
+  rules' edits.
+- **Never silently wrong.** No server for a language, one that cannot
+  start, one still indexing at the timeout, or an error answer fails the
+  run before anything is written, naming the cause. The MCP server starts
+  no language server, so it refuses these rules outright; run them with
+  the CLI.
+- **Cost.** One round trip per match the other constraints keep, after
+  the server's start-up: on colab's own workspace, rust-analyzer took
+  about 10 s to index and the 17 `.unwrap()` calls of `colab-core` were
+  then classified in under a second. A kept server (`colab lsp-daemon`)
+  saves the start-up on later runs.
 
 ### Derived values: `let`
 
@@ -906,7 +960,7 @@ The grammar keywords are:
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
 `count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `requires`, `import`, `drops`, `when`,
-`unused`; `let` for derived values; and for finding clauses `message`, `severity`, `id`, `url` (`error`,
+`unused`, `type`, `resolves`; `let` for derived values; and for finding clauses `message`, `severity`, `id`, `url` (`error`,
 `warning` and `info` are ordinary identifiers).
 
 `::` is the namespace separator. `//` starts a line comment.

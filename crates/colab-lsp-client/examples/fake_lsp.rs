@@ -23,6 +23,12 @@
 //! For M27 it publishes diagnostics on every open and change: an error per
 //! line containing `BROKEN`, a warning per line containing `WARN`.
 //!
+//! For M32 it answers `hover` and `definition` for the identifier at the
+//! position: hover shows its declaration line from the open file (`var x
+//! T` or `func x(…) T`, as gopls would), and definition finds `func x(`
+//! in the directory named by the qualifier before it (`alog.Print` looks
+//! in `alog/`), or in the same file without one.
+//!
 //! `FAKE_LSP_MODE` changes behaviour: `no-rename` (no renameProvider),
 //! `file-op` (a rename also renames the symbol's file to `<new>.<ext>`,
 //! like a Java class), `no-will-rename` (no willRenameFiles support),
@@ -195,6 +201,8 @@ fn main() {
                     "positionEncoding": "utf-16",
                     "codeActionProvider": {"resolveProvider": true},
                     "referencesProvider": true,
+                    "hoverProvider": true,
+                    "definitionProvider": true,
                     "documentSymbolProvider": true,
                     "documentFormattingProvider": true,
                     "executeCommandProvider": {"commands": ["fake.uppercase"]},
@@ -352,6 +360,66 @@ fn main() {
                 send(
                     &mut out,
                     json!({"jsonrpc": "2.0", "id": id, "result": null}),
+                );
+            }
+            ("textDocument/hover", Some(id)) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let text = &open[uri];
+                let at = offset(
+                    text,
+                    params["position"]["line"].as_u64().unwrap(),
+                    params["position"]["character"].as_u64().unwrap(),
+                );
+                let result = ident_at(text, at).and_then(|(s, e)| {
+                    let name = &text[s..e];
+                    text.lines()
+                        .map(str::trim)
+                        .find(|l| {
+                            l.starts_with(&format!("var {name} "))
+                                || l.starts_with(&format!("func {name}("))
+                        })
+                        .map(|l| json!({"contents": {"kind": "markdown", "value": format!("```go\n{}\n```", l.trim_end_matches('{').trim())}}))
+                });
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": result}),
+                );
+            }
+            ("textDocument/definition", Some(id)) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let text = &open[uri];
+                let at = offset(
+                    text,
+                    params["position"]["line"].as_u64().unwrap(),
+                    params["position"]["character"].as_u64().unwrap(),
+                );
+                let result = ident_at(text, at).and_then(|(s, e)| {
+                    let name = &text[s..e];
+                    let qualifier = text[..s]
+                        .strip_suffix('.')
+                        .and_then(|before| ident_at(before, before.len()))
+                        .map(|(qs, qe)| text[qs..qe].to_string());
+                    let here = uri_path(uri);
+                    let dir = match &qualifier {
+                        Some(q) => root.join(q),
+                        None => here.parent().unwrap().to_path_buf(),
+                    };
+                    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+                        .ok()?
+                        .filter_map(|e| e.ok().map(|e| e.path()))
+                        .filter(|p| p.is_file())
+                        .collect();
+                    files.sort();
+                    files.into_iter().find_map(|file| {
+                        let content = std::fs::read_to_string(&file).ok()?;
+                        let i = content.find(&format!("func {name}("))? + "func ".len();
+                        Some(json!({"uri": format!("file://{}", file.display()),
+                            "range": {"start": position(&content, i), "end": position(&content, i + name.len())}}))
+                    })
+                });
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": result}),
                 );
             }
             ("textDocument/references", Some(id)) => {

@@ -48,6 +48,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--no-ignore` | — | Don't honour `.gitignore`, `.git/info/exclude`, or hidden-file rules. By default the walker behaves like `git ls-files`. |
 | `--changed-since <ref>` | — | Only files changed since the given git ref (`git diff --name-only --diff-filter=ACMRT <ref>`). Skips tree walking entirely. CI-friendly. |
 | `--baseline <ref>` | — | Report only findings new since the ref: the script also runs over the tree as it was there, and its findings there are left out (see [Findings new since a ref](#findings-new-since-a-ref---baseline)). Never writes; `fix` takes it too. |
+| `--lsp <command>` | each language's usual server | The language server that answers `type` / `resolves` constraints (also on `find`). With `--lsp-timeout <secs>` (default 120) for its start-up and indexing. |
 | `--staged` | — | Only files in the git index (`git diff --name-only --cached`). Mutually exclusive with `--changed-since`. |
 | `--jobs <N>` | `num_cpus` | Worker thread count for parallel file processing. Falls back to the `COLAB_JOBS` env var when unset. Set to `1` for sequential. |
 | `--verify <CMD>` | — | Run `<CMD>` (a shell command) after each rule's edits. Non-zero exit reverts that rule's changes and aborts the run with exit 1. Implies `--write`. Every rule must pass on its own; for rules that only compile together (a new parameter and its callers), use `--bisect`. |

@@ -85,37 +85,40 @@ where
             continue;
         };
         files_read += 1;
-        for index in live_here {
-            let rule = &rules[index];
-            if rule
-                .prefilter()
-                .is_some_and(|literal| !source.contains(literal))
-            {
-                continue;
+        // A rule that asks a language server asks it about this file.
+        crate::semantic::at_path(path, || {
+            for index in live_here {
+                let rule = &rules[index];
+                if rule
+                    .prefilter()
+                    .is_some_and(|literal| !source.contains(literal))
+                {
+                    continue;
+                }
+                // After a write the file holds the rule's own result, so "already
+                // as the rule asks" is its success, not a skip.
+                if let Some(reason) = rule
+                    .why_unchanged(&source)
+                    .filter(|r| !r.starts_with(crate::ALREADY))
+                {
+                    unchanged.entry(index).or_insert((reason, 0)).1 += 1;
+                }
             }
-            // After a write the file holds the rule's own result, so "already
-            // as the rule asks" is its success, not a skip.
-            if let Some(reason) = rule
-                .why_unchanged(&source)
-                .filter(|r| !r.starts_with(crate::ALREADY))
-            {
-                unchanged.entry(index).or_insert((reason, 0)).1 += 1;
+            for (index, has_target) in relevant {
+                if let Some(reason) = rules[index].why_unchanged(&source) {
+                    unchanged.entry(index).or_insert((reason, 0)).1 += 1;
+                }
+                if !has_target {
+                    continue;
+                }
+                let values: BTreeSet<String> =
+                    rules[index].observed_targets(&source).into_iter().collect();
+                let counts = seen.entry(index).or_default();
+                for value in values {
+                    *counts.entry(value).or_default() += 1;
+                }
             }
-        }
-        for (index, has_target) in relevant {
-            if let Some(reason) = rules[index].why_unchanged(&source) {
-                unchanged.entry(index).or_insert((reason, 0)).1 += 1;
-            }
-            if !has_target {
-                continue;
-            }
-            let values: BTreeSet<String> =
-                rules[index].observed_targets(&source).into_iter().collect();
-            let counts = seen.entry(index).or_default();
-            for value in values {
-                *counts.entry(value).or_default() += 1;
-            }
-        }
+        });
     }
 
     for index in live {

@@ -30,6 +30,9 @@ pub struct RuleNote {
     pub id: Option<String>,
     /// `url "<link>"`, the rule's rationale.
     pub url: Option<String>,
+    /// Whether its `where` clause asks a language server (`type`,
+    /// `resolves`).
+    pub semantic: bool,
     /// The script the rule came from, when it differs from the
     /// refactoring's own name (`colab fix` combines several packs).
     pub script: Option<String>,
@@ -218,6 +221,12 @@ impl Refactoring {
         Ok(())
     }
 
+    /// Whether a rule asks a language server: the run must then install
+    /// an oracle ([`colab_core::semantic`]), and fail on any failure.
+    pub fn needs_oracle(&self) -> bool {
+        self.notes.iter().any(|n| n.semantic)
+    }
+
     /// Returns `true` if the script contains no rules.
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
@@ -285,6 +294,14 @@ impl CodeTransformer for Refactoring {
     /// The prefilter tests `current`, not `source_code`, so a rule whose
     /// target was introduced by an earlier rule still fires.
     fn apply_at(&self, path: &Path, source_code: &str) -> ApplyOutcome {
+        colab_core::semantic::at_path(path, || self.apply_rules_at(path, source_code))
+    }
+}
+
+impl Refactoring {
+    /// [`CodeTransformer::apply_at`]'s body, with semantic queries asked
+    /// about `path`.
+    fn apply_rules_at(&self, path: &Path, source_code: &str) -> ApplyOutcome {
         let mut current = source_code.to_string();
         let mut rules_fired = Vec::new();
         let mut conflicts = Vec::new();

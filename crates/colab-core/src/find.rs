@@ -104,6 +104,15 @@ pub fn locate_all(
     source: &str,
     script: &str,
 ) -> Vec<(usize, Located)> {
+    crate::semantic::at_path(path, || locate_each(rules, path, source, script))
+}
+
+fn locate_each(
+    rules: &[Box<dyn Operation>],
+    path: &Path,
+    source: &str,
+    script: &str,
+) -> Vec<(usize, Located)> {
     let mut out = Vec::new();
     let marked = source.contains(crate::ignore::MARKER);
     for (index, rule) in rules.iter().enumerate() {

@@ -179,6 +179,7 @@ fn compile_inner(
             severity: m.severity.unwrap_or_default(),
             id: m.id.clone(),
             url: m.url.clone(),
+            semantic: m.constraints.iter().any(|c| c.test.is_semantic()),
             script: None,
             advice: Vec::new(),
         };
@@ -1406,6 +1407,41 @@ import (
             r#"refactor "t" { match go::pattern 'f($$$A)' { let $N = $$$A | rewrite("wrap") replace 'ff($N)' } }"#,
         );
         assert!(e.contains("takes the names of rewriters"), "{e}");
+    }
+
+    #[test]
+    fn type_and_resolves_parse_and_mark_the_rule_as_needing_a_server() {
+        let m = one_match(
+            r#"match go::pattern '$F($$$A)' where $F resolves "github.com/pkg/errors.Wrap", any($$$A type "error", nth 1) { delete }"#,
+        );
+        let shown: Vec<String> = m.constraints.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            shown,
+            [
+                r#"$F resolves "github.com/pkg/errors.Wrap""#,
+                r#"any($$$A type "error", nth 1)"#
+            ]
+        );
+        let plain = compile(
+            r#"refactor "t" { match go::pattern 'f($A)' { delete } }"#,
+            &registry(),
+        )
+        .unwrap();
+        assert!(!plain.needs_oracle());
+        let asks = compile(
+            r#"refactor "t" { match go::pattern 'f($A)' where any(nth 1, $A type "int") { delete } }"#,
+            &registry(),
+        )
+        .unwrap();
+        assert!(asks.needs_oracle());
+        let e = compile(
+            r#"refactor "t" { match go::pattern 'f($A)' where $B type "int" { delete } }"#,
+            &registry(),
+        )
+        .err()
+        .unwrap()
+        .to_string();
+        assert!(e.contains("`$B` is not a metavariable"), "{e}");
     }
 
     #[test]
