@@ -3939,3 +3939,91 @@ fn a_git_pack_is_fetched_at_its_pin_and_its_own_cases_must_pass() {
         fs::remove_dir_all(dir).ok();
     }
 }
+
+#[test]
+fn a_fleet_runs_each_repository_in_a_worktree_canary_first() {
+    let root = workspace_temp("fleet");
+    for name in ["api", "billing"] {
+        let repo = root.join(name);
+        write(
+            &repo.join("a.go"),
+            "package p\n\nimport \"github.com/pkg/errors\"\n",
+        );
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["add", "-A"]);
+        git(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "-m",
+                "init",
+            ],
+        );
+    }
+    write(
+        &root.join("m.codemod"),
+        r#"refactor "m" { match go::import "github.com/pkg/errors" { replace "errors" } }"#,
+    );
+    write(
+        &root.join("fleet.toml"),
+        "[fleet]\nscript = \"m.codemod\"\nbranch = \"colab/errors\"\ntitle = \"Use errors\"\ncanary = \"billing\"\n\n[[repos]]\npath = \"api\"\n\n[[repos]]\npath = \"billing\"\n",
+    );
+    let fleet = |args: &[&str]| {
+        colab()
+            .current_dir(&root)
+            .args(["fleet", "fleet.toml", "--format", "json"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let doc = |out: &std::process::Output| -> serde_json::Value {
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    // A dry run: both would change, the canary listed first, nothing written.
+    let dry = fleet(&[]);
+    assert!(
+        dry.status.success(),
+        "{}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    let d = doc(&dry);
+    assert_eq!(d["repos"][0]["repo"], "billing");
+    assert_eq!(d["repos"][1]["status"], "changed");
+    assert!(
+        fs::read_to_string(root.join("api/a.go"))
+            .unwrap()
+            .contains("pkg/errors")
+    );
+    // --write: a commit on the branch each; the checkout itself untouched.
+    let wrote = fleet(&["--write"]);
+    assert!(
+        wrote.status.success(),
+        "{}",
+        String::from_utf8_lossy(&wrote.stderr)
+    );
+    for name in ["api", "billing"] {
+        let repo = root.join(name);
+        assert!(git(&repo, &["show", "colab/errors:a.go"]).contains("import \"errors\""));
+        assert_eq!(git(&repo, &["branch", "--show-current"]).trim(), "main");
+        assert!(git(&repo, &["status", "--short"]).is_empty());
+        assert_eq!(git(&repo, &["worktree", "list"]).lines().count(), 1);
+    }
+    // Again: the branch exists, the canary fails, the rest is skipped.
+    let again = fleet(&["--write"]);
+    assert_eq!(again.status.code(), Some(1));
+    let a = doc(&again);
+    assert_eq!(a["repos"][0]["status"], "failed");
+    assert!(
+        a["repos"][0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("already exists")
+    );
+    assert_eq!(a["repos"][1]["status"], "skipped");
+    fs::remove_dir_all(&root).ok();
+}

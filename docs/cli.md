@@ -469,6 +469,53 @@ colab refactor --script s.codemod --only 2   # the second rule, by number
   you mean"), and so is a selection that leaves no rule, so a typo never
   quietly runs everything or nothing.
 
+### colab fleet
+
+One migration across many repositories, each an ordinary colab run, no
+coordinator: the manifest and git are the state.
+
+```toml
+[fleet]
+script = "migrate.codemod"     # relative to this file; or `fix = true`
+branch = "colab/errors-to-fmt" # what --write commits on
+title = "Move from pkg/errors to fmt"
+body = "Made by colab fleet."
+canary = "api"                 # runs first; default the first repo
+
+[[repos]]
+name = "api"
+path = "../api"                # a local checkout
+
+[[repos]]
+git = "https://github.com/acme/billing"   # cloned into the cache
+ref = "main"                   # the base; default the default branch
+paths = ["src"]                # where the script runs; default "."
+```
+
+```sh
+colab fleet fleet.toml                    # what each repository would change
+colab fleet fleet.toml --write            # a commit on `branch` in each
+colab fleet fleet.toml --write --pr       # …pushed, with `gh pr create`
+colab fleet fleet.toml --repo api         # only some (repeatable)
+colab fleet status fleet.toml --format json   # each branch's PR, from `gh pr view`
+```
+
+- Each repository runs in a temporary `git worktree` at its base, so a
+  checkout of yours is never touched; colab runs there as a subprocess
+  (`refactor --script …`, or `fix` with the repository's own
+  `colab.toml`), and its JSON report gives the files it changed.
+- `--write` commits the change on `branch`, title and body as the
+  message. A branch that already exists is refused, never overwritten;
+  a repository with nothing to change gets no branch.
+- The canary runs first; if it fails, the others are reported as
+  skipped and do not run.
+- `git` repositories are cloned once into the cache (`COLAB_CACHE_DIR`
+  …, as for [packs from git](#packs-from-git)) and fetched on later runs.
+- Exit 0 when every repository succeeded, 1 when one failed. `--format
+  json` gives `{branch, repos: [{repo, status, files, branch, pr,
+  error}]}`, `status` one of `changed`, `unchanged`, `failed`,
+  `skipped`.
+
 ### colab test
 
 Check a repository's packs against cases kept beside them, the way

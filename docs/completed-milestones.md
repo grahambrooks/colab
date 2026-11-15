@@ -915,6 +915,25 @@ different libraries. Was a decision waiting from M29.
 - Starts with a research spike on latency (one hover per match) and on
   how each server spells types; batching by file first.
 
+## Fleet (M33)
+
+### ✅ M33 — Fleet: many repositories, shared packs
+
+Migrations across many repositories, kept thin: each repository is an
+ordinary colab run.
+
+- **Multi-repo runs** (shipped: `colab fleet`, see [`cli.md`](cli.md#colab-fleet)): a manifest (`colab fleet.toml`: repositories by
+  path or git URL, the script or packs), a canary repository first, then
+  the rest; per repository `refactor` / `fix`, a branch, and `gh pr
+  create`; PR state reported as JSON. Moderne `mod run` / `mod git`,
+  Sourcegraph Batch Changes, codemod.com campaigns. No hosted
+  coordinator.
+- **A shareable pack catalog over git** (shipped: see "Packs from git" in [`cli.md`](cli.md#packs-from-git)): `[[packs]] git = "<url>", tag =
+  "<tag>", path = "<pack>"` in `colab.toml`, fetched into a cache,
+  version-pinned, the pack's own `colab test` fixtures run before use.
+  Replaces the remote-registry question: packs are shared as git
+  sources, never published to a hosted registry.
+
 ## Appendix: the original design (2026-05-09)
 
 The plan as first written, goal by goal. Almost all of it has shipped

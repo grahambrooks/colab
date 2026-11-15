@@ -139,6 +139,9 @@ enum Commands {
     ListRules(ListRulesArgs),
     /// Manage discoverable codemod packs.
     Pack(PackArgs),
+    /// Run one migration across many repositories (a `fleet.toml`): a
+    /// canary first, a branch and a PR each with --write --pr.
+    Fleet(crate::fleet::FleetArgs),
     /// Check a repository's packs against the cases beside them
     /// (`<pack>.tests/<case>/{input,expected}/`); exit 12 if one fails.
     Test(crate::pack_test::TestArgs),
@@ -1175,6 +1178,7 @@ pub async fn run() -> Result<i32> {
         Some(Commands::MvSection(args)) => run_mv_section(args),
         Some(Commands::Review(review_args)) => crate::review::run(review_args),
         Some(Commands::Test(args)) => crate::pack_test::run(args, &default_backends()),
+        Some(Commands::Fleet(args)) => crate::fleet::run(args),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);
             language_server::run(default_backends()).await;

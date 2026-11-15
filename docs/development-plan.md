@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then **M10.6**, **M33**–**M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit) and M32 (type and name constraints) have shipped.
+**M20's install step**, now that the stable gate has passed, then **M10.6**, **M34**, **M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints) and M33 (fleet runs, packs from git) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -42,9 +42,8 @@ what it lets that dogfooding cover.
 | ---- | --------- | ------- |
 | 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
 | 2 | M10.6 | Parse-once batching: performance, for the largest repositories. |
-| 3 | M33 Fleet: many repositories, shared packs | Migrations across repositories; packs shared as git sources. |
-| 4 | M34 Symbol-addressed edits | One-off agent edits by symbol, not exact strings. |
-| 5 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
+| 3 | M34 Symbol-addressed edits | One-off agent edits by symbol, not exact strings. |
+| 4 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
 
 ## Stable gate before M20
 
@@ -93,23 +92,6 @@ Wave D of the M29 follow-up sweep: decide before building.
 - Static Linux release binaries (musl via release-kit's
   `EXTRA_TARGETS`): changes what every release ships, so it waits for
   a go-ahead.
-
-### M33 — Fleet: many repositories, shared packs
-
-Migrations across many repositories, kept thin: each repository is an
-ordinary colab run.
-
-- **Multi-repo runs**: a manifest (`colab fleet.toml`: repositories by
-  path or git URL, the script or packs), a canary repository first, then
-  the rest; per repository `refactor` / `fix`, a branch, and `gh pr
-  create`; PR state reported as JSON. Moderne `mod run` / `mod git`,
-  Sourcegraph Batch Changes, codemod.com campaigns. No hosted
-  coordinator.
-- **A shareable pack catalog over git** (shipped: see "Packs from git" in [`cli.md`](cli.md#packs-from-git)): `[[packs]] git = "<url>", tag =
-  "<tag>", path = "<pack>"` in `colab.toml`, fetched into a cache,
-  version-pinned, the pack's own `colab test` fixtures run before use.
-  Replaces the remote-registry question: packs are shared as git
-  sources, never published to a hosted registry.
 
 ### M34 — Symbol-addressed edits
 

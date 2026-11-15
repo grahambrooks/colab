@@ -12,6 +12,7 @@ mod ci_format;
 mod cli;
 mod config;
 mod discover;
+mod fleet;
 mod format;
 mod git;
 mod git_packs;
