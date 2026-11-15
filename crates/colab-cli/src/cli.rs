@@ -1452,6 +1452,12 @@ fn run_fix(args: FixArgs) -> Result<i32> {
                 let text = fs::read_to_string(file).map_err(|e| Error::io_at(file, e))?;
                 codemod::compile_at_source(&text, file, &backends)?
             }
+            crate::config::PackRef::Git { url, pin, path } => {
+                let file = crate::git_packs::resolve(url, pin, path, &backends)?;
+                info!("Pack {} from {url} at {pin}", path.display());
+                let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
+                codemod::compile_at_source(&text, &file, &backends)?
+            }
         });
     }
     let mut refactoring = codemod::Refactoring::combine("fix", parts);

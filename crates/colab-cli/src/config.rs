@@ -39,6 +39,14 @@ pub enum PackRef {
     Builtin(String),
     /// A `.codemod` file, relative to `colab.toml`.
     Path(PathBuf),
+    /// A pack in a git repository, pinned to a tag or commit: `path` is
+    /// the `.codemod` file inside it. Fetched into a cache
+    /// ([`crate::git_packs`]).
+    Git {
+        url: String,
+        pin: crate::git_packs::Pin,
+        path: PathBuf,
+    },
 }
 
 /// A parsed `colab.toml`.
@@ -171,16 +179,50 @@ pub fn parse(path: &Path, text: &str) -> Result<Config> {
                     .as_array_of_tables()
                     .ok_or_else(|| bad(path, "`packs` is a list of `[[packs]]` tables"))?;
                 for table in tables.iter() {
-                    let builtin = table.get("pack").and_then(|v| v.as_str());
-                    let file = table.get("path").and_then(|v| v.as_str());
-                    if let Some(other) = table
-                        .iter()
-                        .map(|(k, _)| k)
-                        .find(|k| *k != "pack" && *k != "path")
-                    {
+                    let text = |key: &str| table.get(key).and_then(|v| v.as_str());
+                    let builtin = text("pack");
+                    let file = text("path");
+                    const KEYS: [&str; 5] = ["pack", "path", "git", "tag", "rev"];
+                    if let Some(other) = table.iter().map(|(k, _)| k).find(|k| !KEYS.contains(k)) {
                         return Err(bad(
                             path,
-                            format!("unknown key `packs.{other}`; a pack has `pack` or `path`"),
+                            format!(
+                                "unknown key `packs.{other}`; a pack has `pack`, `path`, or `git` with `tag` or `rev` and `path`"
+                            ),
+                        ));
+                    }
+                    if let Some(url) = text("git") {
+                        let pin = match (text("tag"), text("rev")) {
+                            (Some(tag), None) => crate::git_packs::Pin::Tag(tag.to_string()),
+                            (None, Some(rev)) => crate::git_packs::Pin::Rev(rev.to_string()),
+                            _ => {
+                                return Err(bad(
+                                    path,
+                                    format!(
+                                        "the git pack `{url}` needs one pin: `tag = \"<tag>\"` or `rev = \"<commit>\"`"
+                                    ),
+                                ));
+                            }
+                        };
+                        let Some(file) = file.filter(|_| builtin.is_none()) else {
+                            return Err(bad(
+                                path,
+                                format!(
+                                    "the git pack `{url}` needs `path = \"<the .codemod file in it>\"`"
+                                ),
+                            ));
+                        };
+                        config.packs.push(PackRef::Git {
+                            url: url.to_string(),
+                            pin,
+                            path: PathBuf::from(file),
+                        });
+                        continue;
+                    }
+                    if text("tag").is_some() || text("rev").is_some() {
+                        return Err(bad(
+                            path,
+                            "`tag` and `rev` pin a `git` pack; this one has no `git`",
                         ));
                     }
                     config.packs.push(match (builtin, file) {
@@ -211,6 +253,35 @@ pub fn parse(path: &Path, text: &str) -> Result<Config> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_git_pack_takes_one_pin_and_a_path() {
+        let ok = parse(
+            Path::new("colab.toml"),
+            "[[packs]]\ngit = \"https://example.test/p.git\"\ntag = \"v1\"\npath = \"go/x.codemod\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            ok.packs,
+            [PackRef::Git {
+                url: "https://example.test/p.git".into(),
+                pin: crate::git_packs::Pin::Tag("v1".into()),
+                path: "go/x.codemod".into(),
+            }]
+        );
+        let err = |text: &str| {
+            parse(Path::new("colab.toml"), text)
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(err("[[packs]]\ngit = \"u\"\npath = \"x\"\n").contains("needs one pin"));
+        assert!(
+            err("[[packs]]\ngit = \"u\"\ntag = \"a\"\nrev = \"b\"\npath = \"x\"\n")
+                .contains("needs one pin")
+        );
+        assert!(err("[[packs]]\ngit = \"u\"\ntag = \"a\"\n").contains("needs `path"));
+        assert!(err("[[packs]]\npath = \"x\"\ntag = \"a\"\n").contains("has no `git`"));
+    }
 
     #[test]
     fn parses_the_documented_shape() {

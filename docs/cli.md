@@ -407,6 +407,29 @@ path = ".colab/packs/house-style.codemod"
   last four as for `refactor`. `fix` takes no `--script`, `-e` or paths:
   the packs and `[run] paths` come from `colab.toml`.
 
+#### Packs from git
+
+A team shares packs as an ordinary git repository, and each repository
+that uses one pins it:
+
+```toml
+[[packs]]
+git = "https://github.com/acme/colab-packs"
+tag = "v3"                       # or rev = "<commit>"; never a branch
+path = "go/errors.codemod"       # the pack inside that repository
+```
+
+- A pin is fetched once, shallow, into a cache: `COLAB_CACHE_DIR`, else
+  `$XDG_CACHE_HOME/colab`, else `~/.cache/colab`. The copy is built under
+  a temporary name and moved into place only when complete, and is used
+  from the cache afterwards, without the network.
+- Before it runs, a fetched pack's own cases (`<pack>.tests/`, see
+  [`colab test`](#colab-test)) must pass; a pack that fails them is not
+  run, and `fix` says which case failed. `colab test` runs them too.
+- Includes in the pack resolve inside its repository; a `path` outside
+  it is refused.
+- There is no registry: a URL and a pin are the whole address.
+
 #### Renovate: fix what a dependency bump breaks
 
 `renovate/colab.json` is a Renovate preset that runs `colab fix --write`

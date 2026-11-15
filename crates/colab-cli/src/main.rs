@@ -14,6 +14,7 @@ mod config;
 mod discover;
 mod format;
 mod git;
+mod git_packs;
 mod help_json;
 mod language_server;
 mod lsp_commands;

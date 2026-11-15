@@ -105,7 +105,7 @@ ordinary colab run.
   create`; PR state reported as JSON. Moderne `mod run` / `mod git`,
   Sourcegraph Batch Changes, codemod.com campaigns. No hosted
   coordinator.
-- **A shareable pack catalog over git**: `[[packs]] git = "<url>", tag =
+- **A shareable pack catalog over git** (shipped: see "Packs from git" in [`cli.md`](cli.md#packs-from-git)): `[[packs]] git = "<url>", tag =
   "<tag>", path = "<pack>"` in `colab.toml`, fetched into a cache,
   version-pinned, the pack's own `colab test` fixtures run before use.
   Replaces the remote-registry question: packs are shared as git

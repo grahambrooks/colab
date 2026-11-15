@@ -3859,3 +3859,83 @@ fn type_and_resolves_constraints_are_answered_by_the_server() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn a_git_pack_is_fetched_at_its_pin_and_its_own_cases_must_pass() {
+    let shared = workspace_temp("git-pack-shared");
+    write(
+        &shared.join("go/errors.codemod"),
+        r#"refactor "errors" { match go::import "github.com/pkg/errors" { replace "errors" } }"#,
+    );
+    write(
+        &shared.join("go/errors.tests/renames/input/a.go"),
+        "package p\n\nimport \"github.com/pkg/errors\"\n",
+    );
+    write(
+        &shared.join("go/errors.tests/renames/expected/a.go"),
+        "package p\n\nimport \"errors\"\n",
+    );
+    let commit = |message: &str| {
+        git(&shared, &["add", "-A"]);
+        git(
+            &shared,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "-m",
+                message,
+            ],
+        );
+    };
+    git(&shared, &["init", "-q", "-b", "main"]);
+    commit("v1");
+    git(&shared, &["tag", "v1"]);
+    let v1 = git(&shared, &["rev-parse", "HEAD"]).trim().to_string();
+    // v2's case expects the wrong thing.
+    write(
+        &shared.join("go/errors.tests/renames/expected/a.go"),
+        "package p\n\nimport \"wrong\"\n",
+    );
+    commit("v2");
+    git(&shared, &["tag", "v2"]);
+
+    let app = workspace_temp("git-pack-app");
+    let cache = workspace_temp("git-pack-cache");
+    write(
+        &app.join("main.go"),
+        "package main\n\nimport \"github.com/pkg/errors\"\n",
+    );
+    let url = format!("file://{}", shared.display());
+    let fix = |pin: &str| {
+        write(
+            &app.join("colab.toml"),
+            &format!("[[packs]]\ngit = \"{url}\"\n{pin}\npath = \"go/errors.codemod\"\n"),
+        );
+        colab()
+            .current_dir(&app)
+            .env("COLAB_CACHE_DIR", &cache)
+            .args(["fix", "--check", "-C", "."])
+            .output()
+            .unwrap()
+    };
+    git(&app, &["init", "-q"]);
+    assert_eq!(fix("tag = \"v1\"").status.code(), Some(10));
+    assert_eq!(fix(&format!("rev = \"{v1}\"")).status.code(), Some(10));
+    let refused = fix("tag = \"v2\"");
+    assert!(!refused.status.success());
+    let err = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        err.contains("fails its own tests") && err.contains("renames"),
+        "{err}"
+    );
+    // Cached: the shared repository can go, the pinned pack still runs.
+    fs::remove_dir_all(&shared).unwrap();
+    assert_eq!(fix("tag = \"v1\"").status.code(), Some(10));
+    for dir in [&app, &cache] {
+        fs::remove_dir_all(dir).ok();
+    }
+}

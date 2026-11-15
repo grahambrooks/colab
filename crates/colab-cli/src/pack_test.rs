@@ -117,8 +117,15 @@ fn discover(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     if roots.is_empty() {
         if let Some(config) = crate::config::find()? {
             for pack in &config.packs {
-                if let crate::config::PackRef::Path(p) = pack {
-                    roots.push(config.dir.join(p));
+                match pack {
+                    crate::config::PackRef::Path(p) => roots.push(config.dir.join(p)),
+                    crate::config::PackRef::Git { url, pin, path } => {
+                        let pack = crate::git_packs::checkout(url, pin)?.join(path);
+                        if tests_dir(&pack).is_dir() {
+                            roots.push(pack);
+                        }
+                    }
+                    crate::config::PackRef::Builtin(_) => {}
                 }
             }
         }
@@ -168,6 +175,25 @@ fn find_packs(dir: &Path, out: &mut BTreeSet<PathBuf>) {
 /// `<dir>/<stem>.tests` for `<dir>/<stem>.codemod`.
 fn tests_dir(pack: &Path) -> PathBuf {
     pack.with_extension("tests")
+}
+
+/// Each failing case of `pack`, as `<case>: <path>: <problem>`; empty
+/// when they all pass.
+pub fn failing_cases(pack: &Path, backends: &BackendRegistry) -> Result<Vec<String>> {
+    let result = test_pack(pack, backends, false)?;
+    Ok(result
+        .cases
+        .iter()
+        .flat_map(|c| {
+            c.failures.iter().map(move |f| {
+                if f.path.is_empty() {
+                    format!("{}: {}", c.name, f.problem)
+                } else {
+                    format!("{}: {}: {}", c.name, f.path, f.problem)
+                }
+            })
+        })
+        .collect())
 }
 
 fn test_pack(pack: &Path, backends: &BackendRegistry, bless: bool) -> Result<PackResult> {
