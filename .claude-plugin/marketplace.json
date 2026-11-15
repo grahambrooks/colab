@@ -1,0 +1,14 @@
+{
+  "name": "colab",
+  "owner": {
+    "name": "Graham Brooks"
+  },
+  "description": "colab, the tree-sitter codemod tool, for Claude Code: a skill, its MCP server, and a post-edit hook that runs a repository's colab.toml packs.",
+  "plugins": [
+    {
+      "name": "colab",
+      "source": "./plugins/claude/colab",
+      "description": "Repo-wide code and config changes with colab (skill + MCP server), and a post-edit hook running the repository's colab.toml packs on each file Claude writes."
+    }
+  ]
+}

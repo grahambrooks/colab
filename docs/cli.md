@@ -516,6 +516,56 @@ colab fleet status fleet.toml --format json   # each branch's PR, from `gh pr vi
   error}]}`, `status` one of `changed`, `unchanged`, `failed`,
   `skipped`.
 
+### colab agent install and uninstall
+
+Put colab in front of an agent, and take it out again:
+
+```sh
+colab agent install                       # every agent found: claude, cursor, codex
+colab agent install --claude --no-hook    # one, without the post-edit hook
+colab agent install --dry-run             # the diffs, nothing written
+colab agent uninstall                     # what install wrote, and nothing else
+```
+
+| Agent | What | Where |
+| ----- | ---- | ----- |
+| Claude Code | MCP server `colab` | `.mcp.json`, key `mcpServers.colab` |
+| Claude Code | post-edit hook | `.claude/settings.json`, the `PostToolUse` hook running `colab hook post-edit` |
+| Claude Code | the skill | `.claude/skills/colab-codemod/` |
+| Cursor | MCP server `colab` | `.cursor/mcp.json`, key `mcpServers.colab` |
+| Cursor | the skill, as a rule | `.cursor/rules/colab.mdc` |
+| Codex | MCP server `colab` | `~/.codex/config.toml`, table `[mcp_servers.colab]` |
+| Codex | how to use colab | `AGENTS.md`, the managed block `colab` |
+
+- **Idempotent.** Install compares by meaning, not bytes: a second run
+  writes nothing and reports every file `unchanged`.
+- **Uninstall takes back only colab's.** It removes those keys, the one
+  hook, the table, the block and colab's own files; everything else in a
+  file stays as it was, and a file (or directory) left with nothing else
+  is removed. Install then uninstall gives back the files as they were,
+  byte for byte.
+- A file colab would edit that does not parse (a broken
+  `settings.json`) is an error; it is never overwritten.
+- Without `--claude` / `--cursor` / `--codex`, the agents found are used:
+  on `PATH`, or with their directory in the project or home directory.
+- `--format json` gives `{action, dry_run, files: [{tool, path,
+  status}]}`, `status` one of `created`, `updated`, `removed`,
+  `unchanged`.
+
+### `colab hook post-edit`
+
+The post-edit hook (the Claude Code plugin's, or `colab agent install`'s)
+reads the tool call as JSON on stdin and runs the packs of the nearest
+`colab.toml` over the file `tool_input.file_path` names, in memory. What
+a rule above `severity info` would change comes back as
+`{"decision": "block", "reason": "…"}`, which Claude Code hands the
+model after the edit, with each finding's line, message, `id` and the
+replacement. No `colab.toml`, a file outside its `[run] paths` or in its
+`exclude`, or packs with scans: no output. It always exits 0, so its
+command can be `colab hook post-edit 2>/dev/null || true` and an older
+colab stays silent. `colab hook post-edit --file <path>` prints the same
+report as text and exits 10 when there is one.
+
 ### colab test
 
 Check a repository's packs against cases kept beside them, the way

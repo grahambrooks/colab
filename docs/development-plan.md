@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints), M33 (fleet runs, packs from git), M34 (symbol-addressed edits), M35 (scan phases) and M10.6 (a parse cache) have shipped.
+**The 2026.11.4 release** that M20's plugin pins, once the stable gate holds again (one more milestone with no silent failure), then the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints), M33 (fleet runs, packs from git), M34 (symbol-addressed edits), M35 (scan phases) and M10.6 (a parse cache) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -40,7 +40,7 @@ what it lets that dogfooding cover.
 
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
-| 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
+| 1 | Release 2026.11.4 | M20's install step has shipped (installer, uninstaller, post-edit hook, marketplace, MCP resources); the plugin pins 2026.11.4, which waits for stable-gate criterion 2 (1 of 2 clean milestones). |
 
 ## Stable gate before M20
 
@@ -65,13 +65,14 @@ these hold:
 | Criterion | Status |
 | --------- | ------ |
 | 1. Coverage | Met for code at many sites, renames, Markdown sections, rows, items and links; config keys only in the eval task, not yet on this repo. |
-| 2. No silent failures | **Met: 2 of 2 clean milestones (M16, M15).** Before them, the follow-ups, M23, M14 and the docs review after M21 each found one or two failures that reported success (a row `set` re-adding its row, fenced imports, patterns dropping unmentioned children, Markdown prefilters skipping files, `ensure` above `//!` docs); all are fixed. M16's finding changed formatting only; M15's (a syntactic scope renaming a field's uses but not its declaration) is the documented, positional meaning of the scope, caught by `cargo check` before shipping. |
+| 2. No silent failures | **Reset, 1 of 2.** M10.6 logged one: `--exclude crates/x/**` walking `crates` excluded nothing, and the run reported success (fixed in M20: such a glob is rebased onto the walk root). M20 logged none. One more clean milestone, then the plugin's 2026.11.4 is released. |
 | 3. Little hand repair | Met: `--tidy` on `refactor` removed the `cargo fmt` step; one hand edit per milestone (a line inside a shell fence). |
 | 4. Measured benefit | Met: `evals/results.md`, 8 tasks correct, 73% fewer bytes than `Read` + `Edit`, budgets checked in CI. |
 
 ## Planned milestones
 
 ### M20 — Agent install & guardrails
+- ✅ Shipped 2026-11-14 (see [`cli.md`](cli.md#colab-agent-install-and-uninstall)): `colab agent install` / `uninstall` (idempotent; uninstall takes back only colab's keys, hook, table, block and files), the post-edit hook (`colab hook post-edit`, in the plugin's `hooks/hooks.json`), MCP resources and a generated `llms-full.txt`, a marketplace (`.claude-plugin/marketplace.json`) and the plugin's version (2026.11.4). **Remaining:** cut that release once the stable gate holds again (criterion 2, below).
 - `colab agent install` detects Claude Code / Cursor / Codex and wires
   skill + MCP server (+ optional hook).
 - Post-edit hook: run `colab fix --check` (M14 packs) on files the agent

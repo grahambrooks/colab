@@ -14,6 +14,7 @@ name = "colab"
 path = "src/main.rs"
 
 [dependencies]
+globset = { workspace = true }
 colab-backends = { workspace = true }
 colab-core = { workspace = true }
 colab-dsl = { workspace = true }

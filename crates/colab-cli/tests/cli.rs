@@ -4178,3 +4178,154 @@ fn a_scan_reads_every_file_before_a_rule_edits_one() {
     assert!(String::from_utf8_lossy(&refused.stderr).contains("--bisect does not do yet"));
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn agent_install_is_idempotent_and_uninstall_takes_back_only_its_own() {
+    let project = workspace_temp("agent-project");
+    let home = workspace_temp("agent-home");
+    // Things of the user's that must survive both.
+    let settings = "{\n  \"model\": \"opus\"\n}\n";
+    write(&project.join(".claude/settings.json"), settings);
+    let agents = "# Notes\n\nKeep this.\n";
+    write(&project.join("AGENTS.md"), agents);
+    let codex = "model = \"o4\"\n";
+    write(&home.join(".codex/config.toml"), codex);
+    let agent = |action: &str| {
+        colab()
+            .env("HOME", &home)
+            .args([
+                "agent", action, "--claude", "--cursor", "--codex", "--format", "json", "-C",
+            ])
+            .arg(&project)
+            .output()
+            .unwrap()
+    };
+    let statuses = |out: &std::process::Output| -> Vec<String> {
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        doc["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                format!(
+                    "{} {}",
+                    f["path"].as_str().unwrap(),
+                    f["status"].as_str().unwrap()
+                )
+            })
+            .collect()
+    };
+    let snapshot = |root: &std::path::Path| -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            for entry in fs::read_dir(&dir).unwrap().flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    stack.push(p.clone());
+                    out.push((
+                        p.strip_prefix(root).unwrap().display().to_string() + "/",
+                        String::new(),
+                    ));
+                } else {
+                    out.push((
+                        p.strip_prefix(root).unwrap().display().to_string(),
+                        fs::read_to_string(&p).unwrap(),
+                    ));
+                }
+            }
+        }
+        out.sort();
+        out
+    };
+    let before = (snapshot(&project), snapshot(&home));
+
+    let first = statuses(&agent("install"));
+    assert!(first.iter().any(|s| s == ".mcp.json created"), "{first:?}");
+    assert!(
+        first.iter().any(|s| s == ".claude/settings.json updated"),
+        "{first:?}"
+    );
+    let installed = (snapshot(&project), snapshot(&home));
+    // Idempotent: a second install changes nothing, byte for byte.
+    let second = statuses(&agent("install"));
+    assert!(
+        second.iter().all(|s| s.ends_with(" unchanged")),
+        "{second:?}"
+    );
+    assert_eq!((snapshot(&project), snapshot(&home)), installed);
+    let settings_now: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(project.join(".claude/settings.json")).unwrap())
+            .unwrap();
+    assert_eq!(settings_now["model"], "opus");
+    assert_eq!(
+        settings_now["hooks"]["PostToolUse"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // Uninstall: everything as it was, nothing of colab's left; twice is fine.
+    statuses(&agent("uninstall"));
+    assert_eq!((snapshot(&project), snapshot(&home)), before);
+    let again = statuses(&agent("uninstall"));
+    assert!(again.iter().all(|s| s.ends_with(" unchanged")), "{again:?}");
+    for dir in [&project, &home] {
+        fs::remove_dir_all(dir).ok();
+    }
+}
+
+#[test]
+fn the_post_edit_hook_reports_a_broken_convention_to_the_model() {
+    let root = workspace_temp("post-edit");
+    write(&root.join(".git/HEAD"), "ref: refs/heads/main\n");
+    write(
+        &root.join("colab.toml"),
+        "[[packs]]\npath = \"packs/p.codemod\"\n",
+    );
+    write(
+        &root.join("packs/p.codemod"),
+        r#"refactor "p" { match go::import "github.com/pkg/errors" { replace "errors" message "use the standard errors package" id "std-errors" } }"#,
+    );
+    let file = root.join("svc/a.go");
+    write(&file, "package svc\n\nimport \"github.com/pkg/errors\"\n");
+    let hook = |path: &std::path::Path| {
+        let mut child = colab()
+            .args(["hook", "post-edit"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let call = serde_json::json!({"tool_name": "Write", "tool_input": {"file_path": path}});
+        std::io::Write::write_all(child.stdin.as_mut().unwrap(), call.to_string().as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let out = hook(&file);
+    assert!(out.status.success());
+    let decision: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(decision["decision"], "block");
+    let reason = decision["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("svc/a.go:3: error: use the standard errors package [std-errors]"),
+        "{reason}"
+    );
+    // Clean, or outside any colab.toml: nothing at all.
+    write(&file, "package svc\n\nimport \"errors\"\n");
+    assert!(hook(&file).stdout.is_empty());
+    let outside = workspace_temp("post-edit-outside");
+    write(
+        &outside.join("b.go"),
+        "package b\n\nimport \"github.com/pkg/errors\"\n",
+    );
+    assert!(hook(&outside.join("b.go")).stdout.is_empty());
+    for dir in [&root, &outside] {
+        fs::remove_dir_all(dir).ok();
+    }
+}

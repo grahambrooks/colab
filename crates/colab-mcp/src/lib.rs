@@ -72,6 +72,7 @@ use colab_core::{BackendRegistry, CodeTransformer};
 use colab_dsl::compile;
 use serde_json::{Map, Value, json};
 
+pub mod resources;
 mod tools;
 mod workflows;
 
@@ -235,7 +236,7 @@ pub fn handle_with(
             id,
             json!({
                 "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": { "tools": {} },
+                "capabilities": { "tools": {}, "resources": {} },
                 "serverInfo": {
                     "name": "colab-mcp",
                     "version": env!("CARGO_PKG_VERSION"),
@@ -251,6 +252,22 @@ pub fn handle_with(
             Some(make_response(id, json!({ "tools": list })))
         }
         "tools/call" => Some(handle_call(id, message.get("params"), backends, extra)),
+        "resources/list" => Some(make_response(id, resources::list())),
+        "resources/read" => {
+            let uri = message
+                .pointer("/params/uri")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            Some(match resources::read(uri) {
+                Some(result) => make_response(id, result),
+                // MCP's "resource not found".
+                None => make_error(
+                    id,
+                    -32002,
+                    &format!("no resource `{uri}`; resources/list names them"),
+                ),
+            })
+        }
         // Notifications: no `id`, no response.
         _ if id.is_none() => None,
         _ => Some(make_error(id, METHOD_NOT_FOUND, "method not found")),

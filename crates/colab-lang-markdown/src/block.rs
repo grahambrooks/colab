@@ -185,13 +185,19 @@ impl Operation for BlockEdit {
             }
             (Mode::Delete, Found::At { begin, end }) => {
                 let mut after = end + 1;
+                let mut start = begin;
                 // Take one blank line with the block when it would otherwise
                 // leave two in a row, or one at the start of the file.
                 let blank_before = begin == 0 || lines[begin - 1].trim().is_empty();
                 if blank_before && lines.get(after).is_some_and(|l| l.trim().is_empty()) {
                     after += 1;
+                } else if after >= lines.len() && begin > 0 && lines[begin - 1].trim().is_empty() {
+                    // A block that ends the file goes with the blank line
+                    // before it, which appending it added: insert then
+                    // delete gives back the file as it was.
+                    start = begin - 1;
                 }
-                let mut out = lines[..begin].concat();
+                let mut out = lines[..start].concat();
                 out.push_str(&lines[after..].concat());
                 out
             }
@@ -232,6 +238,18 @@ mod tests {
             out,
             "# Agents\n\nIntro written by hand.\n\n<!-- myspec:begin — managed by myspec (profile rust) -->\n## myspec\n\n- `myspec report`\n- `myspec tools status`\n<!-- myspec:end -->\n\nMore by hand.\n"
         );
+    }
+
+    #[test]
+    fn an_appended_block_deleted_gives_back_the_file() {
+        let original = "# Notes\n\nKeep this.\n";
+        let added = run(&BlockEdit::set("tool", "Use the tool.").unwrap(), original);
+        assert!(
+            added
+                .ends_with("Keep this.\n\n<!-- tool:begin -->\nUse the tool.\n<!-- tool:end -->\n"),
+            "{added:?}"
+        );
+        assert_eq!(run(&BlockEdit::delete("tool").unwrap(), &added), original);
     }
 
     #[test]

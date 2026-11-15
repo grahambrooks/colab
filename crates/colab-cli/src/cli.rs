@@ -140,6 +140,12 @@ enum Commands {
     /// Edit one declaration by name path (`Config/load`): replace it, or
     /// insert text before or after it, previewed like any run.
     Edit(crate::symbol_edit::EditArgs),
+    /// Wire colab into Claude Code, Cursor or Codex (MCP server, skill,
+    /// post-edit hook), or take it out again: `install` / `uninstall`.
+    Agent(crate::agent::AgentArgs),
+    /// Agent hooks: `colab hook post-edit` runs the repository's packs on
+    /// the file an agent just wrote (exit 2 with findings on stderr).
+    Hook(crate::hook::HookArgs),
     /// Manage discoverable codemod packs.
     Pack(PackArgs),
     /// Run one migration across many repositories (a `fleet.toml`): a
@@ -1098,6 +1104,45 @@ fn refuse_phased(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Res
     }
 }
 
+/// Each pack `config` declares, compiled (a git pack fetched and its own
+/// cases passed first), in order: what `colab fix` and the post-edit hook
+/// run.
+pub(crate) fn compile_packs(
+    config: &crate::config::Config,
+    backends: &BackendRegistry,
+) -> Result<Vec<codemod::Refactoring>> {
+    let mut parts = Vec::new();
+    for pack in &config.packs {
+        parts.push(match pack {
+            crate::config::PackRef::Builtin(name) => {
+                let builtin = crate::packs::builtin(name).map_err(|e| {
+                    Error::Config(format!(
+                        "{}: {e}",
+                        config.dir.join(crate::config::FILE).display()
+                    ))
+                })?;
+                codemod::compile_at_source(
+                    builtin.script,
+                    &PathBuf::from(format!("<builtin {}>", builtin.name)),
+                    backends,
+                )?
+            }
+            crate::config::PackRef::Path(file) => {
+                let file = config.dir.join(file);
+                let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
+                codemod::compile_at_source(&text, &file, backends)?
+            }
+            crate::config::PackRef::Git { url, pin, path } => {
+                let file = crate::git_packs::resolve(url, pin, path, backends)?;
+                info!("Pack {} from {url} at {pin}", path.display());
+                let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
+                codemod::compile_at_source(&text, &file, backends)?
+            }
+        });
+    }
+    Ok(parts)
+}
+
 /// Which rules run, by `id`, id glob (`no-*`) or number (from 1).
 #[derive(clap::Args, Debug, Default)]
 struct SelectArgs {
@@ -1256,6 +1301,8 @@ pub async fn run() -> Result<i32> {
         Some(Commands::Review(review_args)) => crate::review::run(review_args),
         Some(Commands::Test(args)) => crate::pack_test::run(args, &default_backends()),
         Some(Commands::Fleet(args)) => crate::fleet::run(args),
+        Some(Commands::Hook(args)) => crate::hook::run(args, &default_backends()),
+        Some(Commands::Agent(args)) => crate::agent::run(args),
         Some(Commands::Edit(args)) => crate::symbol_edit::run(args, &default_backends()),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);
@@ -1518,30 +1565,7 @@ fn run_fix(args: FixArgs) -> Result<i32> {
     }
 
     let backends = default_backends();
-    let mut parts = Vec::new();
-    for pack in &config.packs {
-        parts.push(match pack {
-            crate::config::PackRef::Builtin(name) => {
-                let builtin = crate::packs::builtin(name)
-                    .map_err(|e| Error::Config(format!("{}: {e}", path.display())))?;
-                codemod::compile_at_source(
-                    builtin.script,
-                    &PathBuf::from(format!("<builtin {}>", builtin.name)),
-                    &backends,
-                )?
-            }
-            crate::config::PackRef::Path(file) => {
-                let text = fs::read_to_string(file).map_err(|e| Error::io_at(file, e))?;
-                codemod::compile_at_source(&text, file, &backends)?
-            }
-            crate::config::PackRef::Git { url, pin, path } => {
-                let file = crate::git_packs::resolve(url, pin, path, &backends)?;
-                info!("Pack {} from {url} at {pin}", path.display());
-                let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
-                codemod::compile_at_source(&text, &file, &backends)?
-            }
-        });
-    }
+    let parts = compile_packs(&config, &backends)?;
     let mut refactoring = codemod::Refactoring::combine("fix", parts);
     args.select.apply(&mut refactoring)?;
     let _oracle = OracleGuard::install(&refactoring, None, 120)?;

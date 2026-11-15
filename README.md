@@ -95,6 +95,12 @@ brew install colab                          # Homebrew, macOS and Linux
 cargo install --git https://github.com/grahambrooks/colab colab-cli
 ```
 
+Then put colab in front of your agent: `colab agent install` wires its
+MCP server, skill and (Claude Code) post-edit hook into Claude Code,
+Cursor or Codex, whichever it finds; `colab agent uninstall` takes it out
+again. Claude Code users can install the plugin instead:
+`/plugin marketplace add grahambrooks/colab`, `/plugin install colab@colab`.
+
 Prebuilt archives for macOS, Linux and Windows (x86_64, a `.zip`) are on the
 [releases page](https://github.com/grahambrooks/colab/releases).
 

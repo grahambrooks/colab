@@ -374,6 +374,7 @@ dependencies = [
  "criterion",
  "env_logger",
  "futures",
+ "globset",
  "log",
  "serde_json",
  "similar",

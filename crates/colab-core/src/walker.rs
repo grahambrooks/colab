@@ -251,11 +251,13 @@ fn collect_paths<T: CodeTransformer>(
     if !opts.include.is_empty() || !opts.exclude.is_empty() {
         let mut overrides = OverrideBuilder::new(root);
         for pattern in &opts.include {
+            let pattern = &rebase(pattern, root);
             overrides.add(pattern).map_err(|e| {
                 Error::Config(format!("invalid --include glob `{}`: {}", pattern, e))
             })?;
         }
         for pattern in &opts.exclude {
+            let pattern = &rebase(pattern, root);
             overrides.add(&format!("!{}", pattern)).map_err(|e| {
                 Error::Config(format!("invalid --exclude glob `{}`: {}", pattern, e))
             })?;
@@ -342,6 +344,24 @@ fn compute_change<T: CodeTransformer>(
     ))
 }
 
+/// `pattern` relative to the walk `root`. A tree walk matches globs
+/// against paths below its root, so `--exclude crates/x/**` walking
+/// `crates` would never match; written from the working directory, as a
+/// rule's `in "<glob>"` is, it means `x/**` there, and is rebased so.
+fn rebase(pattern: &str, root: &Path) -> String {
+    let pattern = pattern.strip_prefix("./").unwrap_or(pattern);
+    let root = root.strip_prefix("./").unwrap_or(root);
+    let root = root.to_string_lossy();
+    let root = root.trim_end_matches('/');
+    if root.is_empty() || root == "." {
+        return pattern.to_string();
+    }
+    pattern
+        .strip_prefix(&format!("{root}/"))
+        .unwrap_or(pattern)
+        .to_string()
+}
+
 /// True if `path` passes any explicit `include` and is not blocked
 /// by `exclude`. `.gitignore` does not apply to directly-supplied
 /// files, only to tree walks.
@@ -409,6 +429,18 @@ pub fn process_path<T: CodeTransformer + Sync>(transformer: &T, path: &Path) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_glob_written_from_the_working_directory_is_rebased_onto_the_walk_root() {
+        assert_eq!(rebase("crates/json/**", Path::new("crates")), "json/**");
+        assert_eq!(
+            rebase("./crates/json/**", Path::new("./crates/")),
+            "json/**"
+        );
+        assert_eq!(rebase("json/**", Path::new("crates")), "json/**");
+        assert_eq!(rebase("vendor/**", Path::new(".")), "vendor/**");
+        assert_eq!(rebase("**/*.rs", Path::new("crates")), "**/*.rs");
+    }
     use std::io::Write;
     use std::path::Path;
 

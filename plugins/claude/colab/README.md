@@ -10,7 +10,8 @@ codemods as tool calls.
 | Kind | Name | Purpose |
 | ---- | ---- | ------- |
 | Skill | `colab-codemod` | When a change is mechanical and structural, write a `.codemod` script, check the blast radius, and apply it safely. Includes a namespace/match-string reference and a diagnosis guide. |
-| MCP server | `colab` | 20 tools over stdio. Codemods: `colab.preview`, `colab.apply`, `colab.find`, `colab.ast`, `colab.test_rule`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema`. No-script workflows: `colab.move_import`, `colab.set_config_key`, `colab.rename_symbol`. Markdown: `colab.outline`, `colab.section`, `colab.edit_markdown`. Language server: `colab.references`, `colab.rename`, `colab.action`, `colab.mv`. One declaration: `colab.edit_symbol`. |
+| MCP server | `colab` | 20 tools over stdio, and colab's documentation as resources (`colab://docs/dsl.md`, `colab://docs/cli.md`, `colab://docs/features.md`, `colab://llms-full.txt`). Codemods: `colab.preview`, `colab.apply`, `colab.find`, `colab.ast`, `colab.test_rule`, `colab.lint_script`, `colab.list_languages`, `colab.list_rules`, `colab.schema`. No-script workflows: `colab.move_import`, `colab.set_config_key`, `colab.rename_symbol`. Markdown: `colab.outline`, `colab.section`, `colab.edit_markdown`. Language server: `colab.references`, `colab.rename`, `colab.action`, `colab.mv`. One declaration: `colab.edit_symbol`. |
+| Hook | post-edit | After `Edit` / `Write` / `MultiEdit`, runs the repository's `colab.toml` packs on the file (`colab hook post-edit`) and hands Claude what they would change. Silent where there is no `colab.toml`, and with a colab older than 2026.11.4. |
 
 The skill triggers on mechanical multi-file changes — an import path, a
 dependency rename, a symbol, a Java package, a Go struct tag, a call
@@ -41,14 +42,18 @@ install colab first and neither happens.
 
 ## Install
 
-From a marketplace that lists this plugin:
+This repository is a marketplace with this one plugin:
 
-```sh
-claude plugin install colab@<marketplace>
+```text
+/plugin marketplace add grahambrooks/colab
+/plugin install colab@colab
 ```
 
-This repository has no `marketplace.json` of its own. To try the plugin
-from a checkout, run `claude --plugin-dir plugins/claude/colab`.
+The plugin needs colab 2026.11.4 or later on `PATH` for the hook (an
+older one leaves the hook silent). To try it from a checkout instead:
+`claude --plugin-dir plugins/claude/colab`. To wire one project without
+the plugin, or Cursor or Codex: `colab agent install` (and `colab agent
+uninstall` to take it out again).
 
 ## Layout
 
