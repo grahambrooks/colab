@@ -114,7 +114,7 @@ fn collect(
         && callee == function
     {
         let arg_strs = collect_args(args, source);
-        let arg_refs: Vec<&str> = arg_strs.iter().map(|s| s.as_str()).collect();
+        let arg_refs: Vec<&str> = arg_strs.iter().map(std::string::String::as_str).collect();
         let rendered = render_call_template(template, function, &arg_refs);
         // Replace only up to the end of the argument list so a trailing
         // lambda after the parens survives untouched.

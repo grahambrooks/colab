@@ -25,6 +25,7 @@
 //! behaviour; review the diff before committing it.
 //!
 //! Adding a new language backend is gated on landing at least one case.
+use std::fmt::Write as _;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -109,7 +110,7 @@ fn collect_cases(root: &Path) -> Vec<Case> {
                 .to_string_lossy()
                 .into_owned();
             out.push(Case {
-                name: format!("{}/{}", lang, case_name),
+                name: format!("{lang}/{case_name}"),
                 dir: case_path,
             });
         }
@@ -121,13 +122,13 @@ fn collect_cases(root: &Path) -> Vec<Case> {
 fn run_case(case: &Case) -> Result<(), String> {
     let script_path = case.dir.join("script");
     let refactoring =
-        compile_at_path(&script_path, &registry()).map_err(|e| format!("compile: {}", e))?;
+        compile_at_path(&script_path, &registry()).map_err(|e| format!("compile: {e}"))?;
 
     let input_dir = case.dir.join("input");
     let expected_dir = case.dir.join("expected");
 
-    let inputs = collect_files(&input_dir).map_err(|e| format!("walk input/: {}", e))?;
-    let expected = collect_files(&expected_dir).map_err(|e| format!("walk expected/: {}", e))?;
+    let inputs = collect_files(&input_dir).map_err(|e| format!("walk input/: {e}"))?;
+    let expected = collect_files(&expected_dir).map_err(|e| format!("walk expected/: {e}"))?;
 
     if inputs.keys().collect::<Vec<_>>() != expected.keys().collect::<Vec<_>>() {
         return Err(format!(
@@ -242,8 +243,8 @@ fn run_case(case: &Case) -> Result<(), String> {
 /// pulled in by `include` are not visible to `check`, so only a script
 /// without includes is compared index by index.
 fn check_matches_compile(script_path: &Path, refactoring: &Refactoring) -> Result<(), String> {
-    let text = fs::read_to_string(script_path).map_err(|e| format!("read script: {}", e))?;
-    let checks = check(&text, &registry()).map_err(|e| format!("check: {}", e))?;
+    let text = fs::read_to_string(script_path).map_err(|e| format!("read script: {e}"))?;
+    let checks = check(&text, &registry()).map_err(|e| format!("check: {e}"))?;
     for rule in &checks {
         if let Err(e) = &rule.outcome {
             return Err(format!(
@@ -259,11 +260,14 @@ fn check_matches_compile(script_path: &Path, refactoring: &Refactoring) -> Resul
             .flatten()
             .map(String::as_str)
             .collect();
-        let compiled: Vec<String> = refactoring.rules.iter().map(|r| r.to_string()).collect();
+        let compiled: Vec<String> = refactoring
+            .rules
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         if checked != compiled {
             return Err(format!(
-                "check and compile disagree\n  check:   {:?}\n  compile: {:?}",
-                checked, compiled
+                "check and compile disagree\n  check:   {checked:?}\n  compile: {compiled:?}"
             ));
         }
     }
@@ -276,29 +280,28 @@ fn check_matches_compile(script_path: &Path, refactoring: &Refactoring) -> Resul
 fn render_rules(report: &RunReport) -> String {
     let mut out = String::new();
     for stat in &report.rules {
-        out.push_str(&format!("{} {}\n", stat.files_matched, stat.rule));
+        let _ = writeln!(out, "{} {}", stat.files_matched, stat.rule);
         for near in &stat.near_misses {
-            out.push_str(&format!(
-                "    near {} ({} file(s))\n",
-                near.value, near.files
-            ));
+            let _ = writeln!(out, "    near {} ({} file(s))", near.value, near.files);
         }
         if let Some(why) = &stat.unchanged {
-            out.push_str(&format!(
-                "    unchanged in {} file(s): {}\n",
+            let _ = writeln!(
+                out,
+                "    unchanged in {} file(s): {}",
                 why.files, why.message
-            ));
+            );
         }
     }
     for conflict in &report.conflicts {
-        out.push_str(&format!(
-            "conflict {} {}: {}\n",
+        let _ = writeln!(
+            out,
+            "conflict {} {}: {}",
             conflict.path.display(),
             conflict
                 .rule
                 .map_or("file".to_string(), |r| format!("rule {}", r + 1)),
             conflict.message
-        ));
+        );
     }
     out
 }
@@ -311,16 +314,17 @@ fn render_find(refactoring: &Refactoring, inputs: &BTreeMap<PathBuf, String>) ->
         let mut hits = locate_all(&refactoring.rules, rel, source, &refactoring.name);
         hits.sort_by_key(|(index, l)| (l.start, *index));
         for (index, at) in hits {
-            out.push_str(&format!(
-                "{}:{}:{}: [{}] {}\n",
+            let _ = writeln!(
+                out,
+                "{}:{}:{}: [{}] {}",
                 rel.display(),
                 at.line,
                 at.column,
                 index,
                 at.text.replace('\n', "\\n")
-            ));
+            );
             for (name, value) in &at.captures {
-                out.push_str(&format!("    ${} = {}\n", name, value.replace('\n', "\\n")));
+                let _ = writeln!(out, "    ${} = {}", name, value.replace('\n', "\\n"));
             }
         }
     }
@@ -332,14 +336,13 @@ fn render_find(refactoring: &Refactoring, inputs: &BTreeMap<PathBuf, String>) ->
 fn expect_file(path: &Path, actual: &str) -> Result<(), String> {
     let name = path.file_name().unwrap().to_string_lossy();
     if std::env::var_os("COLAB_BLESS").is_some() {
-        return fs::write(path, actual).map_err(|e| format!("bless {}: {}", name, e));
+        return fs::write(path, actual).map_err(|e| format!("bless {name}: {e}"));
     }
     let want = fs::read_to_string(path)
-        .map_err(|_| format!("missing {} (create it with COLAB_BLESS=1)", name))?;
+        .map_err(|_| format!("missing {name} (create it with COLAB_BLESS=1)"))?;
     if want != actual {
         return Err(format!(
-            "{} differs (re-run with COLAB_BLESS=1 to accept)\n--- expected\n{}--- got\n{}",
-            name, want, actual
+            "{name} differs (re-run with COLAB_BLESS=1 to accept)\n--- expected\n{want}--- got\n{actual}"
         ));
     }
     Ok(())
@@ -357,14 +360,14 @@ fn collect_files(root: &Path) -> Result<BTreeMap<PathBuf, String>, String> {
 fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<PathBuf, String>) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("read_dir {}: {}", dir.display(), e))?;
     for entry in entries {
-        let entry = entry.map_err(|e| format!("entry: {}", e))?;
+        let entry = entry.map_err(|e| format!("entry: {e}"))?;
         let path = entry.path();
         if path.is_dir() {
             walk(root, &path, out)?;
         } else if path.is_file() {
             let rel = path
                 .strip_prefix(root)
-                .map_err(|e| format!("strip_prefix: {}", e))?
+                .map_err(|e| format!("strip_prefix: {e}"))?
                 .to_path_buf();
             let source =
                 fs::read_to_string(&path).map_err(|e| format!("read {}: {}", path.display(), e))?;

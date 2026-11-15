@@ -18,8 +18,7 @@ const RELEVANT_EXTENSIONS: &[&str] = &["js", "mjs", "cjs", "jsx", "ts", "tsx"];
 pub(crate) fn is_relevant(path: &Path) -> bool {
     path.extension()
         .and_then(|s| s.to_str())
-        .map(|ext| RELEVANT_EXTENSIONS.contains(&ext))
-        .unwrap_or(false)
+        .is_some_and(|ext| RELEVANT_EXTENSIONS.contains(&ext))
 }
 
 /// For each `import_statement` / `export_statement` whose `source`
@@ -351,7 +350,7 @@ mod tests {
         };
         for ext in &["js", "mjs", "cjs", "jsx", "ts", "tsx"] {
             assert!(
-                op.is_file_relevant(Path::new(&format!("foo.{}", ext))),
+                op.is_file_relevant(Path::new(&format!("foo.{ext}"))),
                 "{ext} should be relevant"
             );
         }
@@ -420,12 +419,11 @@ pub fn ensure(target: &str, source_code: &str) -> String {
             let end = child.end_byte();
             insert_at = source_code[end..]
                 .find('\n')
-                .map(|p| end + p + 1)
-                .unwrap_or(source_code.len());
+                .map_or(source_code.len(), |p| end + p + 1);
         }
     }
 
-    let insertion = format!("import '{}';\n", target);
+    let insertion = format!("import '{target}';\n");
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..insert_at]);
     out.push_str(&insertion);

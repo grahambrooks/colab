@@ -14,6 +14,7 @@
 //! say, no `colab.toml`, a file outside its `[run] paths`, or packs with
 //! scan phases (they need the whole tree): no output. With `--file` the
 //! report is plain text and the exit code 10, as for `--check`.
+use std::fmt::Write as _;
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -150,24 +151,26 @@ pub fn check(file: &Path, backends: &BackendRegistry) -> Result<Option<String>> 
         } else {
             f.start_line.to_string()
         };
-        out.push_str(&format!(
-            "  {}:{line}: {}: {what}\n",
+        let _ = writeln!(
+            out,
+            "  {}:{line}: {}: {what}",
             rel.display(),
             f.severity.as_str()
-        ));
+        );
         let replacement = f.replacement.trim_end();
         if replacement.is_empty() {
             out.push_str("    delete these lines\n");
         } else {
             for l in replacement.lines().take(6) {
-                out.push_str(&format!("    | {l}\n"));
+                let _ = writeln!(out, "    | {l}");
             }
         }
     }
-    out.push_str(&format!(
-        "Fix it as shown, or run `colab fix --write` in {}; a deliberate exception takes a `colab:ignore` comment.\n",
+    let _ = writeln!(
+        out,
+        "Fix it as shown, or run `colab fix --write` in {}; a deliberate exception takes a `colab:ignore` comment.",
         dir.display()
-    ));
+    );
     Ok(Some(out))
 }
 
@@ -179,11 +182,10 @@ fn covered(rel: &Path, config: &crate::config::Config) -> bool {
             let p = p.strip_prefix(".").unwrap_or(p);
             p.as_os_str().is_empty() || rel.starts_with(p)
         });
-    let excluded = config.exclude.iter().any(|glob| {
-        globset::Glob::new(glob)
-            .map(|g| g.compile_matcher().is_match(rel))
-            .unwrap_or(false)
-    });
+    let excluded = config
+        .exclude
+        .iter()
+        .any(|glob| globset::Glob::new(glob).is_ok_and(|g| g.compile_matcher().is_match(rel)));
     in_paths && !excluded
 }
 

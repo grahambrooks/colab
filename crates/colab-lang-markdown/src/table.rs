@@ -94,7 +94,7 @@ impl RowEdit {
             None => (target.to_string(), None),
         };
         let before = before.map(|b| pairs(&b)).transpose().map_err(|e| bad(&e))?;
-        if before.as_ref().is_some_and(|b| b.is_empty()) {
+        if before.as_ref().is_some_and(std::vec::Vec::is_empty) {
             return Err(bad(
                 "`< [ ]` needs the selector of the row to insert before",
             ));

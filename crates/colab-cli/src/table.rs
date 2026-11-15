@@ -44,7 +44,7 @@ pub fn hits(report: &FindReport) -> Table {
                 .map(|(name, _)| format!("${name}"))
         })
         .collect();
-    let mut columns: Vec<String> = FIXED.iter().map(|c| c.to_string()).collect();
+    let mut columns: Vec<String> = FIXED.iter().map(std::string::ToString::to_string).collect();
     columns.extend(vars.iter().cloned());
     columns.push("text".into());
     let rows = report

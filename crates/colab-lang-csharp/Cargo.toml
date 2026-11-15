@@ -13,3 +13,6 @@ colab-core = { workspace = true }
 colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-c-sharp = { workspace = true }
+
+[lints]
+workspace = true

@@ -345,7 +345,7 @@ impl Session {
             "$/progress" => {
                 let token = params
                     .get("token")
-                    .map(|t| t.to_string())
+                    .map(std::string::ToString::to_string)
                     .unwrap_or_default();
                 match params.pointer("/value/kind").and_then(Value::as_str) {
                     Some("begin") => {

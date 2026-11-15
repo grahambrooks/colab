@@ -65,7 +65,10 @@ impl LspOracle {
 
     /// Stop every server started.
     pub fn shutdown(&self) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for (_, session) in state.sessions.drain() {
             if let Ok(session) = session {
                 session.shutdown();
@@ -93,7 +96,10 @@ impl Oracle for LspOracle {
             })?,
         };
         let key = server.display();
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let state = &mut *state;
         let fresh = !state.sessions.contains_key(&key);
         let session = state.sessions.entry(key.clone()).or_insert_with(|| {

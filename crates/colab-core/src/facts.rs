@@ -57,17 +57,23 @@ static FAILURE: Mutex<Option<String>> = Mutex::new(None);
 
 /// Answer `in` checks from `facts` until [`uninstall`].
 pub fn install(facts: Facts) {
-    *FACTS.write().unwrap_or_else(|e| e.into_inner()) = Some(facts);
+    *FACTS
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(facts);
 }
 
 pub fn uninstall() {
-    *FACTS.write().unwrap_or_else(|e| e.into_inner()) = None;
+    *FACTS
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 /// Whether `text` was bound to `var` by the scan `set`. `false` when no
 /// facts are installed, the reason kept for [`take_failure`].
 pub fn contains(set: &str, var: &str, text: &str) -> bool {
-    let facts = FACTS.read().unwrap_or_else(|e| e.into_inner());
+    let facts = FACTS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     match facts.as_ref() {
         Some(facts) => facts
             .sets
@@ -77,7 +83,7 @@ pub fn contains(set: &str, var: &str, text: &str) -> bool {
         None => {
             FAILURE
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .get_or_insert_with(|| {
                     format!(
                         "`in {set}` needs the script's scan phases, which this run did not make; \
@@ -91,7 +97,10 @@ pub fn contains(set: &str, var: &str, text: &str) -> bool {
 
 /// The first `in` check that had no facts to ask, since the last call.
 pub fn take_failure() -> Option<String> {
-    FAILURE.lock().unwrap_or_else(|e| e.into_inner()).take()
+    FAILURE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
 }
 
 #[cfg(test)]

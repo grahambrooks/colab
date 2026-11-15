@@ -29,6 +29,7 @@
 //! if it fails nothing else runs. `colab fleet status` reports each
 //! branch's PR as `gh pr view` sees it. There is no coordinator: the
 //! manifest and git are the state.
+use std::fmt::Write as _;
 
 use std::fs;
 use std::io::Write;
@@ -135,7 +136,10 @@ fn parse(path: &Path, text: &str) -> Result<Manifest> {
         }
     }
     let text_of = |key: &str| fleet.get(key).and_then(|v| v.as_str()).map(str::to_string);
-    let fix = fleet.get("fix").and_then(|v| v.as_bool()).unwrap_or(false);
+    let fix = fleet
+        .get("fix")
+        .and_then(toml_edit::Item::as_bool)
+        .unwrap_or(false);
     let run = match (text_of("script"), fix) {
         (Some(script), false) => Run::Script(dir.join(script)),
         (None, true) => Run::Fix,
@@ -579,7 +583,7 @@ pub fn run(args: FleetArgs) -> Result<i32> {
                     ("changed", ..) => format!("{} file(s)", o.files.len()),
                     _ => String::new(),
                 };
-                text.push_str(&format!("{:<10} {:<20} {detail}\n", o.status, o.name));
+                let _ = writeln!(text, "{:<10} {:<20} {detail}", o.status, o.name);
             }
             write!(out, "{text}")
         }
@@ -628,12 +632,13 @@ fn status(path: &Path, format: FleetFormat) -> Result<i32> {
         FleetFormat::Human => {
             let mut text = String::new();
             for r in &rows {
-                text.push_str(&format!(
-                    "{:<20} {:<8} {}\n",
+                let _ = writeln!(
+                    text,
+                    "{:<20} {:<8} {}",
                     r["repo"].as_str().unwrap_or(""),
                     r["state"].as_str().unwrap_or("?"),
                     r["url"].as_str().or(r["error"].as_str()).unwrap_or("")
-                ));
+                );
             }
             write!(out, "{text}")
         }

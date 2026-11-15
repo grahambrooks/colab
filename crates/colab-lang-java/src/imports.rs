@@ -214,17 +214,12 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         };
         if child.kind() == "package_declaration" {
             let end = child.end_byte();
-            insert_at = Some(
-                source_code[end..]
-                    .find('\n')
-                    .map(|p| end + p + 1)
-                    .unwrap_or(end),
-            );
+            insert_at = Some(source_code[end..].find('\n').map_or(end, |p| end + p + 1));
             break;
         }
     }
 
-    let insertion = format!("\nimport {};\n", target);
+    let insertion = format!("\nimport {target};\n");
     let pos = insert_at.unwrap_or(0);
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..pos]);

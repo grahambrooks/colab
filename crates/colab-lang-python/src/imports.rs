@@ -293,7 +293,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // Insert at file top, after any leading shebang, encoding line,
     // module docstring, or `from __future__` imports.
     let insert_at = leading_header_end(&tree, source_code);
-    let insertion = format!("import {}\n", target);
+    let insertion = format!("import {target}\n");
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..insert_at]);
     out.push_str(&insertion);
@@ -314,22 +314,18 @@ fn leading_header_end(tree: &Tree, source: &str) -> usize {
             "expression_statement" => {
                 // Module docstring: a single string literal as the
                 // first statement.
-                child
-                    .named_child(0)
-                    .map(|c| c.kind() == "string")
-                    .unwrap_or(false)
+                child.named_child(0).is_some_and(|c| c.kind() == "string")
             }
             "future_import_statement" => true,
             "import_from_statement" => child
                 .child_by_field_name("module_name")
                 .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-                .map(|t| t == "__future__")
-                .unwrap_or(false),
+                .is_some_and(|t| t == "__future__"),
             _ => false,
         };
         if is_header {
             let end = child.end_byte();
-            last_end = source[end..].find('\n').map(|p| end + p + 1).unwrap_or(end);
+            last_end = source[end..].find('\n').map_or(end, |p| end + p + 1);
         } else {
             break;
         }

@@ -31,7 +31,6 @@ mod table;
 use std::io::Write;
 use std::process::ExitCode;
 
-use chrono::Local;
 use colored::*;
 use env_logger::Builder;
 use log::{LevelFilter, error};
@@ -43,7 +42,7 @@ async fn main() -> ExitCode {
     match cli::run().await {
         Ok(code) => ExitCode::from(code as u8),
         Err(err) => {
-            error!("{}", err);
+            error!("{err}");
             ExitCode::from(err.exit_code() as u8)
         }
     }
@@ -63,7 +62,7 @@ fn initialize_logging() {
             writeln!(
                 buf,
                 "{} [{}] {}",
-                Local::now().format("%Y-%m-%d %H:%M:%S"),
+                buf.timestamp_seconds(),
                 record.level().to_string().color(level_color),
                 record.args()
             )

@@ -19,6 +19,7 @@
 //! corpus harness makes), and no rule reports a conflict. A rule that
 //! fires in no case is reported as untested. `--bless` (or
 //! `COLAB_BLESS=1`) writes `expected/` from what the pack produces.
+use std::fmt::Write as _;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -420,37 +421,38 @@ fn to_human(results: &[PackResult]) -> String {
     let mut out = String::new();
     let (mut passed, mut failed) = (0, 0);
     for p in results {
-        out.push_str(&format!("{}\n", p.pack.display()));
+        let _ = writeln!(out, "{}", p.pack.display());
         for c in &p.cases {
             if c.failures.is_empty() {
                 passed += 1;
                 let mark = if c.blessed { "blessed" } else { "ok" };
-                out.push_str(&format!("  {mark}   {}\n", c.name));
+                let _ = writeln!(out, "  {mark}   {}", c.name);
                 continue;
             }
             failed += 1;
-            out.push_str(&format!("  FAIL {}\n", c.name));
+            let _ = writeln!(out, "  FAIL {}", c.name);
             for f in &c.failures {
                 let at = if f.path.is_empty() {
                     String::new()
                 } else {
                     format!("{}: ", f.path)
                 };
-                out.push_str(&format!("       {at}{}\n", f.problem));
+                let _ = writeln!(out, "       {at}{}", f.problem);
                 if let Some(diff) = &f.diff {
                     for line in diff.lines() {
-                        out.push_str(&format!("         {line}\n"));
+                        let _ = writeln!(out, "         {line}");
                     }
                 }
             }
         }
         for (rule, description) in &p.untested {
-            out.push_str(&format!(
-                "  warning: rule {rule} fires in no case: {description}\n"
-            ));
+            let _ = writeln!(
+                out,
+                "  warning: rule {rule} fires in no case: {description}"
+            );
         }
     }
-    out.push_str(&format!("{passed} passed, {failed} failed\n"));
+    let _ = writeln!(out, "{passed} passed, {failed} failed");
     out
 }
 

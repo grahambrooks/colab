@@ -219,8 +219,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         let end = child.end_byte();
         let line_end = source_code[end..]
             .find('\n')
-            .map(|p| end + p + 1)
-            .unwrap_or(source_code.len());
+            .map_or(source_code.len(), |p| end + p + 1);
         match child.kind() {
             "import" => after_import = Some(line_end),
             "package_header" => after_package = after_package.or(Some(line_end)),
@@ -229,7 +228,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     }
 
     let pos = after_import.or(after_package).unwrap_or(0);
-    let insertion = format!("import {}\n", target);
+    let insertion = format!("import {target}\n");
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..pos]);
     out.push_str(&insertion);

@@ -4,6 +4,7 @@
 //! handlers, and returns the success exit code (0 or 10) to `main`.
 //! Errors bubble up via [`colab_core::Error`] and `main` maps them to
 //! the documented exit-code table.
+use std::fmt::Write as _;
 
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
@@ -332,7 +333,7 @@ struct RefactorArgs {
     #[arg(long, value_name = "REF", conflicts_with = "write")]
     baseline: Option<String>,
 
-    /// Worker thread count. Defaults to `num_cpus`. Falls back to
+    /// Worker thread count. Defaults to the available parallelism. Falls back to
     /// the `COLAB_JOBS` env var when unset. Set to 1 to force
     /// sequential processing.
     #[arg(long, value_name = "N")]
@@ -618,30 +619,34 @@ fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
         "// colab mv-section: `{}` from {source_rel} to {target_rel}.\nrefactor \"mv-section\" {{\n",
         args.section
     );
-    script.push_str(&format!(
-        "    match markdown::section {} in \"{target_rel}\" {{ insert {} }}\n",
+    let _ = writeln!(
+        script,
+        "    match markdown::section {} in \"{target_rel}\" {{ insert {} }}",
         quote(&moved.insert_address)?,
         quote(&moved.body)?
-    ));
-    script.push_str(&format!(
-        "    match markdown::section {} in \"{source_rel}\" {{ delete }}\n",
+    );
+    let _ = writeln!(
+        script,
+        "    match markdown::section {} in \"{source_rel}\" {{ delete }}",
         quote(&args.section)?
-    ));
+    );
     // Links to the section from either file now cross the move; links
     // from elsewhere are caught by the link check.
     let old = format!("#{}", moved.old_slug);
     if source.contains(&format!("]({old}")) {
-        script.push_str(&format!(
-            "    match markdown::link \"{old}\" in \"{source_rel}\" {{ replace \"{to_target}#{}\" }}\n",
+        let _ = writeln!(
+            script,
+            "    match markdown::link \"{old}\" in \"{source_rel}\" {{ replace \"{to_target}#{}\" }}",
             moved.new_slug
-        ));
+        );
     }
     let from_target = format!("{to_source}{old}");
     if target.contains(&format!("]({from_target}")) {
-        script.push_str(&format!(
-            "    match markdown::link \"{from_target}\" in \"{target_rel}\" {{ replace \"#{}\" }}\n",
+        let _ = writeln!(
+            script,
+            "    match markdown::link \"{from_target}\" in \"{target_rel}\" {{ replace \"#{}\" }}",
             moved.new_slug
-        ));
+        );
     }
     // Links from other files: when the two files share a directory, the
     // file name is all that changes, wherever the link is from. Otherwise
@@ -652,12 +657,13 @@ fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
         };
         let needle = format!("{}{old}", from.to_string_lossy());
         if markdown_mentions(&cwd, &needle, &[&source_path, &target_path]) {
-            script.push_str(&format!(
-                "    match markdown::link \"{}{old}\" {{ replace \"{}#{}\" }}\n",
+            let _ = writeln!(
+                script,
+                "    match markdown::link \"{}{old}\" {{ replace \"{}#{}\" }}",
                 from.to_string_lossy(),
                 to.to_string_lossy(),
                 moved.new_slug
-            ));
+            );
         }
     }
     script.push_str("}\n");
@@ -667,8 +673,7 @@ fn run_mv_section(args: MvSectionArgs) -> Result<i32> {
     }
 
     let format = clap::ValueEnum::to_possible_value(&args.format)
-        .map(|v| v.get_name().to_string())
-        .unwrap_or_else(|| "human".into());
+        .map_or_else(|| "human".into(), |v| v.get_name().to_string());
     let mut argv: Vec<String> = vec![
         "refactor".into(),
         "-e".into(),
@@ -1373,7 +1378,7 @@ fn print_licenses() -> Result<i32> {
 fn print_json(value: &serde_json::Value) -> Result<i32> {
     let pretty = serde_json::to_string_pretty(value).expect("serialize JSON");
     let mut out = io::stdout().lock();
-    writeln!(out, "{}", pretty).map_err(io_to_error)?;
+    writeln!(out, "{pretty}").map_err(io_to_error)?;
     Ok(0)
 }
 
@@ -1530,7 +1535,7 @@ impl RefactorArgs {
 
 /// Pick the worker-thread count from `--jobs`, falling back to
 /// `COLAB_JOBS` if the flag wasn't set. `None` lets the walker
-/// default to `num_cpus`.
+/// default to the available parallelism.
 fn resolve_jobs(flag: Option<usize>) -> Option<usize> {
     if let Some(n) = flag {
         return Some(n);
@@ -1591,8 +1596,7 @@ fn run_fix(args: FixArgs) -> Result<i32> {
 
     // The rest is `refactor` with the config's settings as its flags.
     let format = clap::ValueEnum::to_possible_value(&args.format)
-        .map(|v| v.get_name().to_string())
-        .unwrap_or_else(|| "human".into());
+        .map_or_else(|| "human".into(), |v| v.get_name().to_string());
     // `refactor` requires a script; this one is compiled already, so the
     // placeholder rule is never read.
     let mut argv: Vec<String> = vec![
@@ -1667,7 +1671,7 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
         refactoring.name,
         refactoring.rules.len()
     );
-    log::debug!("Rules: {}", refactoring);
+    log::debug!("Rules: {refactoring}");
 
     let targets = if args.paths.is_empty() {
         vec![PathBuf::from(".")]
@@ -2257,7 +2261,7 @@ pub(crate) fn shell(command: &str) -> std::process::Command {
 fn run_verify(cmd: &str) -> Result<bool> {
     let status = shell(cmd)
         .status()
-        .map_err(|e| Error::Config(format!("could not spawn `{}`: {}", cmd, e)))?;
+        .map_err(|e| Error::Config(format!("could not spawn `{cmd}`: {e}")))?;
     Ok(status.success())
 }
 
@@ -2269,7 +2273,7 @@ fn commit_per_rule(rule_label: &str) -> Result<()> {
     let add = std::process::Command::new("git")
         .args(["add", "-u"])
         .status()
-        .map_err(|e| Error::Config(format!("git add failed to spawn: {}", e)))?;
+        .map_err(|e| Error::Config(format!("git add failed to spawn: {e}")))?;
     if !add.success() {
         return Err(Error::Config(format!(
             "git add -u failed (exit {}) for rule `{}`",
@@ -2277,11 +2281,11 @@ fn commit_per_rule(rule_label: &str) -> Result<()> {
             rule_label
         )));
     }
-    let message = format!("colab: {}", rule_label);
+    let message = format!("colab: {rule_label}");
     let commit = std::process::Command::new("git")
         .args(["commit", "-m", &message])
         .output()
-        .map_err(|e| Error::Config(format!("git commit failed to spawn: {}", e)))?;
+        .map_err(|e| Error::Config(format!("git commit failed to spawn: {e}")))?;
     if !commit.status.success() {
         let stderr = String::from_utf8_lossy(&commit.stderr);
         // "nothing to commit" is treated as success — a rule may
@@ -2314,7 +2318,7 @@ fn run_refactor_bisect(
     }
 
     // A tree that already fails would have one of the rules blamed for it.
-    info!("Checking the starting tree with `{}`", verify_cmd);
+    info!("Checking the starting tree with `{verify_cmd}`");
     if !run_verify(verify_cmd)? {
         return Err(Error::Config(format!(
             "the starting tree already fails `{verify_cmd}`, before any rule ran; fix it \
@@ -2371,7 +2375,7 @@ fn run_refactor_bisect(
     }
 
     // Phase 2: full-set verify.
-    info!("Verifying with `{}`", verify_cmd);
+    info!("Verifying with `{verify_cmd}`");
     if run_verify(verify_cmd)? {
         report.elapsed = started.elapsed();
         reporter.finish(&report).map_err(io_to_error)?;
@@ -2441,10 +2445,10 @@ fn bisect_rules(
             )?;
         }
         if run_verify(verify_cmd)? {
-            info!("[bisect] rules[..{}] OK", mid);
+            info!("[bisect] rules[..{mid}] OK");
             lo = mid;
         } else {
-            info!("[bisect] rules[..{}] FAIL", mid);
+            info!("[bisect] rules[..{mid}] FAIL");
             hi = mid;
         }
     }
@@ -2493,7 +2497,7 @@ fn run_undo(from: &Path) -> Result<i32> {
     let mut count = 0u64;
     walk_undo(from, from, &mut count)?;
     if ops > 0 {
-        info!("Undid {} file operation(s) through git", ops);
+        info!("Undid {ops} file operation(s) through git");
     }
     info!("Restored {} file(s) from {}", count, from.display());
     Ok(0)
@@ -2573,7 +2577,7 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
         refactoring.name,
         refactoring.rules.len()
     );
-    log::debug!("Rules: {}", refactoring);
+    log::debug!("Rules: {refactoring}");
 
     let mut source = String::new();
     io::stdin()
@@ -2998,7 +3002,7 @@ fn run_ast(args: AstArgs) -> Result<i32> {
                     writeln!(out, "{key}: {}", text.replace('\n', "⏎")).map_err(io_to_error)?;
                 }
             }
-            if value.get("has_error").and_then(|v| v.as_bool()) == Some(true) {
+            if value.get("has_error").and_then(serde_json::Value::as_bool) == Some(true) {
                 writeln!(
                     out,
                     "warning: the snippet has syntax errors (see ERROR / MISSING nodes)"

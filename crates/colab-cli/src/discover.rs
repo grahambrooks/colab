@@ -113,13 +113,25 @@ fn explain_items(items: &[ast::Item]) -> Vec<Value> {
                 // Present only when written, so scripts without them keep
                 // the shape they always had.
                 if !m.constraints.is_empty() {
-                    out["where"] = m.constraints.iter().map(|c| c.to_string()).collect();
+                    out["where"] = m
+                        .constraints
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
                 }
                 if !m.lets.is_empty() {
-                    out["let"] = m.lets.iter().map(|l| l.to_string()).collect();
+                    out["let"] = m
+                        .lets
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
                 }
                 if !m.imports.is_empty() {
-                    out["imports"] = m.imports.iter().map(|c| c.to_string()).collect();
+                    out["imports"] = m
+                        .imports
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
                 }
                 if let Some(fences) = m.fences {
                     out["fences"] = json!(match fences {
@@ -158,7 +170,11 @@ fn explain_items(items: &[ast::Item]) -> Vec<Value> {
                     "scope": scan.scope,
                 });
                 if !scan.constraints.is_empty() {
-                    out["where"] = scan.constraints.iter().map(|c| c.to_string()).collect();
+                    out["where"] = scan
+                        .constraints
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
                 }
                 out
             }

@@ -435,11 +435,13 @@ fn main() {
                 let include = params["context"]["includeDeclaration"]
                     .as_bool()
                     .unwrap_or(true);
-                let ext = uri_path(uri).extension().map(|e| e.to_owned());
+                let ext = uri_path(uri)
+                    .extension()
+                    .map(std::borrow::ToOwned::to_owned);
                 let mut files: Vec<PathBuf> = std::fs::read_dir(&root)
                     .unwrap()
                     .filter_map(|e| e.ok().map(|e| e.path()))
-                    .filter(|p| p.extension().map(|e| e.to_owned()) == ext)
+                    .filter(|p| p.extension().map(std::borrow::ToOwned::to_owned) == ext)
                     .collect();
                 files.sort();
                 let mut locations = Vec::new();
@@ -550,7 +552,9 @@ fn main() {
                 let (s, e) = ident_at(text, at).unwrap();
                 let name = &text[s..e];
                 let new_name = params["newName"].as_str().unwrap();
-                let ext = Path::new(&uri_path(uri)).extension().map(|e| e.to_owned());
+                let ext = Path::new(&uri_path(uri))
+                    .extension()
+                    .map(std::borrow::ToOwned::to_owned);
                 let changes = rename_everywhere(&root, ext.as_deref(), name, new_name);
                 if mode == "file-op" {
                     // documentChanges: the text edits, then the file itself.
@@ -582,7 +586,7 @@ fn main() {
                     let old = uri_path(file["oldUri"].as_str().unwrap());
                     let new = uri_path(file["newUri"].as_str().unwrap());
                     let stem = |p: &Path| p.file_stem().unwrap().to_string_lossy().into_owned();
-                    let ext = old.extension().map(|e| e.to_owned());
+                    let ext = old.extension().map(std::borrow::ToOwned::to_owned);
                     changes.extend(rename_everywhere(
                         &root,
                         ext.as_deref(),

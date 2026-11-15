@@ -18,6 +18,7 @@
 //! files, keeps everything else in a file as it was, and deletes a file
 //! that is left with nothing else in it. A file colab would edit that does
 //! not parse (a broken `settings.json`) is an error, never overwritten.
+use std::fmt::Write as _;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -174,7 +175,7 @@ fn json_text(before: Option<&str>, old: &Value, new: &Value) -> Option<String> {
     if new == old {
         return before.map(str::to_string);
     }
-    if new.as_object().is_some_and(|o| o.is_empty()) {
+    if new.as_object().is_some_and(serde_json::Map::is_empty) {
         return None;
     }
     Some(serde_json::to_string_pretty(new).unwrap_or_default() + "\n")
@@ -321,7 +322,7 @@ fn codex_config(path: PathBuf, install: bool) -> Result<FileEdit> {
             if doc
                 .get("mcp_servers")
                 .and_then(|s| s.as_table_like())
-                .is_some_and(|t| t.is_empty())
+                .is_some_and(toml_edit::TableLike::is_empty)
             {
                 doc.remove("mcp_servers");
             }
@@ -522,8 +523,7 @@ pub fn run(args: AgentArgs) -> Result<i32> {
     }
     let shown = |p: &Path| {
         p.strip_prefix(&project)
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|_| p.to_path_buf())
+            .map_or_else(|_| p.to_path_buf(), Path::to_path_buf)
     };
     let mut out = std::io::stdout().lock();
     match t.format {
@@ -537,7 +537,7 @@ pub fn run(args: AgentArgs) -> Result<i32> {
         AgentFormat::Human => {
             let mut text = String::new();
             for e in &edits {
-                text.push_str(&format!("{:<7} {:<10} {}\n", e.tool.name(), status(e), shown(&e.path).display()));
+                let _ = writeln!(text, "{:<7} {:<10} {}", e.tool.name(), status(e), shown(&e.path).display());
                 if t.dry_run && e.before != e.after {
                     let diff = colab_core::render::unified_diff(
                         &shown(&e.path),

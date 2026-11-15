@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn dead_rule_gets_the_closest_observed_values() {
         let rules: Vec<Box<dyn Operation>> = vec![Box::new(LineImport("a/b"))];
-        let mut report = RunReport::with_rules(rules.iter().map(|r| r.to_string()));
+        let mut report = RunReport::with_rules(rules.iter().map(std::string::ToString::to_string));
         scanned(&mut report, "one.fake");
         scanned(&mut report, "two.fake");
         scanned(&mut report, "skip.other");
@@ -241,7 +241,7 @@ mod tests {
         // A rule that builds on an earlier rule's output reads, alone on
         // the original, as if it skipped the file it changed.
         let rules: Vec<Box<dyn Operation>> = vec![Box::new(LineImport("a/b"))];
-        let mut report = RunReport::with_rules(rules.iter().map(|r| r.to_string()));
+        let mut report = RunReport::with_rules(rules.iter().map(std::string::ToString::to_string));
         scanned(&mut report, "one.fake");
         report.rules[0].files_matched = 1;
         report.fired.insert("one.fake".into(), vec![0]);
@@ -256,7 +256,7 @@ mod tests {
         // A rule that changed files is probed only for matches it left
         // alone (`why_unchanged`), never for values resembling its target.
         let rules: Vec<Box<dyn Operation>> = vec![Box::new(LineImport("a/b"))];
-        let mut report = RunReport::with_rules(rules.iter().map(|r| r.to_string()));
+        let mut report = RunReport::with_rules(rules.iter().map(std::string::ToString::to_string));
         scanned(&mut report, "one.fake");
         report.rules[0].files_matched = 1;
         probe(&rules, &mut report, |_| Some("import a/b/v2\n".into()));

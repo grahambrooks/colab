@@ -244,17 +244,14 @@ pub fn ensure(target: &str, source_code: &str) -> String {
             insert_at = if source_code[..end].ends_with('\n') {
                 end
             } else {
-                source_code[end..]
-                    .find('\n')
-                    .map(|p| end + p + 1)
-                    .unwrap_or(end)
+                source_code[end..].find('\n').map_or(end, |p| end + p + 1)
             };
         } else if !comment {
             break;
         }
     }
 
-    let insertion = format!("use {};\n", target);
+    let insertion = format!("use {target};\n");
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..insert_at]);
     out.push_str(&insertion);

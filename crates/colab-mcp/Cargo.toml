@@ -15,6 +15,9 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 colab-backends = { workspace = true }
+
+[lints]
+workspace = true
 # Tests exercise compile() and the walker end-to-end; they need real
 # backends. Production code in this crate must NOT depend on any
 # colab-lang-* crate.

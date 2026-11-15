@@ -140,7 +140,7 @@ fn parse(text: &str) -> Result<Log> {
                         .as_array()
                         .map(|a| {
                             a.iter()
-                                .filter_map(|v| v.as_u64())
+                                .filter_map(serde_json::Value::as_u64)
                                 .map(|v| v as usize)
                                 .collect()
                         })

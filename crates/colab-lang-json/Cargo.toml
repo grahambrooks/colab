@@ -14,3 +14,6 @@ colab-rewrite = { workspace = true }
 serde_json = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-json = { workspace = true }
+
+[lints]
+workspace = true

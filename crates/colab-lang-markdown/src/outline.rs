@@ -119,7 +119,7 @@ pub fn headings(source: &str) -> Vec<Heading> {
             "fenced_code_block" => blocks.push(("fence", node.start_byte())),
             // Only outermost lists: a nested list is part of its item.
             "list"
-                if !std::iter::successors(node.parent(), |n| n.parent())
+                if !std::iter::successors(node.parent(), tree_sitter::Node::parent)
                     .any(|n| n.kind() == "list") =>
             {
                 blocks.push(("list", node.start_byte()))

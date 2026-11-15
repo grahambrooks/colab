@@ -162,8 +162,7 @@ where
         if message
             .get("method")
             .and_then(|m| m.as_str())
-            .map(|m| m == "exit")
-            .unwrap_or(false)
+            .is_some_and(|m| m == "exit")
         {
             return Ok(());
         }
@@ -403,8 +402,7 @@ pub fn handle_streaming_with<W: Write>(
     let is_tools_call = message
         .get("method")
         .and_then(|m| m.as_str())
-        .map(|m| m == "tools/call")
-        .unwrap_or(false);
+        .is_some_and(|m| m == "tools/call");
 
     if is_tools_call
         && let Some(params) = message.get("params")
@@ -515,7 +513,11 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
             let cwd = arg_opt_path(args, "cwd")?;
             let refactoring =
                 compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
-            let rules: Vec<String> = refactoring.rules.iter().map(|r| r.to_string()).collect();
+            let rules: Vec<String> = refactoring
+                .rules
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             let mut doc = json!({
                 "ok": true,
                 "name": refactoring.name,
@@ -908,7 +910,7 @@ fn arg_str(args: &Value, key: &str) -> Result<String, ToolError> {
     args.get(key)
         .and_then(|v| v.as_str())
         .map(str::to_string)
-        .ok_or_else(|| ToolError::protocol(format!("missing string argument `{}`", key)))
+        .ok_or_else(|| ToolError::protocol(format!("missing string argument `{key}`")))
 }
 
 fn arg_bool(args: &Value, key: &str) -> Result<bool, ToolError> {
@@ -916,8 +918,7 @@ fn arg_bool(args: &Value, key: &str) -> Result<bool, ToolError> {
         None | Some(Value::Null) => Ok(false),
         Some(Value::Bool(b)) => Ok(*b),
         Some(_) => Err(ToolError::protocol(format!(
-            "argument `{}` must be a boolean",
-            key
+            "argument `{key}` must be a boolean"
         ))),
     }
 }
@@ -927,8 +928,7 @@ fn arg_opt_path(args: &Value, key: &str) -> Result<Option<PathBuf>, ToolError> {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(PathBuf::from(s))),
         Some(_) => Err(ToolError::protocol(format!(
-            "argument `{}` must be a string",
-            key
+            "argument `{key}` must be a string"
         ))),
     }
 }
@@ -939,7 +939,7 @@ fn arg_usize(args: &Value, key: &str, default: usize) -> Result<usize, ToolError
         Some(value) => value
             .as_u64()
             .map(|n| n as usize)
-            .ok_or_else(|| ToolError::protocol(format!("argument `{}` must be a number", key))),
+            .ok_or_else(|| ToolError::protocol(format!("argument `{key}` must be a number"))),
     }
 }
 
@@ -966,15 +966,15 @@ fn arg_render_options(args: &Value) -> Result<RenderOptions, ToolError> {
 fn arg_paths(args: &Value, key: &str, cwd: Option<&Path>) -> Result<Vec<PathBuf>, ToolError> {
     let value = args
         .get(key)
-        .ok_or_else(|| ToolError::protocol(format!("missing argument `{}`", key)))?;
+        .ok_or_else(|| ToolError::protocol(format!("missing argument `{key}`")))?;
     let array = value.as_array().ok_or_else(|| {
-        ToolError::protocol(format!("argument `{}` must be an array of strings", key))
+        ToolError::protocol(format!("argument `{key}` must be an array of strings"))
     })?;
     let mut out = Vec::with_capacity(array.len());
     for item in array {
-        let s = item.as_str().ok_or_else(|| {
-            ToolError::protocol(format!("argument `{}` must contain strings", key))
-        })?;
+        let s = item
+            .as_str()
+            .ok_or_else(|| ToolError::protocol(format!("argument `{key}` must contain strings")))?;
         let path = PathBuf::from(s);
         out.push(match cwd {
             Some(dir) if path.is_relative() => dir.join(path),
@@ -983,8 +983,7 @@ fn arg_paths(args: &Value, key: &str, cwd: Option<&Path>) -> Result<Vec<PathBuf>
     }
     if out.is_empty() {
         return Err(ToolError::protocol(format!(
-            "argument `{}` cannot be empty",
-            key
+            "argument `{key}` cannot be empty"
         )));
     }
     Ok(out)
@@ -1640,8 +1639,7 @@ mod tests {
             .filter(|m| {
                 m.get("method")
                     .and_then(|x| x.as_str())
-                    .map(|s| s == "notifications/progress")
-                    .unwrap_or(false)
+                    .is_some_and(|s| s == "notifications/progress")
             })
             .collect();
         let responses: Vec<&Value> = messages.iter().filter(|m| m.get("id").is_some()).collect();
@@ -1651,7 +1649,7 @@ mod tests {
             "got {} progress messages",
             progress.len()
         );
-        assert_eq!(responses.len(), 1, "got {:?}", responses);
+        assert_eq!(responses.len(), 1, "got {responses:?}");
         assert_eq!(responses[0]["id"], 42);
         // Each progress carries the original token.
         for p in &progress {

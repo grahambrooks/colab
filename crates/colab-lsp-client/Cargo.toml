@@ -13,3 +13,6 @@ log = { workspace = true }
 colab-core = { workspace = true }
 colab-rewrite = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

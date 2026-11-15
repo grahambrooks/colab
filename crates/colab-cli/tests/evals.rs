@@ -24,6 +24,7 @@
 //!
 //! A task whose `meta` says `requires = <tool>` is skipped when the tool
 //! is not on `PATH`. `COLAB_BLESS=1` rewrites `evals/results.md`.
+use std::fmt::Write as _;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -415,7 +416,7 @@ fn results_table(outcomes: &[Outcome], skipped: &[(String, String)]) -> String {
     if !skipped.is_empty() {
         out.push_str("\nSkipped (a required tool is not installed):\n\n");
         for (name, why) in skipped {
-            out.push_str(&format!("- `{name}`: needs {why}\n"));
+            let _ = writeln!(out, "- `{name}`: needs {why}");
         }
     }
     out

@@ -224,12 +224,11 @@ pub fn ensure(target: &str, source_code: &str) -> String {
             let end = child.end_byte();
             insert_at = source_code[end..]
                 .find('\n')
-                .map(|p| end + p + 1)
-                .unwrap_or(source_code.len());
+                .map_or(source_code.len(), |p| end + p + 1);
         }
     }
 
-    let directive = format!("using {};\n", target);
+    let directive = format!("using {target};\n");
     let mut out = String::with_capacity(source_code.len() + directive.len());
     out.push_str(&source_code[..insert_at]);
     out.push_str(&directive);

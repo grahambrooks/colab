@@ -1,4 +1,5 @@
 //! Turn an LSP `WorkspaceEdit` into before/after file pairs.
+use std::fmt::Write as _;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -58,10 +59,7 @@ pub fn offset_of(text: &str, line: u32, character: u32, encoding: Encoding) -> R
             }
         }
     }
-    let end = text[start..]
-        .find('\n')
-        .map(|i| start + i)
-        .unwrap_or(text.len());
+    let end = text[start..].find('\n').map_or(text.len(), |i| start + i);
     let mut units = 0u32;
     for (i, c) in text[start..end].char_indices() {
         if units >= character {
@@ -76,7 +74,7 @@ pub fn offset_of(text: &str, line: u32, character: u32, encoding: Encoding) -> R
 pub fn position_of(text: &str, offset: usize, encoding: Encoding) -> (u32, u32) {
     let before = &text[..offset.min(text.len())];
     let line = before.matches('\n').count() as u32;
-    let start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let start = before.rfind('\n').map_or(0, |i| i + 1);
     let character = before[start..].chars().map(|c| encoding.units(c)).sum();
     (line, character)
 }
@@ -93,7 +91,7 @@ pub fn path_to_uri(path: &Path) -> String {
         if keep {
             out.push(b as char);
         } else {
-            out.push_str(&format!("%{b:02X}"));
+            let _ = write!(out, "%{b:02X}");
         }
     }
     out

@@ -20,3 +20,6 @@ colab-backends = { workspace = true }
 
 [build-dependencies]
 lalrpop = { workspace = true }
+
+[lints]
+workspace = true

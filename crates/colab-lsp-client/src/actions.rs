@@ -5,6 +5,7 @@
 //! Each runs in one session and comes back as a [`ChangeSet`] or a list
 //! of locations — never as a write. The CLI reports, checks, backs up,
 //! verifies, and writes, exactly as for a codemod.
+use std::fmt::Write as _;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -259,7 +260,7 @@ fn no_single_action(server: &str, actions: &[Value], matched: usize) -> Error {
         .map(|a| {
             let mut line = format!("{} [{}]", a.title, a.kind.as_deref().unwrap_or("command"));
             if let Some(reason) = a.disabled {
-                line.push_str(&format!(" (disabled: {reason})"));
+                let _ = write!(line, " (disabled: {reason})");
             }
             line
         })
@@ -307,7 +308,10 @@ fn perform(
     let command = if is_bare_command {
         Some(action.clone())
     } else {
-        action.get("command").cloned().filter(|c| c.is_object())
+        action
+            .get("command")
+            .cloned()
+            .filter(serde_json::Value::is_object)
     };
     if let Some(command) = command {
         session.capture_edits(true);
@@ -530,7 +534,7 @@ fn innermost_symbol(
     }
     let mut best = None;
     walk(
-        answer.as_array().map(Vec::as_slice).unwrap_or(&[]),
+        answer.as_array().map_or(&[][..], Vec::as_slice),
         text,
         offset,
         encoding,

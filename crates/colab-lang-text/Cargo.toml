@@ -10,3 +10,6 @@ description = "Language-blind text edits for colab: replace or delete a literal 
 
 [dependencies]
 colab-core = { workspace = true }
+
+[lints]
+workspace = true

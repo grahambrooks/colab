@@ -97,7 +97,7 @@ fn callee_text(node: Node<'_>, source: &str) -> Option<String> {
     match node.child_by_field_name("receiver") {
         Some(recv) => {
             let recv_text = recv.utf8_text(source.as_bytes()).ok()?;
-            Some(format!("{}.{}", recv_text, method_text))
+            Some(format!("{recv_text}.{method_text}"))
         }
         None => Some(method_text.to_string()),
     }
@@ -131,7 +131,7 @@ fn collect(
         && callee == function
     {
         let arg_strs = collect_args(args, source);
-        let arg_refs: Vec<&str> = arg_strs.iter().map(|s| s.as_str()).collect();
+        let arg_refs: Vec<&str> = arg_strs.iter().map(std::string::String::as_str).collect();
         let rendered = render_call_template(template, function, &arg_refs);
         edits.push((node.start_byte(), node.end_byte(), rendered));
     }

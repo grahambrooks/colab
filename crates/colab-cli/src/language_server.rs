@@ -27,6 +27,7 @@
 //! Diagnostics are per rule: [`colab_dsl::check`] lowers each block on its
 //! own, so every bad rule — an unknown module, a `pattern` that is not
 //! valid code — is underlined where it is written.
+use std::fmt::Write as _;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -139,7 +140,7 @@ fn diagnostic(range: Range, err: &Error) -> Diagnostic {
         severity: Some(DiagnosticSeverity::ERROR),
         code: Some(NumberOrString::Number(err.exit_code())),
         source: Some("colab".into()),
-        message: format!("{}", err),
+        message: format!("{err}"),
         related_information: None,
         tags: None,
         code_description: None,
@@ -431,8 +432,7 @@ impl LanguageServer for Backend {
                 .as_ref()
                 .ok()
                 .and_then(|rules| rules.first())
-                .map(String::as_str)
-                .unwrap_or("");
+                .map_or("", String::as_str);
             actions.push(self.workspace_action(
                 format!("colab: apply `{description}` to the workspace"),
                 &uri,
@@ -493,7 +493,7 @@ fn action_rule(action: &CodeAction) -> Option<usize> {
         .data
         .as_ref()
         .and_then(|d| d.get("rule"))
-        .and_then(|r| r.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|r| r as usize)
 }
 
@@ -662,7 +662,7 @@ impl Backend {
             let cap = backend.capabilities().iter().find(|c| c.module == module)?;
             let mut out = format!("**`{lang}::{module}`** — {}\n\nActions:\n", cap.description);
             for action in cap.actions {
-                out.push_str(&format!("- `{}` — {}\n", action.name, action.description));
+                let _ = writeln!(out, "- `{}` — {}", action.name, action.description);
             }
             return Some(out);
         }
@@ -728,13 +728,11 @@ fn word_at(text: &str, offset: usize) -> Option<&str> {
         .rev()
         .take_while(|(_, c)| is_word(*c))
         .last()
-        .map(|(i, _)| i)
-        .unwrap_or(offset);
+        .map_or(offset, |(i, _)| i);
     let end = text[offset..]
         .char_indices()
         .find(|(_, c)| !is_word(*c))
-        .map(|(i, _)| offset + i)
-        .unwrap_or(text.len());
+        .map_or(text.len(), |(i, _)| offset + i);
     let word = text[start..end].trim_matches(':');
     (!word.is_empty()).then_some(word)
 }
@@ -744,7 +742,7 @@ fn position_at(text: &str, offset: usize) -> Position {
     let offset = offset.min(text.len());
     let before = &text[..offset];
     let line = before.matches('\n').count() as u32;
-    let line_start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
     let character = text[line_start..offset].encode_utf16().count() as u32;
     Position::new(line, character)
 }
@@ -760,8 +758,7 @@ fn offset_at(text: &str, position: Position) -> usize {
     }
     let line_end = text[line_start..]
         .find('\n')
-        .map(|i| line_start + i)
-        .unwrap_or(text.len());
+        .map_or(text.len(), |i| line_start + i);
     let mut units = 0u32;
     for (i, c) in text[line_start..line_end].char_indices() {
         if units >= position.character {
@@ -868,7 +865,7 @@ impl Backend {
             .map(|lang| CompletionItem {
                 label: (*lang).into(),
                 kind: Some(CompletionItemKind::MODULE),
-                insert_text: Some(format!("{}::", lang)),
+                insert_text: Some(format!("{lang}::")),
                 insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
                 detail: Some("colab backend namespace".into()),
                 ..Default::default()
@@ -1075,7 +1072,7 @@ mod tests {
         let backend = service.inner();
         let diags =
             backend.diagnose("refactor \"x\" { match go::import \"old\" { replace \"new\" } }");
-        assert!(diags.is_empty(), "got: {:?}", diags);
+        assert!(diags.is_empty(), "got: {diags:?}");
     }
 
     #[tokio::test]

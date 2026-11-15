@@ -66,13 +66,17 @@ thread_local! {
 
 /// Answer queries with `oracle` until [`uninstall`].
 pub fn install(oracle: Arc<dyn Oracle>) {
-    *ORACLE.write().unwrap_or_else(|e| e.into_inner()) = Some(oracle);
+    *ORACLE
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(oracle);
     take_failure();
 }
 
 /// Stop answering queries; later ones fail.
 pub fn uninstall() {
-    *ORACLE.write().unwrap_or_else(|e| e.into_inner()) = None;
+    *ORACLE
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 /// Run `f` with queries asked about the file at `path`.
@@ -86,7 +90,10 @@ pub fn at_path<T>(path: &Path, f: impl FnOnce() -> T) -> T {
 /// Whether the binding at `span` of `source` satisfies `query`. `false`
 /// when it cannot be told, with the reason kept for [`take_failure`].
 pub fn ask(source: &str, span: Range<usize>, query: &Query) -> bool {
-    let oracle = ORACLE.read().unwrap_or_else(|e| e.into_inner()).clone();
+    let oracle = ORACLE
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     let path = PATH.with(|p| p.borrow().clone());
     let answer = match (oracle, path) {
         (Some(oracle), Some(path)) => oracle.ask(&path, source, span, query),
@@ -99,7 +106,9 @@ pub fn ask(source: &str, span: Range<usize>, query: &Query) -> bool {
     match answer {
         Ok(holds) => holds,
         Err(why) => {
-            let mut failure = FAILURE.lock().unwrap_or_else(|e| e.into_inner());
+            let mut failure = FAILURE
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             failure.get_or_insert(why);
             false
         }
@@ -109,7 +118,10 @@ pub fn ask(source: &str, span: Range<usize>, query: &Query) -> bool {
 /// The first query that could not be answered since the last call, if
 /// any. A run that gets one must fail rather than report its matches.
 pub fn take_failure() -> Option<String> {
-    FAILURE.lock().unwrap_or_else(|e| e.into_inner()).take()
+    FAILURE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
 }
 
 #[cfg(test)]

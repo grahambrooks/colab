@@ -166,10 +166,10 @@ fn keys(change: &FileChange, report: &RunReport) -> Vec<Key> {
                 path.clone(),
                 rules,
                 old.get(block.old.clone())
-                    .map(|l| l.concat())
+                    .map(<[&str]>::concat)
                     .unwrap_or_default(),
                 new.get(block.new.clone())
-                    .map(|l| l.concat())
+                    .map(<[&str]>::concat)
                     .unwrap_or_default(),
             )
         })

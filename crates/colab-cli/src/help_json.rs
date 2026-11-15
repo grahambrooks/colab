@@ -62,7 +62,7 @@ fn describe(command: &Command) -> Value {
         .filter(|g| g.is_required_set())
         .map(|g| {
             json!({
-                "one_of": g.get_args().map(|id| id.as_str()).collect::<Vec<_>>(),
+                "one_of": g.get_args().map(clap::Id::as_str).collect::<Vec<_>>(),
                 "multiple": g.clone().is_multiple(),
             })
         })
@@ -112,7 +112,7 @@ fn describe_arg(command: &Command, arg: &Arg) -> Value {
             json!(
                 names
                     .iter()
-                    .map(|n| n.as_str())
+                    .map(clap::builder::Str::as_str)
                     .collect::<Vec<_>>()
                     .join(" ")
             ),

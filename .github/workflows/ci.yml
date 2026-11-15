@@ -33,6 +33,10 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       # Unit, integration and doc tests.
       - run: cargo test --workspace --all-features --locked
+      # Broken intra-doc links and links to private items.
+      - run: cargo doc --workspace --no-deps --all-features --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
       # colab's own packs (colab.toml): their cases, then the tree itself.
       - run: cargo run -q -p colab-cli --locked -- test
       - run: cargo run -q -p colab-cli --locked -- fix --check

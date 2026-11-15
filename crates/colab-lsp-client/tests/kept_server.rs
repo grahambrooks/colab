@@ -37,6 +37,13 @@ fn request(root: &Path, offset: usize, to: &str) -> RenameRequest {
 
 #[test]
 fn a_kept_server_serves_commands_in_a_row_from_disk() {
+    // SAFETY: this binary has one test, and no thread has been spawned
+    // yet (the daemon below starts one), so nothing can read the
+    // environment concurrently.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("COLAB_KEEP_SERVER", "1")
+    };
     let root = std::env::temp_dir().join(format!("colab-kept-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
@@ -62,10 +69,6 @@ fn a_kept_server_serves_commands_in_a_row_from_disk() {
     while !socket.exists() {
         std::thread::sleep(Duration::from_millis(10));
     }
-    // SAFETY: this binary has one test, so nothing reads the environment
-    // concurrently.
-    unsafe { std::env::set_var("COLAB_KEEP_SERVER", "1") };
-
     // First command: rename `old`, and write the result as colab would.
     let first = rename(&server, &request(&root, 3, "middle")).unwrap();
     assert_eq!(first.changes.edits.len(), 2);

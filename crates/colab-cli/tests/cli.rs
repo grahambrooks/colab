@@ -408,10 +408,10 @@ fn format_diff_emits_unified_diff() {
 
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("--- a/"), "got: {}", stdout);
-    assert!(stdout.contains("+++ b/"), "got: {}", stdout);
-    assert!(stdout.contains("-\t\"some.module\""), "got: {}", stdout);
-    assert!(stdout.contains("+\t\"new.module\""), "got: {}", stdout);
+    assert!(stdout.contains("--- a/"), "got: {stdout}");
+    assert!(stdout.contains("+++ b/"), "got: {stdout}");
+    assert!(stdout.contains("-\t\"some.module\""), "got: {stdout}");
+    assert!(stdout.contains("+\t\"new.module\""), "got: {stdout}");
 
     fs::remove_dir_all(&root).ok();
 }
@@ -992,7 +992,7 @@ fn parallel_walk_produces_identical_results_across_jobs_settings() {
         write(&script, SCRIPT);
         for dir in 0..4 {
             for file in 0..6 {
-                let path = root.join(format!("dir{}/{:02}.go", dir, file));
+                let path = root.join(format!("dir{dir}/{file:02}.go"));
                 write(&path, GO_INPUT);
             }
         }
@@ -1032,11 +1032,11 @@ fn parallel_walk_produces_identical_results_across_jobs_settings() {
     // Compare every file in both trees — they must match.
     for dir in 0..4 {
         for file in 0..6 {
-            let rel = format!("dir{}/{:02}.go", dir, file);
+            let rel = format!("dir{dir}/{file:02}.go");
             let a = fs::read_to_string(root1.join(&rel)).unwrap();
             let b = fs::read_to_string(root8.join(&rel)).unwrap();
-            assert_eq!(a, b, "mismatch at {}", rel);
-            assert_eq!(a, GO_EXPECTED, "wrong content at {}", rel);
+            assert_eq!(a, b, "mismatch at {rel}");
+            assert_eq!(a, GO_EXPECTED, "wrong content at {rel}");
         }
     }
 
@@ -1218,7 +1218,7 @@ fn bisect_isolates_breaking_rule_and_reverts() {
 
     // Verify fails (exit non-zero) when "BAD" is found in the file.
     let target_str = target.to_str().unwrap().to_string();
-    let verify_cmd = format!("! grep -q 'BAD' {}", target_str);
+    let verify_cmd = format!("! grep -q 'BAD' {target_str}");
 
     let output = colab()
         .args([

@@ -64,8 +64,7 @@ impl Repo {
     /// Whether git tracks `path` (a file, or any file under a directory).
     pub fn is_tracked(&self, path: &Path) -> bool {
         self.run(&["ls-files"], &[path])
-            .map(|out| !out.trim().is_empty())
-            .unwrap_or(false)
+            .is_ok_and(|out| !out.trim().is_empty())
     }
 
     /// The paths among `paths` with uncommitted changes — staged or not —

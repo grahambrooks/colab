@@ -40,7 +40,7 @@ impl ScopedOperation {
         let glob: Glob = GlobBuilder::new(pattern)
             .literal_separator(true)
             .build()
-            .map_err(|e| Error::Config(format!("invalid scope glob `{}`: {}", pattern, e)))?;
+            .map_err(|e| Error::Config(format!("invalid scope glob `{pattern}`: {e}")))?;
         Ok(Self {
             inner,
             pattern: pattern.to_string(),

@@ -41,11 +41,10 @@ impl ParseDetail {
         expected: Vec<String>,
     ) -> Self {
         let offset = offset.min(source.len());
-        let line_start = source[..offset].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_start = source[..offset].rfind('\n').map_or(0, |i| i + 1);
         let line_end = source[line_start..]
             .find('\n')
-            .map(|i| line_start + i)
-            .unwrap_or(source.len());
+            .map_or(source.len(), |i| line_start + i);
 
         let line = source[..line_start].matches('\n').count() + 1;
         let column = source[line_start..offset].chars().count() + 1;
@@ -126,10 +125,10 @@ impl fmt::Display for Error {
                 path: Some(p),
                 source,
             } => write!(f, "I/O error at {}: {}", p.display(), source),
-            Error::Io { path: None, source } => write!(f, "I/O error: {}", source),
-            Error::Parse(detail) => write!(f, "parse error at {}", detail),
-            Error::UnsupportedOperation(msg) => write!(f, "unsupported operation: {}", msg),
-            Error::Config(msg) => write!(f, "configuration error: {}", msg),
+            Error::Io { path: None, source } => write!(f, "I/O error: {source}"),
+            Error::Parse(detail) => write!(f, "parse error at {detail}"),
+            Error::UnsupportedOperation(msg) => write!(f, "unsupported operation: {msg}"),
+            Error::Config(msg) => write!(f, "configuration error: {msg}"),
         }
     }
 }

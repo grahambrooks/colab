@@ -82,11 +82,10 @@ pub fn apply_edits(source: &str, mut edits: Vec<Edit>) -> String {
 /// Used by every `delete` operation: removing an import leaves a blank
 /// line unless the line terminator goes with it.
 pub fn line_span(source: &str, start: usize, end: usize) -> (usize, usize) {
-    let line_start = source[..start].rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let line_start = source[..start].rfind('\n').map_or(0, |p| p + 1);
     let line_end = source[end..]
         .find('\n')
-        .map(|p| end + p + 1)
-        .unwrap_or(source.len());
+        .map_or(source.len(), |p| end + p + 1);
     (line_start, line_end)
 }
 

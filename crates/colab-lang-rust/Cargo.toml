@@ -14,3 +14,6 @@ colab-rewrite = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-rust = { workspace = true }
 toml_edit = { workspace = true }
+
+[lints]
+workspace = true

@@ -92,7 +92,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
             edits.push((
                 path_node.start_byte(),
                 path_node.end_byte(),
-                format!("\"{}\"", to),
+                format!("\"{to}\""),
             ));
         }
     });
@@ -181,7 +181,7 @@ impl Operation for ImportDropUnused {
 /// compiler to flag, while a wrong "unused" deletes one the code needs.
 /// So a blank (`_`) or dot import is always used, and when the import has
 /// no alias, every name its package might have counts (see
-/// [`package_names`]). Any identifier with one of those names outside the
+/// `package_names`). Any identifier with one of those names outside the
 /// import declarations, a local variable included, keeps the import.
 pub fn is_used(target: &str, source_code: &str) -> bool {
     let Some(tree) = crate::parse(source_code) else {
@@ -216,7 +216,7 @@ pub fn is_used(target: &str, source_code: &str) -> bool {
         if used || !matches!(node.kind(), "identifier" | "package_identifier") {
             return;
         }
-        let in_import = std::iter::successors(node.parent(), |n| n.parent())
+        let in_import = std::iter::successors(node.parent(), tree_sitter::Node::parent)
             .any(|n| n.kind() == "import_declaration");
         if !in_import && names.iter().any(|n| *n == source_code[node.byte_range()]) {
             used = true;
@@ -376,15 +376,12 @@ fn spec_path<'s>(spec: Node<'_>, source: &'s str) -> Option<&'s str> {
 }
 
 fn line_start(source: &str, at: usize) -> usize {
-    source[..at].rfind('\n').map(|i| i + 1).unwrap_or(0)
+    source[..at].rfind('\n').map_or(0, |i| i + 1)
 }
 
 /// The end of the line holding `at`, past its newline.
 fn line_end(source: &str, at: usize) -> usize {
-    source[at..]
-        .find('\n')
-        .map(|i| at + i + 1)
-        .unwrap_or(source.len())
+    source[at..].find('\n').map_or(source.len(), |i| at + i + 1)
 }
 
 /// A declaration's whole lines, plus one blank line when it sits between
@@ -480,12 +477,11 @@ fn is_std(path: &str) -> bool {
 /// standard library, last otherwise.
 fn insert_into_group(interior: &str, target: &str) -> String {
     let lines: Vec<&str> = interior.split_inclusive('\n').collect();
-    let indent: String = lines
-        .iter()
-        .find(|l| line_path(l).is_some())
-        .map(|l| l.chars().take_while(|c| c.is_whitespace()).collect())
-        .unwrap_or_else(|| "\t".to_string());
-    let new_line = format!("{}\"{}\"\n", indent, target);
+    let indent: String = lines.iter().find(|l| line_path(l).is_some()).map_or_else(
+        || "\t".to_string(),
+        |l| l.chars().take_while(|c| c.is_whitespace()).collect(),
+    );
+    let new_line = format!("{indent}\"{target}\"\n");
 
     // Blocks of consecutive non-blank lines, as index ranges.
     let mut blocks: Vec<std::ops::Range<usize>> = Vec::new();
@@ -507,7 +503,7 @@ fn insert_into_group(interior: &str, target: &str) -> String {
         !paths.is_empty() && paths.iter().all(|p| is_std(p) == kind)
     });
 
-    let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+    let mut out: Vec<String> = lines.iter().map(std::string::ToString::to_string).collect();
     match home {
         Some(block) => {
             let at = block
@@ -612,17 +608,12 @@ pub fn ensure(target: &str, source_code: &str) -> String {
             && child.kind() == "package_clause"
         {
             let end = child.end_byte();
-            insert_at = Some(
-                source_code[end..]
-                    .find('\n')
-                    .map(|p| end + p + 1)
-                    .unwrap_or(end),
-            );
+            insert_at = Some(source_code[end..].find('\n').map_or(end, |p| end + p + 1));
             break;
         }
     }
 
-    let insertion = format!("\nimport \"{}\"\n", target);
+    let insertion = format!("\nimport \"{target}\"\n");
     let pos = insert_at.unwrap_or(0);
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..pos]);

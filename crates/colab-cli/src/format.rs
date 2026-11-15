@@ -143,8 +143,8 @@ impl Reporter for HumanReporter {
             return Ok(());
         }
         match self.mode {
-            ExecMode::Write => log::info!("Made {}", op),
-            ExecMode::DryRun | ExecMode::Check => log::info!("Would {}", op),
+            ExecMode::Write => log::info!("Made {op}"),
+            ExecMode::DryRun | ExecMode::Check => log::info!("Would {op}"),
         }
         Ok(())
     }
@@ -200,7 +200,7 @@ impl Reporter for HumanReporter {
         }
 
         for op in &report.file_ops {
-            writeln!(self.out, "  {}", op)?;
+            writeln!(self.out, "  {op}")?;
         }
         for branch in &report.branches {
             writeln!(
@@ -221,10 +221,10 @@ impl Reporter for HumanReporter {
             )?;
         }
         for conflict in render::conflict_lines(report) {
-            writeln!(self.out, "conflict: {}", conflict)?;
+            writeln!(self.out, "conflict: {conflict}")?;
         }
         for advisory in render::advisories(report) {
-            writeln!(self.out, "warning: {}", advisory)?;
+            writeln!(self.out, "warning: {advisory}")?;
         }
         self.out.flush()
     }
@@ -261,7 +261,7 @@ impl Reporter for JsonReporter {
         {
             obj.insert("warnings".to_string(), json!(advisories));
         }
-        writeln!(self.out, "{}", value)?;
+        writeln!(self.out, "{value}")?;
         self.out.flush()
     }
 }
@@ -306,7 +306,7 @@ impl Reporter for NdjsonReporter {
                 json!({"type": "delete", "path": path.to_string_lossy()})
             }
         };
-        writeln!(self.out, "{}", value)
+        writeln!(self.out, "{value}")
     }
 
     fn report(&mut self, change: &FileChange) -> io::Result<()> {
@@ -341,7 +341,7 @@ impl Reporter for NdjsonReporter {
                 obj.insert("rule_lines".to_string(), json!(lines));
             }
         }
-        writeln!(self.out, "{}", value)
+        writeln!(self.out, "{value}")
     }
 
     fn finish(&mut self, report: &RunReport) -> io::Result<()> {
@@ -362,7 +362,7 @@ impl Reporter for NdjsonReporter {
         {
             obj.insert("warnings".to_string(), json!(advisories));
         }
-        writeln!(self.out, "{}", value)?;
+        writeln!(self.out, "{value}")?;
         self.out.flush()
     }
 }

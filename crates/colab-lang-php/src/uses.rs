@@ -48,8 +48,7 @@ where
             // A declaration containing a group is left alone entirely.
             let has_group = (0..node.named_child_count()).any(|i| {
                 node.named_child(i as u32)
-                    .map(|c| c.kind() == "namespace_use_group")
-                    .unwrap_or(false)
+                    .is_some_and(|c| c.kind() == "namespace_use_group")
             });
             if !has_group {
                 for i in 0..node.named_child_count() {
@@ -248,8 +247,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         let end = child.end_byte();
         let line_end = source_code[end..]
             .find('\n')
-            .map(|p| end + p + 1)
-            .unwrap_or(source_code.len());
+            .map_or(source_code.len(), |p| end + p + 1);
         match child.kind() {
             "namespace_use_declaration" => after_use = Some(line_end),
             "namespace_definition" => after_namespace = after_namespace.or(Some(line_end)),
@@ -259,7 +257,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     }
 
     let pos = after_use.or(after_namespace).or(after_tag).unwrap_or(0);
-    let insertion = format!("use {};\n", target);
+    let insertion = format!("use {target};\n");
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..pos]);
     out.push_str(&insertion);

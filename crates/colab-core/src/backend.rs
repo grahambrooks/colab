@@ -6,7 +6,7 @@
 //! [`Operation`] — a ready-to-run transform.
 //!
 //! Backends are registered in [`BackendRegistry`] by the binary
-//! (typically [`colab-cli`]); the DSL crate has no compile-time
+//! (typically `colab-cli`); the DSL crate has no compile-time
 //! knowledge of which backends exist.
 
 use std::fmt;
@@ -114,7 +114,7 @@ pub fn where_unsupported(lang: &str, module: &str) -> crate::Error {
 }
 
 /// The lowered form of a single `match` block: action plus arguments,
-/// kept backend-neutral so [`colab-dsl`] does not need to know which
+/// kept backend-neutral so `colab-dsl` does not need to know which
 /// language is targeted.
 #[derive(Debug, Clone)]
 pub enum RuleSpec {
@@ -334,8 +334,8 @@ pub trait LanguageBackend: Send + Sync {
 }
 
 /// Lookup table mapping language names to their backends. The binary
-/// constructs one of these and hands it to [`colab-dsl`] at compile
-/// time; [`colab-dsl`] never imports backend crates directly.
+/// constructs one of these and hands it to `colab-dsl` at compile
+/// time; `colab-dsl` never imports backend crates directly.
 #[derive(Default)]
 pub struct BackendRegistry {
     backends: Vec<Box<dyn LanguageBackend>>,
@@ -361,7 +361,7 @@ impl BackendRegistry {
         self.backends
             .iter()
             .find(|b| b.lang() == lang)
-            .map(|b| b.as_ref())
+            .map(std::convert::AsRef::as_ref)
     }
 
     /// Languages currently registered, in registration order.

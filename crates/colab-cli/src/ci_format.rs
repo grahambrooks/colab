@@ -207,7 +207,7 @@ impl SarifReporter {
         }
         for conflict in &report.conflicts {
             let mut result = json!({
-                "ruleId": conflict.rule.map(|i| rule_id(report, i)).unwrap_or_else(|| "colab/conflict".into()),
+                "ruleId": conflict.rule.map_or_else(|| "colab/conflict".into(), |i| rule_id(report, i)),
                 "level": "error",
                 "message": {"text": format!("conflict: {}", conflict.message)},
                 "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri(&conflict.path)}}}],
@@ -303,9 +303,10 @@ impl GithubReporter {
             for finding in render::findings(change, report) {
                 let end = finding.end_line.max(finding.start_line);
                 let lead_rule = lead(report, &finding).and_then(|i| report.rules.get(i));
-                let title = lead_rule
-                    .map(|r| format!("colab: {}", r.id.as_deref().unwrap_or(&r.rule)))
-                    .unwrap_or_else(|| "colab".into());
+                let title = lead_rule.map_or_else(
+                    || "colab".into(),
+                    |r| format!("colab: {}", r.id.as_deref().unwrap_or(&r.rule)),
+                );
                 let see = lead_rule
                     .and_then(|r| r.url.as_deref())
                     .map(|url| format!(" See {url}"))

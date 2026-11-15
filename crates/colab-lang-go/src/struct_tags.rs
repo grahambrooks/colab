@@ -64,8 +64,8 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         return source_code.to_string();
     };
 
-    let needle = format!("{}:\"{}\"", from_key, from_value);
-    let replacement = format!("{}:\"{}\"", to_key, to_value);
+    let needle = format!("{from_key}:\"{from_value}\"");
+    let replacement = format!("{to_key}:\"{to_value}\"");
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     colab_rewrite::visit_all(&tree, |node| {

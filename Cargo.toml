@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/colab-core",
     "crates/colab-dsl",
@@ -67,7 +67,6 @@ regex = "1.10"
 ignore = "0.4"
 globset = "0.4"
 rayon = "1.10"
-num_cpus = "1.16"
 tree-sitter = "0.27.0"
 ast-grep-core = { version = "0.51.2", default-features = false, features = ["tree-sitter"] }
 tree-sitter-c = "0.24.2"
@@ -91,6 +90,14 @@ tokio = { version = "1.35.0", features = ["full"] }
 log = "0.4"
 env_logger = "0.11.6"
 colored = "3.0.0"
-chrono = "0.4.40"
 lalrpop = "0.23.0"
 lalrpop-util = { version = "0.23.0", features = ["lexer", "unicode"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+uninlined_format_args = "warn"
+redundant_closure_for_method_calls = "warn"
+map_unwrap_or = "warn"
+format_push_string = "warn"

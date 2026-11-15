@@ -34,8 +34,7 @@ pub(crate) fn is_relevant(path: &Path) -> bool {
     }
     path.file_name()
         .and_then(|s| s.to_str())
-        .map(|name| RELEVANT_FILENAMES.contains(&name))
-        .unwrap_or(false)
+        .is_some_and(|name| RELEVANT_FILENAMES.contains(&name))
 }
 
 /// Parse `source` into a Ruby syntax tree, through the shared parse

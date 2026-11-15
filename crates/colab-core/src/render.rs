@@ -18,6 +18,7 @@
 //! as the `scanned`/`changed` counters. A rule with `"files": 0` is dead:
 //! it compiled and ran but never changed a byte, which is nearly always a
 //! mistake in the script.
+use std::fmt::Write as _;
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -435,13 +436,14 @@ pub fn advisories(report: &RunReport) -> Vec<String> {
                 .iter()
                 .map(|m| format!("`{}` ({} file(s))", m.value, m.files))
                 .collect();
-            line.push_str(&format!("; nearest seen: {}", seen.join(", ")));
+            let _ = write!(line, "; nearest seen: {}", seen.join(", "));
         }
         if let Some(why) = &r.unchanged {
-            line.push_str(&format!(
+            let _ = write!(
+                line,
                 "; it matched in {} file(s) but left them unchanged: {}",
                 why.files, why.message
-            ));
+            );
         }
         line
     }));
@@ -508,8 +510,8 @@ pub fn write_unified_diff<W: Write>(
     after: &str,
 ) -> io::Result<()> {
     let display = path.display();
-    let header_a = format!("a/{}", display);
-    let header_b = format!("b/{}", display);
+    let header_a = format!("a/{display}");
+    let header_b = format!("b/{display}");
     let diff = similar::TextDiff::from_lines(before, after);
     write!(out, "{}", diff.unified_diff().header(&header_a, &header_b))
 }
@@ -528,7 +530,7 @@ fn truncate_utf8(text: String, limit: usize) -> (String, usize) {
     }
     let dropped = text.len() - end;
     let mut truncated = text[..end].to_string();
-    truncated.push_str(&format!("\n… {} more bytes truncated\n", dropped));
+    let _ = write!(truncated, "\n… {dropped} more bytes truncated\n");
     (truncated, dropped)
 }
 
@@ -769,7 +771,7 @@ pub fn findings(change: &FileChange, report: &RunReport) -> Vec<Finding> {
             end_line: block.old.end,
             replacement: new
                 .get(block.new.clone())
-                .map(|l| l.concat())
+                .map(<[&str]>::concat)
                 .unwrap_or_default(),
             severity: severity(&block.rules),
             rules: block.rules,

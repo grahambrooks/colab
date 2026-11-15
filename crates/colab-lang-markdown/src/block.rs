@@ -1,4 +1,5 @@
 //! `markdown::block`: set, insert or delete a managed block.
+use std::fmt::Write as _;
 
 use std::fmt;
 use std::path::Path;
@@ -167,10 +168,7 @@ impl Operation for BlockEdit {
                         out.push('\n');
                     }
                 }
-                out.push_str(&format!(
-                    "<!-- {}:begin -->\n{content}{end_marker}\n",
-                    self.name
-                ));
+                let _ = write!(out, "<!-- {}:begin -->\n{content}{end_marker}\n", self.name);
                 out
             }
             (Mode::Set(content), Found::At { begin, end }) => {

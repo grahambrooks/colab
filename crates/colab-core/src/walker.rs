@@ -21,7 +21,7 @@
 //! script against the same tree emit identical event streams
 //! regardless of `--jobs`.
 //!
-//! Files are processed in chunks of [`CHUNK_SIZE`] so even a
+//! Files are processed in chunks of `CHUNK_SIZE` so even a
 //! 100k-file run only holds a bounded number of [`FileChange`]
 //! values in memory at once.
 
@@ -50,11 +50,13 @@ const CHUNK_SIZE: usize = 256;
 /// global pool can only be sized once per process). The pool's
 /// workers shut down when it's dropped at the end of the walk.
 fn build_pool(jobs: Option<usize>) -> Result<ThreadPool> {
-    let n = jobs.filter(|j| *j > 0).unwrap_or_else(num_cpus::get);
+    let n = jobs
+        .filter(|j| *j > 0)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, std::num::NonZero::get));
     rayon::ThreadPoolBuilder::new()
         .num_threads(n)
         .build()
-        .map_err(|e| Error::Config(format!("could not build thread pool: {}", e)))
+        .map_err(|e| Error::Config(format!("could not build thread pool: {e}")))
 }
 
 /// One file processed by the walker.
@@ -127,7 +129,7 @@ pub struct WalkOutcome {
 ///
 /// All defaults match the CLI's behaviour with no flags: respect
 /// `.gitignore`, no glob filters, no symlink following, parallel
-/// processing across `num_cpus` threads.
+/// processing across `available_parallelism` threads.
 #[derive(Debug, Clone)]
 pub struct WalkOptions {
     /// Whitelist patterns. If non-empty, only files matching at
@@ -140,7 +142,7 @@ pub struct WalkOptions {
     /// Follow symlinks during the walk.
     pub follow_symlinks: bool,
     /// Worker thread count for parallel processing. `None` →
-    /// `num_cpus`; `Some(1)` forces sequential. Only the first
+    /// `std::thread::available_parallelism`; `Some(1)` forces sequential. Only the first
     /// invocation per process actually sizes the global rayon pool;
     /// subsequent values are silently ignored.
     pub jobs: Option<usize>,
@@ -177,7 +179,7 @@ where
 /// 1. **Discovery.** Sequential `ignore::WalkBuilder` collects
 ///    every eligible file path (no IO read).
 /// 2. **Process.** Files are processed in chunks of
-///    [`CHUNK_SIZE`] via `rayon::par_iter`. Each worker reads its
+///    `CHUNK_SIZE` via `rayon::par_iter`. Each worker reads its
 ///    file from disk, runs `transformer.apply`, and produces a
 ///    [`FileChange`].
 /// 3. **Deliver.** Each chunk is delivered to the visitor in path
@@ -246,34 +248,34 @@ fn collect_paths<T: CodeTransformer>(
         .ignore(opts.respect_gitignore)
         .hidden(opts.respect_gitignore)
         .follow_links(opts.follow_symlinks)
-        .sort_by_file_path(|a, b| a.cmp(b));
+        .sort_by_file_path(std::cmp::Ord::cmp);
 
     if !opts.include.is_empty() || !opts.exclude.is_empty() {
         let mut overrides = OverrideBuilder::new(root);
         for pattern in &opts.include {
             let pattern = &rebase(pattern, root);
-            overrides.add(pattern).map_err(|e| {
-                Error::Config(format!("invalid --include glob `{}`: {}", pattern, e))
-            })?;
+            overrides
+                .add(pattern)
+                .map_err(|e| Error::Config(format!("invalid --include glob `{pattern}`: {e}")))?;
         }
         for pattern in &opts.exclude {
             let pattern = &rebase(pattern, root);
-            overrides.add(&format!("!{}", pattern)).map_err(|e| {
-                Error::Config(format!("invalid --exclude glob `{}`: {}", pattern, e))
-            })?;
+            overrides
+                .add(&format!("!{pattern}"))
+                .map_err(|e| Error::Config(format!("invalid --exclude glob `{pattern}`: {e}")))?;
         }
         let overrides = overrides
             .build()
-            .map_err(|e| Error::Config(format!("could not build glob overrides: {}", e)))?;
+            .map_err(|e| Error::Config(format!("could not build glob overrides: {e}")))?;
         builder.overrides(overrides);
     }
 
     let mut paths = Vec::new();
     let mut visited = 0u64;
     for result in builder.build() {
-        let entry = result.map_err(|e| Error::Config(format!("walk error: {}", e)))?;
+        let entry = result.map_err(|e| Error::Config(format!("walk error: {e}")))?;
         let entry_path = entry.path();
-        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+        if !entry.file_type().is_some_and(|t| t.is_file()) {
             continue;
         }
         visited += 1;
@@ -390,7 +392,7 @@ fn path_matches_glob(path: &Path, pattern: &str) -> Result<bool> {
     let glob = GlobBuilder::new(pattern)
         .literal_separator(false)
         .build()
-        .map_err(|e| Error::Config(format!("invalid glob `{}`: {}", pattern, e)))?;
+        .map_err(|e| Error::Config(format!("invalid glob `{pattern}`: {e}")))?;
     Ok(glob.compile_matcher().is_match(path))
 }
 
@@ -454,7 +456,7 @@ mod tests {
             if source.ends_with('!') {
                 source.to_string()
             } else {
-                format!("{}!", source)
+                format!("{source}!")
             }
         }
     }
@@ -638,7 +640,7 @@ mod tests {
     fn jobs_one_forces_sequential_path() {
         let root = temp_dir("jobs-one");
         for i in 0..10 {
-            write_file(&root.join(format!("{:02}.txt", i)), "x");
+            write_file(&root.join(format!("{i:02}.txt")), "x");
         }
         let opts = WalkOptions {
             jobs: Some(1),
@@ -660,7 +662,7 @@ mod tests {
         };
         let mut visit = |_| Ok(());
         let err = walk_with(&AppendBang, &root, &opts, &mut visit).unwrap_err();
-        assert!(matches!(err, Error::Config(_)), "got: {:?}", err);
+        assert!(matches!(err, Error::Config(_)), "got: {err:?}");
         fs::remove_dir_all(&root).ok();
     }
 }

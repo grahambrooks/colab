@@ -1,7 +1,7 @@
 //! Go backend for colab.
 //!
 //! Exposes a [`GoBackend`] that the binary registers with the
-//! [`BackendRegistry`], plus the underlying tree-sitter rewriters.
+//! [`BackendRegistry`](colab_core::BackendRegistry), plus the underlying tree-sitter rewriters.
 
 pub mod calls;
 pub mod imports;

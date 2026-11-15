@@ -32,7 +32,7 @@ impl Located {
     pub fn at(source: &str, start: usize, end: usize, captures: Vec<(String, String)>) -> Self {
         let before = &source[..start];
         let line = before.matches('\n').count() + 1;
-        let line_start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let line_start = before.rfind('\n').map_or(0, |i| i + 1);
         Self {
             start,
             end,
@@ -217,7 +217,9 @@ pub struct FindReport {
 impl FindReport {
     pub fn new(rules: &[Box<dyn Operation>], max_results: usize, detail: FindDetail) -> Self {
         Self {
-            run: crate::report::RunReport::with_rules(rules.iter().map(|r| r.to_string())),
+            run: crate::report::RunReport::with_rules(
+                rules.iter().map(std::string::ToString::to_string),
+            ),
             hits: Vec::new(),
             matches_per_rule: vec![0; rules.len()],
             total: 0,

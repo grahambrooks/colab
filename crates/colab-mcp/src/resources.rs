@@ -6,6 +6,7 @@
 //! The documents are compiled in, so what the server says is what this
 //! build does; `llms-full.txt` is generated from them, and a test keeps
 //! the committed copy current (`COLAB_BLESS=1` rewrites it).
+use std::fmt::Write as _;
 
 use serde_json::{Value, json};
 
@@ -62,7 +63,7 @@ pub fn llms_full() -> String {
         "# colab\n\n> colab, the tree-sitter codemod tool: repo-wide structural edits across 12 source languages, TOML / JSON / Markdown and any text file, from a small DSL, a CLI, an MCP server and an LSP. This file is generated from the documents below (`cargo test -p colab-mcp`, `COLAB_BLESS=1` to refresh).\n",
     );
     for doc in DOCS {
-        out.push_str(&format!("\n\n---\n\n<!-- file: {} -->\n\n", doc.path));
+        let _ = write!(out, "\n\n---\n\n<!-- file: {} -->\n\n", doc.path);
         out.push_str(doc.text.trim_end());
         out.push('\n');
     }

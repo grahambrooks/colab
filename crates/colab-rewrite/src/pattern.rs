@@ -17,6 +17,7 @@
 //!
 //! A name used twice must bind identical text. Names are upper-case
 //! letters, digits and `_`, starting with a letter or `_`.
+use std::fmt::Write as _;
 
 use std::borrow::Cow;
 
@@ -80,7 +81,9 @@ impl Language for TsLang {
     }
 
     fn field_to_id(&self, field: &str) -> Option<u16> {
-        self.grammar.field_id_for_name(field).map(|f| f.get())
+        self.grammar
+            .field_id_for_name(field)
+            .map(std::num::NonZero::get)
     }
 
     fn build_pattern(&self, builder: &PatternBuilder) -> Result<Pattern, PatternError> {
@@ -869,7 +872,7 @@ impl Rewriter<'_, '_> {
         for var in vars {
             let (name, span) = match &var {
                 MetaVariable::Capture(name, _) => {
-                    let span = nm.get_env().get_match(name).map(|n| n.range());
+                    let span = nm.get_env().get_match(name).map(ast_grep_core::Node::range);
                     (name.clone(), span)
                 }
                 MetaVariable::MultiCapture(name) => {
@@ -1393,7 +1396,7 @@ fn widest<'t>(node: &TsNode<'t>) -> TsNode<'t> {
 /// `node` and each ancestor spanning the same text, innermost first.
 fn same_span<'t>(node: &TsNode<'t>) -> Vec<TsNode<'t>> {
     let mut out = vec![node.clone()];
-    while let Some(parent) = out.last().and_then(|n| n.parent()) {
+    while let Some(parent) = out.last().and_then(ast_grep_core::Node::parent) {
         if parent.range() != node.range() {
             break;
         }
@@ -1685,7 +1688,7 @@ impl Check {
                         _ => None,
                     }
                 } else {
-                    env.get_match(&var.name).map(|n| n.range())
+                    env.get_match(&var.name).map(ast_grep_core::Node::range)
                 };
                 // An empty sequence has no code to ask about.
                 span.is_some_and(|span| colab_core::semantic::ask(source, span, query))
@@ -2063,10 +2066,7 @@ fn print_tree(node: Node<'_>, source: &str, expando: char, positions: bool) -> S
     let style = Style { expando, positions };
     print_node(&mut cursor, source, style, 0, &mut out, &mut lines);
     if lines > MAX_TREE_LINES {
-        out.push_str(&format!(
-            "… {} more node(s) not shown\n",
-            lines - MAX_TREE_LINES
-        ));
+        let _ = writeln!(out, "… {} more node(s) not shown", lines - MAX_TREE_LINES);
     }
     out
 }
@@ -2100,9 +2100,9 @@ fn print_node(
             } else {
                 node.kind().to_string()
             };
-            out.push_str(&format!("{}{}{}", "  ".repeat(depth), field, kind));
+            let _ = write!(out, "{}{}{}", "  ".repeat(depth), field, kind);
             if style.positions {
-                out.push_str(&format!("  {}:{}", pos.row + 1, pos.column + 1));
+                let _ = write!(out, "  {}:{}", pos.row + 1, pos.column + 1);
             }
             if node.named_child_count() == 0
                 && let Ok(text) = node.utf8_text(source.as_bytes())
@@ -2113,7 +2113,7 @@ fn print_node(
                 } else {
                     shown
                 };
-                out.push_str(&format!("  {shown:?}"));
+                let _ = write!(out, "  {shown:?}");
             }
             out.push('\n');
         }
@@ -2323,7 +2323,7 @@ fn longest_literal(node: Node<'_>, source: &str, expando: char) -> Option<String
 fn line_column(source: &str, offset: usize) -> (usize, usize) {
     let before = &source[..offset];
     let line = before.matches('\n').count() + 1;
-    let line_start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
     (line, source[line_start..offset].chars().count() + 1)
 }
 

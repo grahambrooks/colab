@@ -80,9 +80,10 @@ fn apply(step: &Transform, text: &str) -> String {
         // Applied by the pattern engine, which has the code it needs.
         Transform::Rewrite(_) => text.to_string(),
         // Compiled into `Step::Replace`; kept total for a plain call.
-        Transform::Replace { regex, with } => regex::Regex::new(regex)
-            .map(|re| re.replace_all(text, with.as_str()).into_owned())
-            .unwrap_or_else(|_| text.to_string()),
+        Transform::Replace { regex, with } => regex::Regex::new(regex).map_or_else(
+            |_| text.to_string(),
+            |re| re.replace_all(text, with.as_str()).into_owned(),
+        ),
     }
 }
 

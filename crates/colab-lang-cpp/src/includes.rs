@@ -132,9 +132,9 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         };
         // Preserve the delimiter style already in the source.
         let rewritten = if existing.starts_with('<') {
-            format!("<{}>", replacement)
+            format!("<{replacement}>")
         } else {
-            format!("\"{}\"", replacement)
+            format!("\"{replacement}\"")
         };
         edits.push((path_node.start_byte(), path_node.end_byte(), rewritten));
     });
@@ -239,7 +239,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     }
 
     let directive = if wants_system_form(target) {
-        format!("#include {}\n", target)
+        format!("#include {target}\n")
     } else {
         format!("#include \"{}\"\n", unquote(target))
     };
@@ -261,8 +261,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
             } else {
                 source_code[end..]
                     .find('\n')
-                    .map(|p| end + p + 1)
-                    .unwrap_or(source_code.len())
+                    .map_or(source_code.len(), |p| end + p + 1)
             };
         }
     }

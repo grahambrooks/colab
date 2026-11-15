@@ -288,7 +288,7 @@ mod tests {
     fn a_files_backend_is_the_one_whose_patterns_would_run_on_it() {
         let backends = colab_backends::registry();
         assert_eq!(
-            backend_for(&backends, Path::new("src/a.rs")).map(|b| b.lang()),
+            backend_for(&backends, Path::new("src/a.rs")).map(colab_core::LanguageBackend::lang),
             Some("rust")
         );
         assert!(backend_for(&backends, Path::new("notes.txt")).is_none());

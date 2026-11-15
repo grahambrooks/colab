@@ -239,8 +239,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
             insert_at = Some(
                 source_code[end..]
                     .find('\n')
-                    .map(|p| end + p + 1)
-                    .unwrap_or(source_code.len()),
+                    .map_or(source_code.len(), |p| end + p + 1),
             );
         }
     }
@@ -259,7 +258,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         offset
     });
 
-    let insertion = format!("require '{}'\n", target);
+    let insertion = format!("require '{target}'\n");
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..pos]);
     out.push_str(&insertion);

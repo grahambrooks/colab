@@ -134,10 +134,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         }
 
         // Inline-key form within a dependency table.
-        if current
-            .as_deref()
-            .map(|s| DEP_TABLES.contains(&s))
-            .unwrap_or(false)
+        if current.as_deref().is_some_and(|s| DEP_TABLES.contains(&s))
             && let Some(rewritten) = rewrite_inline_key_line(line, from, to)
         {
             out.push_str(&rewritten);
@@ -156,8 +153,7 @@ fn key_present_in_dep_tables(doc: &DocumentMut, from: &str) -> bool {
     DEP_TABLES.iter().any(|name| {
         doc.get(name)
             .and_then(|item| item.as_table())
-            .map(|t| t.contains_key(from))
-            .unwrap_or(false)
+            .is_some_and(|t| t.contains_key(from))
     })
 }
 
@@ -236,10 +232,7 @@ pub fn delete(target: &str, source_code: &str) -> String {
         }
 
         // Inline-key form within a dependency table.
-        if current
-            .as_deref()
-            .map(|s| DEP_TABLES.contains(&s))
-            .unwrap_or(false)
+        if current.as_deref().is_some_and(|s| DEP_TABLES.contains(&s))
             && line_declares_key(line, target)
         {
             // Drop the line entirely.
@@ -272,8 +265,8 @@ fn rewrite_dotted_section_header(line: &str, name: &str, from: &str, to: &str) -
     }
     // The line still contains formatting we want to preserve. Replace
     // only the leaf inside the brackets.
-    let key_in_line = format!(".{}]", from);
-    let replacement = format!(".{}]", to);
+    let key_in_line = format!(".{from}]");
+    let replacement = format!(".{to}]");
     let pos = line.find(&key_in_line)?;
     let mut rewritten = String::with_capacity(line.len() + to.len() - from.len());
     rewritten.push_str(&line[..pos]);

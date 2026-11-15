@@ -90,7 +90,7 @@ fn parse_detail<T: fmt::Display, E: fmt::Display>(
         } => ParseDetail::at_offset(
             source,
             start,
-            format!("unexpected token `{}`", token),
+            format!("unexpected token `{token}`"),
             expected,
         ),
         ParseError::ExtraToken {
@@ -98,7 +98,7 @@ fn parse_detail<T: fmt::Display, E: fmt::Display>(
         } => ParseDetail::at_offset(
             source,
             start,
-            format!("unexpected trailing token `{}`", token),
+            format!("unexpected trailing token `{token}`"),
             Vec::new(),
         ),
         ParseError::User { error } => {
@@ -306,7 +306,8 @@ pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
                 .and_then(|()| resolve_in(&mut m.constraints, &scans, includes))
                 .and_then(|()| lower_match(m, backends));
             let advice = lowered.as_ref().map(|(_, a)| a.clone()).unwrap_or_default();
-            let outcome = lowered.map(|(ops, _)| ops.iter().map(|op| op.to_string()).collect());
+            let outcome =
+                lowered.map(|(ops, _)| ops.iter().map(std::string::ToString::to_string).collect());
             RuleCheck {
                 span,
                 namespace,
@@ -553,7 +554,7 @@ fn resolve_in(
                         return Err(Error::Config(format!(
                             "`{var} in {set}`: the scan `{set}` binds {}; say which, e.g. `{var} in {set}.${}`",
                             listed(),
-                            vars.first().map(String::as_str).unwrap_or("X")
+                            vars.first().map_or("X", String::as_str)
                         )));
                     }
                 }
@@ -662,8 +663,7 @@ fn resolve_include_path(relative: &str, base_path: Option<&Path>) -> Result<Path
     }
     let base = base_path.ok_or_else(|| {
         Error::Config(format!(
-            "cannot resolve `include \"{}\"`: no base path. Use `compile_at_path` instead of `compile` to enable includes.",
-            relative
+            "cannot resolve `include \"{relative}\"`: no base path. Use `compile_at_path` instead of `compile` to enable includes."
         ))
     })?;
     let parent = base.parent().unwrap_or(Path::new("."));
@@ -1397,7 +1397,11 @@ import (
             &backends,
         )
         .unwrap();
-        let shown: Vec<String> = both.rules.iter().map(|r| r.to_string()).collect();
+        let shown: Vec<String> = both
+            .rules
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(
             shown,
             [
@@ -1487,7 +1491,11 @@ import (
         let m = one_match(
             r#"match go::pattern 'f($A, $$$R)' where $A matches /^"a\/b/, $A is identifier, not $A matches "x", $$$R count 1..3, $$$R count 2.., $$$R count ..4, $$$R count 0, inside 'func $F() { $$$ }', not has 'g()' { delete }"#,
         );
-        let shown: Vec<String> = m.constraints.iter().map(|c| c.to_string()).collect();
+        let shown: Vec<String> = m
+            .constraints
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(
             shown,
             [
@@ -1548,7 +1556,11 @@ import (
         let m = one_match(
             r#"match go::pattern 'defer $X.Close()' where follows 'if $C { $$$ }' directly, precedes 'return nil', inside 'for $$$ { $$$ }' until 'func() { $$$ }', has 'f()' directly, not any(nth 1, nth -1, all(field body, $X is identifier)) { delete }"#,
         );
-        let shown: Vec<String> = m.constraints.iter().map(|c| c.to_string()).collect();
+        let shown: Vec<String> = m
+            .constraints
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(
             shown,
             [

@@ -26,8 +26,7 @@ const RELEVANT_EXTENSIONS: &[&str] = &["cs", "csx"];
 pub(crate) fn is_relevant(path: &Path) -> bool {
     path.extension()
         .and_then(|s| s.to_str())
-        .map(|ext| RELEVANT_EXTENSIONS.contains(&ext))
-        .unwrap_or(false)
+        .is_some_and(|ext| RELEVANT_EXTENSIONS.contains(&ext))
 }
 
 /// Parse `source` into a C# syntax tree, through the shared parse

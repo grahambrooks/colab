@@ -3,9 +3,10 @@
 //! the MCP tools built on them.
 //!
 //! The server decides; colab reports. Every change goes through
-//! [`run_change_set`](crate::cli::run_change_set) — the same report, diff,
+//! [`run_change_set`] — the same report, diff,
 //! `--check`, `--backup`, `--verify`, and git-aware file operations as
 //! `rename` and `mv`.
+use std::fmt::Write as _;
 
 use std::fs;
 use std::io::{self, Write};
@@ -423,7 +424,7 @@ pub fn run_action(args: ActionArgs) -> Result<i32> {
                     line.push_str("  [preferred]");
                 }
                 if let Some(reason) = &a.disabled {
-                    line.push_str(&format!("  (disabled: {reason})"));
+                    let _ = write!(line, "  (disabled: {reason})");
                 }
                 writeln!(out, "{line}").map_err(io_to_error)?;
             }

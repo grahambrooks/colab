@@ -11,3 +11,6 @@ description = "TOML config edits for colab: set, insert or delete a key or an ar
 [dependencies]
 colab-core = { workspace = true }
 toml_edit = { workspace = true }
+
+[lints]
+workspace = true

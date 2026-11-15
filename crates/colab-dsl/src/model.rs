@@ -71,8 +71,9 @@ pub struct RuleNote {
 impl Refactoring {
     /// A report seeded with every rule, its message and its severity.
     pub fn report(&self) -> colab_core::RunReport {
-        let mut report =
-            colab_core::RunReport::with_rules(self.rules.iter().map(|r| r.to_string()));
+        let mut report = colab_core::RunReport::with_rules(
+            self.rules.iter().map(std::string::ToString::to_string),
+        );
         self.annotate(&mut report);
         // Each block's advice once, though `and fences` makes two rules.
         let mut seen = std::collections::BTreeSet::new();
@@ -291,7 +292,7 @@ impl fmt::Display for Refactoring {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", rule)?;
+            write!(f, "{rule}")?;
         }
         write!(f, "]")
     }
@@ -346,7 +347,7 @@ impl Refactoring {
     /// The script over `files` (path, text), stage by stage: each stage's
     /// scans read every file as the stages before left it, then its rules
     /// edit each file. Edits are still each one rule's in one file, so the
-    /// result is a [`FileChange`] per file, judged for conflicts against
+    /// result is a [`FileChange`](colab_core::FileChange) per file, judged for conflicts against
     /// the file as the whole script leaves it. The facts stay installed
     /// for whatever reads the run afterwards (`find`, the probes).
     pub fn run_phased(

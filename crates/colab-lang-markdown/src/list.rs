@@ -13,6 +13,7 @@
 //! - `delete` removes the item, nested lines included.
 //! - `replace "<text>"` gives the item new text, keeping its marker and
 //!   nested list.
+use std::fmt::Write as _;
 
 use std::fmt;
 use std::ops::Range;
@@ -192,10 +193,11 @@ impl ItemEdit {
                 let width = wrap_width(source, &items);
                 let hang = format!("{indent}{}", " ".repeat(marker.chars().count()));
                 let mut out = source[..at].to_string();
-                out.push_str(&format!(
-                    "{indent}{marker}{}\n",
+                let _ = writeln!(
+                    out,
+                    "{indent}{marker}{}",
                     wrap(&self.text, width, indent.len() + marker.len(), &hang)
-                ));
+                );
                 out.push_str(&source[at..]);
                 Some(out)
             }
@@ -210,10 +212,11 @@ impl ItemEdit {
                     }
                     let width = wrap_width(source, &items);
                     let hang = format!("{indent}{}", " ".repeat(marker.chars().count()));
-                    out.push_str(&format!(
-                        "{indent}{marker}{}\n",
+                    let _ = writeln!(
+                        out,
+                        "{indent}{marker}{}",
                         wrap(&self.text, width, indent.len() + marker.len(), &hang)
-                    ));
+                    );
                     out.push_str(&source[at..]);
                     out
                 }
@@ -307,7 +310,7 @@ fn wrap(text: &str, width: Option<usize>, first: usize, hang: &str) -> String {
 const MAX_LISTS: usize = 20;
 
 fn next_marker(marker: &str) -> String {
-    let digits: String = marker.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = marker.chars().take_while(char::is_ascii_digit).collect();
     match digits.parse::<u64>() {
         Ok(n) => format!("{}{}", n + 1, &marker[digits.len()..]),
         Err(_) => marker.to_string(),
@@ -327,7 +330,8 @@ fn nth_list(source: &str, own: Range<usize>, nth: usize) -> Vec<Item> {
     let lists = crate::nodes(&tree, |n| {
         n.kind() == "list"
             && own.contains(&n.start_byte())
-            && !std::iter::successors(n.parent(), |p| p.parent()).any(|p| p.kind() == "list")
+            && !std::iter::successors(n.parent(), tree_sitter::Node::parent)
+                .any(|p| p.kind() == "list")
     });
     let Some(list) = nth.checked_sub(1).and_then(|i| lists.get(i)) else {
         return Vec::new();

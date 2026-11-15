@@ -6,6 +6,7 @@
 //! section costs only itself. Together they replace reading a whole file
 //! to find and change one part of it — and, unlike `grep '^#'`, they do
 //! not mistake a `#` comment in a code fence for a heading.
+use std::fmt::Write as _;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -130,14 +131,15 @@ fn outline_human(path: &Path, source: &str, depth: Option<u8>) -> String {
         let marks = "#".repeat(h.level as usize);
         let text = format!("{indent}{marks} {}", h.text);
         if holds.is_empty() {
-            out.push_str(&format!("{:>5}-{:<5} {text}\n", h.line, h.end_line));
+            let _ = writeln!(out, "{:>5}-{:<5} {text}", h.line, h.end_line);
         } else {
-            out.push_str(&format!(
-                "{:>5}-{:<5} {text:<60} {}\n",
+            let _ = writeln!(
+                out,
+                "{:>5}-{:<5} {text:<60} {}",
                 h.line,
                 h.end_line,
                 holds.join(", ")
-            ));
+            );
         }
     }
     out

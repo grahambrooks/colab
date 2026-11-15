@@ -5,6 +5,7 @@
 //! costs a whole round trip to fix. Every site that rejects a name should
 //! answer two questions at once: what was valid here, and which valid
 //! name did you probably mean.
+use std::fmt::Write as _;
 
 /// Edit distance between two strings, counting an adjacent swap as one
 /// edit (optimal string alignment): `mian` is one edit from `main`, not
@@ -95,13 +96,13 @@ pub fn near_miss_distance(target: &str, value: &str) -> Option<usize> {
 /// ```
 pub fn candidates_note(input: &str, label: &str, candidates: &[&str]) -> String {
     if candidates.is_empty() {
-        return format!("no {} are registered", label);
+        return format!("no {label} are registered");
     }
     let mut sorted = candidates.to_vec();
     sorted.sort_unstable();
     let mut note = format!("known {}: {}", label, sorted.join(", "));
     if let Some(best) = closest(input, sorted.iter().copied()) {
-        note.push_str(&format!(" (did you mean `{}`?)", best));
+        let _ = write!(note, " (did you mean `{best}`?)");
     }
     note
 }
