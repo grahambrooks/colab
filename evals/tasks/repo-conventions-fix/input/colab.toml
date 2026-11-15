@@ -5,4 +5,4 @@ exclude = ["vendor/**"]
 pack = "python/3.12-typing"
 
 [[packs]]
-path = ".colab/packs/house.codemod"
+path = ".colab/packs/house.colab"

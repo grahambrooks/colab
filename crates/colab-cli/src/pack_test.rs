@@ -1,10 +1,10 @@
 //! `colab test`: a repository's own packs, checked against fixtures.
 //!
-//! A pack `house-style.codemod` keeps its cases beside it, one directory
+//! A pack `house-style.colab` keeps its cases beside it, one directory
 //! each:
 //!
 //! ```text
-//! .colab/packs/house-style.codemod
+//! .colab/packs/house-style.colab
 //! .colab/packs/house-style.tests/
 //!     renames-the-import/input/main.go
 //!     renames-the-import/expected/main.go     # what the pack makes of it
@@ -34,7 +34,7 @@ pub const FAILED: i32 = 12;
 
 #[derive(Parser, Debug)]
 pub struct TestArgs {
-    /// Packs (`.codemod` files) or directories to search for packs with a
+    /// Packs (`.colab` files) or directories to search for packs with a
     /// `<pack>.tests/` directory. Default: the `path` packs `colab.toml`
     /// declares, and `.colab/packs/`.
     paths: Vec<PathBuf>,
@@ -85,7 +85,7 @@ pub fn run(args: TestArgs, backends: &BackendRegistry) -> Result<i32> {
     if packs.is_empty() {
         return Err(Error::Config(
             "no pack with tests found: put cases in `<pack>.tests/<case>/input/` beside a \
-             `.codemod` file (and `expected/` beside `input/`), or name the packs to test"
+             `.colab` file (and `expected/` beside `input/`), or name the packs to test"
                 .into(),
         ));
     }
@@ -110,7 +110,7 @@ pub fn run(args: TestArgs, backends: &BackendRegistry) -> Result<i32> {
     Ok(if failed > 0 { FAILED } else { 0 })
 }
 
-/// The packs to test: `.codemod` files named, or found (with a tests
+/// The packs to test: `.colab` files named, or found (with a tests
 /// directory) under the directories named or the defaults.
 fn discover(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let mut roots: Vec<PathBuf> = paths.to_vec();
@@ -166,13 +166,13 @@ fn find_packs(dir: &Path, out: &mut BTreeSet<PathBuf>) {
             if !path.extension().is_some_and(|e| e == "tests") {
                 find_packs(&path, out);
             }
-        } else if path.extension().is_some_and(|e| e == "codemod") && tests_dir(&path).is_dir() {
+        } else if colab_core::script_file::is_script(&path) && tests_dir(&path).is_dir() {
             out.insert(path);
         }
     }
 }
 
-/// `<dir>/<stem>.tests` for `<dir>/<stem>.codemod`.
+/// `<dir>/<stem>.tests` for `<dir>/<stem>.colab`.
 fn tests_dir(pack: &Path) -> PathBuf {
     pack.with_extension("tests")
 }
@@ -483,7 +483,7 @@ mod tests {
     const GO: &str = "package p\n\nimport \"old/log\"\n";
 
     fn pack(dir: &Path) -> PathBuf {
-        let pack = dir.join("house.codemod");
+        let pack = dir.join("house.colab");
         write(&pack, PACK);
         write(&dir.join("house.tests/renames/input/src/a.go"), GO);
         write(
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn a_pack_that_rewrites_its_own_output_fails() {
         let dir = temp_dir("loop");
-        let pack = dir.join("wrap.codemod");
+        let pack = dir.join("wrap.colab");
         write(
             &pack,
             r#"refactor "w" { match go::call "f" { replace_call "f(ctx, $args)" } }"#,
@@ -577,7 +577,7 @@ mod tests {
                 .problem
                 .contains("not idempotent")
         );
-        let named = discover(&[dir.join("missing.codemod")])
+        let named = discover(&[dir.join("missing.colab")])
             .unwrap_err()
             .to_string();
         assert!(named.contains("no such pack"), "{named}");

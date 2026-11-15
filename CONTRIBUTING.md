@@ -92,7 +92,7 @@ pinned binary, so a broken working tree cannot break the tool
 ```sh
 scripts/dogfood.sh                       # pin .dogfood/colab
 .dogfood/colab find -e '<rule>' crates   # where it applies
-.dogfood/colab refactor --script s.codemod --write --bisect 'cargo check -q --workspace --tests' crates
+.dogfood/colab refactor --script s.colab --write --bisect 'cargo check -q --workspace --tests' crates
 ```
 
 Docs are edited the same way, with `markdown::` rules. Where colab could

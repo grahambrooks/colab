@@ -11,7 +11,7 @@ are unrelated apart from the name.
 
 ```sh
 # From the repo root. Start with the blast radius, not the diff:
-colab refactor --script examples/rust/scoped_rename/scoped.codemod \
+colab refactor --script examples/rust/scoped_rename/scoped.colab \
     --format json examples/rust/scoped_rename
 ```
 
@@ -24,7 +24,7 @@ colab refactor --script examples/rust/scoped_rename/scoped.codemod \
 Read the three counters together: 4 files were visited, 1 was scanned, 1
 changed. The scope did not merely suppress an edit — `cli/src/main.rs` was
 never parsed at all, because a scoped rule reports itself irrelevant for
-paths outside its glob. The README and the `.codemod` script account for the
+paths outside its glob. The README and the `.colab` script account for the
 other two visited-but-not-scanned files.
 
 `rules[0].files` is 1, so the rule is doing something. A rule reported with
@@ -38,7 +38,7 @@ the scope prevents.
 To see the hunks for the one file that matters:
 
 ```sh
-colab refactor --script examples/rust/scoped_rename/scoped.codemod \
+colab refactor --script examples/rust/scoped_rename/scoped.colab \
     --format diff examples/rust/scoped_rename
 ```
 

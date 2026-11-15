@@ -1,4 +1,4 @@
-# CommonJS → ES modules (`esm.codemod`)
+# CommonJS → ES modules (`esm.colab`)
 
 The top-level CommonJS forms that have a one-to-one ES module spelling,
 as a reviewable diff:
@@ -13,8 +13,8 @@ A form inside a block (a function body, an `if`) is left alone: `import`
 and `export` are only allowed at the top level.
 
 ```sh
-colab refactor --script examples/packs/js/esm.codemod --format diff .
-colab refactor --script examples/packs/js/esm.codemod --write --bisect 'npm test' .
+colab refactor --script examples/packs/js/esm.colab --format diff .
+colab refactor --script examples/packs/js/esm.colab --write --bisect 'npm test' .
 ```
 
 The sample in `tests/corpus/js/esm/` was checked by parsing the result

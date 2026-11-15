@@ -5,7 +5,7 @@
 # Colab (Code Lab)
 
 A scripted, AST-aware code refactoring (codemod) tool. Point it at a
-repo, hand it a small `.codemod` script, and it will rewrite source
+repo, hand it a small `.colab` script, and it will rewrite source
 files deterministically — using tree-sitter for the matching, not
 regex — across twelve languages: **C, C++, C#, Go, Java,
 JavaScript/TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**. It
@@ -20,11 +20,11 @@ all the `import` statements in Java, and it delegates scope-aware renames, file 
 language's own server (`colab rename`, `mv`, `action`).
 
 ```sh
-colab refactor --script rename-tokio.codemod --check .
+colab refactor --script rename-tokio.colab --check .
 ```
 
 <p align="center">
-  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .codemod script is compiled against 15 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
+  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .colab script is compiled against 15 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
 </p>
 
 ## Why
@@ -83,7 +83,7 @@ At runtime, ask the binary directly:
 colab schema           # full JSON capability schema
 colab list-languages   # backends registered in this build
 colab list-rules go    # modules and actions for one backend
-colab server           # LSP for .codemod files: diagnostics, hover, completion, code actions
+colab server           # LSP for .colab files: diagnostics, hover, completion, code actions
 colab mcp              # MCP server: 20 tools (preview, apply, find, ast, test_rule, rename, outline, …)
 ```
 
@@ -120,7 +120,7 @@ Run the bundled Rust dependency rename example:
 
 ```sh
 target/release/colab refactor \
-    --script examples/rust/rename_crate/rename.codemod \
+    --script examples/rust/rename_crate/rename.colab \
     --format diff \
     examples/rust/rename_crate/
 ```
@@ -134,7 +134,7 @@ nothing).
 ## A two-rule script
 
 ```
-// rename-tokio.codemod
+// rename-tokio.colab
 refactor "tokio-major-bump" {
     match rust::crate "tokio" { replace "async_tokio" }
     match rust::use   "tokio" { replace "async_tokio" }
@@ -142,7 +142,7 @@ refactor "tokio-major-bump" {
 ```
 
 ```sh
-colab refactor --script rename-tokio.codemod --write .
+colab refactor --script rename-tokio.colab --write .
 ```
 
 This rewrites the `[dependencies]` entry in every `Cargo.toml` and
@@ -178,7 +178,7 @@ go = "gofmt"                 # reads the file on stdin, writes it on stdout
 pack = "go/1.18-modern"      # built in: `colab pack list`
 
 [[packs]]
-path = ".colab/packs/house-style.codemod"
+path = ".colab/packs/house-style.colab"
 ```
 
 ```sh
@@ -244,14 +244,14 @@ one parse of a file ([`docs/operations.md`](docs/operations.md#performance)).
 ## Output formats
 
 ```sh
-colab refactor --script s.codemod --format human .   # default on TTY: write + log
-colab refactor --script s.codemod --format diff .    # unified diff to stdout
-colab refactor --script s.codemod --format json .    # one JSON doc: counters + per-rule counts
-colab refactor --script s.codemod --format ndjson .  # one object per changed file, then a summary
-colab refactor --script s.codemod --check .          # exit 10 if changes pending
+colab refactor --script s.colab --format human .   # default on TTY: write + log
+colab refactor --script s.colab --format diff .    # unified diff to stdout
+colab refactor --script s.colab --format json .    # one JSON doc: counters + per-rule counts
+colab refactor --script s.colab --format ndjson .  # one object per changed file, then a summary
+colab refactor --script s.colab --check .          # exit 10 if changes pending
 colab fix --check --format github                    # CI: annotations on the pull request
 colab fix --check --format sarif > colab.sarif       # CI: code scanning (SARIF 2.1.0)
-cat foo.go | colab refactor --script s.codemod --stdin --path foo.go
+cat foo.go | colab refactor --script s.colab --stdin --path foo.go
 ```
 
 Defaults: `human` on a TTY implies `--write`; everything else

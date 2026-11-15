@@ -183,7 +183,7 @@ mod tests {
         let e = resolve(
             "file:///nowhere",
             &Pin::Tag("v1".into()),
-            Path::new("../x.codemod"),
+            Path::new("../x.colab"),
             &colab_backends::registry(),
         )
         .unwrap_err()

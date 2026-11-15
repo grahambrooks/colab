@@ -4,4 +4,4 @@
 paths = ["crates"]
 
 [[packs]]
-path = ".colab/packs/hygiene.codemod"
+path = ".colab/packs/hygiene.colab"

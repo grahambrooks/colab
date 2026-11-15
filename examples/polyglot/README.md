@@ -6,7 +6,7 @@ is exactly the kind of mechanical, structural edit colab exists for.
 
 ```sh
 # From the repo root. Start with the blast radius:
-colab refactor --script examples/polyglot/rename-logger.codemod \
+colab refactor --script examples/polyglot/rename-logger.colab \
     --format json examples/polyglot
 ```
 
@@ -20,8 +20,8 @@ colab refactor --script examples/polyglot/rename-logger.codemod \
 Every rule reports `files: 1`, so nothing is dead. Then:
 
 ```sh
-colab refactor --script examples/polyglot/rename-logger.codemod --format diff examples/polyglot
-colab refactor --script examples/polyglot/rename-logger.codemod --write examples/polyglot
+colab refactor --script examples/polyglot/rename-logger.colab --format diff examples/polyglot
+colab refactor --script examples/polyglot/rename-logger.colab --write examples/polyglot
 ```
 
 ## What it shows
@@ -38,7 +38,7 @@ the path before parsing. That is why a 12-rule polyglot script runs about
 as fast as a 2-rule single-language one.
 
 **`visited: 8` vs `scanned: 6`.** The other two files are the
-`.codemod` script and this README — visited by the walker, but not a
+`.colab` script and this README — visited by the walker, but not a
 language any rule targets, so never parsed.
 
 ## Per-language notes worth knowing

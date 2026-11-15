@@ -43,7 +43,7 @@ evals/tasks/<name>/
   input/       the files before
   expected/    the files that change, as they must end up
   colab.sh     the colab commands, one per line ($TASK is this directory)
-  *.codemod    scripts the commands use, counted as written by the agent
+  *.colab    scripts the commands use, counted as written by the agent
 ```
 
 A task that `requires` a tool (`rust-analyzer`) is skipped where it is

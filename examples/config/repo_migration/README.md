@@ -6,7 +6,7 @@ scoped, previewable, idempotent, and gated in CI with `--check`.
 
 `repo/` stands in for a project: a prek hook file, Claude Code settings, an
 `AGENTS.md` with a managed block, and a `myspec.toml` recording which
-version of the convention the repository is at. `migration.codemod` moves it
+version of the convention the repository is at. `migration.colab` moves it
 to the next version.
 
 ```sh
@@ -14,12 +14,12 @@ to the next version.
 # files: a walk of `.` skips hidden directories such as .claude/ (unless
 # --no-ignore), but a file named on the command line is always processed.
 colab refactor -C examples/config/repo_migration/repo \
-    --script ../migration.codemod --format diff \
+    --script ../migration.colab --format diff \
     prek.toml .claude/settings.json AGENTS.md myspec.toml
 
 # Would anything change? Exit 10 means yes; wire this into CI.
 colab refactor -C examples/config/repo_migration/repo \
-    --script ../migration.codemod --check \
+    --script ../migration.colab --check \
     prek.toml .claude/settings.json AGENTS.md myspec.toml
 ```
 

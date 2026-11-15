@@ -24,7 +24,7 @@ refactor "name" {
 ```
 
 `colab` parses, validates, and lowers the script before touching any
-source files. Use [`colab explain --script foo.codemod`](./cli.md#colab-explain---script-path---e-rule)
+source files. Use [`colab explain --script foo.colab`](./cli.md#colab-explain---script-path---e-rule)
 to inspect the parsed IR; use `--format diff` (or `--check`) to preview
 edits before writing.
 
@@ -188,7 +188,12 @@ or run it on named files. The address syntax of each backend is in
 
 ## `include` directive
 
-A script can pull in match clauses from another `.codemod` file by
+Scripts are `.colab` files. The older `.codemod` extension is still
+accepted everywhere a script is looked for (`--script`, `include`,
+`colab.toml` packs, `colab pack list`, `colab test`, `colab server`), with
+a warning; rename such scripts to `.colab`.
+
+A script can pull in match clauses from another `.colab` file by
 listing `include "<path>"` inside its `refactor` block. The path
 is resolved relative to the *including* script's directory (or as
 an absolute path). The included file's outer `refactor "..."`
@@ -197,9 +202,9 @@ spliced into the parent in source order, intermixed with sibling
 matches.
 
 ```
-// project/scripts/main.codemod
+// project/scripts/main.colab
 refactor "company-migration" {
-    include "shared/javax-to-jakarta.codemod"
+    include "shared/javax-to-jakarta.colab"
     match go::import "internal.old" { replace "internal.new" }
 }
 ```
@@ -374,7 +379,7 @@ and use the name wherever a constraint takes a pattern:
 
 ```
 refactor "test-hygiene" {
-    include "shared.codemod"    // defines `goroutine`
+    include "shared.colab"    // defines `goroutine`
     pattern test_func = 'func $F(t *testing.T) { $$$B }'
 
     match go::pattern '$T.Fatal($$$A)' where inside goroutine, inside test_func {
@@ -927,7 +932,7 @@ template that still calls the function (`f(ctx, $args)` for `f`), and a
 `pattern` template that is itself a match of its pattern (`f($A)` →
 `f(g($A))`). The warning is on every run's report (`the template matches
 the pattern again, so every run rewrites its own output once more`), in
-`colab.lint_script`'s `warnings`, and on the rule in a `.codemod` editor.
+`colab.lint_script`'s `warnings`, and on the rule in a `.colab` editor.
 It is a warning, not an error: a wrap applied once on purpose is fine.
 
 ## Conflicts
@@ -1003,7 +1008,7 @@ refactor "swap-args" {
 ### Header file (pack)
 
 ```
-// java-jakarta-migration.codemod
+// java-jakarta-migration.colab
 //
 // Mechanical javax → jakarta swaps. Runs the full set in one pass.
 refactor "javax-to-jakarta" {
@@ -1113,7 +1118,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |
-| `--script <path>` | one of `--script` / `-e` | The `.codemod` file to execute. `builtin:<pack>` runs a pack built into colab (`colab pack list`). `-` reads the script from stdin (not combinable with `--stdin`). |
+| `--script <path>` | one of `--script` / `-e` | The `.colab` file to execute. `builtin:<pack>` runs a pack built into colab (`colab pack list`). `-` reads the script from stdin (not combinable with `--stdin`). |
 | `-e`, `--rule <rule>` | one of `--script` / `-e` | An inline rule — one or more `match …` blocks, or an `include` — so no script file is needed. Repeatable; rules run in the order given, under the script name `inline`. A single value that is a whole `refactor "…" { … }` script is used as-is. `include` resolves against the working directory. |
 | `-C`, `--change-dir <dir>` | `.` | Change to this directory first: `paths`, `include` and the `colab.toml` lookup (for `[formatters]`) are relative to it. |
 | `--format <FORMAT>` | `human` | Output format: `human`, `json`, `ndjson`, `diff`, `sarif` or `github`. `human` is coloured log lines plus a summary. `json` emits one JSON document for the whole run. `ndjson` streams one object per *changed* file then a summary. `diff` emits a unified diff per changed file. `sarif` and `github` report each changed block for CI (SARIF 2.1.0, or GitHub Actions annotations); see [shapes](#--format-shapes). |
@@ -1254,13 +1259,13 @@ The useful loop, at roughly increasing cost:
 
 ```sh
 # 1. Blast radius. Cheap enough to run on every edit of the script.
-colab refactor --script s.codemod --format json .
+colab refactor --script s.colab --format json .
 
 # 2. Sample the hunks once the counts look right.
-colab refactor --script s.codemod --format diff .
+colab refactor --script s.colab --format diff .
 
 # 3. Apply.
-colab refactor --script s.codemod --write .
+colab refactor --script s.colab --write .
 ```
 
 #### Inline rules
@@ -1369,7 +1374,7 @@ argument counts, but an unresolved name only shows in `cargo check`. Keep
 #### `--stdin` pipeline
 
 ```sh
-cat foo.go | colab refactor --script s.codemod --stdin --path foo.go
+cat foo.go | colab refactor --script s.colab --stdin --path foo.go
 ```
 
 Reads the source from stdin, applies the script (using `--path` only
@@ -1385,7 +1390,7 @@ is fixed. `--baseline` enforces it on what changes from now on:
 
 ```sh
 colab fix --check --baseline origin/main --format github
-colab refactor --script no-log.codemod --check --baseline v2.0 src
+colab refactor --script no-log.colab --check --baseline v2.0 src
 ```
 
 - The script runs twice: over a detached worktree at the ref (made under
@@ -1411,7 +1416,7 @@ Each branch is `HEAD` plus that rule's changes alone, committed as
 `colab/<script name>`:
 
 ```sh
-colab refactor --script migrate.codemod --split-pr .
+colab refactor --script migrate.colab --split-pr .
 #   branch colab/migrate/01-go-import-old-log-new-log (e301afa50c): rule 1, 1 file(s)
 #   branch colab/migrate/02-go-call-log-old-replace-call-log-new (cec17e8b2b): rule 2, 2 file(s)
 git push origin 'colab/migrate/*'          # then one pull request per branch
@@ -1468,7 +1473,7 @@ ts = "prettier --stdin-filepath {path}"
 pack = "go/1.18-modern"               # built in: `colab pack list`
 
 [[packs]]
-path = ".colab/packs/house-style.codemod"
+path = ".colab/packs/house-style.colab"
 ```
 
 - Every pack is compiled first, so a broken pack fails before any file is
@@ -1495,7 +1500,7 @@ that uses one pins it:
 [[packs]]
 git = "https://github.com/acme/colab-packs"
 tag = "v3"                       # or rev = "<commit>"; never a branch
-path = "go/errors.codemod"       # the pack inside that repository
+path = "go/errors.colab"       # the pack inside that repository
 ```
 
 - A pin is fetched once, shallow, into a cache: `COLAB_CACHE_DIR`, else
@@ -1534,7 +1539,7 @@ how much one matters, without editing it:
 colab fix --check --only no-dbg              # just this rule
 colab fix --check --off 'legacy-*'           # all but these
 colab fix --check --severity no-dbg=warning  # report it, still fail --check (info would not)
-colab refactor --script s.codemod --only 2   # the second rule, by number
+colab refactor --script s.colab --only 2   # the second rule, by number
 ```
 
 - A selector is a rule's `id`, a glob over ids (`*` is any run of
@@ -1555,7 +1560,7 @@ coordinator: the manifest and git are the state.
 
 ```toml
 [fleet]
-script = "migrate.codemod"     # relative to this file; or `fix = true`
+script = "migrate.colab"     # relative to this file; or `fix = true`
 branch = "colab/errors-to-fmt" # what --write commits on
 title = "Move from pkg/errors to fmt"
 body = "Made by colab fleet."
@@ -1651,7 +1656,7 @@ Check a repository's packs against cases kept beside them, the way
 colab's corpus harness checks its own:
 
 ```text
-.colab/packs/hygiene.codemod
+.colab/packs/hygiene.colab
 .colab/packs/hygiene.tests/
     removes-a-dbg/input/crates/x/src/lib.rs
     removes-a-dbg/expected/crates/x/src/lib.rs     # what the pack makes of it
@@ -1660,7 +1665,7 @@ colab's corpus harness checks its own:
 
 ```sh
 colab test                       # colab.toml's `path` packs, and .colab/packs/
-colab test .colab/packs/hygiene.codemod
+colab test .colab/packs/hygiene.colab
 colab test --bless               # write each case's expected/ (also COLAB_BLESS=1)
 colab test --format json         # {packs: [{pack, cases, untested_rules}], passed, failed}
 ```
@@ -1684,7 +1689,7 @@ colab test --format json         # {packs: [{pack, cases, untested_rules}], pass
 Review a large run by rule, from its log:
 
 ```sh
-colab refactor --script big.codemod --format ndjson --detail diff . > run.ndjson
+colab refactor --script big.colab --format ndjson --detail diff . > run.ndjson
 colab review run.ndjson                       # by rule: files, lines, most edited, spread
 colab review run.ndjson --rule 2              # page through rule 2's diffs (10 a page)
 colab review run.ndjson --rule 2 --page 3 --per-page 20
@@ -2135,7 +2140,7 @@ operations, they are undone first, through git (see
 [File operations](#file-operations)).
 
 ```sh
-colab refactor --script s.codemod --write --backup .colab-backup .
+colab refactor --script s.colab --write --backup .colab-backup .
 # … review / decide to roll back …
 colab undo --from .colab-backup
 ```
@@ -2160,8 +2165,8 @@ the allowlist in [`deny.toml`](../deny.toml).
 
 ### `colab pack list`
 
-List the packs: those built into colab, then discoverable `.codemod`
-files. Lookup paths, in order:
+List the packs: those built into colab, then discoverable `.colab`
+(or, deprecated, `.codemod`) files. Lookup paths, in order:
 
 1. Built in: the packs under `examples/packs/`, named by path
    (`go/1.18-modern`, `java/8-to-21`, `js/esm`, `python/3.12-typing`,
@@ -2184,7 +2189,7 @@ Output (sorted by path; a built-in pack's path is `builtin:<name>`):
     { "name": "go/1.18-modern", "path": "builtin:go/1.18-modern", "source": "builtin" },
     {
       "name": "javax-to-jakarta",
-      "path": "/path/to/repo/.colab/packs/javax-to-jakarta.codemod",
+      "path": "/path/to/repo/.colab/packs/javax-to-jakarta.colab",
       "source": "repo"
     }
   ]
@@ -2200,7 +2205,7 @@ PACK=$(colab pack list | jq -r '.packs[] | select(.name == "javax-to-jakarta") |
 colab refactor --script "$PACK" --check .
 ```
 
-A pack is just a `.codemod` file. Use `include "<path>"` from a
+A pack is just a `.colab` file. Use `include "<path>"` from a
 top-level project script to compose multiple packs, or list them in
 `colab.toml` (see `colab fix`).
 
@@ -2210,7 +2215,7 @@ Parse the script and emit its IR as JSON without running anything.
 Useful for verifying syntax in CI before applying:
 
 ```sh
-colab explain --script my-pack.codemod
+colab explain --script my-pack.colab
 ```
 
 Output:
@@ -2222,7 +2227,7 @@ Output:
     {"kind": "match", "namespace": "go::import", "match": "old.module", "scope": null, "action": "replace", "value": "new.module"},
     {"kind": "match", "namespace": "go::import", "match": "another", "scope": null, "action": "delete", "value": null},
     {"kind": "match", "namespace": "rust::symbol", "match": "Config", "scope": "core/**", "action": "replace", "value": "CoreConfig"},
-    {"kind": "include", "path": "shared/javax-to-jakarta.codemod"}
+    {"kind": "include", "path": "shared/javax-to-jakarta.colab"}
   ]
 }
 ```
@@ -2238,7 +2243,7 @@ clause.
 
 ### `colab server`
 
-Start the colab Language Server on stdio, for editing `.codemod` files:
+Start the colab Language Server on stdio, for editing `.colab` files:
 
 - **Diagnostics, per rule.** Every open / change lowers each `match`
   block on its own, so every bad rule — an unknown module, an action the
@@ -2498,33 +2503,33 @@ was malformed".
 
 ```sh
 # Preview every change without touching disk.
-colab refactor --script s.codemod --format diff path/
+colab refactor --script s.colab --format diff path/
 
 # Pre-commit gate: fail if anything would change.
-colab refactor --script s.codemod --check . || exit $?
+colab refactor --script s.colab --check . || exit $?
 
 # Stream one object per changed file to a structured log.
-colab refactor --script s.codemod --format ndjson . | tee changes.ndjson
+colab refactor --script s.colab --format ndjson . | tee changes.ndjson
 
 # stdin rewriter for an editor pre-save hook.
-cat current-buffer.go | colab refactor --script s.codemod --stdin --path current-buffer.go > rewritten.go
+cat current-buffer.go | colab refactor --script s.colab --stdin --path current-buffer.go > rewritten.go
 
 # Restrict a sweeping refactor to one subtree, skipping vendored code.
-colab refactor --script s.codemod \
+colab refactor --script s.colab \
     --include 'cmd/**/*.go' --exclude '**/vendor/**' \
     --write .
 
 # CI gate: only verify files changed on this branch.
-colab refactor --script s.codemod --check --changed-since origin/main || exit $?
+colab refactor --script s.colab --check --changed-since origin/main || exit $?
 
 # Pre-commit hook: only the staged files.
-colab refactor --script s.codemod --check --staged || exit $?
+colab refactor --script s.colab --check --staged || exit $?
 
 # Apply rules one-by-one with build-check after each; auto-revert on failure.
-colab refactor --script s.codemod --write --verify "cargo check --quiet" .
+colab refactor --script s.colab --write --verify "cargo check --quiet" .
 
 # Same, plus a git commit per rule for clean review history.
-colab refactor --script s.codemod --write --verify "cargo check --quiet" --commit-per-rule .
+colab refactor --script s.colab --write --verify "cargo check --quiet" --commit-per-rule .
 ```
 
 ## Environment
@@ -3447,12 +3452,12 @@ check = "cargo check -q"        # after writing: a failure is bisected to one ru
 pack = "rust/edition-2021-to-2024"
 
 [[packs]]
-path = ".colab/packs/house-style.codemod"
+path = ".colab/packs/house-style.colab"
 
 [[packs]]
 git = "https://github.com/acme/colab-packs"
 tag = "v3"                       # or rev = "<commit>"
-path = "go/errors.codemod"
+path = "go/errors.colab"
 ```
 
 Give each pack cases beside it (`<pack>.tests/<case>/input/` and
@@ -3624,7 +3629,7 @@ More: the skill's troubleshooting guide,
 # Colab (Code Lab)
 
 A scripted, AST-aware code refactoring (codemod) tool. Point it at a
-repo, hand it a small `.codemod` script, and it will rewrite source
+repo, hand it a small `.colab` script, and it will rewrite source
 files deterministically — using tree-sitter for the matching, not
 regex — across twelve languages: **C, C++, C#, Go, Java,
 JavaScript/TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**. It
@@ -3639,11 +3644,11 @@ all the `import` statements in Java, and it delegates scope-aware renames, file 
 language's own server (`colab rename`, `mv`, `action`).
 
 ```sh
-colab refactor --script rename-tokio.codemod --check .
+colab refactor --script rename-tokio.colab --check .
 ```
 
 <p align="center">
-  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .codemod script is compiled against 15 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
+  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .colab script is compiled against 15 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
 </p>
 
 ## Why
@@ -3702,7 +3707,7 @@ At runtime, ask the binary directly:
 colab schema           # full JSON capability schema
 colab list-languages   # backends registered in this build
 colab list-rules go    # modules and actions for one backend
-colab server           # LSP for .codemod files: diagnostics, hover, completion, code actions
+colab server           # LSP for .colab files: diagnostics, hover, completion, code actions
 colab mcp              # MCP server: 20 tools (preview, apply, find, ast, test_rule, rename, outline, …)
 ```
 
@@ -3739,7 +3744,7 @@ Run the bundled Rust dependency rename example:
 
 ```sh
 target/release/colab refactor \
-    --script examples/rust/rename_crate/rename.codemod \
+    --script examples/rust/rename_crate/rename.colab \
     --format diff \
     examples/rust/rename_crate/
 ```
@@ -3753,7 +3758,7 @@ nothing).
 ## A two-rule script
 
 ```
-// rename-tokio.codemod
+// rename-tokio.colab
 refactor "tokio-major-bump" {
     match rust::crate "tokio" { replace "async_tokio" }
     match rust::use   "tokio" { replace "async_tokio" }
@@ -3761,7 +3766,7 @@ refactor "tokio-major-bump" {
 ```
 
 ```sh
-colab refactor --script rename-tokio.codemod --write .
+colab refactor --script rename-tokio.colab --write .
 ```
 
 This rewrites the `[dependencies]` entry in every `Cargo.toml` and
@@ -3797,7 +3802,7 @@ go = "gofmt"                 # reads the file on stdin, writes it on stdout
 pack = "go/1.18-modern"      # built in: `colab pack list`
 
 [[packs]]
-path = ".colab/packs/house-style.codemod"
+path = ".colab/packs/house-style.colab"
 ```
 
 ```sh
@@ -3863,14 +3868,14 @@ one parse of a file ([`docs/operations.md`](docs/operations.md#performance)).
 ## Output formats
 
 ```sh
-colab refactor --script s.codemod --format human .   # default on TTY: write + log
-colab refactor --script s.codemod --format diff .    # unified diff to stdout
-colab refactor --script s.codemod --format json .    # one JSON doc: counters + per-rule counts
-colab refactor --script s.codemod --format ndjson .  # one object per changed file, then a summary
-colab refactor --script s.codemod --check .          # exit 10 if changes pending
+colab refactor --script s.colab --format human .   # default on TTY: write + log
+colab refactor --script s.colab --format diff .    # unified diff to stdout
+colab refactor --script s.colab --format json .    # one JSON doc: counters + per-rule counts
+colab refactor --script s.colab --format ndjson .  # one object per changed file, then a summary
+colab refactor --script s.colab --check .          # exit 10 if changes pending
 colab fix --check --format github                    # CI: annotations on the pull request
 colab fix --check --format sarif > colab.sarif       # CI: code scanning (SARIF 2.1.0)
-cat foo.go | colab refactor --script s.codemod --stdin --path foo.go
+cat foo.go | colab refactor --script s.colab --stdin --path foo.go
 ```
 
 Defaults: `human` on a TTY implies `--write`; everything else

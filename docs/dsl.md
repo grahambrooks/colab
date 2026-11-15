@@ -15,7 +15,7 @@ refactor "name" {
 ```
 
 `colab` parses, validates, and lowers the script before touching any
-source files. Use [`colab explain --script foo.codemod`](./cli.md#colab-explain---script-path---e-rule)
+source files. Use [`colab explain --script foo.colab`](./cli.md#colab-explain---script-path---e-rule)
 to inspect the parsed IR; use `--format diff` (or `--check`) to preview
 edits before writing.
 
@@ -179,7 +179,12 @@ or run it on named files. The address syntax of each backend is in
 
 ## `include` directive
 
-A script can pull in match clauses from another `.codemod` file by
+Scripts are `.colab` files. The older `.codemod` extension is still
+accepted everywhere a script is looked for (`--script`, `include`,
+`colab.toml` packs, `colab pack list`, `colab test`, `colab server`), with
+a warning; rename such scripts to `.colab`.
+
+A script can pull in match clauses from another `.colab` file by
 listing `include "<path>"` inside its `refactor` block. The path
 is resolved relative to the *including* script's directory (or as
 an absolute path). The included file's outer `refactor "..."`
@@ -188,9 +193,9 @@ spliced into the parent in source order, intermixed with sibling
 matches.
 
 ```
-// project/scripts/main.codemod
+// project/scripts/main.colab
 refactor "company-migration" {
-    include "shared/javax-to-jakarta.codemod"
+    include "shared/javax-to-jakarta.colab"
     match go::import "internal.old" { replace "internal.new" }
 }
 ```
@@ -365,7 +370,7 @@ and use the name wherever a constraint takes a pattern:
 
 ```
 refactor "test-hygiene" {
-    include "shared.codemod"    // defines `goroutine`
+    include "shared.colab"    // defines `goroutine`
     pattern test_func = 'func $F(t *testing.T) { $$$B }'
 
     match go::pattern '$T.Fatal($$$A)' where inside goroutine, inside test_func {
@@ -918,7 +923,7 @@ template that still calls the function (`f(ctx, $args)` for `f`), and a
 `pattern` template that is itself a match of its pattern (`f($A)` →
 `f(g($A))`). The warning is on every run's report (`the template matches
 the pattern again, so every run rewrites its own output once more`), in
-`colab.lint_script`'s `warnings`, and on the rule in a `.codemod` editor.
+`colab.lint_script`'s `warnings`, and on the rule in a `.colab` editor.
 It is a warning, not an error: a wrap applied once on purpose is fine.
 
 ## Conflicts
@@ -994,7 +999,7 @@ refactor "swap-args" {
 ### Header file (pack)
 
 ```
-// java-jakarta-migration.codemod
+// java-jakarta-migration.colab
 //
 // Mechanical javax → jakarta swaps. Runs the full set in one pass.
 refactor "javax-to-jakarta" {

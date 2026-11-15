@@ -1120,14 +1120,14 @@ mod tests {
         let command = parse(
             r#"
             refactor "with-include" {
-                include "shared.codemod"
+                include "shared.colab"
                 match go::import "x" { replace "y" }
             }
             "#,
         )
         .unwrap();
         assert_eq!(command.items.len(), 2);
-        assert!(matches!(command.items[0], Item::Include(ref s) if s == "shared.codemod"));
+        assert!(matches!(command.items[0], Item::Include(ref s) if s == "shared.colab"));
         assert!(matches!(command.items[1], Item::Match(_)));
     }
 
@@ -1219,7 +1219,7 @@ import (
 
     #[test]
     fn compile_rejects_include_without_base_path() {
-        let err = compile(r#"refactor "x" { include "other.codemod" }"#, &registry()).unwrap_err();
+        let err = compile(r#"refactor "x" { include "other.colab" }"#, &registry()).unwrap_err();
         assert!(
             matches!(&err, Error::Config(msg) if msg.contains("compile_at_path")),
             "got: {err}"
@@ -1237,11 +1237,11 @@ import (
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let main = dir.join("main.codemod");
-        let shared = dir.join("shared.codemod");
+        let main = dir.join("main.colab");
+        let shared = dir.join("shared.colab");
         std::fs::write(
             &main,
-            r#"refactor "outer" { include "shared.codemod" match go::import "z" { replace "Z" } }"#,
+            r#"refactor "outer" { include "shared.colab" match go::import "z" { replace "Z" } }"#,
         )
         .unwrap();
         std::fs::write(
@@ -1271,10 +1271,10 @@ import (
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let a = dir.join("a.codemod");
-        let b = dir.join("b.codemod");
-        std::fs::write(&a, r#"refactor "a" { include "b.codemod" }"#).unwrap();
-        std::fs::write(&b, r#"refactor "b" { include "a.codemod" }"#).unwrap();
+        let a = dir.join("a.colab");
+        let b = dir.join("b.colab");
+        std::fs::write(&a, r#"refactor "a" { include "b.colab" }"#).unwrap();
+        std::fs::write(&b, r#"refactor "b" { include "a.colab" }"#).unwrap();
 
         let err = compile_at_path(&a, &registry()).unwrap_err();
         assert!(
@@ -1773,7 +1773,7 @@ import (
         );
         // With an include, it may be defined there: the rule is checked.
         let checks = check(
-            r#"refactor "t" { include "shared.codemod" match go::pattern 'f()' where inside shared { delete } }"#,
+            r#"refactor "t" { include "shared.colab" match go::pattern 'f()' where inside shared { delete } }"#,
             &registry(),
         )
         .unwrap();

@@ -19,7 +19,7 @@ colab section examples/markdown/guide.md "Options"
 # link to `#old-name` as a conflict, so --write would refuse (exit 11).
 # Run it on guide.md alone: its `in "**/guide.md"` scope also matches
 # fences/guide.md, where `set` would add front matter.
-colab refactor --script examples/markdown/sections.codemod --format diff examples/markdown/guide.md
+colab refactor --script examples/markdown/sections.colab --format diff examples/markdown/guide.md
 ```
 
 | Rule | Shows |
@@ -34,7 +34,7 @@ colab refactor --script examples/markdown/sections.codemod --format diff example
 
 ```sh
 # Rows by cell value (`^`: top), items by their text, links by destination.
-colab refactor --script examples/markdown/rows.codemod --format diff examples/markdown
+colab refactor --script examples/markdown/rows.colab --format diff examples/markdown
 
 # Broken links (exit 10 when there are any).
 colab links examples/markdown docs
@@ -49,8 +49,8 @@ colab links examples/markdown docs
 # A Go migration that also rewrites the ```go examples in the docs, and a
 # Rust rule that only touches the docs (`in fences`). The indented fence
 # in a list item is handled; the shell fence is left alone.
-colab refactor --script examples/markdown/fences/migrate.codemod --format diff examples/markdown/fences
+colab refactor --script examples/markdown/fences/migrate.colab --format diff examples/markdown/fences
 
 # Where a pattern matches in the docs' fences, at its place in the file.
-colab find --script examples/markdown/fences/find.codemod examples/markdown/fences
+colab find --script examples/markdown/fences/find.colab examples/markdown/fences
 ```

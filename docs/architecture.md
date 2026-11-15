@@ -1,6 +1,6 @@
 # Architecture
 
-Colab is a Cargo workspace that compiles a small DSL (the `.codemod`
+Colab is a Cargo workspace that compiles a small DSL (the `.colab`
 language) into a list of language-specific tree-sitter rewrites and
 applies them deterministically to a filesystem tree. This document
 describes the workspace layout, the runtime data flow, and the steps
@@ -80,7 +80,7 @@ crates/
                       # (apply.rs); the LSP-client commands
                       # (lsp_commands.rs); the Markdown commands and
                       # link check (markdown.rs); the LSP server for
-                      # .codemod files; `colab mcp`. Depends on
+                      # .colab files; `colab mcp`. Depends on
                       # colab-backends, and on colab-lsp-client and
                       # colab-lang-markdown directly.
 tests/corpus/         # Per-language end-to-end fixtures.

@@ -1,4 +1,4 @@
-# Go up to 1.18 (`1.18-modern.codemod`)
+# Go up to 1.18 (`1.18-modern.colab`)
 
 The modernisations that are pure syntax, as a reviewable diff:
 
@@ -13,8 +13,8 @@ Each `ioutil` rule adds the `os` or `io` import to the files it changes,
 and drops `io/ioutil` once nothing uses it.
 
 ```sh
-colab refactor --script examples/packs/go/1.18-modern.codemod --format diff .
-colab refactor --script examples/packs/go/1.18-modern.codemod --write --bisect 'go build ./...' .
+colab refactor --script examples/packs/go/1.18-modern.colab --format diff .
+colab refactor --script examples/packs/go/1.18-modern.colab --write --bisect 'go build ./...' .
 ```
 
 Or name it in `colab.toml` and run `colab fix`:

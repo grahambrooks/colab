@@ -5,18 +5,18 @@ finds a conflict writes nothing and exits 11.
 
 ```sh
 # Two conflicts in a.go, none in b.go. Nothing is written; exit 11.
-colab refactor --script examples/conflicts/check.codemod --write examples/conflicts
+colab refactor --script examples/conflicts/check.colab --write examples/conflicts
 echo $?
 
 # The same, as JSON: see `conflicts`.
-colab refactor --script examples/conflicts/check.codemod --format json examples/conflicts
+colab refactor --script examples/conflicts/check.colab --format json examples/conflicts
 
 # Fixed rules: no conflicts (preview only).
-colab refactor --script examples/conflicts/fixed.codemod --format diff examples/conflicts
+colab refactor --script examples/conflicts/fixed.colab --format diff examples/conflicts
 
 # Ask the language server too (needs gopls on PATH, and a go.mod for
 # real type checking).
-colab refactor --script examples/conflicts/fixed.codemod --verify-lsp --dry-run examples/conflicts
+colab refactor --script examples/conflicts/fixed.colab --verify-lsp --dry-run examples/conflicts
 ```
 
 | Rule | Conflict |

@@ -23,7 +23,7 @@ body:
         - colab refactor / find / fix (a script or pack)
         - colab rename / mv / action / references / safe-delete / edit (a language server)
         - colab mcp (the MCP server)
-        - colab server (the .codemod editor support)
+        - colab server (the .colab editor support)
         - colab agent / hook (agent install, post-edit hook)
         - colab fleet / test / review / other command
         - Install or release archive
@@ -33,7 +33,7 @@ body:
     id: script
     attributes:
       label: Script or command
-      description: The `.codemod` script, or the inline rules and command line.
+      description: The `.colab` script, or the inline rules and command line.
       render: text
     validations:
       required: true

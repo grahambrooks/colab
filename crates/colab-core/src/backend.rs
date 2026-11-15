@@ -87,7 +87,7 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     /// What this rule compiles to but probably should not, known before it
     /// runs: a rewrite whose output matches it again, so a second run
     /// changes the code once more. Shown as a warning on every run, and by
-    /// `lint_script` and the `.codemod` editor. The default has none.
+    /// `lint_script` and the `.colab` editor. The default has none.
     fn advice(&self) -> Vec<String> {
         Vec::new()
     }

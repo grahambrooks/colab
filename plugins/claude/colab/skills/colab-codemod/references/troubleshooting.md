@@ -163,7 +163,7 @@ Do not guess which rule did it. Let colab find out:
 
 ```sh
 # Revert first if you already applied.
-colab refactor --script fix.codemod --bisect 'cargo check' .
+colab refactor --script fix.colab --bisect 'cargo check' .
 ```
 
 `--bisect` applies everything, runs the command, and on failure
@@ -174,7 +174,7 @@ To avoid the situation next time, apply rule-by-rule with a build check
 after each — a failure reverts just that rule:
 
 ```sh
-colab refactor --script fix.codemod --verify 'cargo check' --write .
+colab refactor --script fix.colab --verify 'cargo check' --write .
 ```
 
 ## Rolling back
@@ -182,7 +182,7 @@ colab refactor --script fix.codemod --verify 'cargo check' --write .
 If you applied with `--backup`:
 
 ```sh
-colab refactor --script fix.codemod --backup /tmp/snap --write .
+colab refactor --script fix.colab --backup /tmp/snap --write .
 colab undo --from /tmp/snap
 ```
 

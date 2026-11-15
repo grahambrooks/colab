@@ -1,4 +1,4 @@
-//! Pack catalog: the packs built into colab, and `.codemod` files in
+//! Pack catalog: the packs built into colab, and `.colab` files in
 //! well-known locations.
 //!
 //! Built-in packs are the scripts under `examples/packs/`, compiled into
@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 /// A pack compiled into colab.
 #[derive(Debug, Clone, Copy)]
 pub struct Builtin {
-    /// `<lang>/<name>`, its path under `examples/packs/` without `.codemod`.
+    /// `<lang>/<name>`, its path under `examples/packs/` without `.colab`.
     pub name: &'static str,
     pub script: &'static str,
 }
@@ -34,7 +34,7 @@ macro_rules! builtin {
     ($name:literal) => {
         Builtin {
             name: $name,
-            script: include_str!(concat!("../../../examples/packs/", $name, ".codemod")),
+            script: include_str!(concat!("../../../examples/packs/", $name, ".colab")),
         }
     };
 }
@@ -50,7 +50,7 @@ pub const BUILTIN: &[Builtin] = &[
 
 /// The built-in pack called `name`, or an error naming them all.
 pub fn builtin(name: &str) -> colab_core::Result<&'static Builtin> {
-    let name = name.trim_end_matches(".codemod");
+    let name = colab_core::script_file::strip_extension(name);
     BUILTIN.iter().find(|b| b.name == name).ok_or_else(|| {
         let names: Vec<&str> = BUILTIN.iter().map(|b| b.name).collect();
         colab_core::Error::Config(format!(
@@ -111,9 +111,10 @@ fn scan(dir: &Path, source: &str, out: &mut Vec<Value>) {
         if !path.is_file() {
             continue;
         }
-        if path.extension().and_then(|s| s.to_str()) != Some("codemod") {
+        if !colab_core::script_file::is_script(&path) {
             continue;
         }
+        colab_core::script_file::warn_if_legacy(&path);
         let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         out.push(json!({
             "name": name,
@@ -158,14 +159,17 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{}: {e}", pack.name));
         }
         assert!(builtin("go/1.18-modern").is_ok());
+        assert!(builtin("go/1.18-modern.colab").is_ok());
+        assert!(builtin("go/1.18-modern.codemod").is_ok());
         let e = builtin("go/1.18-modren").unwrap_err().to_string();
         assert!(e.contains("did you mean `go/1.18-modern`"), "{e}");
     }
 
     #[test]
-    fn scan_picks_only_codemod_files() {
+    fn scan_picks_only_script_files() {
         let dir = temp_dir("scan");
-        write(&dir.join("first.codemod"), "refactor \"x\" {}");
+        write(&dir.join("first.colab"), "refactor \"x\" {}");
+        // The legacy extension is still a pack.
         write(&dir.join("second.codemod"), "refactor \"y\" {}");
         write(&dir.join("README.md"), "not a pack");
 

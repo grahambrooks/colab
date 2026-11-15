@@ -118,12 +118,12 @@ check = "cargo check -q"        # after writing: a failure is bisected to one ru
 pack = "rust/edition-2021-to-2024"
 
 [[packs]]
-path = ".colab/packs/house-style.codemod"
+path = ".colab/packs/house-style.colab"
 
 [[packs]]
 git = "https://github.com/acme/colab-packs"
 tag = "v3"                       # or rev = "<commit>"
-path = "go/errors.codemod"
+path = "go/errors.colab"
 ```
 
 Give each pack cases beside it (`<pack>.tests/<case>/input/` and

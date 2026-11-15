@@ -19,6 +19,7 @@ pub mod prose;
 pub mod render;
 pub mod report;
 pub mod scoped;
+pub mod script_file;
 pub mod semantic;
 pub mod suggest;
 pub mod symbols;

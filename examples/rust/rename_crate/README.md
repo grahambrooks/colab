@@ -5,7 +5,7 @@ and source files in one script.
 
 ```sh
 # From the repo root: preview, then add --write to apply.
-colab refactor --script examples/rust/rename_crate/rename.codemod \
+colab refactor --script examples/rust/rename_crate/rename.colab \
     --format diff examples/rust/rename_crate
 ```
 
@@ -20,7 +20,7 @@ What the script does:
 For CI-style read-only verification, use `--check`:
 
 ```sh
-colab refactor --script examples/rust/rename_crate/rename.codemod \
+colab refactor --script examples/rust/rename_crate/rename.colab \
     --check examples/rust/rename_crate
 echo "exit: $?"   # 10 if changes are pending, 0 if already applied
 ```

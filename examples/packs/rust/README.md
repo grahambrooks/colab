@@ -1,4 +1,4 @@
-# Rust 2021 → 2024 (`edition-2021-to-2024.codemod`)
+# Rust 2021 → 2024 (`edition-2021-to-2024.colab`)
 
 The edition changes that are pure syntax, as a reviewable diff:
 
@@ -10,8 +10,8 @@ The edition changes that are pure syntax, as a reviewable diff:
 | identifiers named `gen` → `r#gen` | `gen` is a reserved keyword |
 
 ```sh
-colab refactor --script examples/packs/rust/edition-2021-to-2024.codemod --format diff .
-colab refactor --script examples/packs/rust/edition-2021-to-2024.codemod --write --tidy .
+colab refactor --script examples/packs/rust/edition-2021-to-2024.colab --format diff .
+colab refactor --script examples/packs/rust/edition-2021-to-2024.colab --write --tidy .
 # then set `edition = "2024"` in Cargo.toml and build
 ```
 

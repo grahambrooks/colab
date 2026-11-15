@@ -16,7 +16,7 @@
 //! pack = "go/1.18-modern"             # a pack built into colab (`colab pack list`)
 //!
 //! [[packs]]
-//! path = ".colab/packs/house-style.codemod"   # relative to colab.toml
+//! path = ".colab/packs/house-style.colab"   # relative to colab.toml
 //! ```
 //!
 //! The file is found by walking up from the working directory, stopping
@@ -37,10 +37,10 @@ pub const FILE: &str = "colab.toml";
 pub enum PackRef {
     /// A pack built into colab, by name.
     Builtin(String),
-    /// A `.codemod` file, relative to `colab.toml`.
+    /// A `.colab` file, relative to `colab.toml`.
     Path(PathBuf),
     /// A pack in a git repository, pinned to a tag or commit: `path` is
-    /// the `.codemod` file inside it. Fetched into a cache
+    /// the `.colab` file inside it. Fetched into a cache
     /// ([`crate::git_packs`]).
     Git {
         url: String,
@@ -208,7 +208,7 @@ pub fn parse(path: &Path, text: &str) -> Result<Config> {
                             return Err(bad(
                                 path,
                                 format!(
-                                    "the git pack `{url}` needs `path = \"<the .codemod file in it>\"`"
+                                    "the git pack `{url}` needs `path = \"<the .colab file in it>\"`"
                                 ),
                             ));
                         };
@@ -258,7 +258,7 @@ mod tests {
     fn a_git_pack_takes_one_pin_and_a_path() {
         let ok = parse(
             Path::new("colab.toml"),
-            "[[packs]]\ngit = \"https://example.test/p.git\"\ntag = \"v1\"\npath = \"go/x.codemod\"\n",
+            "[[packs]]\ngit = \"https://example.test/p.git\"\ntag = \"v1\"\npath = \"go/x.colab\"\n",
         )
         .unwrap();
         assert_eq!(
@@ -266,7 +266,7 @@ mod tests {
             [PackRef::Git {
                 url: "https://example.test/p.git".into(),
                 pin: crate::git_packs::Pin::Tag("v1".into()),
-                path: "go/x.codemod".into(),
+                path: "go/x.colab".into(),
             }]
         );
         let err = |text: &str| {
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn parses_the_documented_shape() {
-        let text = "[run]\npaths = [\"src\"]\nexclude = [\"vendor/**\"]\njobs = 4\ncheck = \"cargo check\"\ntidy = true\n\n[formatters]\nrs = \"rustfmt\"\n\n[[packs]]\npack = \"go/1.18-modern\"\n\n[[packs]]\npath = \".colab/packs/x.codemod\"\n";
+        let text = "[run]\npaths = [\"src\"]\nexclude = [\"vendor/**\"]\njobs = 4\ncheck = \"cargo check\"\ntidy = true\n\n[formatters]\nrs = \"rustfmt\"\n\n[[packs]]\npack = \"go/1.18-modern\"\n\n[[packs]]\npath = \".colab/packs/x.colab\"\n";
         let c = parse(Path::new("/repo/colab.toml"), text).unwrap();
         assert_eq!(c.dir, Path::new("/repo"));
         assert_eq!(c.paths, [PathBuf::from("src")]);
@@ -296,7 +296,7 @@ mod tests {
             c.packs,
             [
                 PackRef::Builtin("go/1.18-modern".into()),
-                PackRef::Path(".colab/packs/x.codemod".into())
+                PackRef::Path(".colab/packs/x.colab".into())
             ]
         );
     }

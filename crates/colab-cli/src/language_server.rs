@@ -1,8 +1,8 @@
-//! LSP server for `.codemod` scripts.
+//! LSP server for `.colab` scripts.
 //!
 //! Today serves two features:
 //!
-//! - **Diagnostics.** Every open / change of a `.codemod` file
+//! - **Diagnostics.** Every open / change of a `.colab` file
 //!   triggers `colab_dsl::compile` against the binary's default
 //!   [`BackendRegistry`]; parse errors and unsupported-namespace
 //!   errors surface as LSP diagnostics. Parse errors carry a
@@ -218,7 +218,7 @@ impl Backend {
     }
 
     async fn refresh_diagnostics(&self, uri: Url, version: Option<i32>, text: String) {
-        // Only diagnose `.codemod` files; ignore everything else so
+        // Only diagnose `.colab` files; ignore everything else so
         // editors that route arbitrary buffers here don't pollute
         // the diagnostics panel.
         if !is_codemod_uri(&uri) {
@@ -235,7 +235,7 @@ impl Backend {
 }
 
 fn is_codemod_uri(uri: &Url) -> bool {
-    uri.path().ends_with(".codemod")
+    colab_core::script_file::is_script(std::path::Path::new(uri.path()))
 }
 
 #[tower_lsp::async_trait]
@@ -525,7 +525,7 @@ impl Backend {
     ) -> colab_core::Result<WorkspaceEdit> {
         let base = uri
             .to_file_path()
-            .unwrap_or_else(|_| PathBuf::from("script.codemod"));
+            .unwrap_or_else(|_| PathBuf::from("script.colab"));
         let mut refactoring = compile_at_source(text, &base, &self.backends)?;
         if let Some(index) = rule {
             // `rule` is a block; a block can lower to more than one rule
@@ -1001,6 +1001,7 @@ mod tests {
 
     #[test]
     fn is_codemod_uri_recognises_extension() {
+        assert!(is_codemod_uri(&Url::parse("file:///x/y.colab").unwrap()));
         assert!(is_codemod_uri(&Url::parse("file:///x/y.codemod").unwrap()));
         assert!(!is_codemod_uri(&Url::parse("file:///x/y.go").unwrap()));
     }
@@ -1011,12 +1012,12 @@ mod tests {
 
     #[test]
     fn include_at_finds_the_path_under_the_cursor() {
-        let text = "refactor \"r\" {\n    include \"packs/a.codemod\"\n    match go::include \"x\" { delete }\n}\n";
+        let text = "refactor \"r\" {\n    include \"packs/a.colab\"\n    match go::include \"x\" { delete }\n}\n";
         let at = text.find("packs").unwrap();
-        assert_eq!(include_at(text, at).as_deref(), Some("packs/a.codemod"));
+        assert_eq!(include_at(text, at).as_deref(), Some("packs/a.colab"));
         assert_eq!(
             include_at(text, text.find("include").unwrap()).as_deref(),
-            Some("packs/a.codemod")
+            Some("packs/a.colab")
         );
         // `c::include` is a module, not the directive.
         assert_eq!(
@@ -1025,8 +1026,8 @@ mod tests {
         );
         assert_eq!(include_at(text, text.find("match").unwrap()), None);
         assert_eq!(
-            include_at("include r#\"b.codemod\"#", 12).as_deref(),
-            Some("b.codemod")
+            include_at("include r#\"b.colab\"#", 12).as_deref(),
+            Some("b.colab")
         );
     }
 
@@ -1034,9 +1035,9 @@ mod tests {
     async fn an_include_goes_to_the_included_script() {
         let dir = std::env::temp_dir().join(format!("colab-lsp-def-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("packs")).unwrap();
-        std::fs::write(dir.join("packs/a.codemod"), "refactor \"a\" {}\n").unwrap();
-        let main = dir.join("main.codemod");
-        let text = "refactor \"m\" {\n    include \"packs/a.codemod\"\n    include \"missing.codemod\"\n}\n";
+        std::fs::write(dir.join("packs/a.colab"), "refactor \"a\" {}\n").unwrap();
+        let main = dir.join("main.colab");
+        let text = "refactor \"m\" {\n    include \"packs/a.colab\"\n    include \"missing.colab\"\n}\n";
         std::fs::write(&main, text).unwrap();
         let (service, _) = LspService::new(|client| Backend::new(client, registry()));
         let backend = service.inner();
@@ -1059,7 +1060,7 @@ mod tests {
             panic!("no definition: {found:?}");
         };
         assert!(
-            location.uri.path().ends_with("/packs/a.codemod"),
+            location.uri.path().ends_with("/packs/a.colab"),
             "{location:?}"
         );
         // A file that does not exist goes nowhere.
@@ -1296,7 +1297,7 @@ mod tests {
             backend.progress.load(Ordering::Relaxed),
             "read from initialize"
         );
-        let uri = Url::from_file_path(root.join("fix.codemod")).unwrap();
+        let uri = Url::from_file_path(root.join("fix.colab")).unwrap();
         let text = "refactor \"x\" { match go::import \"a\" { replace \"b\" } }\n";
         let edit = backend.workspace_edit(&uri, text, None).await.unwrap();
         assert_eq!(edit.changes.unwrap().len(), PROGRESS_EVERY + 5);
@@ -1333,7 +1334,7 @@ mod tests {
         let (service, _) = LspService::new(|client| Backend::new(client, registry()));
         let backend = service.inner();
         *backend.roots.lock().await = vec![root.clone()];
-        let uri = Url::from_file_path(root.join("fix.codemod")).unwrap();
+        let uri = Url::from_file_path(root.join("fix.colab")).unwrap();
         let text = "refactor \"x\" {\n  match go::import \"a\" { replace \"b\" }\n  match go::import \"c\" { replace \"d\" }\n}\n";
 
         let all = backend.workspace_edit(&uri, text, None).await.unwrap();

@@ -1,1 +1,1 @@
-colab refactor --script "$TASK/docs.codemod" --format json --detail counts --write .
+colab refactor --script "$TASK/docs.colab" --format json --detail counts --write .

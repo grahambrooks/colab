@@ -1,4 +1,4 @@
-# Java 8 → 21 (`8-to-21.codemod`)
+# Java 8 → 21 (`8-to-21.colab`)
 
 The modernisations that are pure syntax, as a reviewable diff:
 
@@ -9,8 +9,8 @@ The modernisations that are pure syntax, as a reviewable diff:
 | `xs = new ArrayList<String>(…)` → `new ArrayList<>(…)` | likewise, the target type is known |
 
 ```sh
-colab refactor --script examples/packs/java/8-to-21.codemod --format diff .
-colab refactor --script examples/packs/java/8-to-21.codemod --write --bisect 'mvn -q compile' .
+colab refactor --script examples/packs/java/8-to-21.colab --format diff .
+colab refactor --script examples/packs/java/8-to-21.colab --write --bisect 'mvn -q compile' .
 ```
 
 On the sample in `tests/corpus/java/modern_21/`, `javac -Xlint:all`

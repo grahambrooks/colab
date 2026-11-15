@@ -206,7 +206,7 @@ pub Action: Action = {
 // Namespace segments may be spelled like DSL keywords: a backend's
 // module is named after the language's own construct, and C's is
 // `#include`. Listing the keyword terminals here lets `c::include` parse
-// as a namespace while `include "pack.codemod"` at item level still
+// as a namespace while `include "pack.colab"` at item level still
 // reads as the directive — the two positions are never ambiguous,
 // because a namespace only ever follows `match`.
 pub Identifier: String = {

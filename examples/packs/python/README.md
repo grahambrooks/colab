@@ -1,4 +1,4 @@
-# Python typing for 3.12 (`3.12-typing.codemod`)
+# Python typing for 3.12 (`3.12-typing.colab`)
 
 Annotations written the way 3.9+ and 3.10+ allow, as a reviewable diff:
 
@@ -13,8 +13,8 @@ The rules apply in annotations and anywhere else the subscript appears
 (`cast(Optional[str], x)`), so the code must run on 3.10 or later.
 
 ```sh
-colab refactor --script examples/packs/python/3.12-typing.codemod --format diff .
-colab refactor --script examples/packs/python/3.12-typing.codemod --write .
+colab refactor --script examples/packs/python/3.12-typing.colab --format diff .
+colab refactor --script examples/packs/python/3.12-typing.colab --write .
 ruff check --select F401 --fix .   # the typing imports it leaves unused
 ```
 

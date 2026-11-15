@@ -3,7 +3,7 @@
 //!
 //! ```toml
 //! [fleet]
-//! script = "migrate.codemod"     # relative to this file; or `fix = true`
+//! script = "migrate.colab"     # relative to this file; or `fix = true`
 //! branch = "colab/errors-to-fmt" # what --write commits on
 //! title = "Move from pkg/errors to fmt"
 //! body = "Made by colab fleet."
@@ -651,10 +651,10 @@ mod tests {
         let path = Path::new("/w/fleet.toml");
         let m = parse(
             path,
-            "[fleet]\nscript = \"m.codemod\"\nbranch = \"colab/m\"\ncanary = \"api\"\n\n[[repos]]\nname = \"api\"\npath = \"../api\"\n\n[[repos]]\ngit = \"https://example.test/acme/billing.git\"\nref = \"main\"\npaths = [\"src\"]\n",
+            "[fleet]\nscript = \"m.colab\"\nbranch = \"colab/m\"\ncanary = \"api\"\n\n[[repos]]\nname = \"api\"\npath = \"../api\"\n\n[[repos]]\ngit = \"https://example.test/acme/billing.git\"\nref = \"main\"\npaths = [\"src\"]\n",
         )
         .unwrap();
-        assert_eq!(m.run, Run::Script("/w/m.codemod".into()));
+        assert_eq!(m.run, Run::Script("/w/m.colab".into()));
         assert_eq!(m.repos[1].name, "billing");
         assert_eq!(m.repos[1].paths, ["src"]);
         assert_eq!(m.title, "colab: colab/m");

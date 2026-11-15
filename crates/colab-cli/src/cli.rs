@@ -56,7 +56,7 @@ search and debug patterns. `colab rename` / `mv` / `action` /
 `colab outline` / `section` / `links` read Markdown. `colab schema` /
 `list-languages` / `list-rules <lang>` describe the capabilities,
 `colab explain` prints a parsed script as JSON, `colab server` is the
-LSP for .codemod files, and `colab mcp` the Model Context Protocol
+LSP for .colab files, and `colab mcp` the Model Context Protocol
 server.
 
 Exit codes:
@@ -1132,6 +1132,7 @@ pub(crate) fn compile_packs(
             }
             crate::config::PackRef::Path(file) => {
                 let file = config.dir.join(file);
+                colab_core::script_file::warn_if_legacy(&file);
                 let text = fs::read_to_string(&file).map_err(|e| Error::io_at(&file, e))?;
                 codemod::compile_at_source(&text, &file, backends)?
             }
@@ -1187,7 +1188,7 @@ impl SelectArgs {
 ///
 /// Exactly one of `--script` / `--rule` is required. Inline rules exist
 /// so an agent (or a one-off shell command) can run a rule without
-/// first writing a `.codemod` file.
+/// first writing a `.colab` file.
 #[derive(clap::Args, Debug)]
 #[group(required = true, multiple = false)]
 struct ScriptArgs {
@@ -1230,6 +1231,7 @@ impl ScriptArgs {
                 ))
             }
             Some(path) => {
+                colab_core::script_file::warn_if_legacy(path);
                 let text = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
                 Ok((text, path.clone()))
             }
@@ -1573,7 +1575,7 @@ fn run_fix(args: FixArgs) -> Result<i32> {
     if config.packs.is_empty() {
         return Err(Error::Config(format!(
             "{} declares no packs; add a `[[packs]]` table with `pack = \"<built-in>\"` \
-             or `path = \"<file>.codemod\"`",
+             or `path = \"<file>.colab\"`",
             path.display()
         )));
     }

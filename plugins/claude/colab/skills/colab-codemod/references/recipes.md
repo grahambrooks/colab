@@ -156,9 +156,9 @@ refactor "javax-to-jakarta" {
 ```
 
 ```
-// callers/main.codemod
+// callers/main.colab
 refactor "our-migration" {
-    include "../packs/javax-to-jakarta.codemod"
+    include "../packs/javax-to-jakarta.colab"
     match java::package "com.old" { replace "com.new" }
 }
 ```
@@ -458,7 +458,7 @@ them with `'…'` and put the text inline as above.
 
 ## Reusable packs
 
-Put shared migrations in their own `.codemod` file and `include` them.
+Put shared migrations in their own `.colab` file and `include` them.
 `colab pack list` shows the built-in packs (run through `colab.toml` and
 `colab fix`) and any in `<repo>/.colab/packs/` and `~/.colab/packs/`. A pack with no match
 clauses compiles to zero rules and does nothing — the run reports
@@ -470,7 +470,7 @@ placeholder.
 For an editor hook or a one-file check, skip the walker entirely:
 
 ```sh
-cat foo.go | colab refactor --script s.codemod --stdin --path foo.go
+cat foo.go | colab refactor --script s.colab --stdin --path foo.go
 ```
 
 `--path` is a hint used only to decide which rules are relevant; no file

@@ -1,6 +1,6 @@
 ---
 name: colab-codemod
-description: Make a mechanical, repo-wide code change with colab instead of editing files one at a time or reaching for sed. Use when the same structural edit repeats across many files — an import path, a dependency rename, a symbol, a Java package, a Go struct tag, a call site, any code shape expressible as a pattern with $METAVARS (e.g. errors.Wrap($E, $M) → fmt.Errorf(...)), or a TOML/JSON/Markdown config key. Also for read-only structural search (colab find) when grep would match strings and comments too. Covers deciding whether colab fits, writing the .codemod script, checking blast radius before applying, and applying safely, via the CLI or the MCP tools.
+description: Make a mechanical, repo-wide code change with colab instead of editing files one at a time or reaching for sed. Use when the same structural edit repeats across many files — an import path, a dependency rename, a symbol, a Java package, a Go struct tag, a call site, any code shape expressible as a pattern with $METAVARS (e.g. errors.Wrap($E, $M) → fmt.Errorf(...)), or a TOML/JSON/Markdown config key. Also for read-only structural search (colab find) when grep would match strings and comments too. Covers deciding whether colab fits, writing the .colab script, checking blast radius before applying, and applying safely, via the CLI or the MCP tools.
 ---
 
 # Running a codemod with colab
@@ -77,13 +77,13 @@ each can save you the next.
 # 1. Blast radius. A few hundred bytes. Re-run after every script edit.
 #    This compiles the script too, so it also reports syntax errors
 #    (exit 2) and unknown namespaces/modules (exit 3).
-colab refactor --script fix.codemod --format json .
+colab refactor --script fix.colab --format json .
 
 # 2. Sample the actual hunks, once the counts look right.
-colab refactor --script fix.codemod --format diff .
+colab refactor --script fix.colab --format diff .
 
 # 3. Apply.
-colab refactor --script fix.codemod --write .
+colab refactor --script fix.colab --write .
 ```
 
 For a change of one or two rules, skip the file: pass each rule inline
@@ -381,17 +381,17 @@ move is committed on its own and `git log --follow` keeps working.
 
 ```sh
 # Reversible: snapshot originals, roll back if you change your mind.
-colab refactor --script fix.codemod --backup /tmp/snap --write .
+colab refactor --script fix.colab --backup /tmp/snap --write .
 colab undo --from /tmp/snap
 
 # Apply rule by rule, running a build after each; auto-revert on failure.
-colab refactor --script fix.codemod --verify 'cargo check' --write .
+colab refactor --script fix.colab --verify 'cargo check' --write .
 
 # Apply everything, then bisect to the single rule that broke the build.
-colab refactor --script fix.codemod --bisect 'cargo check' .
+colab refactor --script fix.colab --bisect 'cargo check' .
 
 # One git commit per rule, for a reviewable history.
-colab refactor --script fix.codemod --commit-per-rule .
+colab refactor --script fix.colab --commit-per-rule .
 ```
 
 On a large or unfamiliar codebase prefer `--verify` over a bare
@@ -413,11 +413,11 @@ intended. Over MCP, `colab.apply` returns `applied: false` with the same
 
 ```sh
 # Cheap pre-write check by the language server (gopls, rust-analyzer, …).
-colab refactor --script fix.codemod --verify-lsp --write .
+colab refactor --script fix.colab --verify-lsp --write .
 
 # Format the changed files (colab.toml [formatters], else the language
 # server) before writing; combines with --bisect, not with --verify.
-colab refactor --script fix.codemod --tidy --bisect 'cargo check' --write .
+colab refactor --script fix.colab --tidy --bisect 'cargo check' --write .
 ```
 
 **A run too big to review as one diff:** record it with `--format ndjson
@@ -447,7 +447,7 @@ Narrowing what gets touched:
 doubles as a lint that keeps a convention from coming back:
 
 ```sh
-colab refactor --script lint.codemod --check .
+colab refactor --script lint.colab --check .
 ```
 
 Exit codes: `0` success · `1` config error · `2` script parse error ·

@@ -288,7 +288,7 @@ fn run_task(dir: &Path, bin_dir: &Path) -> Result<Outcome, String> {
     // everything it prints (stdout and the log on stderr).
     let mut colab = Cost::default();
     for entry in fs::read_dir(dir).unwrap().flatten() {
-        if entry.path().extension().is_some_and(|e| e == "codemod") {
+        if colab_core::script_file::is_script(&entry.path()) {
             colab.written += EDIT_OVERHEAD + fs::read_to_string(entry.path()).unwrap().len();
             colab.read += EDIT_RESULT;
             colab.calls += 1;

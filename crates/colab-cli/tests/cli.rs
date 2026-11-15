@@ -57,7 +57,7 @@ fn colab() -> Command {
 #[test]
 fn check_exits_10_when_changes_pending() {
     let root = workspace_temp("check-pending");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -83,7 +83,7 @@ fn check_exits_10_when_changes_pending() {
 #[test]
 fn check_exits_0_when_no_changes() {
     let root = workspace_temp("check-clean");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_EXPECTED);
@@ -105,9 +105,38 @@ fn check_exits_0_when_no_changes() {
 }
 
 #[test]
+fn a_legacy_codemod_script_still_runs_with_a_warning() {
+    let root = workspace_temp("legacy-extension");
+    let script = root.join("rename.codemod");
+    let target = root.join("main.go");
+    write(&script, SCRIPT);
+    write(&target, GO_INPUT);
+
+    let out = colab()
+        .args([
+            "refactor",
+            "--script",
+            script.to_str().unwrap(),
+            "--check",
+            target.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(out.status.code(), Some(10));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("`.codemod` extension is deprecated"),
+        "{stderr}"
+    );
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn dry_run_does_not_write() {
     let root = workspace_temp("dry-run");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -132,7 +161,7 @@ fn dry_run_does_not_write() {
 #[test]
 fn write_rewrites_in_place() {
     let root = workspace_temp("write");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -157,7 +186,7 @@ fn write_rewrites_in_place() {
 #[test]
 fn format_json_emits_one_document_and_does_not_write() {
     let root = workspace_temp("format-json");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -209,7 +238,7 @@ fn format_json_emits_one_document_and_does_not_write() {
 #[test]
 fn json_detail_diff_adds_capped_diffs() {
     let root = workspace_temp("format-json-diff");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -238,7 +267,7 @@ fn json_detail_diff_adds_capped_diffs() {
 #[test]
 fn a_rule_that_matches_nothing_is_reported_as_dead() {
     let root = workspace_temp("dead-rule");
-    let script = root.join("dead.codemod");
+    let script = root.join("dead.colab");
     let target = root.join("main.go");
     write(
         &script,
@@ -284,7 +313,7 @@ fn a_rule_that_matches_nothing_is_reported_as_dead() {
 #[test]
 fn summary_only_suppresses_per_file_detail() {
     let root = workspace_temp("summary-only");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let a = root.join("a.go");
     let b = root.join("b.go");
     write(&script, SCRIPT);
@@ -319,7 +348,7 @@ fn summary_only_suppresses_per_file_detail() {
 #[test]
 fn ndjson_streams_changed_files_then_a_summary() {
     let root = workspace_temp("format-ndjson");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let changed = root.join("a.go");
     let untouched = root.join("b.go");
     write(&script, SCRIPT);
@@ -360,7 +389,7 @@ fn ndjson_streams_changed_files_then_a_summary() {
 #[test]
 fn format_diff_emits_unified_diff() {
     let root = workspace_temp("format-diff");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -390,7 +419,7 @@ fn format_diff_emits_unified_diff() {
 #[test]
 fn stdin_emits_transformed_source_to_stdout() {
     let root = workspace_temp("stdin");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     write(&script, SCRIPT);
 
     let mut child = colab()
@@ -530,7 +559,7 @@ fn list_rules_for_unknown_lang_exits_3() {
 #[test]
 fn explain_returns_parsed_ir() {
     let root = workspace_temp("explain");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     write(&script, SCRIPT);
 
     let output = colab()
@@ -555,7 +584,7 @@ fn explain_returns_parsed_ir() {
 #[test]
 fn explain_reports_an_in_scope_clause() {
     let root = workspace_temp("explain-scope");
-    let script = root.join("scoped.codemod");
+    let script = root.join("scoped.colab");
     write(
         &script,
         "refactor \"scoped\" {\n  \
@@ -578,7 +607,7 @@ fn explain_reports_an_in_scope_clause() {
 #[test]
 fn a_parse_error_reports_line_column_and_expected_tokens() {
     let root = workspace_temp("parse-detail");
-    let script = root.join("broken.codemod");
+    let script = root.join("broken.colab");
     write(
         &script,
         "refactor \"x\" {\n  match go::import \"a\" { replac \"b\" }\n}\n",
@@ -603,7 +632,7 @@ fn a_parse_error_reports_line_column_and_expected_tokens() {
 #[test]
 fn an_unknown_module_names_the_closest_real_one() {
     let root = workspace_temp("typo-module");
-    let script = root.join("typo.codemod");
+    let script = root.join("typo.colab");
     write(
         &script,
         "refactor \"x\" {\n  match go::improt \"a\" { replace \"b\" }\n}\n",
@@ -637,7 +666,7 @@ fn an_unknown_module_names_the_closest_real_one() {
 #[test]
 fn an_unsupported_action_names_the_action_and_the_valid_ones() {
     let root = workspace_temp("bad-action");
-    let script = root.join("bad.codemod");
+    let script = root.join("bad.colab");
     // `rust::crate` supports replace and delete but not ensure: adding a
     // dependency needs a version, which the DSL has no way to express.
     write(
@@ -670,7 +699,7 @@ fn an_unsupported_action_names_the_action_and_the_valid_ones() {
 #[test]
 fn parse_error_exits_2() {
     let root = workspace_temp("parse-err");
-    let script = root.join("broken.codemod");
+    let script = root.join("broken.colab");
     write(&script, "this is not valid syntax");
 
     let output = colab()
@@ -685,7 +714,7 @@ fn parse_error_exits_2() {
 #[test]
 fn delete_action_round_trips_through_cli() {
     let root = workspace_temp("delete-action");
-    let script = root.join("drop.codemod");
+    let script = root.join("drop.colab");
     let target = root.join("main.go");
     write(
         &script,
@@ -715,7 +744,7 @@ fn delete_action_round_trips_through_cli() {
 #[test]
 fn ensure_action_is_idempotent_through_cli() {
     let root = workspace_temp("ensure-action");
-    let script = root.join("ensure.codemod");
+    let script = root.join("ensure.colab");
     let target = root.join("main.go");
     write(
         &script,
@@ -835,7 +864,7 @@ impl WaitTimeoutExt for std::process::Child {
 #[test]
 fn include_glob_restricts_processed_files() {
     let root = workspace_temp("include-glob");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     write(&script, SCRIPT);
     let want = root.join("src/main.go");
     let nope = root.join("vendor/main.go");
@@ -866,7 +895,7 @@ fn include_glob_restricts_processed_files() {
 #[test]
 fn exclude_glob_skips_matching_files() {
     let root = workspace_temp("exclude-glob");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     write(&script, SCRIPT);
     let kept = root.join("main.go");
     let skipped = root.join("vendor/main.go");
@@ -898,7 +927,7 @@ fn gitignore_default_skips_ignored_files() {
     let root = workspace_temp("gitignore-default");
     fs::create_dir_all(root.join(".git")).unwrap();
     write(&root.join(".gitignore"), "vendor/\n");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     write(&script, SCRIPT);
     let kept = root.join("main.go");
     let ignored = root.join("vendor/main.go");
@@ -929,7 +958,7 @@ fn no_ignore_visits_gitignored_files() {
     let root = workspace_temp("no-ignore");
     fs::create_dir_all(root.join(".git")).unwrap();
     write(&root.join(".gitignore"), "vendor/\n");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     write(&script, SCRIPT);
     let in_vendor = root.join("vendor/main.go");
     write(&in_vendor, GO_INPUT);
@@ -958,7 +987,7 @@ fn parallel_walk_produces_identical_results_across_jobs_settings() {
     // the resulting files. Both must converge on the same output.
     let make_tree = |label: &str| {
         let root = workspace_temp(label);
-        let script = root.join("rename.codemod");
+        let script = root.join("rename.colab");
         write(&script, SCRIPT);
         for dir in 0..4 {
             for file in 0..6 {
@@ -1017,7 +1046,7 @@ fn parallel_walk_produces_identical_results_across_jobs_settings() {
 #[test]
 fn verify_passes_through_when_command_succeeds() {
     let root = workspace_temp("verify-ok");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -1044,7 +1073,7 @@ fn verify_passes_through_when_command_succeeds() {
 #[test]
 fn verify_reverts_and_errors_when_command_fails() {
     let root = workspace_temp("verify-fail");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -1089,7 +1118,7 @@ fn commit_per_rule_produces_one_commit_per_rule() {
     assert!(git(&["init", "-q", "-b", "main"]).success());
     assert!(git(&["config", "user.name", "test"]).success());
     assert!(git(&["config", "user.email", "test@example.com"]).success());
-    let script = root.join("rules.codemod");
+    let script = root.join("rules.colab");
     let target = root.join("main.go");
     // Two rules; both will fire on the same file.
     write(
@@ -1141,7 +1170,7 @@ fn commit_per_rule_produces_one_commit_per_rule() {
 #[test]
 fn bisect_passes_when_full_apply_verifies() {
     let root = workspace_temp("bisect-pass");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -1173,7 +1202,7 @@ fn bisect_isolates_breaking_rule_and_reverts() {
     // verify pattern and triggers bisection. Bisect should
     // identify rule 2 as the culprit.
     let root = workspace_temp("bisect-find");
-    let script = root.join("rules.codemod");
+    let script = root.join("rules.colab");
     let target = root.join("main.go");
     write(
         &script,
@@ -1220,7 +1249,7 @@ fn bisect_isolates_breaking_rule_and_reverts() {
 fn backup_and_undo_roundtrip() {
     let root = workspace_temp("backup-undo");
     let backup = workspace_temp("backup-store");
-    let script = root.join("rename.codemod");
+    let script = root.join("rename.colab");
     let target = root.join("main.go");
     write(&script, SCRIPT);
     write(&target, GO_INPUT);
@@ -1263,7 +1292,7 @@ fn pack_list_finds_repo_packs() {
     fs::create_dir_all(root.join(".git")).unwrap();
     fs::create_dir_all(root.join(".colab/packs")).unwrap();
     write(
-        &root.join(".colab/packs/example.codemod"),
+        &root.join(".colab/packs/example.colab"),
         "refactor \"x\" {}\n",
     );
 
@@ -1293,7 +1322,7 @@ fn missing_script_exits_4() {
         .args([
             "refactor",
             "--script",
-            "/this/path/does/not/exist.codemod",
+            "/this/path/does/not/exist.colab",
             ".",
         ])
         .output()
@@ -1442,7 +1471,7 @@ fn inline_parse_error_points_at_the_rule_as_typed() {
 #[test]
 fn script_and_rule_are_mutually_exclusive() {
     let output = colab()
-        .args(["refactor", "--script", "x.codemod", "-e", INLINE_RULE, "."])
+        .args(["refactor", "--script", "x.colab", "-e", INLINE_RULE, "."])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2), "clap usage error");
@@ -1708,7 +1737,7 @@ impl Drop for LspClient {
 fn lsp_hover_and_workspace_code_action_round_trip() {
     let root = workspace_temp("lsp-roundtrip");
     write(&root.join("main.go"), GO_INPUT);
-    let script_path = root.join("fix.codemod");
+    let script_path = root.join("fix.colab");
     write(&script_path, SCRIPT);
     let root_uri = format!("file://{}", root.display());
     let script_uri = format!("file://{}", script_path.display());
@@ -1728,7 +1757,7 @@ fn lsp_hover_and_workspace_code_action_round_trip() {
     lsp.notify("initialized", serde_json::json!({}));
     lsp.notify(
         "textDocument/didOpen",
-        serde_json::json!({"textDocument": {"uri": script_uri, "languageId": "codemod", "version": 1, "text": SCRIPT}}),
+        serde_json::json!({"textDocument": {"uri": script_uri, "languageId": "colab", "version": 1, "text": SCRIPT}}),
     );
 
     let hover = lsp.request(
@@ -3025,7 +3054,7 @@ fn fix_workspace(label: &str, config: &str) -> PathBuf {
         "import typing\n\ndef f(a: Optional[str]) -> List[int]:\n    return old(a)\n",
     );
     write(
-        &root.join(".colab/house.codemod"),
+        &root.join(".colab/house.colab"),
         "refactor \"house\" {\n    match python::pattern 'old($A)' { replace 'new($A)' }\n}\n",
     );
     root
@@ -3036,7 +3065,7 @@ fn fix_runs_the_packs_colab_toml_declares() {
     let root = fix_workspace(
         "fix",
         "[run]\ntidy = true\n\n[formatters]\npy = \"sed 's/^import typing$/import typing  # tidy/'\"\n\n\
-         [[packs]]\npack = \"python/3.12-typing\"\n\n[[packs]]\npath = \".colab/house.codemod\"\n",
+         [[packs]]\npack = \"python/3.12-typing\"\n\n[[packs]]\npath = \".colab/house.colab\"\n",
     );
     let fix = |flag: &str| {
         colab()
@@ -3881,7 +3910,7 @@ fn type_and_resolves_constraints_are_answered_by_the_server() {
 fn a_git_pack_is_fetched_at_its_pin_and_its_own_cases_must_pass() {
     let shared = workspace_temp("git-pack-shared");
     write(
-        &shared.join("go/errors.codemod"),
+        &shared.join("go/errors.colab"),
         r#"refactor "errors" { match go::import "github.com/pkg/errors" { replace "errors" } }"#,
     );
     write(
@@ -3930,7 +3959,7 @@ fn a_git_pack_is_fetched_at_its_pin_and_its_own_cases_must_pass() {
     let fix = |pin: &str| {
         write(
             &app.join("colab.toml"),
-            &format!("[[packs]]\ngit = \"{url}\"\n{pin}\npath = \"go/errors.codemod\"\n"),
+            &format!("[[packs]]\ngit = \"{url}\"\n{pin}\npath = \"go/errors.colab\"\n"),
         );
         colab()
             .current_dir(&app)
@@ -3983,12 +4012,12 @@ fn a_fleet_runs_each_repository_in_a_worktree_canary_first() {
         );
     }
     write(
-        &root.join("m.codemod"),
+        &root.join("m.colab"),
         r#"refactor "m" { match go::import "github.com/pkg/errors" { replace "errors" } }"#,
     );
     write(
         &root.join("fleet.toml"),
-        "[fleet]\nscript = \"m.codemod\"\nbranch = \"colab/errors\"\ntitle = \"Use errors\"\ncanary = \"billing\"\n\n[[repos]]\npath = \"api\"\n\n[[repos]]\npath = \"billing\"\n",
+        "[fleet]\nscript = \"m.colab\"\nbranch = \"colab/errors\"\ntitle = \"Use errors\"\ncanary = \"billing\"\n\n[[repos]]\npath = \"api\"\n\n[[repos]]\npath = \"billing\"\n",
     );
     let fleet = |args: &[&str]| {
         colab()
@@ -4152,7 +4181,7 @@ fn a_scan_reads_every_file_before_a_rule_edits_one() {
         &root.join("app/main.go"),
         "package main\n\nfunc main() {\n\tapi.Exported()\n\tapi.internal()\n}\n",
     );
-    let script = root.join("s.codemod");
+    let script = root.join("s.colab");
     write(
         &script,
         r#"refactor "s" {
@@ -4163,7 +4192,7 @@ fn a_scan_reads_every_file_before_a_rule_edits_one() {
     let run = |args: &[&str]| {
         colab()
             .current_dir(&root)
-            .args(["refactor", "--script", "s.codemod", "--format", "diff"])
+            .args(["refactor", "--script", "s.colab", "--format", "diff"])
             .args(args)
             .arg(".")
             .output()
@@ -4181,7 +4210,7 @@ fn a_scan_reads_every_file_before_a_rule_edits_one() {
     // `find` reads the same facts.
     let found = colab()
         .current_dir(&root)
-        .args(["find", "--script", "s.codemod", "."])
+        .args(["find", "--script", "s.colab", "."])
         .output()
         .unwrap();
     let found = String::from_utf8_lossy(&found.stdout);
@@ -4304,10 +4333,10 @@ fn the_post_edit_hook_reports_a_broken_convention_to_the_model() {
     write(&root.join(".git/HEAD"), "ref: refs/heads/main\n");
     write(
         &root.join("colab.toml"),
-        "[[packs]]\npath = \"packs/p.codemod\"\n",
+        "[[packs]]\npath = \"packs/p.colab\"\n",
     );
     write(
-        &root.join("packs/p.codemod"),
+        &root.join("packs/p.colab"),
         r#"refactor "p" { match go::import "github.com/pkg/errors" { replace "errors" message "use the standard errors package" id "std-errors" } }"#,
     );
     let file = root.join("svc/a.go");
