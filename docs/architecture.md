@@ -414,6 +414,34 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
 - **`colab:ignore` is generic.** It is applied in `Refactoring::apply_at`;
   backends need nothing for it.
 
+## Parsing once per text
+
+Most of a rule's cost is the parse: on 55 MB of Rust (5,000 files from
+the cargo registry) tree-sitter took 5.0 s of the 6.4-8.1 s one
+`pattern` rule needed. Rules run one after another over a file, each
+given the previous one's output, so a rule that changes nothing hands
+the next the very text it just parsed.
+
+- **`colab_rewrite::parse_cache::parse(grammar, text)`** keeps the last
+  few trees per thread, keyed by grammar and exact text. Every source
+  backend's `parse` and the pattern engine (its matching and the
+  "does the result still parse" check) go through it. The walker gives a
+  file to one thread, so a thread's cache is a file's chain of rules.
+- **Semantics are untouched.** A rule still sees exactly the previous
+  rule's output: a rule that changed the text makes the next parse a
+  miss. Trees are never edited in place, so sharing one is safe.
+- **Rejected: one parse for a batch of rules.** M10.6 first planned an
+  `Operation::lang()` and a backend `apply_batch` that applied several
+  rules' edits to one tree. Each rule would then stop seeing the rules
+  before it, which changes what a script means and needs merge rules for
+  overlapping edits. The cache gets most of the gain without that.
+- **Measured** (one thread, the same 5,000 files): one rule 3.5 s before
+  and after; four rules that do not fire 13.3 s → 5.7 s; the built-in
+  `rust/edition-2021-to-2024` pack (nine rules) 11.9 s → 8.0 s, its
+  output byte for byte the same.
+- **Not yet:** reparsing incrementally after a rule changes a file (an
+  `InputEdit` from the rule's edits, and the old tree).
+
 ## Phased runs: scan and then
 
 M35 relaxes "every rule acts on one file" for **reading** only.

@@ -535,7 +535,7 @@ impl StructuralPattern {
 
     /// Matches of this compilation only, not its `also` ones.
     fn find_own(&self, source: &str) -> Vec<Found> {
-        let grep = self.lang.ast_grep(source);
+        let grep = parsed(&self.lang, source);
         self.matches(&grep, source)
             .into_iter()
             .map(|m| {
@@ -596,7 +596,7 @@ impl StructuralPattern {
     }
 
     fn rewrite_own(&self, source: &str, template: &str) -> String {
-        let grep = self.lang.ast_grep(source);
+        let grep = parsed(&self.lang, source);
         let matches = self.matches(&grep, source);
         if matches.is_empty() {
             return source.to_string();
@@ -2167,14 +2167,21 @@ pub fn describe(
 }
 
 /// Parse `text`, failing if the tree contains a syntax error.
+/// `source` as ast-grep's tree, parsed once per text (`parse_cache`).
+fn parsed(lang: &TsLang, source: &str) -> ast_grep_core::AstGrep<StrDoc<TsLang>> {
+    match crate::parse_cache::parse(&lang.grammar, source) {
+        Some(tree) => ast_grep_core::AstGrep::doc(StrDoc {
+            src: source.to_string(),
+            lang: lang.clone(),
+            tree,
+        }),
+        None => lang.ast_grep(source),
+    }
+}
+
 fn parse_clean(grammar: &tree_sitter::Language, text: &str) -> Result<tree_sitter::Tree, String> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(grammar)
-        .map_err(|e| format!("grammar failed to load: {e}"))?;
-    let tree = parser
-        .parse(text, None)
-        .ok_or_else(|| "the parser gave up".to_string())?;
+    let tree = crate::parse_cache::parse(grammar, text)
+        .ok_or_else(|| "the parser gave up (or the grammar failed to load)".to_string())?;
     if tree.root_node().has_error() {
         return Err("syntax error".into());
     }

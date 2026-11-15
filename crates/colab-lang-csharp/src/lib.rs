@@ -15,11 +15,10 @@ pub mod patterns;
 pub mod symbols;
 pub mod usings;
 
-use std::cell::RefCell;
 use std::path::Path;
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
-use tree_sitter::{Parser, Tree};
+use tree_sitter::Tree;
 
 /// Extensions this backend claims. `.csx` is the C# scripting form.
 const RELEVANT_EXTENSIONS: &[&str] = &["cs", "csx"];
@@ -31,22 +30,11 @@ pub(crate) fn is_relevant(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-thread_local! {
-    /// Per-thread tree-sitter C# parser. Reused across files so
-    /// `Parser::new() + set_language()` only happens once per rayon
-    /// worker.
-    static PARSER: RefCell<Parser> = RefCell::new({
-        let mut p = Parser::new();
-        p.set_language(&tree_sitter_c_sharp::LANGUAGE.into())
-            .expect("failed to load tree-sitter C# grammar");
-        p
-    });
-}
-
-/// Parse `source` into a C# syntax tree using the thread-local parser.
-/// Returns `None` if tree-sitter cannot parse.
+/// Parse `source` into a C# syntax tree, through the shared parse
+/// cache (`colab_rewrite::parse_cache`): a text the rules before have
+/// already parsed is not parsed again. `None` if tree-sitter cannot parse.
 pub(crate) fn parse(source: &str) -> Option<Tree> {
-    PARSER.with_borrow_mut(|p| p.parse(source, None))
+    colab_rewrite::parse_cache::parse(&patterns::language().grammar, source)
 }
 
 /// Plug-in entry point for the `csharp` namespace.

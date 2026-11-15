@@ -21,6 +21,7 @@ pub mod calls;
 pub mod declarations;
 pub use declarations::declarations;
 mod derive;
+pub mod parse_cache;
 pub mod pattern;
 pub mod scope;
 

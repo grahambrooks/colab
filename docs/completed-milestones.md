@@ -981,6 +981,23 @@ each; a scan phase may read many**.
   and updates the "rules act on one file each" invariant in CLAUDE.md and
   `architecture.md` when it ships.
 
+## Parse once per text (M10.6)
+
+### ✅ M10.6 — Parse once per text (planned as batching)
+
+Shipped 2026-11-14 as a parse cache instead of batching (see [`architecture.md`](architecture.md#parsing-once-per-text)): four non-firing rules 13.3 s → 5.7 s on 55 MB of Rust, semantics unchanged. The batching design below was rejected, since one tree for several rules stops each rule seeing the ones before it.
+- Add `Operation::lang() -> &'static str` so the composer can
+  group consecutive same-backend rules.
+- Backend-level `apply_batch(ops, source) -> String` that parses
+  once and applies every rule's edits, with conflict resolution
+  on overlapping byte ranges (first rule wins, error on overlap,
+  or merge — to be designed).
+- This is a real `Operation` trait change with conflict
+  semantics to settle; queued separately because it deserves its
+  own design pass.
+
+---
+
 ## Appendix: the original design (2026-05-09)
 
 The plan as first written, goal by goal. Almost all of it has shipped

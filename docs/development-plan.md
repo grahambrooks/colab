@@ -21,7 +21,7 @@ millions of lines — when you want to:
 
 ## Where things stand (2026-11-14)
 
-M1–M13.5 (but M10.6), M14–M19 (but M10.6), M21, M22–M28 and M20's non-installing parts have shipped
+M1–M19, M21–M35 and M20's non-installing parts have shipped
 ([details](completed-milestones.md)). colab has 12 source backends and
 3 config backends, structural patterns with `where` constraints, delegated
 rename, move, code actions, references and safe delete through the
@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then **M10.6**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints), M33 (fleet runs, packs from git), M34 (symbol-addressed edits) and M35 (scan phases) have shipped.
+**M20's install step**, now that the stable gate has passed, then the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints), M33 (fleet runs, packs from git), M34 (symbol-addressed edits), M35 (scan phases) and M10.6 (a parse cache) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -41,7 +41,6 @@ what it lets that dogfooding cover.
 | Rank | Milestone | Why now |
 | ---- | --------- | ------- |
 | 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
-| 2 | M10.6 | Parse-once batching: performance, for the largest repositories. |
 
 ## Stable gate before M20
 
@@ -91,19 +90,6 @@ Wave D of the M29 follow-up sweep: decide before building.
   `EXTRA_TARGETS`): changes what every release ships, so it waits for
   a go-ahead.
 
-### M10.6 — Parse-once-per-backend batching (deferred from M10)
-- Add `Operation::lang() -> &'static str` so the composer can
-  group consecutive same-backend rules.
-- Backend-level `apply_batch(ops, source) -> String` that parses
-  once and applies every rule's edits, with conflict resolution
-  on overlapping byte ranges (first rule wins, error on overlap,
-  or merge — to be designed).
-- This is a real `Operation` trait change with conflict
-  semantics to settle; queued separately because it deserves its
-  own design pass.
-
----
-
 ## Follow-ups from shipped milestones
 
 Deferred when a milestone shipped, or found while dogfooding
@@ -120,6 +106,9 @@ whichever milestone touches the same code.
 | `type` / `resolves` asked once per match; batching a file's questions (or a server's own type-of-range request) would cut the round trips. Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match | M32 |
 | `create "<path>" '<template>'`: a new file from a match, made as a `FileOp::Create` so undo and `--verify` reverse it, a file that exists a conflict. Needs file operations in the `refactor` write path, which writes text edits only | M35 |
 | Phased runs (scans) under `--bisect`, `--verify`, `--split-pr`, `--stdin`, `--changed-since` and MCP, which refuse them today | M35 |
+| Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
+| `--include` / `--exclude` match paths relative to the walked target (`colab-lang-json/**` for target `crates`), while a rule's `in "<glob>"` matches paths relative to the working directory; one of them should accept the other's form | M10.6 |
+| `rust::use "tree_sitter::Parser" { delete }` does not remove one member of a brace list (`use tree_sitter::{Parser, Tree};`); a `rust::pattern` rule did | M10.6 |
 
 ## Unscheduled
 
@@ -157,7 +146,7 @@ whichever milestone touches the same code.
 | Workspace split temporarily slows iteration. | Migrate in one PR, no behaviour change, full CI green before any backend work begins. |
 | GenAI-driven misuse (agent runs `--write` without review). | Default to `--dry-run` in non-TTY contexts; MCP `apply` tool returns the diff and requires explicit confirmation in the host. |
 | Mass refactor lands a silent regression on a large repo. | M12: `--verify <command>` runs the project's check after each rule and auto-reverts on failure. `--commit-per-rule` makes each rule individually revertable. `colab fix --check` (M14) gates merges in CI. |
-| The walker is too slow on a 100k-file monorepo. | M10: parallel walker + per-thread parser pool; M10.6 (planned): single-parse multi-rule batching. `criterion` benches under `benches/` track regressions. |
+| The walker is too slow on a 100k-file monorepo. | M10: parallel walker + per-thread parser pool; M10.6: one parse per text, shared by consecutive rules (`colab_rewrite::parse_cache`). `criterion` benches under `benches/` track regressions. |
 | Reviewers cannot audit a 5k-file diff produced by one run. | M16: per-rule attribution in JSON output, `colab review` paginated mode, `--split-pr` emits one branch per rule for separate review. |
 | Mass `<lang>::symbol` rename touches more than the user intended. | Documented as syntactic and verified with `--format diff`. Narrowed by path (`in "<glob>"`) and by code (`where inside '<pattern>'`, M15); `colab rename` for a semantic rename. |
 | Walking a vendored / generated tree wastes CPU and risks corrupting third-party code. | M9: default-on `.gitignore` awareness via the `ignore` crate; `--include`/`--exclude` glob filters; `--changed-since` for CI runs. |
