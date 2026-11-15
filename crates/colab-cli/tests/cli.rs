@@ -3978,6 +3978,11 @@ fn a_fleet_runs_each_repository_in_a_worktree_canary_first() {
             .current_dir(&root)
             .args(["fleet", "fleet.toml", "--format", "json"])
             .args(args)
+            // CI runners have no git identity; the fleet commits.
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
             .output()
             .unwrap()
     };
@@ -4003,7 +4008,8 @@ fn a_fleet_runs_each_repository_in_a_worktree_canary_first() {
     let wrote = fleet(&["--write"]);
     assert!(
         wrote.status.success(),
-        "{}",
+        "{}{}",
+        String::from_utf8_lossy(&wrote.stdout),
         String::from_utf8_lossy(&wrote.stderr)
     );
     for name in ["api", "billing"] {
