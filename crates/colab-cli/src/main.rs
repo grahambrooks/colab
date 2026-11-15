@@ -35,11 +35,10 @@ use colored::*;
 use env_logger::Builder;
 use log::{LevelFilter, error};
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     initialize_logging();
 
-    match cli::run().await {
+    match cli::run() {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
             error!("{err}");

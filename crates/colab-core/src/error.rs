@@ -142,12 +142,6 @@ impl std::error::Error for Error {
     }
 }
 
-impl From<io::Error> for Error {
-    fn from(source: io::Error) -> Self {
-        Error::Io { path: None, source }
-    }
-}
-
 /// Crate-wide [`std::result::Result`] alias defaulting to [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 

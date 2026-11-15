@@ -224,7 +224,7 @@ fn run_lsp_daemon(args: LspDaemonArgs) -> Result<u8> {
         &socket,
         std::time::Duration::from_secs(args.idle),
     )
-    .map_err(io_to_error)?;
+    .map_err(|e| Error::io_at(&socket, e))?;
     Ok(0)
 }
 
@@ -1297,7 +1297,7 @@ struct ListRulesArgs {
 
 /// Parse CLI arguments and dispatch to the requested subcommand.
 /// Returns the success exit code (0 or 10).
-pub async fn run() -> Result<u8> {
+pub fn run() -> Result<u8> {
     let argv: Vec<String> = std::env::args().collect();
     if let Some(value) = crate::help_json::requested(&Args::command(), &argv) {
         print_json(&value)?;
@@ -1316,7 +1316,14 @@ pub async fn run() -> Result<u8> {
         Some(Commands::Edit(args)) => crate::symbol_edit::run(args, &default_backends()),
         Some(Commands::Server(server_args)) => {
             info!("Starting language server (port hint: {})", server_args.port);
-            language_server::run(default_backends()).await;
+            // The only async command. Multi-threaded: the server runs
+            // walks under `block_in_place`, which a current-thread
+            // runtime does not allow.
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(io_to_error)?
+                .block_on(language_server::run(default_backends()));
             Ok(0)
         }
         Some(Commands::Mcp) => {
@@ -1382,6 +1389,10 @@ fn print_json(value: &serde_json::Value) -> Result<u8> {
     Ok(0)
 }
 
+/// An I/O error with no file to name: stdout, stdin, a child process,
+/// the working directory. Anything that touches a known path uses
+/// [`Error::io_at`] instead; `colab_core::Error` has no `From<io::Error>`,
+/// so a bare `?` cannot drop the path by accident.
 pub(crate) fn io_to_error(err: io::Error) -> Error {
     Error::Io {
         path: None,

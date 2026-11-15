@@ -80,11 +80,19 @@ pub fn uninstall() {
 }
 
 /// Run `f` with queries asked about the file at `path`.
+///
+/// The previous path is restored when `f` returns or unwinds: rayon's
+/// worker threads outlive a run, so a panicking rule must not leave the
+/// next run on that thread asking about this file.
 pub fn at_path<T>(path: &Path, f: impl FnOnce() -> T) -> T {
-    let previous = PATH.with(|p| p.replace(Some(path.to_path_buf())));
-    let out = f();
-    PATH.with(|p| *p.borrow_mut() = previous);
-    out
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PATH.with(|p| *p.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(PATH.with(|p| p.replace(Some(path.to_path_buf()))));
+    f()
 }
 
 /// Whether the binding at `span` of `source` satisfies `query`. `false`
@@ -127,6 +135,19 @@ pub fn take_failure() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn at_path_restores_the_previous_path_when_f_panics() {
+        let current = || PATH.with(|p| p.borrow().clone());
+        at_path(Path::new("outer.rs"), || {
+            let unwound = std::panic::catch_unwind(|| {
+                at_path(Path::new("inner.rs"), || panic!("a rule panicked"));
+            });
+            assert!(unwound.is_err());
+            assert_eq!(current().as_deref(), Some(Path::new("outer.rs")));
+        });
+        assert_eq!(current(), None);
+    }
 
     struct Fixed(bool);
 

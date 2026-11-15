@@ -85,7 +85,7 @@ tree-sitter-rust = "0.24"
 tree-sitter-swift = "0.7.3"
 tree-sitter-toml = "0.20.0"
 toml_edit = "0.25"
-tokio = { version = "1.35.0", features = ["full"] }
+tokio = { version = "1.35.0", features = ["rt-multi-thread", "io-std", "sync"] }
 log = "0.4"
 env_logger = "0.11.6"
 colored = "3.0.0"
