@@ -1,0 +1,23 @@
+# cargo-deny: `cargo deny check licenses` (CI's licenses job).
+# Only the license check is configured; advisories are cargo-audit's job.
+#
+# Every dependency, dev-dependencies included, must be under one of these.
+# All are permissive, except MPL-2.0 (`colored`): file-level copyleft,
+# met by using it unmodified and saying where its source is
+# (THIRD-PARTY-LICENSES.txt). Adding a license here is a decision: say
+# why in the commit. Shipped crates' texts: scripts/third-party-licenses.py.
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# The workspace crates are colab itself (MIT) and are not published.
+ignore = true

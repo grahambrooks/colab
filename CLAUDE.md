@@ -50,6 +50,8 @@ cargo run -p colab-cli -- list-languages                         # registered ba
 cargo run -p colab-cli -- list-rules <lang>                      # modules + actions for one backend
 cargo run -p colab-cli -- explain --script <s>                   # parsed IR as JSON, no execution
 cargo run -p colab-cli -- links docs/                            # broken Markdown links (exit 10 if any)
+cargo run -p colab-cli -- licenses                               # colab's and every shipped crate's license (THIRD-PARTY-LICENSES.txt)
+scripts/third-party-licenses.py [--check]                        # regenerate that file (CI: --check) after changing dependencies
 cargo run -p colab-cli -- undo --from <dir>                      # restore a run made with --backup <dir>
 cargo run -p colab-cli -- lsp-daemon --stop                      # stop every kept language server
 cargo run -p colab-cli -- server                                 # LSP for .codemod files: diagnostics, hover, completion, code actions, go to include

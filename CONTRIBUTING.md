@@ -61,6 +61,7 @@ The ones most often at stake:
 | The pattern engine, `where`, the DSL | unit tests beside the code, and a corpus case that shows it |
 | A command or flag | a CLI test in `crates/colab-cli/tests/cli.rs` |
 | Agent-facing output | the eval suite still passes its byte budgets (`cargo test -p colab-cli --test evals`) |
+| Dependencies (`Cargo.toml`, `Cargo.lock`) | `make licenses` (regenerates `THIRD-PARTY-LICENSES.txt`); a license not yet in `deny.toml` is a decision, so say why in the commit |
 
 Generated expectations are rewritten with `COLAB_BLESS=1`; review the
 diff before committing it:

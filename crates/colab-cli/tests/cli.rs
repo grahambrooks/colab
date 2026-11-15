@@ -505,6 +505,23 @@ fn list_languages_returns_registered_backends() {
 }
 
 #[test]
+fn licenses_prints_colabs_and_every_shipped_crates() {
+    let output = colab().arg("licenses").output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.starts_with("colab\n\nMIT License"), "{}", &text[..80]);
+    for crate_ in ["tree-sitter ", "ast-grep-core ", "colored ", "serde "] {
+        assert!(
+            text.lines().any(|l| l.starts_with(crate_)),
+            "{crate_} is not listed"
+        );
+    }
+    // The one copyleft license: its text, and where the source is.
+    assert!(text.contains("Mozilla Public License Version 2.0"));
+    assert!(text.contains("https://crates.io/crates/<name>/<version>"));
+}
+
+#[test]
 fn list_rules_for_unknown_lang_exits_3() {
     let output = colab().args(["list-rules", "klingon"]).output().unwrap();
     assert_eq!(output.status.code(), Some(3));

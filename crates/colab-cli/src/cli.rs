@@ -158,6 +158,9 @@ enum Commands {
     /// `colab refactor`, `rename`, or `mv` run, undoing its file
     /// operations (through git) first.
     Undo(UndoArgs),
+    /// Print colab's license and those of the crates the binary is built
+    /// from, with their texts (THIRD-PARTY-LICENSES.txt).
+    Licenses,
 }
 
 #[derive(Parser, Debug)]
@@ -1345,9 +1348,23 @@ pub async fn run() -> Result<i32> {
             PackCommand::List => print_json(&crate::packs::list()),
         },
         Some(Commands::Undo(args)) => run_undo(&args.from),
+        Some(Commands::Licenses) => print_licenses(),
         None => Err(Error::Config(
             "no command provided; run with --help for usage".to_string(),
         )),
+    }
+}
+
+/// colab's own license, then every third-party one the binary carries:
+/// a release archive holds only the binary, so their notices travel in it.
+fn print_licenses() -> Result<i32> {
+    const OWN: &str = include_str!("../../../LICENSE");
+    const THIRD_PARTY: &str = include_str!("../../../THIRD-PARTY-LICENSES.txt");
+    let mut out = io::stdout().lock();
+    let written = writeln!(out, "colab\n\n{}\n\n{THIRD_PARTY}", OWN.trim_end());
+    match written {
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(0),
+        other => other.map(|()| 0).map_err(io_to_error),
     }
 }
 

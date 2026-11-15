@@ -248,6 +248,16 @@ those of the language servers it runs.
   `/plugin` menu; `colab lsp-daemon --stop`; delete the cache directory above; then
   `brew uninstall colab` or remove the binary.
 
+## Licenses
+
+colab is MIT licensed. The binary links about two hundred crates, all
+under permissive licenses (MIT, Apache-2.0, Unicode-3.0, Unlicense,
+Zlib) except `colored`, MPL-2.0, which colab uses unmodified; its source,
+like every crate's, is at `https://crates.io/crates/<name>/<version>`.
+`colab licenses` prints colab's license and theirs, with the texts the
+crates ship ([`THIRD-PARTY-LICENSES.txt`](../THIRD-PARTY-LICENSES.txt)),
+so a binary copied out of a release archive still carries its notices.
+
 ## Environment variables
 
 | Variable | Effect |

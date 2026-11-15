@@ -36,6 +36,8 @@ jobs:
       # colab's own packs (colab.toml): their cases, then the tree itself.
       - run: cargo run -q -p colab-cli --locked -- test
       - run: cargo run -q -p colab-cli --locked -- fix --check
+      # The notices `colab licenses` prints match Cargo.lock.
+      - run: scripts/third-party-licenses.py --check
 
   windows:
     name: windows — the release builds there
@@ -70,6 +72,17 @@ jobs:
       # `cargo +<floor>` explicitly, not bare `cargo`: rust-toolchain.toml would
       # otherwise override whatever was installed and the job would test nothing.
       - run: cargo +${{ steps.floor.outputs.version }} check --workspace --all-targets --all-features --locked
+
+  licenses:
+    name: cargo-deny licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      # Every dependency's license is one deny.toml allows.
+      - run: cargo deny --locked check licenses
 
   audit:
     name: cargo-audit

@@ -4,12 +4,12 @@
 
 CARGO ?= cargo
 
-.PHONY: help check fmt fmt-check lint test hooks
+.PHONY: help check fmt fmt-check lint test licenses licenses-check hooks
 
 help: ## List targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-check: fmt-check lint test ## The pre-push gate: the same commands as the CI check job
+check: fmt-check lint test licenses-check ## The pre-push gate: the same commands as the CI check job
 
 # CI sets RUSTFLAGS=-D warnings for the whole workflow.
 check lint test: export RUSTFLAGS = -D warnings
@@ -25,6 +25,12 @@ lint: ## Clippy, warnings as errors
 
 test: ## Run the tests
 	$(CARGO) test --workspace --all-features --locked
+
+licenses: ## Regenerate THIRD-PARTY-LICENSES.txt (after changing dependencies)
+	scripts/third-party-licenses.py
+
+licenses-check: ## Fail when THIRD-PARTY-LICENSES.txt is stale
+	scripts/third-party-licenses.py --check
 
 hooks: ## Install the git hooks (prek: pre-commit and pre-push)
 	prek install

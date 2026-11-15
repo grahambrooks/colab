@@ -379,4 +379,7 @@ privately ([`SECURITY.md`](SECURITY.md)); everyone follows the
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE). The binary is built from crates under MIT,
+Apache-2.0, Unicode-3.0, Unlicense, Zlib and (unmodified) MPL-2.0
+licenses; [`THIRD-PARTY-LICENSES.txt`](THIRD-PARTY-LICENSES.txt) holds
+their texts, and `colab licenses` prints them with colab's own.
