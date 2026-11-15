@@ -17,6 +17,7 @@ members = [
     "crates/colab-lang-ruby",
     "crates/colab-lang-rust",
     "crates/colab-lang-swift",
+    "crates/colab-lang-text",
     "crates/colab-lang-toml",
     "crates/colab-backends",
     "crates/colab-rewrite",
@@ -51,6 +52,7 @@ colab-lang-python = { path = "crates/colab-lang-python" }
 colab-lang-ruby = { path = "crates/colab-lang-ruby" }
 colab-lang-rust = { path = "crates/colab-lang-rust" }
 colab-lang-swift = { path = "crates/colab-lang-swift" }
+colab-lang-text = { path = "crates/colab-lang-text" }
 colab-lang-toml = { path = "crates/colab-lang-toml" }
 colab-mcp = { path = "crates/colab-mcp" }
 colab-rewrite = { path = "crates/colab-rewrite" }

@@ -1,0 +1,12 @@
+[package]
+name = "colab-lang-text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Language-blind text edits for colab: replace or delete a literal string, or a whole word, in any text file."
+
+[dependencies]
+colab-core = { workspace = true }

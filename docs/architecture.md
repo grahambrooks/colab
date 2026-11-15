@@ -57,6 +57,7 @@ crates/
   colab-lang-json/    # JSON config (tree-sitter-json): key by JSON Pointer.
   colab-lang-markdown/  # Markdown by structure (tree-sitter-md): section,
                       # row, item, text, link, frontmatter, block.
+  colab-lang-text/    # Any text file, no grammar: literal, word.
   colab-lang-toml/    # TOML config (toml_edit): key by dotted path.
   colab-lsp-client/   # colab as an LSP client: rename, mv, action,
                       # references, safe-delete, --tidy, --verify-lsp,

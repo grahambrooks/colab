@@ -1,0 +1,6 @@
+0 text::literal "MaxRetries" -> replace "MaxAttempts"
+    near maxretries (1 file(s))
+0 text::word "retry" -> replace "attempt"
+    near retrying (1 file(s))
+    near retryable (1 file(s))
+    near retryCount (1 file(s))

@@ -154,9 +154,10 @@ colab list-languages        # every registered backend
 colab list-rules go         # modules + actions for one backend
 ```
 
-The 15 backends: `c`, `cpp`, `csharp`, `go`, `java`, `js`, `kotlin`,
+The 16 backends: `c`, `cpp`, `csharp`, `go`, `java`, `js`, `kotlin`,
 `php`, `python`, `ruby`, `rust`, `swift` for source, and `json`,
-`markdown`, `toml` for config.
+`markdown`, `toml` for config, and `text` for a string in any file
+(`text::word ".codemod" { replace ".colab" }`): no grammar, so scope it.
 
 Every source backend has the same floor — an import-equivalent named for
 the language's own construct (`include` / `using` / `import` / `use` /

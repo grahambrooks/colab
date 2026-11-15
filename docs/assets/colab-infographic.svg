@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" width="1200" height="860" role="img" aria-labelledby="title desc">
   <title id="title">colab — AST-aware codemods</title>
-  <desc id="desc">A .colab script is parsed, compiled against 15 language backends, run over the tree with tree-sitter, and reported as a diff, JSON, a CI check, or a write. Rewrites are idempotent and syntax-aware, and colab runs from the CLI, MCP and LSP.</desc>
+  <desc id="desc">A .colab script is parsed, compiled against 16 backends, run over the tree with tree-sitter, and reported as a diff, JSON, a CI check, or a write. Rewrites are idempotent and syntax-aware, and colab runs from the CLI, MCP and LSP.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#141c3d"/>

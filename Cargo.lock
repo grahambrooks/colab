@@ -354,6 +354,7 @@ dependencies = [
  "colab-lang-ruby",
  "colab-lang-rust",
  "colab-lang-swift",
+ "colab-lang-text",
  "colab-lang-toml",
 ]
 
@@ -547,6 +548,13 @@ dependencies = [
  "colab-rewrite",
  "tree-sitter",
  "tree-sitter-swift",
+]
+
+[[package]]
+name = "colab-lang-text"
+version = "2026.11.3"
+dependencies = [
+ "colab-core",
 ]
 
 [[package]]

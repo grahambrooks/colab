@@ -713,13 +713,33 @@ it. Every source backend — `c`, `cpp`, `csharp`, `go`, `java`, `js`,
 import-equivalent (named for the language's own construct), a `symbol`
 rename, a `call` rewrite and `pattern`; those with a namespace or
 package declaration expose one too. The config backends `json`,
-`markdown` and `toml` have modules of their own. The full list is
+`markdown` and `toml` have modules of their own, and `text`
+(`literal`, `word`) edits any file as plain text, whatever its language. The full list is
 machine-discoverable via `colab schema` and `colab list-rules <lang>`,
 and is documented in [features.md](./features.md).
 
 Namespaces colab does not implement produce a clear
 `Error::UnsupportedOperation` (CLI exit code 3) instead of silently
 no-oping.
+
+### Text in any file
+
+`text::literal "<s>"` matches every occurrence of `s`, exactly;
+`text::word "<s>"` only an occurrence that is not part of a longer word
+(letters, digits and `_`). Both take `replace` and `delete`, and run on
+every text file the walk reaches, so scope them:
+
+```
+refactor "rename-extension" {
+    match text::word ".codemod" { replace ".colab" }
+    match text::word "billing" in "deploy/**" { replace "invoicing" }
+}
+```
+
+Use them for a string that runs through files no single grammar covers.
+They see no structure, so a language's own modules are the better fit when
+the change lives in one language. See
+[features.md](./features.md#text-colab-lang-text).
 
 ## Match-string conventions
 

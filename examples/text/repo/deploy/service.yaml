@@ -1,0 +1,2 @@
+name: billing
+image: registry.example.test/billing:1.4

@@ -24,7 +24,7 @@ colab refactor --script rename-tokio.colab --check .
 ```
 
 <p align="center">
-  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .colab script is compiled against 15 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
+  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .colab script is compiled against 16 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
 </p>
 
 ## Why
@@ -69,7 +69,8 @@ import-equivalent module takes all three of `replace`/`delete`/`ensure`;
 `symbol` and the namespace/package modules take `replace`; `call` takes
 `replace_call`; `pattern` takes `replace`/`delete`. The config backends
 (`json`, `toml`, `markdown`) take `set`/`insert`/`delete`, and Markdown
-also `replace`/`ensure`.
+also `replace`/`ensure`. `text::literal` and `text::word` replace or
+delete a string in any text file, whatever its language.
 
 Each backend's module is named for the language's own construct, so a
 polyglot script reads naturally — see
@@ -345,6 +346,7 @@ crates/
   colab-lang-swift/   # Swift backend
   colab-lang-json/    # JSON (key by JSON Pointer)
   colab-lang-markdown/  # Markdown by structure (sections, rows, items, links, …)
+  colab-lang-text/    # Any text file: a literal string or whole word
   colab-lang-toml/    # TOML (key by dotted path)
   colab-lsp-client/   # colab as an LSP client: rename, mv, action, references, tidy, lsp-daemon
     colab-mcp/          # MCP server (20 tools; see docs/cli.md#colab-mcp)

@@ -1,0 +1,7 @@
+// The service `billing` became `invoicing`. The name is written in Go
+// strings, YAML, a Dockerfile, a shell script and the docs, so no one
+// grammar reaches every site; `text::word` does. It leaves `billingctl`,
+// a different tool whose name only starts with the word, alone.
+refactor "rename-service" {
+    match text::word "billing" { replace "invoicing" }
+}

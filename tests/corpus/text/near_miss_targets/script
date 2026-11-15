@@ -1,0 +1,7 @@
+// Dead rules explain themselves. The target is written in another case
+// in one file, and only inside a longer word in the other, so neither
+// rule changes anything; each reports what it nearly matched.
+refactor "near-miss" {
+    match text::literal "MaxRetries" { replace "MaxAttempts" }
+    match text::word "retry" { replace "attempt" }
+}

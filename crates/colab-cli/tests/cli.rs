@@ -487,10 +487,11 @@ fn every_backend_advertises_import_symbol_and_call() {
     // The import-equivalent module is named for the language's own
     // construct, so accept any of these.
     const IMPORT_MODULES: &[&str] = &["import", "include", "use", "using", "require"];
-    // Config-file backends edit data, not source: they have no imports,
-    // symbols or calls. They are named here so a new source backend cannot
-    // slip past the floor by accident.
-    const CONFIG_FORMATS: &[&str] = &["json", "markdown", "toml"];
+    // Config-file backends edit data, not source, and `text` reads every
+    // file as plain text: they have no imports, symbols or calls. They are
+    // named here so a new source backend cannot slip past the floor by
+    // accident.
+    const CONFIG_FORMATS: &[&str] = &["json", "markdown", "text", "toml"];
 
     let mut source_backends = 0;
     for lang in value["languages"].as_array().expect("languages") {

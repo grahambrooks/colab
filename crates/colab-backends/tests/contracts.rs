@@ -212,8 +212,20 @@ fn no_backend_claims_a_path_it_cannot_parse() {
     // Every operation must reject paths outside its language. A backend
     // whose `is_file_relevant` accepted everything would parse the whole
     // repo with the wrong grammar.
+    //
+    // `text` is the one exception, and the reason it exists: it parses
+    // nothing, so every text file is its language. It still turns down
+    // binary formats (checked below).
     let registry = colab_backends::registry();
     for (lang, module, action, op) in sentinel_rules(&registry) {
+        if lang == "text" {
+            assert!(
+                op.is_file_relevant(std::path::Path::new("a.definitely_not_a_language"))
+                    && !op.is_file_relevant(std::path::Path::new("logo.png")),
+                "text::{module} `{action}` must take any text file and no binary one"
+            );
+            continue;
+        }
         assert!(
             !op.is_file_relevant(std::path::Path::new("a.definitely_not_a_language")),
             "{lang}::{module} `{action}` claims an unknown extension"
@@ -383,7 +395,7 @@ fn prose_ranges_cover_comments_and_strings_but_not_code() {
             .count();
         assert_eq!(inside, 2, "{lang}: {ranges:?}");
     }
-    for lang in ["json", "markdown", "toml"] {
+    for lang in ["json", "markdown", "text", "toml"] {
         assert!(
             registry.get(lang).unwrap().prose_ranges("x").is_none(),
             "{lang}"
