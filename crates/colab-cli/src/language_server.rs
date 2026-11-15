@@ -1037,7 +1037,8 @@ mod tests {
         std::fs::create_dir_all(dir.join("packs")).unwrap();
         std::fs::write(dir.join("packs/a.colab"), "refactor \"a\" {}\n").unwrap();
         let main = dir.join("main.colab");
-        let text = "refactor \"m\" {\n    include \"packs/a.colab\"\n    include \"missing.colab\"\n}\n";
+        let text =
+            "refactor \"m\" {\n    include \"packs/a.colab\"\n    include \"missing.colab\"\n}\n";
         std::fs::write(&main, text).unwrap();
         let (service, _) = LspService::new(|client| Backend::new(client, registry()));
         let backend = service.inner();
