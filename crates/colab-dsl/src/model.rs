@@ -19,6 +19,33 @@ pub struct Refactoring {
     pub rules: Vec<Box<dyn Operation>>,
     /// Each rule's `message` and `severity`, aligned with `rules`.
     pub notes: Vec<RuleNote>,
+    /// The script's stages (`then { … }` starts one), each from a rule
+    /// index, with the scans that run before its rules. Empty: one stage,
+    /// no scans.
+    pub stages: Vec<Stage>,
+}
+
+/// One file through a phased run: as it was, as it is now, the rules that
+/// changed it, and each one's input (for the conflict check).
+struct PhasedFile {
+    path: std::path::PathBuf,
+    before: String,
+    text: String,
+    fired: Vec<usize>,
+    inputs: Vec<(usize, String)>,
+}
+
+/// One stage of a phased run.
+pub struct Stage {
+    /// Its first rule; it runs to the next stage's `start`.
+    pub start: usize,
+    pub scans: Vec<ScanOp>,
+}
+
+/// `scan … as <name>`, compiled: the pattern that finds what it collects.
+pub struct ScanOp {
+    pub name: String,
+    pub op: Box<dyn Operation>,
 }
 
 /// What a rule says about what it finds.
@@ -73,7 +100,16 @@ impl Refactoring {
     pub fn combine(name: &str, parts: Vec<Refactoring>) -> Self {
         let mut rules = Vec::new();
         let mut notes = Vec::new();
+        let mut stages = Vec::new();
         for part in parts {
+            // Each pack's stages, from where its rules start.
+            let offset = rules.len();
+            for stage in part.stages {
+                stages.push(Stage {
+                    start: stage.start + offset,
+                    scans: stage.scans,
+                });
+            }
             for (i, rule) in part.rules.into_iter().enumerate() {
                 let mut note = part.notes.get(i).cloned().unwrap_or_default();
                 note.script.get_or_insert_with(|| part.name.clone());
@@ -85,6 +121,7 @@ impl Refactoring {
             name: name.to_string(),
             rules,
             notes,
+            stages,
         }
     }
 
@@ -299,16 +336,100 @@ impl CodeTransformer for Refactoring {
 }
 
 impl Refactoring {
-    /// [`CodeTransformer::apply_at`]'s body, with semantic queries asked
-    /// about `path`.
-    fn apply_rules_at(&self, path: &Path, source_code: &str) -> ApplyOutcome {
-        let mut current = source_code.to_string();
-        let mut rules_fired = Vec::new();
-        let mut conflicts = Vec::new();
-        // Each fired rule's input, for the conflict check after the loop.
-        let mut inputs: Vec<(usize, String)> = Vec::new();
+    /// Whether the script has `scan` phases: then it must run as a
+    /// phased run ([`run_phased`](Self::run_phased)), every file's scans
+    /// before any rule of their stage.
+    pub fn has_scans(&self) -> bool {
+        self.stages.iter().any(|s| !s.scans.is_empty())
+    }
 
-        for (index, rule) in self.rules.iter().enumerate() {
+    /// The script over `files` (path, text), stage by stage: each stage's
+    /// scans read every file as the stages before left it, then its rules
+    /// edit each file. Edits are still each one rule's in one file, so the
+    /// result is a [`FileChange`] per file, judged for conflicts against
+    /// the file as the whole script leaves it. The facts stay installed
+    /// for whatever reads the run afterwards (`find`, the probes).
+    pub fn run_phased(
+        &self,
+        files: Vec<(std::path::PathBuf, String)>,
+    ) -> Vec<colab_core::walker::FileChange> {
+        let mut state: Vec<PhasedFile> = files
+            .into_iter()
+            .map(|(path, text)| PhasedFile {
+                path,
+                before: text.clone(),
+                text,
+                fired: Vec::new(),
+                inputs: Vec::new(),
+            })
+            .collect();
+        // Compile-time advice may have asked an `in` check before any facts
+        // existed; this run answers its own.
+        colab_core::facts::take_failure();
+        let mut facts = colab_core::facts::Facts::default();
+        let mut bounds: Vec<usize> = self.stages.iter().map(|s| s.start).collect();
+        bounds.push(0);
+        bounds.sort_unstable();
+        bounds.dedup();
+        for (k, &start) in bounds.iter().enumerate() {
+            let end = bounds.get(k + 1).copied().unwrap_or(self.rules.len());
+            for stage in self.stages.iter().filter(|s| s.start == start) {
+                for scan in &stage.scans {
+                    facts.declare(&scan.name);
+                    for file in &state {
+                        let (path, text) = (&file.path, &file.text);
+                        if !scan.op.is_file_relevant(path)
+                            || scan.op.prefilter().is_some_and(|l| !text.contains(l))
+                        {
+                            continue;
+                        }
+                        let found = colab_core::semantic::at_path(path, || scan.op.locate(text));
+                        for located in found.unwrap_or_default() {
+                            for (var, value) in &located.captures {
+                                facts.add(&scan.name, var, value);
+                            }
+                        }
+                    }
+                }
+            }
+            colab_core::facts::install(facts.clone());
+            for file in &mut state {
+                colab_core::semantic::at_path(&file.path, || {
+                    let (next, f, i) = self.apply_range(&file.path, &file.text, start..end);
+                    file.text = next;
+                    file.fired.extend(f);
+                    file.inputs.extend(i);
+                });
+            }
+        }
+        state
+            .into_iter()
+            .map(|file| {
+                let conflicts = self.conflicts_of(&file.inputs, &file.text);
+                colab_core::walker::FileChange {
+                    path: file.path,
+                    before: file.before,
+                    after: file.text,
+                    rules_fired: file.fired,
+                    conflicts,
+                }
+            })
+            .collect()
+    }
+
+    /// The rules in `range` over `source`: the result, the rules that
+    /// changed it, and each one's input.
+    fn apply_range(
+        &self,
+        path: &Path,
+        source: &str,
+        range: std::ops::Range<usize>,
+    ) -> (String, Vec<usize>, Vec<(usize, String)>) {
+        let mut current = source.to_string();
+        let mut rules_fired = Vec::new();
+        let mut inputs: Vec<(usize, String)> = Vec::new();
+        for index in range {
+            let rule = &self.rules[index];
             if !rule.is_file_relevant(path) {
                 continue;
             }
@@ -324,19 +445,32 @@ impl Refactoring {
                 inputs.push((index, std::mem::replace(&mut current, next)));
             }
         }
+        (current, rules_fired, inputs)
+    }
 
-        // Judged against the file as the whole script leaves it, so a later
-        // rule that adds the missing import clears the conflict.
-        for (index, input) in &inputs {
+    /// Each fired rule's conflicts, judged against `after`, the file as the
+    /// whole script leaves it, so a later rule that adds the missing
+    /// import clears the conflict.
+    fn conflicts_of(&self, inputs: &[(usize, String)], after: &str) -> Vec<RuleConflict> {
+        let mut conflicts = Vec::new();
+        for (index, input) in inputs {
             let rule = &self.rules[*index];
-            conflicts.extend(rule.conflicts(input, &current).into_iter().map(|message| {
+            conflicts.extend(rule.conflicts(input, after).into_iter().map(|message| {
                 RuleConflict {
                     rule: *index,
                     message,
                 }
             }));
         }
+        conflicts
+    }
 
+    /// [`CodeTransformer::apply_at`]'s body, with semantic queries asked
+    /// about `path`.
+    fn apply_rules_at(&self, path: &Path, source_code: &str) -> ApplyOutcome {
+        let (current, rules_fired, inputs) =
+            self.apply_range(path, source_code, 0..self.rules.len());
+        let conflicts = self.conflicts_of(&inputs, &current);
         ApplyOutcome {
             output: current,
             rules_fired,
@@ -503,6 +637,7 @@ mod tests {
             name: "test".to_string(),
             notes: vec![Default::default(); rules.len()],
             rules,
+            stages: Vec::new(),
         }
     }
 

@@ -8,6 +8,7 @@
 pub mod backend;
 pub mod constraint;
 pub mod error;
+pub mod facts;
 pub mod fences;
 pub mod fileops;
 pub mod find;

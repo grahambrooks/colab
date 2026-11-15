@@ -11,7 +11,7 @@ pub mod compiler;
 pub mod model;
 
 pub use compiler::{RuleCheck, check, compile, compile_at_path, compile_at_source, parse};
-pub use model::{Refactoring, Selection, SingleRule};
+pub use model::{Refactoring, ScanOp, Selection, SingleRule, Stage};
 
 // Re-export so consumers can use the trait without depending on
 // colab-core directly.

@@ -4123,3 +4123,58 @@ fn edit_finds_a_declaration_by_name_path_and_previews_like_any_run() {
     );
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn a_scan_reads_every_file_before_a_rule_edits_one() {
+    let root = workspace_temp("scan-phases");
+    write(
+        &root.join("api/api.go"),
+        "package api\n\nfunc Exported() {}\n\nfunc internal() {}\n",
+    );
+    write(
+        &root.join("app/main.go"),
+        "package main\n\nfunc main() {\n\tapi.Exported()\n\tapi.internal()\n}\n",
+    );
+    let script = root.join("s.codemod");
+    write(
+        &script,
+        r#"refactor "s" {
+    scan go::pattern 'func $F() {}' in "api/**" where $F matches /^[A-Z]/ as exported
+    match go::pattern 'api.$F()' where $F in exported { replace 'api.$F(nil)' }
+}"#,
+    );
+    let run = |args: &[&str]| {
+        colab()
+            .current_dir(&root)
+            .args(["refactor", "--script", "s.codemod", "--format", "diff"])
+            .args(args)
+            .arg(".")
+            .output()
+            .unwrap()
+    };
+    let out = run(&[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let diff = String::from_utf8_lossy(&out.stdout);
+    assert!(diff.contains("+\tapi.Exported(nil)"), "{diff}");
+    assert!(!diff.contains("api.internal(nil)"), "{diff}");
+    // `find` reads the same facts.
+    let found = colab()
+        .current_dir(&root)
+        .args(["find", "--script", "s.codemod", "."])
+        .output()
+        .unwrap();
+    let found = String::from_utf8_lossy(&found.stdout);
+    assert!(
+        found.contains("main.go:4:2") && !found.contains("main.go:5:"),
+        "{found}"
+    );
+    // A run path that reads files one at a time refuses, naming itself.
+    let refused = run(&["--bisect", "true", "--write"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--bisect does not do yet"));
+    fs::remove_dir_all(&root).ok();
+}

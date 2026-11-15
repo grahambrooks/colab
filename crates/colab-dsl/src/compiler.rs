@@ -158,12 +158,12 @@ fn compile_inner(
     }
 
     let mut defs = Definitions::default();
-    let mut matches = expand_includes(command.items, base_path, &mut seen, &mut defs)?;
-    for m in &mut matches {
-        resolve_names(m, &defs, None)?;
-    }
+    let entries = expand_includes(command.items, base_path, &mut seen, &mut defs)?;
     let mut ids = HashSet::new();
-    for id in matches.iter().filter_map(|m| m.id.as_deref()) {
+    for id in entries.iter().filter_map(|e| match e {
+        Entry::Match(m) => m.id.as_deref(),
+        _ => None,
+    }) {
         if !ids.insert(id) {
             return Err(Error::Config(format!(
                 "two rules have `id \"{id}\"`; an id names one rule"
@@ -171,9 +171,49 @@ fn compile_inner(
         }
     }
 
-    let mut rules: Vec<Box<dyn Operation>> = Vec::with_capacity(matches.len());
-    let mut notes = Vec::with_capacity(matches.len());
-    for m in matches {
+    let mut rules: Vec<Box<dyn Operation>> = Vec::new();
+    let mut notes = Vec::new();
+    let mut stages: Vec<crate::model::Stage> = Vec::new();
+    // Scans so far: name → the metavariables it binds.
+    let mut scans: std::collections::HashMap<String, Vec<String>> = Default::default();
+    for entry in entries {
+        let mut m = match entry {
+            Entry::Match(m) => m,
+            Entry::Stage => {
+                // A new stage, unless the current one is still empty.
+                let start = stages.last().map_or(0, |s| s.start);
+                let has_scans = stages.last().is_some_and(|s| !s.scans.is_empty());
+                if rules.len() > start || has_scans {
+                    stages.push(crate::model::Stage {
+                        start: rules.len(),
+                        scans: Vec::new(),
+                    });
+                }
+                continue;
+            }
+            Entry::Scan(scan) => {
+                if scans.contains_key(&scan.name) {
+                    return Err(Error::Config(format!(
+                        "two scans are named `{}`; give each its own name",
+                        scan.name
+                    )));
+                }
+                let (name, vars, op) = lower_scan(scan, &defs, backends)?;
+                scans.insert(name.clone(), vars);
+                match stages.last_mut() {
+                    Some(stage) if stage.start == rules.len() => {
+                        stage.scans.push(crate::model::ScanOp { name, op })
+                    }
+                    _ => stages.push(crate::model::Stage {
+                        start: rules.len(),
+                        scans: vec![crate::model::ScanOp { name, op }],
+                    }),
+                }
+                continue;
+            }
+        };
+        resolve_names(&mut m, &defs, None)?;
+        resolve_in(&mut m.constraints, &scans, false)?;
         let mut note = crate::model::RuleNote {
             message: m.message.clone(),
             severity: m.severity.unwrap_or_default(),
@@ -193,6 +233,7 @@ fn compile_inner(
         name: command.refactor_name,
         rules,
         notes,
+        stages,
     })
 }
 
@@ -237,18 +278,32 @@ pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
     for item in &command.items {
         defs.add(item)?;
     }
-    Ok(command
-        .items
+    // `then` blocks' rules are checked as the others; scans are known by
+    // name, and (in a file with includes) an unknown one may come from one.
+    fn flat(items: Vec<Item>, matches: &mut Vec<Match>, scans: &mut Vec<crate::ast::Scan>) {
+        for item in items {
+            match item {
+                Item::Match(m) => matches.push(m),
+                Item::Scan(s) => scans.push(s),
+                Item::Then(inner) => flat(inner, matches, scans),
+                Item::Include(_) | Item::Pattern { .. } | Item::Rewriter { .. } => {}
+            }
+        }
+    }
+    let (mut matches, mut scan_items) = (Vec::new(), Vec::new());
+    flat(command.items, &mut matches, &mut scan_items);
+    let scans: std::collections::HashMap<String, Vec<String>> = scan_items
         .into_iter()
-        .filter_map(|item| match item {
-            Item::Match(m) => Some(m),
-            Item::Include(_) | Item::Pattern { .. } | Item::Rewriter { .. } => None,
-        })
+        .map(|s| (s.name.clone(), metavariable_names(&s.pattern)))
+        .collect();
+    Ok(matches
+        .into_iter()
         .map(|mut m| {
             let span = m.span;
             let namespace = format!("{}::{}", m.namespace.lang, m.namespace.module);
             let action = m.action.keyword();
             let lowered = resolve_names(&mut m, &defs, includes.then_some("$_"))
+                .and_then(|()| resolve_in(&mut m.constraints, &scans, includes))
                 .and_then(|()| lower_match(m, backends));
             let advice = lowered.as_ref().map(|(_, a)| a.clone()).unwrap_or_default();
             let outcome = lowered.map(|(ops, _)| ops.iter().map(|op| op.to_string()).collect());
@@ -263,19 +318,33 @@ pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
         .collect())
 }
 
-/// Recursively expand `include` directives, in source order.
-/// Returns the flattened list of `Match` clauses ready for lowering.
+/// A script's contents in order, includes expanded: rules, scans, and
+/// where a `then { … }` stage begins or ends.
+enum Entry {
+    Match(Match),
+    Scan(crate::ast::Scan),
+    Stage,
+}
+
+/// Recursively expand `include` directives (and `then` blocks), in source
+/// order.
 fn expand_includes(
     items: Vec<Item>,
     base_path: Option<&Path>,
     seen: &mut HashSet<PathBuf>,
     defs: &mut Definitions,
-) -> Result<Vec<Match>> {
+) -> Result<Vec<Entry>> {
     let mut out = Vec::new();
     for item in items {
         defs.add(&item)?;
         match item {
-            Item::Match(m) => out.push(m),
+            Item::Match(m) => out.push(Entry::Match(m)),
+            Item::Scan(scan) => out.push(Entry::Scan(scan)),
+            Item::Then(inner) => {
+                out.push(Entry::Stage);
+                out.extend(expand_includes(inner, base_path, seen, defs)?);
+                out.push(Entry::Stage);
+            }
             Item::Pattern { .. } | Item::Rewriter { .. } => {}
             Item::Include(rel) => {
                 let resolved = resolve_include_path(&rel, base_path)?;
@@ -331,10 +400,168 @@ impl Definitions {
                     return Err(twice("rewriter", name));
                 }
             }
-            Item::Match(_) | Item::Include(_) => {}
+            Item::Match(_) | Item::Include(_) | Item::Scan(_) => {}
+            Item::Then(inner) => {
+                for item in inner {
+                    self.add(item)?;
+                }
+            }
         }
         Ok(())
     }
+}
+
+/// The metavariables `pattern` binds, by name (no sigil, `$_` aside).
+fn metavariable_names(pattern: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = pattern;
+    while let Some(i) = rest.find('$') {
+        let after = rest[i..].trim_start_matches('$');
+        let len = after
+            .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'))
+            .unwrap_or(after.len());
+        let name = &after[..len];
+        let starts = name.starts_with(|c: char| c.is_ascii_uppercase() || c == '_');
+        if !name.is_empty() && name != "_" && starts && !out.iter().any(|n| n == name) {
+            out.push(name.to_string());
+        }
+        rest = &after[len..];
+    }
+    out
+}
+
+/// A `scan`: its name, the metavariables it collects, and the pattern rule
+/// that finds them (`<lang>::pattern` only).
+fn lower_scan(
+    scan: crate::ast::Scan,
+    defs: &Definitions,
+    backends: &BackendRegistry,
+) -> Result<(String, Vec<String>, Box<dyn Operation>)> {
+    let crate::ast::Scan {
+        namespace,
+        pattern,
+        scope,
+        constraints,
+        name,
+        ..
+    } = scan;
+    if namespace.module != "pattern" {
+        return Err(Error::UnsupportedOperation(format!(
+            "`scan {}::{}`: a scan collects a pattern's bindings, so it is `{}::pattern '<code>'`",
+            namespace.lang, namespace.module, namespace.lang
+        )));
+    }
+    let backend = backends.get(namespace.lang.as_str()).ok_or_else(|| {
+        Error::UnsupportedOperation(format!(
+            "`scan {}::pattern`: no backend for language `{}`; {}",
+            namespace.lang,
+            namespace.lang,
+            suggest::candidates_note(&namespace.lang, "languages", &backends.languages())
+        ))
+    })?;
+    // Named patterns resolve in a scan's `where` as in a rule's.
+    let mut holder = Match {
+        namespace: Namespace {
+            lang: namespace.lang.clone(),
+            module: "pattern".into(),
+        },
+        match_string: pattern.clone(),
+        scope: None,
+        fences: None,
+        prose: false,
+        message: None,
+        severity: None,
+        id: None,
+        url: None,
+        constraints,
+        lets: Vec::new(),
+        action: Action::Delete,
+        imports: Vec::new(),
+        span: crate::ast::Span { start: 0, end: 0 },
+    };
+    resolve_names(&mut holder, defs, None)?;
+    let spec = RuleSpec::Delete {
+        target: pattern.clone(),
+    };
+    let op = if holder.constraints.is_empty() {
+        backend.build_rule("pattern", spec)?
+    } else {
+        backend.build_rule_where("pattern", spec, &holder.constraints)?
+    };
+    let op: Box<dyn Operation> = match scope {
+        Some(glob) => Box::new(ScopedOperation::new(op, &glob)?),
+        None => op,
+    };
+    Ok((name, metavariable_names(&pattern), op))
+}
+
+/// Check each `where $X in <set>` names a scan made before it, and fill in
+/// which of the scan's metavariables it means: the one it names
+/// (`<set>.$F`), else the one with `$X`'s name, else the scan's only one.
+/// `lenient`: an unknown set may come from an include the editor cannot see.
+fn resolve_in(
+    constraints: &mut [Constraint],
+    scans: &std::collections::HashMap<String, Vec<String>>,
+    lenient: bool,
+) -> Result<()> {
+    for c in constraints {
+        match &mut c.test {
+            colab_core::Test::Any(all) | colab_core::Test::All(all) => {
+                resolve_in(all, scans, lenient)?
+            }
+            colab_core::Test::In { var, set, field } => {
+                let Some(vars) = scans.get(set.as_str()) else {
+                    if lenient {
+                        continue;
+                    }
+                    let mut known: Vec<&str> = scans.keys().map(String::as_str).collect();
+                    known.sort_unstable();
+                    let hint = suggest::closest(set, known.iter().copied())
+                        .map(|k| format!(" (did you mean `{k}`?)"))
+                        .unwrap_or_default();
+                    return Err(Error::Config(format!(
+                        "`{var} in {set}`: no scan named `{set}` before this rule{hint}; a rule reads the scans of its own stage and earlier ones"
+                    )));
+                };
+                let listed = || {
+                    vars.iter()
+                        .map(|v| format!("`${v}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                match field {
+                    Some(f) if !vars.contains(&f.name) => {
+                        return Err(Error::Config(format!(
+                            "`{var} in {set}.{f}`: the scan `{set}` binds {}",
+                            listed()
+                        )));
+                    }
+                    Some(_) => {}
+                    None if vars.contains(&var.name) => {
+                        *field = Some(colab_core::Var {
+                            name: var.name.clone(),
+                            multi: false,
+                        });
+                    }
+                    None if vars.len() == 1 => {
+                        *field = Some(colab_core::Var {
+                            name: vars[0].clone(),
+                            multi: false,
+                        });
+                    }
+                    None => {
+                        return Err(Error::Config(format!(
+                            "`{var} in {set}`: the scan `{set}` binds {}; say which, e.g. `{var} in {set}.${}`",
+                            listed(),
+                            vars.first().map(String::as_str).unwrap_or("X")
+                        )));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// `names` in order for a message, with a "did you mean" for `name`.
@@ -1335,6 +1562,54 @@ import (
         // The keywords stay usable where an identifier goes.
         let m = one_match(r#"match go::pattern '$X' where $X is field { delete }"#);
         assert_eq!(m.constraints[0].to_string(), "$X is field");
+    }
+
+    #[test]
+    fn scans_and_stages_compile_and_in_names_a_scan_before_it() {
+        let script = r#"refactor "t" {
+            match go::import "a" { replace "b" }
+            then {
+                scan go::pattern 'func $F($$$P) error { $$$B }' in "api/**" as fails
+                match go::pattern 'api.$F($$$A)' where $F in fails { replace 'api.$F(ctx, $$$A)' }
+            }
+        }"#;
+        let r = compile(script, &registry()).unwrap();
+        assert!(r.has_scans());
+        let starts: Vec<usize> = r.stages.iter().map(|s| s.start).collect();
+        // The stage the `then` opens, at rule 1 (an empty one may follow).
+        assert_eq!(starts[0], 1);
+        assert_eq!(r.stages[0].scans[0].name, "fails");
+        assert!(
+            r.rules[1].to_string().contains("$F in fails.$F"),
+            "{}",
+            r.rules[1]
+        );
+        let err = |script: &str| compile(script, &registry()).err().unwrap().to_string();
+        // Used before the scan exists.
+        let e = err(
+            r#"refactor "t" { match go::pattern 'f($X)' where $X in later { delete } then { scan go::pattern 'g($Y)' as later } }"#,
+        );
+        assert!(e.contains("no scan named `later` before this rule"), "{e}");
+        let e = err(
+            r#"refactor "t" { scan go::pattern 'f($A, $B)' as two match go::pattern 'g($X)' where $X in two { delete } }"#,
+        );
+        assert!(e.contains("binds `$A`, `$B`; say which"), "{e}");
+        let e = err(
+            r#"refactor "t" { scan go::pattern 'f($A)' as one match go::pattern 'g($X)' where $X in one.$Q { delete } }"#,
+        );
+        assert!(e.contains("binds `$A`"), "{e}");
+        let e = err(r#"refactor "t" { scan go::import "x" as imports }"#);
+        assert!(e.contains("is `go::pattern '<code>'`"), "{e}");
+        let e =
+            err(r#"refactor "t" { scan go::pattern 'f($A)' as s scan go::pattern 'g($A)' as s }"#);
+        assert!(e.contains("two scans are named `s`"), "{e}");
+        // Without scans, stages are only rule order: no phased run.
+        let plain = compile(r#"refactor "t" { match go::import "a" { replace "b" } then { match go::import "b" { replace "c" } } }"#, &registry()).unwrap();
+        assert!(!plain.has_scans());
+        assert_eq!(
+            plain.apply("package p\n\nimport \"a\"\n"),
+            "package p\n\nimport \"c\"\n"
+        );
     }
 
     #[test]

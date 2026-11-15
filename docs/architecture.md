@@ -414,6 +414,35 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
 - **`colab:ignore` is generic.** It is applied in `Refactoring::apply_at`;
   backends need nothing for it.
 
+## Phased runs: scan and then
+
+M35 relaxes "every rule acts on one file" for **reading** only.
+
+- A script is a sequence of stages (`then { … }` starts one, and so does
+  a `scan` after rules). Each stage is a rule-index range plus its scans
+  (`colab_dsl::model::Stage`). Without scans the stages are just rule
+  order, and `apply_at` runs every rule per file as before.
+- With scans, `Refactoring::run_phased` takes every file the run covers
+  in memory (the CLI walks once with a no-op `Relevant` transformer to
+  collect them), and for each stage runs its scans over all files —
+  `locate` on the pattern, each capture added to `colab_core::facts` —
+  installs the facts, then applies the stage's rules to each file. The
+  result is one `FileChange` per file, conflicts judged against the file
+  as the whole script leaves it, fed to the same visit / tidy / conflict /
+  write pipeline as an ordinary walk.
+- `where $X in <set>` is `Test::In`; the compiler checks the set exists
+  in this or an earlier stage and pins which of its metavariables is
+  meant. The pattern engine reads `colab_core::facts::contains`; with no
+  facts installed it records a failure (the run fails at the end of the
+  walk, before writes) rather than answer from an empty set.
+- Paths that cannot make a phased run refuse a script with scans:
+  `--stdin`, `--bisect`, `--verify`, `--commit-per-rule`, `--split-pr`,
+  `--changed-since` / `--staged`, and MCP. Facts are plain text; nothing
+  resolves names across files. Every edit is still one rule's in one
+  file, so conflicts, `colab:ignore`, attribution and idempotency hold.
+- Deferred: `create` (a new file from a match), which needs `FileOp`s in
+  the `refactor` write path.
+
 ## Error handling
 
 Every fallible operation returns `colab_core::Result<T>`. I/O

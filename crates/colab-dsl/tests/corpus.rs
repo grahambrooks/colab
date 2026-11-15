@@ -141,6 +141,48 @@ fn run_case(case: &Case) -> Result<(), String> {
 
     let mut report = refactoring.report();
 
+    // A script with scans reads every file before it edits one: run it as
+    // the CLI does, over all of input/ at once, twice for idempotency.
+    if refactoring.has_scans() {
+        let files: Vec<(PathBuf, String)> =
+            inputs.iter().map(|(p, s)| (p.clone(), s.clone())).collect();
+        let first = refactoring.run_phased(files);
+        let again: Vec<(PathBuf, String)> = first
+            .iter()
+            .map(|c| (c.path.clone(), c.after.clone()))
+            .collect();
+        let second = refactoring.run_phased(again);
+        for (change, rerun) in first.iter().zip(&second) {
+            let want = &expected[&change.path];
+            if &change.after != want {
+                return Err(format!(
+                    "{}: output != expected\n--- expected\n{}\n--- got\n{}",
+                    change.path.display(),
+                    want,
+                    change.after
+                ));
+            }
+            if rerun.after != change.after {
+                return Err(format!(
+                    "{}: the phased run is not idempotent on its own output",
+                    change.path.display()
+                ));
+            }
+            if refactoring.is_file_relevant(&change.path) {
+                report.record(change);
+            }
+        }
+        near_miss::probe(&refactoring.rules, &mut report, |path| {
+            inputs.get(path).cloned()
+        });
+        expect_file(&case.dir.join("rules.expected"), &render_rules(&report))?;
+        expect_file(
+            &case.dir.join("find.expected"),
+            &render_find(&refactoring, &inputs),
+        )?;
+        return Ok(());
+    }
+
     for (rel, source) in &inputs {
         let want = expected
             .get(rel)

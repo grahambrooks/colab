@@ -28,6 +28,8 @@ program     = "refactor" string "{" item* "}"
 item        = match | "include" string
             | "pattern" identifier "=" string   -- a pattern constraints name
             | "rewriter" identifier "=" string "->" string   -- what `rewrite(…)` does
+            | "scan" namespace string location* [ where ] "as" identifier   -- a read-only phase
+            | "then" "{" item* "}"               -- runs after everything before it
 match       = "match" namespace string location* [ where ] "{" let* action clause* "}"
 location    = "in" string                -- path scope, at most once
             | "in" "fences"              -- only inside Markdown code fences
@@ -38,6 +40,7 @@ constraint  = [ "not" ] test
 test        = metavar "matches" ( regex | string )
             | metavar "is" ( identifier | string )
             | metavar "count" range
+            | metavar "in" identifier [ "." metavar ]  -- a scan's bindings
             | metavar "type" string     -- answered by the language server
             | metavar "resolves" string -- answered by the language server
             | "inside" pattern [ stop ]  -- without a stop, the only test on symbol / call: a code scope
@@ -564,6 +567,57 @@ match rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ 
 This is how the Rust 2024 pack finds `extern` blocks, whose item list a
 `$$$` cannot stand for.
 
+## Across files: scan, in and then
+
+Every rule edits one file. A **scan** reads all of them first, so a rule
+can narrow on what is true elsewhere:
+
+```
+refactor "context-first" {
+    // Stage 1: exported api functions that can fail take a context first.
+    match go::pattern 'func $F($$$P) error { $$$B }' in "api/**"
+        where $F matches /^[A-Z]/, not $$$P matches /^ctx /
+    {
+        replace 'func $F(ctx context.Context, $$$P) error { $$$B }'
+        requires import "context"
+    }
+    then {
+        // Reads stage 1's result in api/; edits the callers anywhere.
+        scan go::pattern 'func $F(ctx context.Context, $$$P) error { $$$B }' in "api/**" as takes_ctx
+        match go::pattern 'api.$F($$$A)' where $F in takes_ctx, not $$$A matches /^ctx\b/ {
+            replace 'api.$F(ctx, $$$A)'
+        }
+    }
+}
+```
+
+- **`scan <lang>::pattern '<code>' [in "<glob>"] [where …] as <name>`**
+  is read-only. It runs over every file the run covers, before the rules
+  after it, and keeps the text of each binding of each match under
+  `<name>`. It takes the `in` and `where` clauses a rule does.
+- **`where $X in <name>`** keeps a match when the text bound to `$X` was
+  bound by the scan, to the metavariable of the same name, or to the
+  scan's only one; `$X in <name>.$F` names it. `not $X in <name>` keeps
+  the others. Values are compared as text: nothing resolves names, so
+  `local.Load` and `api.Load` are both `Load` (narrow by the qualifier,
+  as above).
+- **`then { … }`** starts a stage: its scans read every file as the
+  stages before left it (in memory), so stage 2 can act on what stage 1
+  wrote in another file. A scan written after rules, without `then`,
+  likewise reads their result. Without scans, stages are only rule order.
+- **What stays the same.** Every edit is still one rule's in one file,
+  so conflicts, `colab:ignore`, per-rule attribution and idempotency
+  hold; the corpus re-runs the whole phased script to check the last.
+  A rule that uses `in` with no scan before it, in its own stage or an
+  earlier one, fails the script.
+- **Where it runs.** `colab refactor`, `colab fix` and `colab find` (which
+  runs the scans, then locates the hits in the files as they are).
+  `--stdin`, `--bisect`, `--verify`, `--commit-per-rule`, `--split-pr`,
+  `--changed-since` / `--staged` and the MCP tools refuse such a script,
+  saying so, rather than run it without its scans.
+- **Not yet:** a `create` action that makes a new file from a match (it
+  needs file operations in the `refactor` write path).
+
 ## Findings: `message`, `severity`, `id` and `url`
 
 A rule can say what its finding means, after the action:
@@ -956,7 +1010,7 @@ refactor "javax-to-jakarta" {
 
 The grammar keywords are:
 
-`refactor`, `match`, `in`, `include`, `pattern`, `rewriter`, `replace`, `delete`, `ensure`,
+`refactor`, `match`, `in`, `include`, `pattern`, `rewriter`, `scan`, `as`, `then`, `replace`, `delete`, `ensure`,
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
 `count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `requires`, `import`, `drops`, `when`,

@@ -83,6 +83,14 @@ pub enum Test {
     /// `all(c, …)`: every one holds (a comma does the same at the top
     /// level; `all` groups them under `not` or `any`).
     All(Vec<Constraint>),
+    /// `$X in <set>` / `$X in <set>.$F`: the text bound to `$X` was bound
+    /// to `field` by the `scan … as <set>` (see [`crate::facts`]). The
+    /// compiler fills in `field` when the script leaves it out.
+    In {
+        var: Var,
+        set: String,
+        field: Option<Var>,
+    },
     /// `$X type "io.Reader"` / `$F resolves "pkg.Func"`: answered by the
     /// language server, through [`crate::semantic`].
     Semantic {
@@ -454,6 +462,10 @@ impl fmt::Display for Constraint {
             }
             Test::Nth(n) => write!(f, "nth {n}"),
             Test::Semantic { var, query } => write!(f, "{var} {query}"),
+            Test::In { var, set, field } => match field {
+                Some(field) => write!(f, "{var} in {set}.{field}"),
+                None => write!(f, "{var} in {set}"),
+            },
             Test::Field(name) => write!(f, "field {name}"),
             Test::Let { var, from, steps } => {
                 write!(f, "let {var} = {from}")?;

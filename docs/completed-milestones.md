@@ -948,6 +948,39 @@ safer than `Edit`'s exact-string match. Serena's symbolic tools.
   error that lists the candidates.
 - Reported, previewed and conflict-checked like any colab run.
 
+## Rules across files (M35)
+
+### ✅ M35 — Rules that work across files in one pass
+
+Shipped 2026-11-14 (scan phases, `in`, `then`; see [`dsl.md`](dsl.md#across-files-scan-in-and-then) and [`architecture.md`](architecture.md#phased-runs-scan-and-then)); `create` moved to the follow-ups. Grit's `sequential` / `multifile` and OpenRewrite's scanning recipes let
+one script reason across files: collect facts everywhere, then edit with
+them. colab's invariant is that every rule acts on one file; this keeps
+the edit half of it and relaxes the reading half — **rules edit one file
+each; a scan phase may read many**.
+
+- **Scan phases**: `scan <lang>::pattern '<pattern>' as <name>` walks
+  every file first, read-only, and collects the bindings of each match
+  into a named set (with the file each came from). Later rules use it as
+  a narrowing constraint: `where $X in <name>`, `where $X not in <name>`.
+  Example: collect every exported Go function, then rename only the call
+  sites of those, in every file.
+- **Ordered passes**: `then { … }` blocks run after the previous block
+  has finished over every file, reading its output (kept in memory, as
+  `--split-pr --stacked` does), so rule B can act on what rule A wrote in
+  another file.
+- **Creating files**: `match … { create "<path>" '<template>' }`, made
+  through the git file-operation path (`FileOp::Create`), so undo and
+  `--verify` reverse it; a file that exists is a conflict.
+- **What stays**: every edit is still made by a per-file rule, so
+  conflicts, `colab:ignore`, attribution, idempotency (the corpus re-runs
+  the whole script) and `find` agreement hold. Facts are plain data;
+  nothing resolves names across files.
+- **Design first**: the scan phase changes the walk from one pass to
+  several, and `find` / `review` / `--split-pr` must report a phased run.
+  The milestone starts with that design and a corpus of the cases above,
+  and updates the "rules act on one file each" invariant in CLAUDE.md and
+  `architecture.md` when it ships.
+
 ## Appendix: the original design (2026-05-09)
 
 The plan as first written, goal by goal. Almost all of it has shipped

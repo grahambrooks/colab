@@ -31,6 +31,14 @@ pub Item: Item = {
     "include" <s: StringLiteral> => Item::Include(s),
     // `pattern helper = '…'`: a pattern `where` clauses name.
     <start: @L> "pattern" <name: Identifier> "=" <text: StringLiteral> <end: @R> => Item::Pattern { name, text, span: Span { start, end } },
+    // `scan <lang>::pattern '<p>' [in "<glob>"] [where …] as <name>`: a
+    // read-only phase whose bindings `where $X in <name>` can use.
+    <start: @L> "scan" <namespace: Namespace> <pattern: StringLiteral> <locations: Location*> <constraints: Where?> "as" <name: Identifier> <end: @R> =>? {
+        let (scope, _, _) = crate::ast::locations(locations).map_err(|error| ParseError::User { error })?;
+        Ok(Item::Scan(crate::ast::Scan { namespace, pattern, scope, constraints: constraints.unwrap_or_default(), name, span: Span { start, end } }))
+    },
+    // `then { … }`: what runs after everything before it, over every file.
+    "then" "{" <items: Item*> "}" => Item::Then(items),
     // `rewriter opt = '<pattern>' -> '<template>'`: what a `let`'s
     // `rewrite(opt)` step does to each match inside a binding.
     <start: @L> "rewriter" <name: Identifier> "=" <pattern: StringLiteral> "->" <template: StringLiteral> <end: @R> => Item::Rewriter { name, pattern, template, span: Span { start, end } },
@@ -80,6 +88,8 @@ Test: Test = {
     <var: Metavar> "matches" <regex: StringLiteral> => Test::Matches { var, regex },
     <var: Metavar> "is" <kind: Identifier> => Test::Is { var, kind },
     <var: Metavar> "is" <kind: StringLiteral> => Test::Is { var, kind },
+    <var: Metavar> "in" <set: Identifier> => Test::In { var, set, field: None },
+    <var: Metavar> "in" <set: Identifier> "." <field: Metavar> => Test::In { var, set, field: Some(field) },
     <var: Metavar> "type" <ty: StringLiteral> => Test::Semantic { var, query: colab_core::semantic::Query::Type(ty) },
     <var: Metavar> "resolves" <target: StringLiteral> => Test::Semantic { var, query: colab_core::semantic::Query::Resolves(target) },
     <var: Metavar> "count" <range: CountRange> => Test::Count { var, min: range.0, max: range.1 },
@@ -240,6 +250,9 @@ pub Identifier: String = {
     "url" => "url".to_string(),
     "type" => "type".to_string(),
     "resolves" => "resolves".to_string(),
+    "scan" => "scan".to_string(),
+    "as" => "as".to_string(),
+    "then" => "then".to_string(),
 };
 
 // Three spellings, none with escapes. A double-quoted string cannot

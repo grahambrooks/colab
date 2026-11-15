@@ -29,6 +29,10 @@ pub enum Item {
         text: String,
         span: Span,
     },
+    /// `scan <lang>::pattern '<p>' … as <name>`: a read-only phase.
+    Scan(Scan),
+    /// `then { … }`: items that run after everything before them.
+    Then(Vec<Item>),
     /// `rewriter <name> = '<pattern>' -> '<template>'`: what a `let`'s
     /// `rewrite(<name>)` step does to each match inside a binding.
     Rewriter {
@@ -118,6 +122,17 @@ impl std::fmt::Display for Let {
         }
         Ok(())
     }
+}
+
+/// `scan <namespace> '<pattern>' [in "<glob>"] [where …] as <name>`.
+#[derive(Debug, PartialEq)]
+pub struct Scan {
+    pub namespace: Namespace,
+    pub pattern: String,
+    pub scope: Option<String>,
+    pub constraints: Vec<colab_core::Constraint>,
+    pub name: String,
+    pub span: Span,
 }
 
 /// One clause after a rule's action.

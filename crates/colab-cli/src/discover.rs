@@ -82,8 +82,11 @@ pub fn explain_source(script: &str) -> Result<Value> {
 }
 
 fn explain_command(cmd: &ast::Command) -> Value {
-    let items: Vec<Value> = cmd
-        .items
+    json!({ "name": cmd.refactor_name, "items": explain_items(&cmd.items) })
+}
+
+fn explain_items(items: &[ast::Item]) -> Vec<Value> {
+    items
         .iter()
         .map(|item| match item {
             ast::Item::Match(m) => {
@@ -146,9 +149,22 @@ fn explain_command(cmd: &ast::Command) -> Value {
                 "pattern": pattern,
                 "template": template,
             }),
+            ast::Item::Scan(scan) => {
+                let mut out = json!({
+                    "kind": "scan",
+                    "namespace": format!("{}::{}", scan.namespace.lang, scan.namespace.module),
+                    "pattern": scan.pattern,
+                    "as": scan.name,
+                    "scope": scan.scope,
+                });
+                if !scan.constraints.is_empty() {
+                    out["where"] = scan.constraints.iter().map(|c| c.to_string()).collect();
+                }
+                out
+            }
+            ast::Item::Then(inner) => json!({"kind": "then", "items": explain_items(inner)}),
         })
-        .collect();
-    json!({ "name": cmd.refactor_name, "items": items })
+        .collect()
 }
 
 /// `colab ast --pattern`: how a pattern parses for `lang`.

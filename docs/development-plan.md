@@ -30,7 +30,7 @@ checks, and a CLI, MCP server and LSP that share one report shape.
 
 ## Order of work
 
-**M20's install step**, now that the stable gate has passed, then **M10.6**, **M35**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints), M33 (fleet runs, packs from git) and M34 (symbol-addressed edits) have shipped.
+**M20's install step**, now that the stable gate has passed, then **M10.6**, and the [decisions waiting](#decisions-waiting-from-m29) from M29 when they are made. M28 (Markdown by structure), the dogfood follow-ups, M23 (the eval suite), M14 (`colab.toml` + `colab fix`), M21 (CI formats), M16 (`colab review`, `--split-pr`), M15 (`where inside` on `symbol` / `call`), M29 (the follow-up sweep), M30 (rule expressiveness), M31 (CI fit), M32 (type and name constraints), M33 (fleet runs, packs from git), M34 (symbol-addressed edits) and M35 (scan phases) have shipped.
 
 M20 puts colab in front of every Claude session, so a version is pinned
 there only once it has passed the [stable gate](#stable-gate-before-m20)
@@ -42,7 +42,6 @@ what it lets that dogfooding cover.
 | ---- | --------- | ------- |
 | 1 | M20 install step | The stable gate's criteria hold as of 2026-11-14 (criterion 1's config keys through the eval task, not yet on this repo); its non-installing parts (`colab:ignore`, rule `message` / `severity`) shipped earlier. |
 | 2 | M10.6 | Parse-once batching: performance, for the largest repositories. |
-| 3 | M35 Rules that work across files in one pass | Scan-then-edit scripts; relaxes the one-file invariant for reading only, design first. |
 
 ## Stable gate before M20
 
@@ -92,37 +91,6 @@ Wave D of the M29 follow-up sweep: decide before building.
   `EXTRA_TARGETS`): changes what every release ships, so it waits for
   a go-ahead.
 
-### M35 — Rules that work across files in one pass
-
-Grit's `sequential` / `multifile` and OpenRewrite's scanning recipes let
-one script reason across files: collect facts everywhere, then edit with
-them. colab's invariant is that every rule acts on one file; this keeps
-the edit half of it and relaxes the reading half — **rules edit one file
-each; a scan phase may read many**.
-
-- **Scan phases**: `scan <lang>::pattern '<pattern>' as <name>` walks
-  every file first, read-only, and collects the bindings of each match
-  into a named set (with the file each came from). Later rules use it as
-  a narrowing constraint: `where $X in <name>`, `where $X not in <name>`.
-  Example: collect every exported Go function, then rename only the call
-  sites of those, in every file.
-- **Ordered passes**: `then { … }` blocks run after the previous block
-  has finished over every file, reading its output (kept in memory, as
-  `--split-pr --stacked` does), so rule B can act on what rule A wrote in
-  another file.
-- **Creating files**: `match … { create "<path>" '<template>' }`, made
-  through the git file-operation path (`FileOp::Create`), so undo and
-  `--verify` reverse it; a file that exists is a conflict.
-- **What stays**: every edit is still made by a per-file rule, so
-  conflicts, `colab:ignore`, attribution, idempotency (the corpus re-runs
-  the whole script) and `find` agreement hold. Facts are plain data;
-  nothing resolves names across files.
-- **Design first**: the scan phase changes the walk from one pass to
-  several, and `find` / `review` / `--split-pr` must report a phased run.
-  The milestone starts with that design and a corpus of the cases above,
-  and updates the "rules act on one file each" invariant in CLAUDE.md and
-  `architecture.md` when it ships.
-
 ### M10.6 — Parse-once-per-backend batching (deferred from M10)
 - Add `Operation::lang() -> &'static str` so the composer can
   group consecutive same-backend rules.
@@ -150,6 +118,8 @@ whichever milestone touches the same code.
 | Packs that name the dependency range they apply to, so `colab fix` after a Renovate bump runs only the packs for what changed (each ecosystem's lockfile read for the version) | M31 |
 | A clean `fix --check` warns that a finding rule matched no files, and so does a `--baseline` run whose findings were all the ref's: for a check, matching nothing is the state wanted, so the warning could be worded by what the run means, or dropped for rules with a `message` | M31 |
 | `type` / `resolves` asked once per match; batching a file's questions (or a server's own type-of-range request) would cut the round trips. Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match | M32 |
+| `create "<path>" '<template>'`: a new file from a match, made as a `FileOp::Create` so undo and `--verify` reverse it, a file that exists a conflict. Needs file operations in the `refactor` write path, which writes text edits only | M35 |
+| Phased runs (scans) under `--bisect`, `--verify`, `--split-pr`, `--stdin`, `--changed-since` and MCP, which refuse them today | M35 |
 
 ## Unscheduled
 

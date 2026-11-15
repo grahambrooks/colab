@@ -1,0 +1,2 @@
+1 go::pattern 'func $F($$$P) error { $$$B }' where $F matches /^[A-Z]/, not $$$P matches /^ctx / -> 'func $F(ctx context.Context, $$$P) error { $$$B }' requires import "context" in "api/**"
+1 go::pattern 'api.$F($$$A)' where $F in takes_ctx.$F, not $$$A matches /^ctx\b/ -> 'api.$F(ctx, $$$A)'

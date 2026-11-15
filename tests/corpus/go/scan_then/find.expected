@@ -1,0 +1,14 @@
+api/store.go:3:1: [0] func Load(id string) error {\n	return nil\n}
+    $B = return nil\n
+    $F = Load
+    $P = id string
+api/store.go:7:1: [0] func Save(id string, v int) error { return nil }
+    $B = return nil
+    $F = Save
+    $P = id string, v int
+app/main.go:4:12: [1] api.Load("a")
+    $A = "a"
+    $F = Load
+app/main.go:9:9: [1] api.Save("a", 1)
+    $A = "a", 1
+    $F = Save

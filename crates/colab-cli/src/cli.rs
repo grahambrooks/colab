@@ -1018,8 +1018,82 @@ impl Drop for OracleGuard {
 /// A question a rule's `type` / `resolves` constraint could not have
 /// answered fails the run, before anything is written.
 fn semantic_failure() -> Result<()> {
-    match colab_core::semantic::take_failure() {
+    match colab_core::semantic::take_failure().or_else(colab_core::facts::take_failure) {
         Some(why) => Err(Error::Config(why)),
+        None => Ok(()),
+    }
+}
+
+/// Visits every file a phased run needs (one any rule or scan applies
+/// to), changing nothing: what [`phased_walk`] reads into memory.
+struct Relevant<'a>(&'a codemod::Refactoring);
+
+impl CodeTransformer for Relevant<'_> {
+    fn is_file_relevant(&self, path: &Path) -> bool {
+        self.0.is_file_relevant(path)
+            || self
+                .0
+                .stages
+                .iter()
+                .flat_map(|s| &s.scans)
+                .any(|scan| scan.op.is_file_relevant(path))
+    }
+
+    fn apply(&self, source: &str) -> String {
+        source.to_string()
+    }
+}
+
+/// A script with `scan` phases: every file it needs read into memory, the
+/// stages run over all of them (`Refactoring::run_phased`), and each
+/// file's result visited as an ordinary walk would.
+fn phased_walk<F>(
+    refactoring: &codemod::Refactoring,
+    args: &RefactorArgs,
+    targets: &[PathBuf],
+    visit: &mut F,
+) -> Result<WalkOutcome>
+where
+    F: FnMut(FileChange) -> Result<()>,
+{
+    let mut files = Vec::new();
+    let outcome = walk_targets(
+        &Relevant(refactoring),
+        args,
+        targets,
+        &mut |change: FileChange| {
+            files.push((change.path, change.before));
+            Ok(())
+        },
+    )?;
+    for change in refactoring.run_phased(files) {
+        visit(change)?;
+    }
+    semantic_failure()?;
+    Ok(outcome)
+}
+
+/// The run paths a script with scans cannot take yet: each walks the
+/// files once, one rule at a time, or reads one file.
+fn refuse_phased(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Result<()> {
+    if !refactoring.has_scans() {
+        return Ok(());
+    }
+    let flag = [
+        (args.split_pr.is_some(), "--split-pr"),
+        (args.verify.is_some(), "--verify"),
+        (args.commit_per_rule, "--commit-per-rule"),
+        (args.bisect.is_some(), "--bisect"),
+        (args.changed_since.is_some(), "--changed-since"),
+        (args.staged, "--staged"),
+        (args.stdin, "--stdin"),
+    ]
+    .into_iter()
+    .find_map(|(on, name)| on.then_some(name));
+    match flag {
+        Some(flag) => Err(Error::UnsupportedOperation(format!(
+            "a script with `scan` phases reads every file before it edits one, which {flag} does not do yet; run it without {flag}"
+        ))),
         None => Ok(()),
     }
 }
@@ -1558,6 +1632,7 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
         args.paths.clone()
     };
 
+    refuse_phased(refactoring, args)?;
     if let Some(prefix) = &args.split_pr {
         return run_split(refactoring, args, &targets, prefix);
     }
@@ -1621,7 +1696,11 @@ fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Resu
         Ok(())
     };
 
-    let outcome = run_transformer(refactoring, args, &targets, &mut visit)?;
+    let outcome = if refactoring.has_scans() {
+        phased_walk(refactoring, args, &targets, &mut visit)?
+    } else {
+        run_transformer(refactoring, args, &targets, &mut visit)?
+    };
     report.record_walk(outcome);
     if let Some(baseline) = &baseline
         && baseline.dropped > 0
@@ -2443,6 +2522,7 @@ fn run_stdin(args: RefactorArgs) -> Result<i32> {
     let mut refactoring = args.script.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
     let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
+    refuse_phased(&refactoring, &args)?;
     // The rules are in every report; the log names the script, so an
     // agent does not read each rule twice.
     info!(
@@ -2509,6 +2589,35 @@ fn run_find(args: FindArgs) -> Result<i32> {
     let mut refactoring = args.script.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
     let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
+    // Scans first, over every file and every stage, so `in` reads what
+    // `refactor` would; hits are still located in the files as they are.
+    if refactoring.has_scans() {
+        let opts = WalkOptions {
+            include: args.include.clone(),
+            exclude: args.exclude.clone(),
+            respect_gitignore: !args.no_ignore,
+            follow_symlinks: false,
+            jobs: None,
+        };
+        let targets = if args.paths.is_empty() {
+            vec![PathBuf::from(".")]
+        } else {
+            args.paths.clone()
+        };
+        let mut files = Vec::new();
+        for target in &targets {
+            walker::walk_with(
+                &Relevant(&refactoring),
+                target,
+                &opts,
+                &mut |change: FileChange| {
+                    files.push((change.path, change.before));
+                    Ok(())
+                },
+            )?;
+        }
+        refactoring.run_phased(files);
+    }
     let rules = &refactoring.rules;
     let detail = match args.detail {
         FindDetailArg::Concise => FindDetail::Concise,

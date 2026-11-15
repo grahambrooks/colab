@@ -593,6 +593,15 @@ fn compile_script(
         Some(dir) => colab_dsl::compile_at_source(script, &dir.join("<script>"), backends),
         None => compile(script, backends),
     }?;
+    // A phased run reads every file before it edits one; the MCP tools
+    // run file by file.
+    if refactoring.has_scans() {
+        return Err(colab_core::Error::UnsupportedOperation(
+            "a script with `scan` phases reads every file before it edits one, which the MCP \
+             tools do not do yet; run it with the colab CLI (`colab refactor` / `colab find`)"
+                .into(),
+        ));
+    }
     // The MCP server starts no language server, so it cannot answer them.
     if refactoring.needs_oracle() {
         return Err(colab_core::Error::UnsupportedOperation(

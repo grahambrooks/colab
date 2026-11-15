@@ -1343,6 +1343,12 @@ enum CheckKind {
     All(Vec<Check>),
     Nth(i64),
     Field(String),
+    /// Read from the scan phases' facts, through `colab_core::facts`.
+    In {
+        var: Var,
+        set: String,
+        field: String,
+    },
     /// Asked of the language server, through `colab_core::semantic`.
     Semantic {
         var: Var,
@@ -1574,6 +1580,16 @@ impl Check {
                 ));
             }
             Test::Nth(n) => CheckKind::Nth(*n),
+            Test::In { var, set, field } => {
+                require_bound(bound, var)?;
+                CheckKind::In {
+                    var: var.clone(),
+                    set: set.clone(),
+                    field: field
+                        .as_ref()
+                        .map_or_else(|| var.name.clone(), |f| f.name.clone()),
+                }
+            }
             Test::Semantic { var, query } => {
                 require_bound(bound, var)?;
                 CheckKind::Semantic {
@@ -1645,6 +1661,22 @@ impl Check {
             CheckKind::All(checks) => checks.iter().all(|c| c.holds(m, source)),
             CheckKind::Nth(n) => is_nth(m.get_node(), *n),
             CheckKind::Field(name) => in_field(m.get_node(), name),
+            CheckKind::In { var, set, field } => {
+                let text = if var.multi {
+                    let nodes = env.get_multiple_matches(&var.name);
+                    match (nodes.first(), nodes.last()) {
+                        (Some(first), Some(last)) => {
+                            source[first.range().start..last.range().end].to_string()
+                        }
+                        _ => String::new(),
+                    }
+                } else {
+                    env.get_match(&var.name)
+                        .map(|n| n.text().into_owned())
+                        .unwrap_or_default()
+                };
+                colab_core::facts::contains(set, field, &text)
+            }
             CheckKind::Semantic { var, query } => {
                 let span = if var.multi {
                     let nodes = env.get_multiple_matches(&var.name);
