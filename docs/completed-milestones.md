@@ -901,7 +901,7 @@ What a team needs to gate a repository on its packs. All six shipped on 2026-11-
 ### ✅ M32 — Type and name constraints, delegated
 
 The main correctness gap against OpenRewrite, rust-analyzer SSR,
-IntelliJ, Rector and LibCST: telling apart same-named APIs from (shipped 2026-11-14: `type` / `resolves`, see [`dsl.md`](dsl.md#asking-the-language-server-type-and-resolves))
+IntelliJ, Rector and LibCST: telling apart same-named APIs from (shipped 2026-11-14: `type` / `resolves`, see [`dsl.md`](dsl.md#asking-the-language-server-type-resolves-implements-calls-called_by))
 different libraries. Was a decision waiting from M29.
 
 - `where $X type "io.Reader"` and `where $F resolves "pkg.Func"`,

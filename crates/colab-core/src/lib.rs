@@ -25,6 +25,7 @@ pub mod script_file;
 pub mod semantic;
 pub mod suggest;
 pub mod symbols;
+pub mod telemetry;
 pub mod template;
 pub mod transformer;
 pub mod walker;

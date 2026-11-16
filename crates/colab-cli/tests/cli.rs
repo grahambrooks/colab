@@ -51,6 +51,9 @@ fn write(path: &std::path::Path, contents: &str) {
 fn colab() -> Command {
     let mut cmd = Command::cargo_bin("colab").expect("colab binary built");
     cmd.env("COLAB_KEEP_SERVER", "0");
+    // A developer's shell (Claude Code's, with a collector configured) may
+    // set an OTLP endpoint; tests must not send it traces.
+    cmd.env("OTEL_SDK_DISABLED", "true");
     cmd
 }
 
@@ -4486,4 +4489,133 @@ fn the_post_edit_hook_reports_a_broken_convention_to_the_model() {
     for dir in [&root, &outside] {
         fs::remove_dir_all(dir).ok();
     }
+}
+
+// ---- OpenTelemetry traces ---------------------------------------------------
+
+/// A collector on a free loopback port: answers every OTLP/HTTP POST with
+/// 200 and hands back the bodies it received.
+fn collector() -> (String, std::sync::mpsc::Receiver<serde_json::Value>) {
+    use std::io::{Read, Write as _};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut seen = Vec::new();
+            let mut buf = [0u8; 8192];
+            let body = loop {
+                let Ok(n) = stream.read(&mut buf) else {
+                    break None;
+                };
+                if n == 0 {
+                    break None;
+                }
+                seen.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&seen).into_owned();
+                if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                    let len: usize = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("Content-Length: "))
+                        .and_then(|n| n.parse().ok())
+                        .unwrap_or(0);
+                    if body.len() >= len {
+                        break Some(body.to_string());
+                    }
+                }
+            };
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+            if let Some(body) = body.and_then(|b| serde_json::from_str(&b).ok()) {
+                let _ = send.send(body);
+            }
+        }
+    });
+    (endpoint, receive)
+}
+
+#[test]
+fn a_command_is_one_otlp_trace_when_an_endpoint_is_set() {
+    let root = workspace_temp("otel");
+    write(&root.join("main.go"), GO_INPUT);
+    let (endpoint, traces) = collector();
+    let out = colab()
+        .current_dir(&root)
+        .env_remove("OTEL_SDK_DISABLED")
+        .env("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint)
+        .env("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=test")
+        .args([
+            "find",
+            "-e",
+            r#"match go::import "old.module" { replace "new.module" }"#,
+        ])
+        .args(["--format", "json", "main.go"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body = traces
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the trace reached the collector");
+    let resource = body["resourceSpans"][0]["resource"]["attributes"].to_string();
+    assert!(resource.contains(r#""stringValue":"colab""#), "{resource}");
+    assert!(resource.contains("deployment.environment"), "{resource}");
+    let spans = body["resourceSpans"][0]["scopeSpans"][0]["spans"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let named = |name: &str| {
+        spans
+            .iter()
+            .find(|s| s["name"] == name)
+            .unwrap_or_else(|| panic!("no `{name}` span in {spans:?}"))
+    };
+    let command = named("colab find");
+    assert!(command.get("parentSpanId").is_none(), "the root: {command}");
+    for child in ["compile", "walk"] {
+        assert_eq!(named(child)["parentSpanId"], command["spanId"], "{child}");
+        assert_eq!(named(child)["traceId"], command["traceId"], "{child}");
+    }
+    let attributes = command["attributes"].to_string();
+    assert!(attributes.contains("process.exit.code"), "{attributes}");
+    assert!(
+        attributes.contains(r#""format""#),
+        "flag names: {attributes}"
+    );
+    // Flag names only: no paths, rules or flag values.
+    let whole = body.to_string();
+    assert!(!whole.contains("main.go"), "a path in the trace: {whole}");
+    assert!(
+        !whole.contains("old.module"),
+        "the rule in the trace: {whole}"
+    );
+    assert!(
+        !attributes.contains(r#""json""#),
+        "a flag's value: {attributes}"
+    );
+
+    // Without an endpoint, nothing is sent and the command is unaffected.
+    let quiet = colab()
+        .current_dir(&root)
+        .env_remove("OTEL_SDK_DISABLED")
+        .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .env_remove("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+        .args([
+            "find",
+            "-e",
+            r#"match go::import "old.module" { replace "new.module" }"#,
+            "main.go",
+        ])
+        .output()
+        .unwrap();
+    assert!(quiet.status.success());
+    assert!(
+        traces
+            .recv_timeout(std::time::Duration::from_millis(300))
+            .is_err()
+    );
+    fs::remove_dir_all(&root).ok();
 }

@@ -101,6 +101,46 @@ pub trait Reporter {
 }
 
 pub fn make_reporter(format: Format, mode: ExecMode, options: RenderOptions) -> Box<dyn Reporter> {
+    Box::new(Traced(make_untraced(format, mode, options)))
+}
+
+/// Every run path ends in `finish`; this puts the run's counts on the
+/// command's trace (`crate::telemetry`) on the way.
+struct Traced(Box<dyn Reporter>);
+
+impl Reporter for Traced {
+    fn file_op(&mut self, op: &FileOp) -> io::Result<()> {
+        self.0.file_op(op)
+    }
+    fn report(&mut self, change: &FileChange) -> io::Result<()> {
+        self.0.report(change)
+    }
+    fn attribution(
+        &mut self,
+        spans: &std::collections::BTreeMap<std::path::PathBuf, Vec<colab_core::report::RuleSpan>>,
+    ) {
+        self.0.attribution(spans);
+    }
+    fn refused(&mut self) {
+        colab_core::telemetry::annotate("colab.refused", true);
+        self.0.refused();
+    }
+    fn finish(&mut self, report: &RunReport) -> io::Result<()> {
+        use colab_core::telemetry::annotate;
+        annotate("colab.files.visited", report.files_visited);
+        annotate("colab.files.scanned", report.files_scanned);
+        annotate("colab.files.changed", report.files_changed);
+        annotate("colab.rules", report.rules.len());
+        annotate(
+            "colab.rules.unmatched",
+            report.rules.iter().filter(|r| r.files_matched == 0).count(),
+        );
+        annotate("colab.conflicts", report.conflicts.len());
+        self.0.finish(report)
+    }
+}
+
+fn make_untraced(format: Format, mode: ExecMode, options: RenderOptions) -> Box<dyn Reporter> {
     match format {
         Format::Human => Box::new(HumanReporter::new(mode, options)),
         Format::Json => Box::new(JsonReporter::new(options)),

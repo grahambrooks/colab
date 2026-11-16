@@ -281,7 +281,32 @@ fn handle_call(
     backends: &BackendRegistry,
     extra: &dyn ToolProvider,
 ) -> Value {
-    colab_core::run::Run::new().enter(|| handle_call_in_run(id, params, backends, extra))
+    let tool = params
+        .and_then(|p| p.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("unnamed");
+    // A trace per call: the server itself runs for as long as the client.
+    let mut span = colab_core::telemetry::root(format!("colab mcp {tool}"));
+    span.set("colab.mcp.tool", tool);
+    let response =
+        colab_core::run::Run::new().enter(|| handle_call_in_run(id, params, backends, extra));
+    trace_outcome(&mut span, &response);
+    response
+}
+
+/// Mark a tool call's span failed when the response says it failed.
+fn trace_outcome(span: &mut colab_core::telemetry::Span, response: &Value) {
+    if let Some(error) = response.get("error") {
+        span.fail(format!("protocol error {}", error["code"]));
+    } else if response["result"]["isError"] == true {
+        let body: Value = response["result"]["content"][0]["text"]
+            .as_str()
+            .and_then(|text| serde_json::from_str(text).ok())
+            .unwrap_or_default();
+        let kind = body["error"]["kind"].as_str().unwrap_or("tool").to_string();
+        span.set("error.type", kind.clone());
+        span.fail(kind);
+    }
 }
 
 fn handle_call_in_run(
@@ -452,9 +477,14 @@ fn handle_call_with_progress<W: Write>(
         token,
         last_emitted: 0,
     };
+    let mut span = colab_core::telemetry::root(format!("colab mcp {name}"));
+    span.set("colab.mcp.tool", name);
+    span.set("colab.mcp.streaming", true);
     let outcome =
         colab_core::run::Run::new().enter(|| run_script(&arguments, backends, mode, &mut sink));
-    Ok(tool_response(id, outcome))
+    let response = tool_response(id, outcome);
+    trace_outcome(&mut span, &response);
+    Ok(response)
 }
 
 /// One progress notification per N files. Hand-tuned to be small

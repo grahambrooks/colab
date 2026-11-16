@@ -68,12 +68,15 @@ pub(super) fn prepare_writes(
     changes: &[FileChange],
     report: &mut RunReport,
 ) -> Result<colab_core::merge::Prepared> {
+    let mut span = colab_core::telemetry::span("prepare writes");
     let prepared = colab_core::merge::prepare_writes(
         changes
             .iter()
             .filter(|c| c.changed())
             .map(|c| (c.path.as_path(), c.before.as_str(), c.after.as_str())),
     )?;
+    span.set("colab.files.merged", prepared.merged.len());
+    span.set("colab.conflicts", prepared.conflicts.len());
     report.warnings.extend(prepared.merge_warning());
     report.conflicts.extend(prepared.conflicts.iter().cloned());
     Ok(prepared)
@@ -86,6 +89,8 @@ pub(super) fn write_changes(
     prepared: &colab_core::merge::Prepared,
     backup: Option<&Path>,
 ) -> Result<()> {
+    let mut span = colab_core::telemetry::span("write");
+    span.set("colab.files.written", prepared.writes.len());
     for write in &prepared.writes {
         if let Some(dir) = backup {
             write_backup_snapshot(dir, &write.path, &write.on_disk)?;

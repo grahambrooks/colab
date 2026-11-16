@@ -352,7 +352,7 @@ match go::pattern 'errors.Wrap($E, $M)'
 | `nth n` | the match is its parent's `n`th named child, from 1; `nth -1` is the last |
 | `field <name>` | the match is the child in that field of its parent (`function` of a call, `body` of a loop; an unknown field gets a "did you mean") |
 | `any(c, …)` | at least one of the constraints holds: one rule for two shapes. `all(c, …)` groups constraints that must all hold, under `not` or `any` (at the top level a comma does the same). |
-| `$X type "<type>"` | the language server says `$X` has this type (see [Asking the language server](#asking-the-language-server-type-and-resolves)) |
+| `$X type "<type>"` | the language server says `$X` has this type (see [Asking the language server](#asking-the-language-server-type-resolves-implements-calls-called_by)) |
 | `$F resolves "<path>.<name>"` | the language server says `$F` refers to that declaration |
 | `$T implements "<path>.<name>"` | the server's type hierarchy gives `$T` a supertype (interface, trait, base class) that resolves to that declaration, at any depth |
 | `$F calls "<path>.<name>"` | the server's call hierarchy says the function `$F` calls that declaration |
@@ -2656,6 +2656,10 @@ colab refactor --script s.colab --write --verify "cargo check --quiet" --commit-
 - `HOME` — also where `colab agent install --codex` finds `~/.codex`.
 - `COLAB_BLESS` — `1` makes the tests (and `colab test`) rewrite their
   expected output: corpus, evals, `llms-full.txt`, a pack's cases.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` (and the other standard `OTEL_*`
+  variables) — send traces of colab's work to an OpenTelemetry collector;
+  off when unset. What a trace holds and every variable:
+  [operations.md#traces-opentelemetry](operations.md#traces-opentelemetry).
 
 ## See also
 
@@ -3764,6 +3768,54 @@ so a binary copied out of a release archive still carries its notices.
 | `COLAB_CACHE_DIR` | Where git packs and fleet clones are kept. |
 | `XDG_CACHE_HOME`, `HOME` | The cache's fallback location; `HOME` also locates `~/.codex`. |
 | `COLAB_BLESS` | `1`: tests rewrite their expected output (corpus, `colab test`, evals, `llms-full.txt`). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, … | Send traces of colab's work to an OpenTelemetry collector; see [Traces](#traces-opentelemetry). |
+
+## Traces (OpenTelemetry)
+
+colab can report what it does as OpenTelemetry traces, to any collector
+that takes OTLP over HTTP: a local usage service such as
+[habit](https://github.com/grahambrooks/habit), an OpenTelemetry
+Collector, Jaeger. It is **off** unless an endpoint is set, and it is
+configured only by the standard variables; colab has no collector of its
+own and no SDK dependency.
+
+**What a trace holds.** One trace per command — the root span
+`colab <subcommand>`, with `process.exit.code`, `error.type` when it
+failed, the *names* of the flags given (`format`, `write`, never their
+values) and the run's counts (`colab.files.visited` / `scanned` /
+`changed`, `colab.rules`, `colab.rules.unmatched`, `colab.conflicts`) —
+and inside it `compile`, `walk`, `prepare writes`, `write`, and a client
+span per language-server request (`lsp textDocument/hover`, `lsp start`,
+with `rpc.method` and the server's program name). `colab mcp` reports a
+trace per tool call (`colab mcp colab.preview`), `colab server` one per
+walk. Paths, file contents, script text, rule text and argument values
+never leave the process. The resource carries `service.name` (`colab`),
+`service.version`, and `vcs.repository.name` — the repository's
+directory *name*, not its path.
+
+| Variable | Effect |
+| -------- | ------ |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | The traces URL, used as given (`http://127.0.0.1:4318/v1/traces`). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | The collector's base URL; `/v1/traces` is appended. A gRPC endpoint (port 4317, or `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`) is reached on the same host's OTLP/HTTP port, 4318. |
+| `OTEL_SERVICE_NAME` | The service name (default `colab`). |
+| `OTEL_RESOURCE_ATTRIBUTES` | More resource attributes, `k=v,k2=v2` (percent-encoded values). |
+| `OTEL_EXPORTER_OTLP_HEADERS`, `…_TRACES_HEADERS` | Request headers, `k=v,…` (an ingest token). |
+| `OTEL_EXPORTER_OTLP_TIMEOUT`, `…_TRACES_TIMEOUT` | Milliseconds one export may take (default 500). |
+| `OTEL_SDK_DISABLED=true`, `OTEL_TRACES_EXPORTER=none` | Off, whatever else is set. |
+
+Traces go as OTLP/JSON over plain `http://`; colab ships no TLS stack, so
+an `https://` endpoint turns export off (use a local collector to
+forward). An export that cannot be made — nothing listening, a timeout,
+an error answer — is dropped (`RUST_LOG=debug` says so) and never
+changes a command's output or exit code.
+
+**With habit.** `habit setup claude-code` already puts
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` into Claude Code's
+environment, so every colab command an agent runs reports to habit with
+no further setup; elsewhere, `export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`.
+habit keeps each command's root span as a `span` record (service `colab`,
+the span name, its outcome and duration) and drops the child spans;
+`habit status` shows them arriving.
 
 ## When something looks wrong
 

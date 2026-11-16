@@ -309,6 +309,8 @@ fn run_task(dir: &Path, bin_dir: &Path) -> Result<Outcome, String> {
             .arg("-c")
             .arg(line)
             .current_dir(&work)
+            // No traces from an eval to a developer's collector.
+            .env("OTEL_SDK_DISABLED", "true")
             .env("PATH", &path_var)
             .env("TASK", dir)
             .output()

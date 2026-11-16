@@ -1008,8 +1008,20 @@ struct ListRulesArgs {
 ///
 /// The command is one [`colab_core::run::Run`]: its oracle, scan facts
 /// and unanswerable questions belong to it alone.
+///
+/// With an OTLP endpoint in the environment, the command is also a trace
+/// (`crate::telemetry`): its root span ends, and is exported, here.
 pub fn run() -> Result<u8> {
-    colab_core::run::Run::new().enter(dispatch)
+    crate::telemetry::init();
+    let argv: Vec<String> = std::env::args().collect();
+    let subcommands: Vec<String> = Args::command()
+        .get_subcommands()
+        .map(|c| c.get_name().to_string())
+        .collect();
+    let mut span = crate::telemetry::command_span(&argv, &subcommands);
+    let outcome = colab_core::run::Run::new().enter(dispatch);
+    crate::telemetry::finish(&mut span, &outcome);
+    outcome
 }
 
 fn dispatch() -> Result<u8> {

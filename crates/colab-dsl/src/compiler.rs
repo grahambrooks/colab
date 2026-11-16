@@ -148,6 +148,20 @@ fn compile_inner(
     backends: &BackendRegistry,
     base_path: Option<&Path>,
 ) -> Result<Refactoring> {
+    let mut span = colab_core::telemetry::span("compile");
+    let compiled = compile_traced(text, backends, base_path);
+    match &compiled {
+        Ok(refactoring) => span.set("colab.rules", refactoring.rules.len()),
+        Err(e) => span.fail(e.kind()),
+    }
+    compiled
+}
+
+fn compile_traced(
+    text: &str,
+    backends: &BackendRegistry,
+    base_path: Option<&Path>,
+) -> Result<Refactoring> {
     let command = parse(text)?;
 
     let mut seen: HashSet<PathBuf> = HashSet::new();

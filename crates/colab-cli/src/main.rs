@@ -27,6 +27,7 @@ mod packs;
 mod review;
 mod symbol_edit;
 mod table;
+mod telemetry;
 
 use std::io::Write;
 use std::process::ExitCode;

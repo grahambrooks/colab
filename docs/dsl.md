@@ -343,7 +343,7 @@ match go::pattern 'errors.Wrap($E, $M)'
 | `nth n` | the match is its parent's `n`th named child, from 1; `nth -1` is the last |
 | `field <name>` | the match is the child in that field of its parent (`function` of a call, `body` of a loop; an unknown field gets a "did you mean") |
 | `any(c, …)` | at least one of the constraints holds: one rule for two shapes. `all(c, …)` groups constraints that must all hold, under `not` or `any` (at the top level a comma does the same). |
-| `$X type "<type>"` | the language server says `$X` has this type (see [Asking the language server](#asking-the-language-server-type-and-resolves)) |
+| `$X type "<type>"` | the language server says `$X` has this type (see [Asking the language server](#asking-the-language-server-type-resolves-implements-calls-called_by)) |
 | `$F resolves "<path>.<name>"` | the language server says `$F` refers to that declaration |
 | `$T implements "<path>.<name>"` | the server's type hierarchy gives `$T` a supertype (interface, trait, base class) that resolves to that declaration, at any depth |
 | `$F calls "<path>.<name>"` | the server's call hierarchy says the function `$F` calls that declaration |

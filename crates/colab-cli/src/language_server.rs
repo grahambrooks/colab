@@ -794,6 +794,10 @@ impl Backend {
         let labels: Vec<String> = refactoring.rules.iter().map(ToString::to_string).collect();
         let changes = tokio::task::block_in_place(|| {
             run.enter(|| {
+                // A trace per walk, opened and closed on this thread: an
+                // async task can move between threads at an `.await`.
+                let mut span = colab_core::telemetry::root("colab server walk");
+                span.set("colab.server.rule", rule.is_some());
                 let mut changes: Vec<edits::Planned> = Vec::new();
                 for root in &roots {
                     walker::walk_with(

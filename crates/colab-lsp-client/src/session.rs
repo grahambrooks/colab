@@ -57,6 +57,22 @@ impl Session {
         timeout: Duration,
         file_operations: bool,
     ) -> Result<Self> {
+        let mut span = colab_core::telemetry::client_span("lsp start");
+        span.set("colab.lsp.server", server_name(program));
+        let session = Self::start_untraced(program, args, root, timeout, file_operations);
+        if let Err(e) = &session {
+            span.fail(e.kind());
+        }
+        session
+    }
+
+    fn start_untraced(
+        program: &str,
+        args: &[String],
+        root: &Path,
+        timeout: Duration,
+        file_operations: bool,
+    ) -> Result<Self> {
         let transport = Self::transport(program, args, root, timeout)?;
         let mut session = Self {
             transport,
@@ -229,6 +245,32 @@ impl Session {
         method: &str,
         params: Value,
     ) -> Result<std::result::Result<Value, ResponseError>> {
+        let mut span = self.span(method);
+        let answer = self.request_untraced(method, params);
+        match &answer {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => span.fail(format!("error {}", e.code)),
+            Err(e) => span.fail(e.kind()),
+        }
+        answer
+    }
+
+    /// A client span for a request of `method` to this server.
+    fn span(&self, method: &str) -> colab_core::telemetry::Span {
+        let mut span = colab_core::telemetry::client_span(format!("lsp {method}"));
+        if span.is_recording() {
+            span.set("rpc.system", "jsonrpc");
+            span.set("rpc.method", method);
+            span.set("colab.lsp.server", server_name(&self.name));
+        }
+        span
+    }
+
+    fn request_untraced(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<std::result::Result<Value, ResponseError>> {
         let id = self.next_id;
         self.next_id += 1;
         self.transport
@@ -262,6 +304,20 @@ impl Session {
     /// come back in `params` order; one the server was not ready for is
     /// asked again on its own ([`request_retrying`](Self::request_retrying)).
     pub fn request_all(
+        &mut self,
+        method: &str,
+        params: Vec<Value>,
+    ) -> Result<Vec<std::result::Result<Value, ResponseError>>> {
+        let mut span = self.span(method);
+        span.set("colab.lsp.requests", params.len());
+        let answers = self.request_all_untraced(method, params);
+        if let Err(e) = &answers {
+            span.fail(e.kind());
+        }
+        answers
+    }
+
+    fn request_all_untraced(
         &mut self,
         method: &str,
         params: Vec<Value>,
@@ -492,4 +548,12 @@ impl Session {
     fn io_error(&self, e: std::io::Error) -> Error {
         Error::Server(format!("lost the connection to `{}`: {e}", self.name))
     }
+}
+
+/// A server's program name for a span: the file name, never the path it
+/// was started from.
+fn server_name(program: &str) -> String {
+    Path::new(program)
+        .file_name()
+        .map_or_else(|| program.to_string(), |n| n.to_string_lossy().into_owned())
 }

@@ -1518,6 +1518,10 @@ colab refactor --script s.colab --write --verify "cargo check --quiet" --commit-
 - `HOME` — also where `colab agent install --codex` finds `~/.codex`.
 - `COLAB_BLESS` — `1` makes the tests (and `colab test`) rewrite their
   expected output: corpus, evals, `llms-full.txt`, a pack's cases.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` (and the other standard `OTEL_*`
+  variables) — send traces of colab's work to an OpenTelemetry collector;
+  off when unset. What a trace holds and every variable:
+  [operations.md#traces-opentelemetry](operations.md#traces-opentelemetry).
 
 ## See also
 

@@ -201,6 +201,33 @@ where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
 {
+    let mut span = crate::telemetry::span("walk");
+    let mut changed = 0usize;
+    let outcome = walk_untraced(transformer, path, opts, &mut |change: FileChange| {
+        changed += usize::from(change.changed());
+        visit(change)
+    });
+    match &outcome {
+        Ok(outcome) => {
+            span.set("colab.files.visited", outcome.files_visited);
+            span.set("colab.files.changed", changed);
+            span.set("colab.files.skipped", outcome.skipped.len());
+        }
+        Err(e) => span.fail(e.kind()),
+    }
+    outcome
+}
+
+fn walk_untraced<T, F>(
+    transformer: &T,
+    path: &Path,
+    opts: &WalkOptions,
+    visit: &mut F,
+) -> Result<WalkOutcome>
+where
+    T: CodeTransformer + Sync,
+    F: FnMut(FileChange) -> Result<()>,
+{
     if !path.exists() {
         return Err(Error::Config(format!(
             "path does not exist: {}",
@@ -304,9 +331,18 @@ where
     // Workers are the pool's threads, not the caller's: each enters the
     // caller's run, so its rules see that run's oracle and facts.
     let run = crate::run::Run::current();
-    let compute = |p: &PathBuf| match &run {
-        Some(run) => run.enter(|| compute_change(transformer, p)),
-        None => compute_change(transformer, p),
+    // Likewise the trace: a worker's spans (a language-server request a
+    // rule makes) belong to the walk that started it.
+    let trace = crate::telemetry::current();
+    let compute = |p: &PathBuf| {
+        let work = || match &run {
+            Some(run) => run.enter(|| compute_change(transformer, p)),
+            None => compute_change(transformer, p),
+        };
+        match &trace {
+            Some(trace) => trace.enter(work),
+            None => work(),
+        }
     };
     for chunk in paths.chunks(CHUNK_SIZE) {
         let changes: Vec<std::result::Result<FileChange, SkippedFile>> =
