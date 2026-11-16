@@ -2344,7 +2344,12 @@ work at all.
 
 **Errors.** A tool that ran and rejected its input returns
 `isError: true` with a structured body — `{"error": {kind, message,
-exit_code, line?, column?, expected?, snippet?}}`. JSON-RPC error
+exit_code, line?, column?, expected?, snippet?}}`. `kind` says what to do
+next: `parse`, `unsupported` and `config` mean the request should change;
+`server` (a language server failed to start, timed out, exited or sent an
+unusable answer), `git` (a git command failed, or the work tree is not a
+repository or has uncommitted changes) and `io` mean the environment
+should. All but `parse` (2), `unsupported` (3) and `io` (4) exit 1. JSON-RPC error
 responses are reserved for malformed *calls*: `-32601` for an unknown
 method, `-32602` for an unknown tool or missing or mistyped arguments.
 

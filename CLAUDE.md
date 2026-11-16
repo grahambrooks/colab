@@ -193,7 +193,7 @@ Key invariants when changing this code:
 
 ## Error handling
 
-All fallible code returns `crate::error::Result<T>`. I/O errors must be wrapped with `Error::io_at(path, source)` so the offending path appears in the message; `Error` deliberately has no `From<io::Error>`, so a bare `?` on an I/O result does not compile (the CLI's `io_to_error` is the explicit path-less case: stdout, stdin, child processes, the working directory). The CLI maps any error into a single `error!` log line plus a non-zero exit code; library code never panics on user input. Reserve `expect`/`panic!` for genuinely unreachable conditions (e.g. loading a built-in tree-sitter grammar) and inside `#[cfg(test)]`.
+All fallible code returns `crate::error::Result<T>`. I/O errors must be wrapped with `Error::io_at(path, source)` so the offending path appears in the message; `Error` deliberately has no `From<io::Error>`, so a bare `?` on an I/O result does not compile (the CLI's `io_to_error` is the explicit path-less case: stdout, stdin, child processes, the working directory). Pick the variant by who must act: `Config` when the request should change, `Server` when a language server failed, `Git` when a git command failed or the work tree is in the wrong state (`Error::kind` names them for MCP). The CLI maps any error into a single `error!` log line plus a non-zero exit code; library code never panics on user input. Reserve `expect`/`panic!` for genuinely unreachable conditions (e.g. loading a built-in tree-sitter grammar) and inside `#[cfg(test)]`.
 
 ## Coding standards (from `.github/copilot-instructions.md`)
 

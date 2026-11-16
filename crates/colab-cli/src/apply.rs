@@ -87,7 +87,7 @@ pub fn prepare(set: &ChangeSet, options: &ApplyOptions) -> Result<Prepared> {
     if !options.allow_dirty {
         let dirty = repo.dirty(&set.touched_paths())?;
         if !dirty.is_empty() {
-            return Err(Error::Config(format!(
+            return Err(Error::Git(format!(
                 "these paths have uncommitted changes, which undoing this could lose: {}; commit or stash them, or pass --allow-dirty",
                 dirty.join(", ")
             )));
@@ -231,7 +231,7 @@ pub fn undo_manifest(backup: &Path) -> Result<usize> {
         .as_str()
         .ok_or_else(|| Error::Config(format!("{}: no `root`", path.display())))?;
     let repo = Repo::discover(Path::new(top))
-        .ok_or_else(|| Error::Config(format!("{top} is no longer a git work tree")))?;
+        .ok_or_else(|| Error::Git(format!("{top} is no longer a git work tree")))?;
     let done: Vec<Done> = manifest["ops"]
         .as_array()
         .into_iter()

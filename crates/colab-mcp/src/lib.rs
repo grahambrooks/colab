@@ -351,27 +351,16 @@ impl ToolError {
         let mut payload = Map::new();
         payload.insert("message".into(), json!(err.to_string()));
         payload.insert("exit_code".into(), json!(err.exit_code()));
-        match &err {
-            colab_core::Error::Parse(detail) => {
-                payload.insert("kind".into(), json!("parse"));
-                payload.insert("line".into(), json!(detail.line));
-                payload.insert("column".into(), json!(detail.column));
-                payload.insert("offset".into(), json!(detail.offset));
-                if !detail.expected.is_empty() {
-                    payload.insert("expected".into(), json!(detail.expected));
-                }
-                if let Some(snippet) = &detail.snippet {
-                    payload.insert("snippet".into(), json!(snippet));
-                }
+        payload.insert("kind".into(), json!(err.kind()));
+        if let colab_core::Error::Parse(detail) = &err {
+            payload.insert("line".into(), json!(detail.line));
+            payload.insert("column".into(), json!(detail.column));
+            payload.insert("offset".into(), json!(detail.offset));
+            if !detail.expected.is_empty() {
+                payload.insert("expected".into(), json!(detail.expected));
             }
-            colab_core::Error::UnsupportedOperation(_) => {
-                payload.insert("kind".into(), json!("unsupported"));
-            }
-            colab_core::Error::Io { .. } => {
-                payload.insert("kind".into(), json!("io"));
-            }
-            colab_core::Error::Config(_) => {
-                payload.insert("kind".into(), json!("config"));
+            if let Some(snippet) = &detail.snippet {
+                payload.insert("snippet".into(), json!(snippet));
             }
         }
         ToolError::Tool(Value::Object(payload))

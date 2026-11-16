@@ -119,7 +119,7 @@ fn offset(text: &str, position: &Value, encoding: Encoding) -> Result<usize> {
     let character = position["character"].as_u64();
     match (line, character) {
         (Some(l), Some(c)) => offset_of(text, lsp_u32(l), lsp_u32(c), encoding),
-        _ => Err(Error::Config(
+        _ => Err(Error::Server(
             "language server sent a symbol without a range".into(),
         )),
     }

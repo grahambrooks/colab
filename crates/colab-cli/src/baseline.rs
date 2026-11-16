@@ -58,7 +58,7 @@ impl Baseline {
     ) -> Result<Self> {
         let cwd = std::env::current_dir().map_err(crate::cli::io_to_error)?;
         let repo = crate::git::Repo::discover(&cwd).ok_or_else(|| {
-            Error::Config("--baseline compares with a git ref, so it needs a git work tree".into())
+            Error::Git("--baseline compares with a git ref, so it needs a git work tree".into())
         })?;
         let canonical = cwd.canonicalize().unwrap_or(cwd.clone());
         let prefix = canonical
@@ -75,6 +75,7 @@ impl Baseline {
         ));
         repo.add_worktree(&dir, reference).map_err(|e| match e {
             Error::Config(why) => Error::Config(format!("--baseline {reference}: {why}")),
+            Error::Git(why) => Error::Git(format!("--baseline {reference}: {why}")),
             other => other,
         })?;
         let worktree = Worktree { repo: &repo, dir };

@@ -240,7 +240,7 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
             source: e,
         })?;
     if !out.status.success() {
-        return Err(Error::Config(format!(
+        return Err(Error::Git(format!(
             "`git {}` failed: {}",
             args.join(" "),
             String::from_utf8_lossy(&out.stderr).trim()
@@ -277,7 +277,7 @@ fn checkout(repo: &Repo) -> Result<(PathBuf, String)> {
                         source: e,
                     })?;
                 if !out.status.success() {
-                    return Err(Error::Config(format!(
+                    return Err(Error::Git(format!(
                         "cloning {url}: {}",
                         String::from_utf8_lossy(&out.stderr).trim()
                     )));
@@ -321,7 +321,9 @@ impl Outcome {
 /// An error's own words, without its kind (`configuration error: `).
 fn words(e: &Error) -> String {
     match e {
-        Error::Config(m) | Error::UnsupportedOperation(m) => m.clone(),
+        Error::Config(m) | Error::UnsupportedOperation(m) | Error::Server(m) | Error::Git(m) => {
+            m.clone()
+        }
         other => other.to_string(),
     }
 }
@@ -491,9 +493,9 @@ fn try_one(manifest: &Manifest, repo: &Repo, write: bool, pr: bool) -> Result<Ou
                 &manifest.body,
             ])
             .output()
-            .map_err(|e| Error::Config(format!("running `gh pr create`: {e}")))?;
+            .map_err(|e| Error::Git(format!("running `gh pr create`: {e}")))?;
         if !out.status.success() {
-            return Err(Error::Config(format!(
+            return Err(Error::Git(format!(
                 "`gh pr create` failed (the branch `{}` is pushed): {}",
                 manifest.branch,
                 String::from_utf8_lossy(&out.stderr).trim()

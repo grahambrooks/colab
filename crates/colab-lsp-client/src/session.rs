@@ -158,7 +158,7 @@ impl Session {
             }
         }
         Transport::spawn(program, args, root).map_err(|e| {
-            Error::Config(format!(
+            Error::Server(format!(
                 "could not start language server `{program}`: {e}. Is it installed and on PATH? (pass --lsp to choose another)"
             ))
         })
@@ -294,7 +294,7 @@ impl Session {
                 }
                 Err(Closed::TimedOut) if !busy => return Ok(()),
                 Err(Closed::TimedOut) if Instant::now() >= self.deadline => {
-                    return Err(Error::Config(format!(
+                    return Err(Error::Server(format!(
                         "`{}` was still indexing when the timeout expired; a rename now could be incomplete. Raise --timeout.",
                         self.name
                     )));
@@ -329,7 +329,7 @@ impl Session {
     fn recv(&mut self, waiting_for: &str) -> Result<Value> {
         match self.transport.recv_until(self.deadline) {
             Ok(message) => Ok(message),
-            Err(Closed::TimedOut) => Err(Error::Config(format!(
+            Err(Closed::TimedOut) => Err(Error::Server(format!(
                 "`{}` did not answer `{waiting_for}` before the timeout; raise --timeout",
                 self.name
             ))),
@@ -418,20 +418,20 @@ impl Session {
     }
 
     pub fn server_error(&self, method: &str, e: &ResponseError) -> Error {
-        Error::Config(format!(
+        Error::Server(format!(
             "`{}` rejected `{method}`: {} (code {})",
             self.name, e.message, e.code
         ))
     }
 
     fn exited(&self, during: &str) -> Error {
-        Error::Config(format!(
+        Error::Server(format!(
             "language server `{}` exited while {during}",
             self.name
         ))
     }
 
     fn io_error(&self, e: std::io::Error) -> Error {
-        Error::Config(format!("lost the connection to `{}`: {e}", self.name))
+        Error::Server(format!("lost the connection to `{}`: {e}", self.name))
     }
 }

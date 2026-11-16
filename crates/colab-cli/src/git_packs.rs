@@ -66,7 +66,7 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
             source: e,
         })?;
     if !out.status.success() {
-        return Err(Error::Config(format!(
+        return Err(Error::Git(format!(
             "`git {}` failed: {}",
             args.join(" "),
             String::from_utf8_lossy(&out.stderr).trim()
@@ -114,7 +114,7 @@ pub fn checkout(url: &str, pin: &Pin) -> Result<PathBuf> {
             Pin::Rev(rev) => rev.clone(),
         };
         git(&partial, &["fetch", "-q", "--depth", "1", url, &refspec])
-            .map_err(|e| Error::Config(format!("fetching the pack {url} at {pin}: {e}")))?;
+            .map_err(|e| Error::Git(format!("fetching the pack {url} at {pin}: {e}")))?;
         git(
             &partial,
             &[

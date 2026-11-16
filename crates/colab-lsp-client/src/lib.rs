@@ -303,7 +303,7 @@ pub fn rename(server: &ServerCommand, request: &RenameRequest) -> Result<RenameO
     let name = session.name().to_string();
     session.shutdown();
     if edit.is_null() {
-        return Err(Error::Config(format!(
+        return Err(Error::Server(format!(
             "`{name}` returned no edit for the rename"
         )));
     }

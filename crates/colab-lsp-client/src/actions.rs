@@ -422,7 +422,7 @@ fn byte_range(text: &str, range: &Value, encoding: Encoding) -> Result<(usize, u
             .and_then(Value::as_u64);
         match (line, character) {
             (Some(l), Some(c)) => offset_of(text, lsp_u32(l), lsp_u32(c), encoding),
-            _ => Err(Error::Config(
+            _ => Err(Error::Server(
                 "language server sent a range without positions".into(),
             )),
         }

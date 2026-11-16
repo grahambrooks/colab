@@ -51,7 +51,7 @@ pub fn offset_of(text: &str, line: u32, character: u32, encoding: Encoding) -> R
         match text[start..].find('\n') {
             Some(i) => start += i + 1,
             None => {
-                return Err(Error::Config(format!(
+                return Err(Error::Server(format!(
                     "language server sent line {} past the end of a {}-line file",
                     line + 1,
                     text.lines().count()
@@ -108,7 +108,7 @@ pub fn path_to_uri(path: &Path) -> String {
 pub fn uri_to_path(uri: &str) -> Result<PathBuf> {
     let rest = uri
         .strip_prefix("file://")
-        .ok_or_else(|| Error::Config(format!("language server sent a non-file URI: {uri}")))?;
+        .ok_or_else(|| Error::Server(format!("language server sent a non-file URI: {uri}")))?;
     let rest = rest.strip_prefix("localhost").unwrap_or(rest);
     let bytes = rest.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
@@ -126,7 +126,7 @@ pub fn uri_to_path(uri: &str) -> Result<PathBuf> {
         i += 1;
     }
     let text = String::from_utf8(decoded)
-        .map_err(|_| Error::Config(format!("language server sent a non-UTF-8 URI: {uri}")))?;
+        .map_err(|_| Error::Server(format!("language server sent a non-UTF-8 URI: {uri}")))?;
     // `/C:/x` → `C:/x` on Windows.
     let text = match text.as_bytes() {
         [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => text[1..].to_string(),
@@ -213,7 +213,7 @@ pub fn to_change_set(
             let uri = change
                 .pointer("/textDocument/uri")
                 .and_then(Value::as_str)
-                .ok_or_else(|| Error::Config("documentChanges entry without a URI".into()))?;
+                .ok_or_else(|| Error::Server("documentChanges entry without a URI".into()))?;
             let edits: Vec<&Value> = change
                 .get("edits")
                 .and_then(Value::as_array)
@@ -305,7 +305,7 @@ impl Vfs<'_> {
             let before = match origin {
                 Some(origin) => self.files.read(&origin)?,
                 None => {
-                    return Err(Error::Config(format!(
+                    return Err(Error::Server(format!(
                         "language server edited {}, which does not exist",
                         path.display()
                     )));
@@ -336,7 +336,7 @@ impl Vfs<'_> {
                     .and_then(Value::as_u64);
                 match (line, character) {
                     (Some(l), Some(c)) => offset_of(text, lsp_u32(l), lsp_u32(c), encoding),
-                    _ => Err(Error::Config("text edit without a range".into())),
+                    _ => Err(Error::Server("text edit without a range".into())),
                 }
             };
             let new_text = edit.get("newText").and_then(Value::as_str).unwrap_or("");
@@ -355,7 +355,7 @@ impl Vfs<'_> {
         };
         let uri = |field: &str| -> Result<PathBuf> {
             let uri = change.get(field).and_then(Value::as_str).ok_or_else(|| {
-                Error::Config(format!("`{kind}` file operation without `{field}`"))
+                Error::Server(format!("`{kind}` file operation without `{field}`"))
             })?;
             Ok(PathBuf::from(
                 uri_to_path(uri)?.to_string_lossy().trim_end_matches('/'),
@@ -399,7 +399,7 @@ impl Vfs<'_> {
                 }
                 let is_dir = self.origin(&from).is_some_and(|o| self.files.is_dir(&o));
                 if !is_dir && !self.exists(&from) {
-                    return Err(Error::Config(format!(
+                    return Err(Error::Server(format!(
                         "the language server would move {}, which does not exist",
                         from.display()
                     )));
@@ -436,7 +436,7 @@ impl Vfs<'_> {
                     if option("ignoreIfNotExists") {
                         return Ok(());
                     }
-                    return Err(Error::Config(format!(
+                    return Err(Error::Server(format!(
                         "the language server would delete {}, which does not exist",
                         path.display()
                     )));
@@ -455,7 +455,7 @@ impl Vfs<'_> {
                 }
             }
             other => {
-                return Err(Error::Config(format!(
+                return Err(Error::Server(format!(
                     "unknown file operation `{other}` in the language server's edit"
                 )));
             }

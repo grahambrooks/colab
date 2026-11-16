@@ -90,8 +90,16 @@ pub enum Error {
     /// The script asked for a namespace/operation combination that colab
     /// does not (yet) implement.
     UnsupportedOperation(String),
-    /// CLI argument or runtime configuration was invalid.
+    /// CLI argument or runtime configuration was invalid: the caller
+    /// should change what it asked for.
     Config(String),
+    /// A language server failed: it could not be started, timed out,
+    /// exited, rejected a request, or sent an answer colab cannot use.
+    /// The request may be fine; the environment is not.
+    Server(String),
+    /// A `git` (or `gh`) command failed, or the work tree is not in the
+    /// state the command needs (not a repository, uncommitted changes).
+    Git(String),
 }
 
 impl Error {
@@ -113,7 +121,22 @@ impl Error {
             Error::Parse(_) => 2,
             Error::UnsupportedOperation(_) => 3,
             Error::Io { .. } => 4,
-            Error::Config(_) => 1,
+            Error::Config(_) | Error::Server(_) | Error::Git(_) => 1,
+        }
+    }
+
+    /// A stable, machine-readable name for the variant: `io`, `parse`,
+    /// `unsupported`, `config`, `server` or `git`. MCP reports it as
+    /// `kind`, so an agent can tell a request to fix from an environment
+    /// to repair without reading the message.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Error::Io { .. } => "io",
+            Error::Parse(_) => "parse",
+            Error::UnsupportedOperation(_) => "unsupported",
+            Error::Config(_) => "config",
+            Error::Server(_) => "server",
+            Error::Git(_) => "git",
         }
     }
 }
@@ -129,6 +152,8 @@ impl fmt::Display for Error {
             Error::Parse(detail) => write!(f, "parse error at {detail}"),
             Error::UnsupportedOperation(msg) => write!(f, "unsupported operation: {msg}"),
             Error::Config(msg) => write!(f, "configuration error: {msg}"),
+            Error::Server(msg) => write!(f, "language server error: {msg}"),
+            Error::Git(msg) => write!(f, "git error: {msg}"),
         }
     }
 }
@@ -148,6 +173,16 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_and_git_errors_have_their_own_kind_and_prefix() {
+        let server = Error::Server("`gopls` exited while indexing".into());
+        assert_eq!((server.kind(), server.exit_code()), ("server", 1));
+        assert!(server.to_string().starts_with("language server error: "));
+        let git = Error::Git("`git worktree add` failed".into());
+        assert_eq!((git.kind(), git.exit_code()), ("git", 1));
+        assert!(git.to_string().starts_with("git error: "));
+    }
 
     #[test]
     fn resolves_a_byte_offset_to_line_and_column() {

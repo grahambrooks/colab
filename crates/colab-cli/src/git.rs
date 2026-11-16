@@ -52,7 +52,7 @@ impl Repo {
             source: e,
         })?;
         if !out.status.success() {
-            return Err(Error::Config(format!(
+            return Err(Error::Git(format!(
                 "`git {}` failed: {}",
                 args.join(" "),
                 String::from_utf8_lossy(&out.stderr).trim()
@@ -133,7 +133,7 @@ impl Repo {
         }
         let out = child.wait_with_output().map_err(io)?;
         if !out.status.success() {
-            return Err(Error::Config(format!(
+            return Err(Error::Git(format!(
                 "`git {}` failed: {}",
                 args.join(" "),
                 String::from_utf8_lossy(&out.stderr).trim()
