@@ -17,6 +17,17 @@
 //!   and its file's path holds each segment of `<path>`, in order, as a
 //!   directory or the file's stem (a module cache's `@v1.2.3` ignored).
 //!
+//! - `implements "<path>.<name>"`: `textDocument/prepareTypeHierarchy`,
+//!   then `typeHierarchy/supertypes` up to 200 types deep, which holds when
+//!   a supertype's declaration resolves to the target as above.
+//! - `calls` / `called_by "<path>.<name>"`: `textDocument/prepareCallHierarchy`,
+//!   then `callHierarchy/outgoingCalls` / `incomingCalls`, which holds when
+//!   a callee / caller resolves to the target.
+//!
+//! [`Oracle::ask_all`] answers a file's `type` / `resolves` questions with
+//! their requests pipelined ([`Session::request_all`]), so a batch costs
+//! about one round trip; the hierarchy questions are asked in turn.
+//!
 //! Any failure (no server, a start-up error, indexing past the timeout, an
 //! error answer) is the question's answer, and the run reports it.
 
@@ -77,14 +88,25 @@ impl LspOracle {
     }
 }
 
-impl Oracle for LspOracle {
-    fn ask(
+/// A server ready to answer about one file: started, indexed, and sent
+/// the file's text as the run has it.
+struct Ready<'s> {
+    session: &'s mut Session,
+    /// The server's command line, for messages.
+    key: String,
+    file: PathBuf,
+}
+
+impl LspOracle {
+    /// Start (once) the server for `path`, send it `source`, and run `f`
+    /// with it.
+    fn with_server<T>(
         &self,
         path: &Path,
         source: &str,
-        span: Range<usize>,
         query: &Query,
-    ) -> Result<bool, String> {
+        f: impl FnOnce(&mut Ready<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
         let file = self.root.join(path.strip_prefix(".").unwrap_or(path));
         let server = match &self.server {
             Some(server) => server.clone(),
@@ -122,59 +144,262 @@ impl Oracle for LspOracle {
             // Its first answer is worth having only once it has indexed.
             session.wait_until_quiet(self.settle).map_err(failed)?;
         }
-        let (at, call) = asked_at(source, span.clone());
-        let (line, character) = position_of(source, at, session.encoding);
-        let params = json!({
-            "textDocument": {"uri": path_to_uri(&file)},
-            "position": {"line": line, "character": character},
-        });
-        let hover = |session: &mut Session| -> Result<String, String> {
-            session
-                .request_retrying("textDocument/hover", params.clone())
-                .map_err(|e| format!("`{query}`: `{key}` {e}"))?
-                .map(|answer| hover_text(&answer))
-                .map_err(|e| {
-                    format!(
-                        "`{query}`: `{key}` {}",
-                        session.server_error("textDocument/hover", &e)
-                    )
+        f(&mut Ready { session, key, file })
+    }
+}
+
+impl Ready<'_> {
+    fn failed(&self, query: &Query, e: &colab_core::Error) -> String {
+        format!("`{query}`: `{}` {e}", self.key)
+    }
+
+    /// `textDocument/…` params at the binding's last identifier, and
+    /// whether the binding is a call.
+    fn position(&self, source: &str, span: Range<usize>) -> (Value, bool) {
+        let (at, call) = asked_at(source, span);
+        let (line, character) = position_of(source, at, self.session.encoding);
+        (
+            json!({
+                "textDocument": {"uri": path_to_uri(&self.file)},
+                "position": {"line": line, "character": character},
+            }),
+            call,
+        )
+    }
+
+    fn request(&mut self, query: &Query, method: &str, params: Value) -> Result<Value, String> {
+        let answer = self
+            .session
+            .request_retrying(method, params)
+            .map_err(|e| self.failed(query, &e))?;
+        answer.map_err(|e| {
+            let e = self.session.server_error(method, &e);
+            self.failed(query, &e)
+        })
+    }
+
+    /// Several requests of one method, sent together.
+    fn request_all(
+        &mut self,
+        query: &Query,
+        method: &str,
+        params: Vec<Value>,
+    ) -> Result<Vec<Result<Value, String>>, String> {
+        let answers = self
+            .session
+            .request_all(method, params)
+            .map_err(|e| self.failed(query, &e))?;
+        Ok(answers
+            .into_iter()
+            .map(|answer| {
+                answer.map_err(|e| {
+                    let e = self.session.server_error(method, &e);
+                    self.failed(query, &e)
                 })
+            })
+            .collect())
+    }
+
+    fn hover(&mut self, query: &Query, params: Value) -> Result<String, String> {
+        Ok(hover_text(&self.request(
+            query,
+            "textDocument/hover",
+            params,
+        )?))
+    }
+
+    /// Whether a `definition` answer lands on a declaration that resolves
+    /// to `target`; the hover at `params` settles a module the server
+    /// cannot point into.
+    fn resolves(
+        &mut self,
+        query: &Query,
+        source: &str,
+        target: &str,
+        answer: &Value,
+        params: Value,
+    ) -> Result<bool, String> {
+        let Some((uri, line, character)) = first_location(answer) else {
+            // Nothing to resolve to (a local, a builtin the server has no
+            // source for): it does not resolve there.
+            return Ok(false);
         };
+        let def = uri_to_path(&uri).map_err(|e| self.failed(query, &e))?;
+        let text = if def == self.file {
+            source.to_string()
+        } else {
+            std::fs::read_to_string(&def)
+                .map_err(|e| format!("`{query}`: reading {}: {e}", def.display()))?
+        };
+        let name = offset_of(&text, line, character, self.session.encoding)
+            .ok()
+            .map(|offset| identifier_at(&text, offset))
+            .unwrap_or_default();
+        if resolves_to(target, &def, &name) {
+            return Ok(true);
+        }
+        // A module that is not a file of its own (Rust's inline `mod`, a
+        // Go package's import path): the hover names it.
+        Ok(name_of(target) == name && named_in(target, &self.hover(query, params)?))
+    }
+
+    /// Whether a hierarchy item (`TypeHierarchyItem`, `CallHierarchyItem`)
+    /// is a declaration that resolves to `target`.
+    fn item_resolves(&self, target: &str, item: &Value) -> bool {
+        let name = item["name"].as_str().unwrap_or("");
+        // `Iterator<Item = T>`, `(*T).Read`: the identifier the item names.
+        let name: String = name
+            .rsplit(['.', ':'])
+            .next()
+            .unwrap_or(name)
+            .chars()
+            .take_while(|c| word(*c))
+            .collect();
+        item["uri"]
+            .as_str()
+            .and_then(|uri| uri_to_path(uri).ok())
+            .is_some_and(|def| resolves_to(target, &def, &name))
+    }
+
+    /// `implements`: a supertype, at any depth, that resolves to `target`.
+    fn implements(&mut self, query: &Query, target: &str, params: Value) -> Result<bool, String> {
+        let prepared = self.request(query, "textDocument/prepareTypeHierarchy", params)?;
+        let mut queue: Vec<Value> = prepared.as_array().cloned().unwrap_or_default();
+        let mut seen = std::collections::HashSet::new();
+        // Bounded: a hierarchy is shallow, a cycle is not.
+        while let Some(item) = queue.pop() {
+            if seen.len() >= HIERARCHY_LIMIT || !seen.insert(item.to_string()) {
+                continue;
+            }
+            let supers = self.request(query, "typeHierarchy/supertypes", json!({"item": item}))?;
+            for parent in supers.as_array().into_iter().flatten() {
+                if self.item_resolves(target, parent) {
+                    return Ok(true);
+                }
+                queue.push(parent.clone());
+            }
+        }
+        Ok(false)
+    }
+
+    /// `calls` / `called_by`: a callee (`outgoingCalls`, under `to`) or a
+    /// caller (`incomingCalls`, under `from`) that resolves to `target`.
+    fn call_edge(
+        &mut self,
+        query: &Query,
+        target: &str,
+        params: Value,
+        outgoing: bool,
+    ) -> Result<bool, String> {
+        let prepared = self.request(query, "textDocument/prepareCallHierarchy", params)?;
+        let (method, end) = if outgoing {
+            ("callHierarchy/outgoingCalls", "to")
+        } else {
+            ("callHierarchy/incomingCalls", "from")
+        };
+        for item in prepared.as_array().into_iter().flatten() {
+            let calls = self.request(query, method, json!({"item": item}))?;
+            if calls
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|call| self.item_resolves(target, &call[end]))
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// One question about the binding at `span`.
+    fn answer(&mut self, source: &str, span: Range<usize>, query: &Query) -> Result<bool, String> {
+        let (params, call) = self.position(source, span);
         match query {
             Query::Type(ty) => {
-                let text = hover(session)?;
+                let text = self.hover(query, params)?;
                 // A call's type is what its callee returns.
                 let text = if call { returned(&text) } else { text.as_str() };
                 Ok(contains_token(text, ty))
             }
             Query::Resolves(target) => {
-                let answer = session
-                    .request_retrying("textDocument/definition", params.clone())
-                    .map_err(failed)?
-                    .map_err(|e| failed(session.server_error("textDocument/definition", &e)))?;
-                let Some((uri, line, character)) = first_location(&answer) else {
-                    // Nothing to resolve to (a local, a builtin the server
-                    // has no source for): it does not resolve there.
-                    return Ok(false);
-                };
-                let def = uri_to_path(&uri).map_err(failed)?;
-                let text = if def == file {
-                    source.to_string()
-                } else {
-                    std::fs::read_to_string(&def)
-                        .map_err(|e| format!("`{query}`: reading {}: {e}", def.display()))?
-                };
-                let name = offset_of(&text, line, character, session.encoding)
-                    .ok()
-                    .map(|offset| identifier_at(&text, offset))
-                    .unwrap_or_default();
-                if resolves_to(target, &def, &name) {
-                    return Ok(true);
-                }
-                // A module that is not a file of its own (Rust's inline
-                // `mod`, a Go package's import path): the hover names it.
-                Ok(name_of(target) == name && named_in(target, &hover(session)?))
+                let answer = self.request(query, "textDocument/definition", params.clone())?;
+                self.resolves(query, source, target, &answer, params)
             }
+            Query::Implements(target) => self.implements(query, target, params),
+            Query::Calls(target) => self.call_edge(query, target, params, true),
+            Query::CalledBy(target) => self.call_edge(query, target, params, false),
+        }
+    }
+}
+
+/// How many types `implements` walks before it stops looking.
+const HIERARCHY_LIMIT: usize = 200;
+
+impl Oracle for LspOracle {
+    fn ask(
+        &self,
+        path: &Path,
+        source: &str,
+        span: Range<usize>,
+        query: &Query,
+    ) -> Result<bool, String> {
+        self.with_server(path, source, query, |ready| {
+            ready.answer(source, span, query)
+        })
+    }
+
+    /// `type` and `resolves` about a file's bindings, each method's
+    /// requests sent together; the hierarchy questions, which take more
+    /// than one step each, are asked in turn.
+    fn ask_all(
+        &self,
+        path: &Path,
+        source: &str,
+        spans: &[Range<usize>],
+        query: &Query,
+    ) -> Vec<Result<bool, String>> {
+        let batch = self.with_server(path, source, query, |ready| {
+            let asked: Vec<(Value, bool)> = spans
+                .iter()
+                .map(|s| ready.position(source, s.clone()))
+                .collect();
+            let params = || asked.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>();
+            Ok(match query {
+                Query::Type(ty) => ready
+                    .request_all(query, "textDocument/hover", params())?
+                    .into_iter()
+                    .zip(&asked)
+                    .map(|(answer, (_, call))| {
+                        let text = hover_text(&answer?);
+                        let text = if *call {
+                            returned(&text)
+                        } else {
+                            text.as_str()
+                        };
+                        Ok(contains_token(text, ty))
+                    })
+                    .collect(),
+                Query::Resolves(target) => {
+                    let answers = ready.request_all(query, "textDocument/definition", params())?;
+                    answers
+                        .into_iter()
+                        .zip(&asked)
+                        .map(|(answer, (p, _))| {
+                            ready.resolves(query, source, target, &answer?, p.clone())
+                        })
+                        .collect()
+                }
+                Query::Implements(_) | Query::Calls(_) | Query::CalledBy(_) => spans
+                    .iter()
+                    .map(|span| ready.answer(source, span.clone(), query))
+                    .collect(),
+            })
+        });
+        match batch {
+            Ok(answers) => answers,
+            // The server could not be reached at all: every question fails
+            // with the same reason.
+            Err(why) => spans.iter().map(|_| Err(why.clone())).collect(),
         }
     }
 }

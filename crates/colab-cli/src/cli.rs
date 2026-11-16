@@ -135,6 +135,12 @@ enum Commands {
     Action(crate::lsp_commands::ActionArgs),
     /// List the references the language server finds to a symbol.
     References(crate::lsp_commands::ReferencesArgs),
+    /// List who calls a function, or what it calls (`--outgoing`), as
+    /// the language server's call hierarchy answers.
+    Calls(crate::lsp_commands::CallsArgs),
+    /// List what implements an interface, trait or abstract method, as
+    /// the language server answers.
+    Implementations(crate::lsp_commands::ImplementationsArgs),
     /// Delete a declaration only if nothing else refers to it.
     SafeDelete(crate::lsp_commands::SafeDeleteArgs),
     /// Print the syntax tree of a snippet or a pattern, to see why a
@@ -1056,6 +1062,8 @@ fn dispatch() -> Result<u8> {
         Some(Commands::Mv(args)) => run_mv(args),
         Some(Commands::Action(args)) => crate::lsp_commands::run_action(args),
         Some(Commands::References(args)) => crate::lsp_commands::run_references(args),
+        Some(Commands::Calls(args)) => crate::lsp_commands::run_calls(args),
+        Some(Commands::Implementations(args)) => crate::lsp_commands::run_implementations(args),
         Some(Commands::SafeDelete(args)) => crate::lsp_commands::run_safe_delete(args),
         Some(Commands::Ast(args)) => run_ast(args),
         Some(Commands::Outline(args)) => crate::markdown::run_outline(args),

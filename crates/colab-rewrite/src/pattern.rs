@@ -503,11 +503,23 @@ impl StructuralPattern {
         grep: &'t ast_grep_core::AstGrep<StrDoc<TsLang>>,
         source: &str,
     ) -> Vec<NodeMatch<'t, StrDoc<TsLang>>> {
-        grep.root()
+        // Semantic checks are sorted last. Each one asks the server about
+        // every match still standing in one batch, so a file's questions
+        // cost one round trip per check rather than one per match.
+        let (cheap, asked) = self
+            .checks
+            .split_at(self.checks.partition_point(|c| !c.is_semantic()));
+        let mut found: Vec<_> = grep
+            .root()
             .find_all(&self.pattern)
             .filter(|m| self.shape.fits(m.get_node()))
-            .filter(|m| self.checks.iter().all(|c| c.holds(m, source)))
-            .collect()
+            .filter(|m| cheap.iter().all(|c| c.holds(m, source)))
+            .collect();
+        for check in asked {
+            check.prefetch(&found, source);
+            found.retain(|m| check.holds(m, source));
+        }
+        found
     }
 
     /// The context wrapper the pattern needed, or `None` if it parsed on

@@ -408,6 +408,20 @@ impl Check {
         })
     }
 
+    /// Whether this is a top-level question for the language server.
+    pub(super) fn is_semantic(&self) -> bool {
+        matches!(self.kind, CheckKind::Semantic { .. })
+    }
+
+    /// Ask a semantic check's question about every match in `found` at
+    /// once ([`colab_core::semantic::prefetch`]); a no-op for any other.
+    pub(super) fn prefetch(&self, found: &[NodeMatch<'_, StrDoc<TsLang>>], source: &str) {
+        if let CheckKind::Semantic { var, query } = &self.kind {
+            let spans: Vec<_> = found.iter().filter_map(|m| semantic_span(var, m)).collect();
+            colab_core::semantic::prefetch(source, &spans, query);
+        }
+    }
+
     /// Whether match `m` in `source` satisfies this constraint.
     pub(super) fn holds(&self, m: &NodeMatch<'_, StrDoc<TsLang>>, source: &str) -> bool {
         let env = m.get_env();
@@ -467,20 +481,27 @@ impl Check {
                 colab_core::facts::contains(set, field, &text)
             }
             CheckKind::Semantic { var, query } => {
-                let span = if var.multi {
-                    let nodes = env.get_multiple_matches(&var.name);
-                    match (nodes.first(), nodes.last()) {
-                        (Some(first), Some(last)) => Some(first.range().start..last.range().end),
-                        _ => None,
-                    }
-                } else {
-                    env.get_match(&var.name).map(ast_grep_core::Node::range)
-                };
                 // An empty sequence has no code to ask about.
-                span.is_some_and(|span| colab_core::semantic::ask(source, span, query))
+                semantic_span(var, m)
+                    .is_some_and(|span| colab_core::semantic::ask(source, span, query))
             }
         };
         result != self.negated
+    }
+}
+
+/// The code a semantic check asks about: the binding's span (a sequence's
+/// from its first node to its last), or `None` for an empty sequence.
+fn semantic_span(var: &Var, m: &NodeMatch<'_, StrDoc<TsLang>>) -> Option<std::ops::Range<usize>> {
+    let env = m.get_env();
+    if var.multi {
+        let nodes = env.get_multiple_matches(&var.name);
+        match (nodes.first(), nodes.last()) {
+            (Some(first), Some(last)) => Some(first.range().start..last.range().end),
+            _ => None,
+        }
+    } else {
+        env.get_match(&var.name).map(ast_grep_core::Node::range)
     }
 }
 

@@ -43,6 +43,9 @@ test        = metavar "matches" ( regex | string )
             | metavar "in" identifier [ "." metavar ]  -- a scan's bindings
             | metavar "type" string     -- answered by the language server
             | metavar "resolves" string -- answered by the language server
+            | metavar "implements" string -- the server's type hierarchy
+            | metavar "calls" string      -- the server's call hierarchy
+            | metavar "called_by" string  -- the server's call hierarchy
             | "inside" pattern [ stop ]  -- without a stop, the only test on symbol / call: a code scope
             | "has" pattern [ stop ]
             | "follows" pattern [ stop ]
@@ -342,6 +345,9 @@ match go::pattern 'errors.Wrap($E, $M)'
 | `any(c, …)` | at least one of the constraints holds: one rule for two shapes. `all(c, …)` groups constraints that must all hold, under `not` or `any` (at the top level a comma does the same). |
 | `$X type "<type>"` | the language server says `$X` has this type (see [Asking the language server](#asking-the-language-server-type-and-resolves)) |
 | `$F resolves "<path>.<name>"` | the language server says `$F` refers to that declaration |
+| `$T implements "<path>.<name>"` | the server's type hierarchy gives `$T` a supertype (interface, trait, base class) that resolves to that declaration, at any depth |
+| `$F calls "<path>.<name>"` | the server's call hierarchy says the function `$F` calls that declaration |
+| `$F called_by "<path>.<name>"` | the server's call hierarchy says that declaration calls the function `$F` |
 | `not <constraint>` | the constraint does not hold |
 
 - `<lang>::pattern` takes every constraint. `symbol` and `call` take only
@@ -394,7 +400,7 @@ refactor "test-hygiene" {
 - `colab explain` lists the definitions; a rule's description shows the
   code the name stands for.
 
-### Asking the language server: `type` and `resolves`
+### Asking the language server: `type`, `resolves`, `implements`, `calls`, `called_by`
 
 Two libraries can both have a `read` or a `Wrap`, and a variable named
 `r` can be any type. A syntax tree cannot tell them apart; the language's
@@ -406,6 +412,17 @@ match go::pattern '$F($E, $M)' where $F resolves "github.com/pkg/errors.Wrap" {
 }
 match rust::pattern '$X.unwrap()' where $X type "Option" {
     replace '$X.expect("checked above")'
+}
+// Every function that calls the client's Dial, in whatever file: it takes
+// a context now.
+match go::pattern 'func $F($$$P) error { $$$B }' where $F calls "github.com/acme/client.Dial" {
+    replace 'func $F(ctx context.Context, $$$P) error { $$$B }'
+    requires import "context"
+    message "calls client.Dial, which takes a context from v2"
+}
+// Handlers only: methods of the types that implement http.Handler.
+match go::pattern 'func ($R *$T) ServeHTTP($W, $Q) { $$$B }' where $T implements "net/http.Handler" {
+    replace 'func ($R *$T) ServeHTTP($W, $Q) { defer metrics.Track()(); $$$B }'
 }
 ```
 
@@ -430,6 +447,18 @@ match rust::pattern '$X.unwrap()' where $X type "Option" {
   holds each segment of `<path>`, in order (a module cache's `@v1.2.3`
   ignored), or the server's hover names the qualifier, as for a module
   that is not a file of its own (Rust's inline `mod`).
+- **`implements "<path>.<name>"`** walks the server's type hierarchy
+  (`textDocument/prepareTypeHierarchy`, then `typeHierarchy/supertypes`,
+  up to 200 types) from `$T`, and holds when a supertype's declaration
+  resolves to the target by the same path-and-name rule as `resolves`.
+- **`calls` / `called_by "<path>.<name>"`** ask the server's call
+  hierarchy (`textDocument/prepareCallHierarchy`, then
+  `callHierarchy/outgoingCalls` / `incomingCalls`) about the function
+  `$F`, and hold when one of its callees / callers resolves to the
+  target. Both see across files, which no syntactic constraint can; a
+  server without the hierarchy answers with an error, which fails the
+  run like any other unanswerable question. `colab calls` and `colab
+  implementations` show the same answers on their own.
 - **The text it asks about is the run's.** Each file is sent to the
   server as the run has it, so a rule sees the types after earlier
   rules' edits.
@@ -438,10 +467,15 @@ match rust::pattern '$X.unwrap()' where $X type "Option" {
   run before anything is written, naming the cause. The MCP server starts
   no language server, so it refuses these rules outright; run them with
   the CLI.
-- **Cost.** One round trip per match the other constraints keep, after
-  the server's start-up: on colab's own workspace, rust-analyzer took
-  about 10 s to index and the 17 `.unwrap()` calls of `colab-core` were
-  then classified in under a second. A kept server (`colab lsp-daemon`)
+- **Cost.** A file's questions go to the server together: every match
+  the other constraints keep is asked about in one batch (its `hover` or
+  `definition` requests sent before any answer is read), so a file costs
+  about one round trip per constraint, not one per match. `implements`,
+  `calls` and `called_by` take a few steps each and are asked in turn.
+  Answers are kept for the run, keyed by the file's text, so the same
+  question from another rule, `find` or the near-miss probe is not asked
+  again. On colab's own workspace rust-analyzer took about 10 s to index;
+  after that the questions are quick. A kept server (`colab lsp-daemon`)
   saves the start-up on later runs.
 
 ### Derived values: `let`
@@ -1039,7 +1073,7 @@ The grammar keywords are:
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
 `count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `requires`, `import`, `drops`, `when`,
-`unused`, `type`, `resolves`; `let` for derived values; and for finding clauses `message`, `severity`, `id`, `url` (`error`,
+`unused`, `type`, `resolves`, `implements`, `calls`, `called_by`; `let` for derived values; and for finding clauses `message`, `severity`, `id`, `url` (`error`,
 `warning` and `info` are ordinary identifiers).
 
 `::` is the namespace separator. `//` starts a line comment.

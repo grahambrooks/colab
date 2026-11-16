@@ -29,6 +29,14 @@
 //! in the directory named by the qualifier before it (`alog.Print` looks
 //! in `alog/`), or in the same file without one.
 //!
+//! It also answers the call and type hierarchies, Go-like: a call
+//! hierarchy item is a `func NAME(` declaration, its outgoing calls are
+//! the `f(` / `q.f(` calls in its body (resolved like `definition`), and
+//! its incoming calls are the functions under the root whose bodies call
+//! it. A type's supertypes are named by a comment on its declaration,
+//! `type T struct{} // implements: alog.Writer`, each found as `type
+//! Writer interface` in `alog/`.
+//!
 //! `FAKE_LSP_MODE` changes behaviour: `no-rename` (no renameProvider),
 //! `file-op` (a rename also renames the symbol's file to `<new>.<ext>`,
 //! like a Java class), `no-will-rename` (no willRenameFiles support),
@@ -107,6 +115,96 @@ fn ident_at(text: &str, at: usize) -> Option<(usize, usize)> {
         .find(|(_, c)| !is_ident(*c))
         .map_or(text.len(), |(i, _)| at + i);
     (start < end).then_some((start, end))
+}
+
+/// The text of `file`: as the client opened it, else from disk.
+fn text_of(open: &HashMap<String, String>, file: &Path) -> Option<String> {
+    open.get(&format!("file://{}", file.display()))
+        .cloned()
+        .or_else(|| std::fs::read_to_string(file).ok())
+}
+
+/// The `.go` files of the root and its package directories, sorted.
+fn go_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|e| e == "go") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+/// Each `func NAME(` in `text`: its name, where the name starts, and its
+/// body (from the `{` to the next top-level `func` or the end).
+fn funcs(text: &str) -> Vec<(String, usize, std::ops::Range<usize>)> {
+    let starts: Vec<usize> = text.match_indices("func ").map(|(i, _)| i).collect();
+    starts
+        .iter()
+        .enumerate()
+        .filter_map(|(k, &i)| {
+            let at = i + "func ".len();
+            let (s, e) = ident_at(text, at)?;
+            let body = text[e..].find('{').map(|b| e + b)?;
+            let end = starts.get(k + 1).copied().unwrap_or(text.len());
+            Some((text[s..e].to_string(), s, body..end))
+        })
+        .collect()
+}
+
+/// A hierarchy item for the declaration of `name` at `at` in `file`.
+fn item(file: &Path, text: &str, name: &str, at: usize, kind: u32) -> Value {
+    let range = json!({"start": position(text, at), "end": position(text, at + name.len())});
+    json!({"name": name, "kind": kind, "uri": format!("file://{}", file.display()),
+        "range": range, "selectionRange": range})
+}
+
+/// The declaration a call `qualifier.name(` in `here` refers to: `func
+/// name(` in the qualifier's directory, or in `here`'s without one.
+fn declaration(
+    open: &HashMap<String, String>,
+    root: &Path,
+    here: &Path,
+    qualifier: Option<&str>,
+    name: &str,
+) -> Option<Value> {
+    let dir = match qualifier {
+        Some(q) => root.join(q),
+        None => here.parent()?.to_path_buf(),
+    };
+    go_files(root)
+        .into_iter()
+        .filter(|f| f.parent() == Some(dir.as_path()))
+        .find_map(|file| {
+            let text = text_of(open, &file)?;
+            let (_, at, _) = funcs(&text).into_iter().find(|(n, _, _)| n == name)?;
+            Some(item(&file, &text, name, at, 12))
+        })
+}
+
+/// The calls in `body` of `text`: `(qualifier, name)` for each `f(` or
+/// `q.f(`.
+fn calls_in(text: &str, body: std::ops::Range<usize>) -> Vec<(Option<String>, String)> {
+    text[body.clone()]
+        .match_indices('(')
+        .filter_map(|(i, _)| {
+            let at = body.start + i;
+            let (s, e) = ident_at(text, at.checked_sub(1)?)?;
+            (e == at).then_some(())?;
+            let qualifier = text[..s]
+                .strip_suffix('.')
+                .and_then(|before| ident_at(before, before.len()))
+                .map(|(qs, qe)| text[qs..qe].to_string());
+            Some((qualifier, text[s..e].to_string()))
+        })
+        .collect()
 }
 
 fn occurrences(text: &str, name: &str) -> Vec<usize> {
@@ -203,6 +301,9 @@ fn main() {
                     "referencesProvider": true,
                     "hoverProvider": true,
                     "definitionProvider": true,
+                    "callHierarchyProvider": true,
+                    "typeHierarchyProvider": true,
+                    "implementationProvider": true,
                     "documentSymbolProvider": true,
                     "documentFormattingProvider": true,
                     "executeCommandProvider": {"commands": ["fake.uppercase"]},
@@ -420,6 +521,167 @@ fn main() {
                 send(
                     &mut out,
                     json!({"jsonrpc": "2.0", "id": id, "result": result}),
+                );
+            }
+            ("textDocument/prepareCallHierarchy", Some(id)) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let here = uri_path(uri);
+                let text = &open[uri];
+                let at = offset(
+                    text,
+                    params["position"]["line"].as_u64().unwrap(),
+                    params["position"]["character"].as_u64().unwrap(),
+                );
+                // At a declaration, that function; at a call, its callee.
+                let result = ident_at(text, at).and_then(|(s, e)| {
+                    let name = &text[s..e];
+                    if text[..s].ends_with("func ") {
+                        return Some(json!([item(&here, text, name, s, 12)]));
+                    }
+                    let qualifier = text[..s]
+                        .strip_suffix('.')
+                        .and_then(|before| ident_at(before, before.len()))
+                        .map(|(qs, qe)| text[qs..qe].to_string());
+                    declaration(&open, &root, &here, qualifier.as_deref(), name).map(|i| json!([i]))
+                });
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": result}),
+                );
+            }
+            ("callHierarchy/outgoingCalls", Some(id)) => {
+                let file = uri_path(params["item"]["uri"].as_str().unwrap());
+                let name = params["item"]["name"].as_str().unwrap();
+                let text = text_of(&open, &file).unwrap_or_default();
+                let calls: Vec<Value> = funcs(&text)
+                    .into_iter()
+                    .find(|(n, _, _)| n == name)
+                    .map(|(_, _, body)| calls_in(&text, body))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|(q, f)| declaration(&open, &root, &file, q.as_deref(), &f))
+                    .map(|to| json!({"to": to, "fromRanges": []}))
+                    .collect();
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": calls}),
+                );
+            }
+            ("callHierarchy/incomingCalls", Some(id)) => {
+                let target = (
+                    params["item"]["uri"].as_str().unwrap().to_string(),
+                    params["item"]["name"].as_str().unwrap().to_string(),
+                );
+                let mut callers = Vec::new();
+                for file in go_files(&root) {
+                    let Some(text) = text_of(&open, &file) else {
+                        continue;
+                    };
+                    for (name, at, body) in funcs(&text) {
+                        let calls_it = calls_in(&text, body).into_iter().any(|(q, f)| {
+                            declaration(&open, &root, &file, q.as_deref(), &f).is_some_and(|d| {
+                                d["uri"].as_str() == Some(target.0.as_str())
+                                    && d["name"].as_str() == Some(target.1.as_str())
+                            })
+                        });
+                        if calls_it {
+                            callers.push(json!({"from": item(&file, &text, &name, at, 12), "fromRanges": []}));
+                        }
+                    }
+                }
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": callers}),
+                );
+            }
+            ("textDocument/prepareTypeHierarchy", Some(id)) => {
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let text = &open[uri];
+                let at = offset(
+                    text,
+                    params["position"]["line"].as_u64().unwrap(),
+                    params["position"]["character"].as_u64().unwrap(),
+                );
+                let result = ident_at(text, at)
+                    .filter(|(s, _)| text[..*s].ends_with("type "))
+                    .map(|(s, e)| json!([item(&uri_path(uri), text, &text[s..e], s, 23)]));
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": result}),
+                );
+            }
+            ("textDocument/implementation", Some(id)) => {
+                // At `type I interface`: every type whose `// implements:`
+                // comment names `<package>.I`.
+                let uri = params["textDocument"]["uri"].as_str().unwrap();
+                let here = uri_path(uri);
+                let text = &open[uri];
+                let at = offset(
+                    text,
+                    params["position"]["line"].as_u64().unwrap(),
+                    params["position"]["character"].as_u64().unwrap(),
+                );
+                let package = here
+                    .parent()
+                    .and_then(Path::file_name)
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let mut found = Vec::new();
+                if let Some((s, e)) = ident_at(text, at) {
+                    let wanted = format!("{package}.{}", &text[s..e]);
+                    for file in go_files(&root) {
+                        let Some(t) = text_of(&open, &file) else {
+                            continue;
+                        };
+                        let mut line_start = 0;
+                        for line in t.split_inclusive('\n') {
+                            let names_it = line.starts_with("type ")
+                                && line.split_once("// implements:").is_some_and(|(_, list)| {
+                                    list.split(',').any(|q| q.trim() == wanted)
+                                });
+                            if names_it
+                                && let Some((ns, ne)) = ident_at(&t, line_start + "type ".len())
+                            {
+                                found.push(json!({"uri": format!("file://{}", file.display()),
+                                    "range": {"start": position(&t, ns), "end": position(&t, ne)}}));
+                            }
+                            line_start += line.len();
+                        }
+                    }
+                }
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": found}),
+                );
+            }
+            ("typeHierarchy/supertypes", Some(id)) => {
+                let file = uri_path(params["item"]["uri"].as_str().unwrap());
+                let name = params["item"]["name"].as_str().unwrap();
+                let text = text_of(&open, &file).unwrap_or_default();
+                let named = text
+                    .lines()
+                    .find(|l| l.starts_with(&format!("type {name} ")))
+                    .and_then(|l| l.split_once("// implements:"))
+                    .map(|(_, list)| list.to_string())
+                    .unwrap_or_default();
+                let supers: Vec<Value> = named
+                    .split(',')
+                    .filter_map(|q| q.trim().split_once('.'))
+                    .filter_map(|(pkg, iface)| {
+                        go_files(&root)
+                            .into_iter()
+                            .filter(|f| f.parent() == Some(root.join(pkg).as_path()))
+                            .find_map(|f| {
+                                let t = text_of(&open, &f)?;
+                                let at =
+                                    t.find(&format!("type {iface} interface"))? + "type ".len();
+                                Some(item(&f, &t, iface, at, 11))
+                            })
+                    })
+                    .collect();
+                send(
+                    &mut out,
+                    json!({"jsonrpc": "2.0", "id": id, "result": supers}),
                 );
             }
             ("textDocument/references", Some(id)) => {

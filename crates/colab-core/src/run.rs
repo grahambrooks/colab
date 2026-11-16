@@ -25,6 +25,9 @@ pub struct Run {
     facts: RwLock<Option<Facts>>,
     semantic_failure: Mutex<Option<String>>,
     facts_failure: Mutex<Option<String>>,
+    /// The oracle's answers so far, so a question asked again (another
+    /// rule, `find`, the near-miss probe) costs nothing.
+    answers: Mutex<std::collections::HashMap<crate::semantic::AnswerKey, bool>>,
 }
 
 thread_local! {
@@ -82,6 +85,28 @@ impl Run {
 
     pub(crate) fn set_facts(&self, facts: Option<Facts>) {
         *self.facts.write().unwrap_or_else(PoisonError::into_inner) = facts;
+    }
+
+    pub(crate) fn answer(&self, key: &crate::semantic::AnswerKey) -> Option<bool> {
+        self.answers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .copied()
+    }
+
+    pub(crate) fn remember(&self, key: crate::semantic::AnswerKey, holds: bool) {
+        self.answers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key, holds);
+    }
+
+    pub(crate) fn forget_answers(&self) {
+        self.answers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
     }
 
     pub(crate) fn semantic_failure(&self) -> &Mutex<Option<String>> {

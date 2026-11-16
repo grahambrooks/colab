@@ -257,6 +257,64 @@ impl Session {
         }
     }
 
+    /// Several requests of one `method`, pipelined: all are sent before
+    /// any answer is read, so a batch costs about one round trip. Answers
+    /// come back in `params` order; one the server was not ready for is
+    /// asked again on its own ([`request_retrying`](Self::request_retrying)).
+    pub fn request_all(
+        &mut self,
+        method: &str,
+        params: Vec<Value>,
+    ) -> Result<Vec<std::result::Result<Value, ResponseError>>> {
+        let first = self.next_id;
+        self.next_id += params.len() as u64;
+        for (i, p) in params.iter().enumerate() {
+            let id = first + i as u64;
+            self.transport
+                .send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": p}))
+                .map_err(|e| self.io_error(e))?;
+        }
+        let mut answers: Vec<Option<std::result::Result<Value, ResponseError>>> =
+            vec![None; params.len()];
+        let mut left = params.len();
+        while left > 0 {
+            let message = self.recv(method)?;
+            if message.get("method").is_some() {
+                self.serve(&message)?;
+                continue;
+            }
+            let Some(slot) = message
+                .get("id")
+                .and_then(Value::as_u64)
+                .and_then(|id| id.checked_sub(first))
+                .and_then(|i| usize::try_from(i).ok())
+                .filter(|&i| i < answers.len() && answers[i].is_none())
+            else {
+                continue;
+            };
+            answers[slot] = Some(match message.get("error") {
+                Some(error) => Err(ResponseError {
+                    code: error.get("code").and_then(Value::as_i64).unwrap_or(0),
+                    message: error
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                }),
+                None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
+            });
+            left -= 1;
+        }
+        let mut out = Vec::with_capacity(answers.len());
+        for (answer, p) in answers.into_iter().zip(params) {
+            out.push(match answer.expect("every slot was answered") {
+                Err(e) if RETRYABLE.contains(&e.code) => self.request_retrying(method, p)?,
+                other => other,
+            });
+        }
+        Ok(out)
+    }
+
     /// [`request`](Self::request), retried while the server answers with a
     /// "not ready / content modified" error.
     pub fn request_retrying(

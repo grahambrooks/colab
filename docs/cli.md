@@ -918,6 +918,36 @@ The references the server resolves to the symbol — scope-aware, unlike
 truncated?}`, the `colab find` shape. Use it to see a change's reach
 before making it.
 
+### `colab calls`
+
+```
+colab calls (--at FILE:LINE:COL | --symbol NAME --in FILE) [--outgoing]
+            [--format human|json] [--max-results N] [--lsp …] [--root DIR] [-C DIR]
+            [--timeout SECS]
+```
+
+Who calls the function, or with `--outgoing` what it calls, from the
+server's call hierarchy (`textDocument/prepareCallHierarchy`, then
+`callHierarchy/incomingCalls` / `outgoingCalls`): each caller's or
+callee's declaration, in any file. The output is `colab references`'
+shape under `callers` / `callees`. A server without a call hierarchy is
+an error that names the missing capability. The `calls` / `called_by`
+constraints ask the same question inside a rule
+([`docs/dsl.md`](dsl.md#asking-the-language-server-type-resolves-implements-calls-called_by)).
+
+### `colab implementations`
+
+```
+colab implementations (--at FILE:LINE:COL | --symbol NAME --in FILE)
+                      [--format human|json] [--max-results N] [--lsp …] [--root DIR] [-C DIR]
+                      [--timeout SECS]
+```
+
+What implements the interface, trait or abstract method
+(`textDocument/implementation`): each implementation's declaration, under
+`implementations`. Use it before changing an interface to see every type
+that must follow; the `implements` constraint narrows a rule to them.
+
 ### `colab safe-delete`
 
 ```
@@ -1235,6 +1265,8 @@ MCP-aware host) can call them directly:
 | `colab.move_import` | `lang`, `from`, `to?`, `paths[]`, `cwd?`, `write?`, `detail?`, `allow_conflicts?` | No DSL needed: generates `match <lang>::<import module> "<from>" { replace "<to>" }` (`delete` without `to`) and returns the preview / apply report with the generated `script`. |
 | `colab.set_config_key` | `key`, `value` or `delete: true`, `only_if_absent?`, `paths[]`, `lang?`, `write?`, … | No DSL needed: `json::key` / `toml::key` `set` (`insert` with `only_if_absent`, or `delete`), or `markdown::block`; the format comes from the first path's extension. Returns the report with the `script`. |
 | `colab.references` | `at` (`FILE:LINE:COL`) or `symbol` + `in`, `include_declaration?`, `max_results?`, `lsp?`, `root?`, `cwd?` | References the language server resolves; same document as `colab references --format json`. Read-only. |
+| `colab.calls` | `at` or `symbol` + `in`, `outgoing?`, `max_results?`, `lsp?`, `root?`, `cwd?` | Callers (or callees) from the server's call hierarchy; same document as `colab calls --format json`. Read-only. |
+| `colab.implementations` | `at` or `symbol` + `in`, `max_results?`, `lsp?`, `root?`, `cwd?` | Implementations the server finds; same document as `colab implementations --format json`. Read-only. |
 | `colab.rename` | position as above, `to`, `write?`, `tidy?`, `detail?`, `lsp?`, `root?`, `cwd?` | Scope-aware rename via the server; the `colab.preview` report plus `written`. |
 | `colab.action` | `at` (position or `FILE:L:C-L:C` selection), `list?`, `kind?`, `title?`, `write?`, `tidy?`, … | With `list: true`, `{actions: [{title, kind, preferred, disabled?}]}`; otherwise runs the one matching action and returns the report. |
 | `colab.mv` | `from`, `to`, `lsp?`, `no_lsp?`, `root?`, `cwd?`, `write?`, `tidy?`, `detail?` | `colab mv`: the move through `git mv` plus the server's reference edits (`workspace/willRenameFiles`); the `colab.preview` report plus `written`. |

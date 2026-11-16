@@ -381,35 +381,151 @@ fn references_in(
         )?
         .map_err(|e| session.server_error("textDocument/references", &e))?;
 
-    let mut texts: BTreeMap<PathBuf, String> = BTreeMap::new();
+    let mut texts = BTreeMap::new();
     let mut out = Vec::new();
     for location in answer.as_array().into_iter().flatten() {
-        let Some(uri) = location["uri"].as_str() else {
-            continue;
-        };
-        let path = uri_to_path(uri)?;
-        if !texts.contains_key(&path) {
-            let source = std::fs::read_to_string(&path).map_err(|e| Error::io_at(&path, e))?;
-            texts.insert(path.clone(), source);
+        if let Some(uri) = location["uri"].as_str() {
+            out.push(reference_at(&mut texts, session, uri, &location["range"])?);
         }
-        let source = &texts[&path];
-        let (start, end) = byte_range(source, &location["range"], session.encoding)?;
-        let at = Located::at(source, start, end, Vec::new());
-        let line_text = source
-            .lines()
-            .nth(at.line - 1)
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        out.push(Reference {
-            path,
-            at,
-            line_text,
-        });
     }
-    out.sort_by(|a, b| (&a.path, a.at.start).cmp(&(&b.path, b.at.start)));
-    out.dedup_by(|a, b| a.path == b.path && a.at.start == b.at.start);
-    Ok(out)
+    Ok(sorted(out))
+}
+
+/// A `Reference` to `range` of the file at `uri`, its text read once.
+fn reference_at(
+    texts: &mut BTreeMap<PathBuf, String>,
+    session: &Session,
+    uri: &str,
+    range: &Value,
+) -> Result<Reference> {
+    let path = uri_to_path(uri)?;
+    if !texts.contains_key(&path) {
+        let source = std::fs::read_to_string(&path).map_err(|e| Error::io_at(&path, e))?;
+        texts.insert(path.clone(), source);
+    }
+    let source = &texts[&path];
+    let (start, end) = byte_range(source, range, session.encoding)?;
+    let at = Located::at(source, start, end, Vec::new());
+    let line_text = source
+        .lines()
+        .nth(at.line - 1)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    Ok(Reference {
+        path,
+        at,
+        line_text,
+    })
+}
+
+/// In file order, each place once.
+fn sorted(mut found: Vec<Reference>) -> Vec<Reference> {
+    found.sort_by(|a, b| (&a.path, a.at.start).cmp(&(&b.path, b.at.start)));
+    found.dedup_by(|a, b| a.path == b.path && a.at.start == b.at.start);
+    found
+}
+
+/// The functions that call the one at `target` (`outgoing`: that it
+/// calls), from the server's call hierarchy: each a [`Reference`] to the
+/// function's name in its declaration.
+pub fn calls(server: &ServerCommand, target: &Target, outgoing: bool) -> Result<Vec<Reference>> {
+    let (session, text) = start(server, target)?;
+    let mut session = require(session, "callHierarchyProvider", "call hierarchy")?;
+    let found = calls_in(&mut session, &target.file, &text, target.start, outgoing);
+    session.shutdown();
+    found
+}
+
+fn calls_in(
+    session: &mut Session,
+    file: &Path,
+    text: &str,
+    offset: usize,
+    outgoing: bool,
+) -> Result<Vec<Reference>> {
+    let (line, character) = position_of(text, offset, session.encoding);
+    let prepare = "textDocument/prepareCallHierarchy";
+    let items = session
+        .request_retrying(
+            prepare,
+            json!({
+                "textDocument": {"uri": path_to_uri(file)},
+                "position": {"line": line, "character": character},
+            }),
+        )?
+        .map_err(|e| session.server_error(prepare, &e))?;
+    let (method, end) = if outgoing {
+        ("callHierarchy/outgoingCalls", "to")
+    } else {
+        ("callHierarchy/incomingCalls", "from")
+    };
+    let mut texts = BTreeMap::new();
+    let mut out = Vec::new();
+    for item in items.as_array().into_iter().flatten() {
+        let calls = session
+            .request_retrying(method, json!({"item": item}))?
+            .map_err(|e| session.server_error(method, &e))?;
+        for call in calls.as_array().into_iter().flatten() {
+            let other = &call[end];
+            if let Some(uri) = other["uri"].as_str() {
+                out.push(reference_at(
+                    &mut texts,
+                    session,
+                    uri,
+                    &other["selectionRange"],
+                )?);
+            }
+        }
+    }
+    Ok(sorted(out))
+}
+
+/// What implements the interface, trait or abstract method at `target`
+/// (`textDocument/implementation`): each a [`Reference`].
+pub fn implementations(server: &ServerCommand, target: &Target) -> Result<Vec<Reference>> {
+    let (session, text) = start(server, target)?;
+    let mut session = require(session, "implementationProvider", "implementations")?;
+    let found = implementations_in(&mut session, &target.file, &text, target.start);
+    session.shutdown();
+    found
+}
+
+fn implementations_in(
+    session: &mut Session,
+    file: &Path,
+    text: &str,
+    offset: usize,
+) -> Result<Vec<Reference>> {
+    let (line, character) = position_of(text, offset, session.encoding);
+    let method = "textDocument/implementation";
+    let answer = session
+        .request_retrying(
+            method,
+            json!({
+                "textDocument": {"uri": path_to_uri(file)},
+                "position": {"line": line, "character": character},
+            }),
+        )?
+        .map_err(|e| session.server_error(method, &e))?;
+    // `Location`, `Location[]` or `LocationLink[]`.
+    let list = match answer {
+        Value::Array(list) => list,
+        Value::Null => Vec::new(),
+        one => vec![one],
+    };
+    let mut texts = BTreeMap::new();
+    let mut out = Vec::new();
+    for location in &list {
+        let (uri, range) = match location.get("targetUri") {
+            Some(uri) => (uri, &location["targetSelectionRange"]),
+            None => (&location["uri"], &location["range"]),
+        };
+        if let Some(uri) = uri.as_str() {
+            out.push(reference_at(&mut texts, session, uri, range)?);
+        }
+    }
+    Ok(sorted(out))
 }
 
 fn byte_range(text: &str, range: &Value, encoding: Encoding) -> Result<(usize, usize)> {

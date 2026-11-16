@@ -552,14 +552,33 @@ pub fn run_references(args: ReferencesArgs) -> Result<u8> {
         &target(&place, root, args.timeout),
         args.include_declaration,
     )?;
-    let value = references_json(&found, &cwd, args.max_results);
+    print_locations(
+        "references",
+        "reference(s)",
+        &found,
+        &cwd,
+        args.max_results,
+        args.format,
+    )
+}
+
+/// `path:line:col: line` per place and a count, or the JSON document.
+fn print_locations(
+    key: &str,
+    noun: &str,
+    found: &[Reference],
+    cwd: &Path,
+    max: usize,
+    format: Format,
+) -> Result<u8> {
+    let value = locations_json(key, found, cwd, max);
     let mut out = io::stdout().lock();
-    if args.format == Format::Human {
-        for r in found.iter().take(args.max_results) {
+    if format == Format::Human {
+        for r in found.iter().take(max) {
             writeln!(
                 out,
                 "{}:{}:{}: {}",
-                relative(&r.path, &cwd).display(),
+                relative(&r.path, cwd).display(),
                 r.at.line,
                 r.at.column,
                 r.line_text
@@ -567,11 +586,137 @@ pub fn run_references(args: ReferencesArgs) -> Result<u8> {
             .map_err(io_to_error)?;
         }
         let files = value["summary"]["files"].as_u64().unwrap_or(0);
-        writeln!(out, "{} reference(s) in {} file(s)", found.len(), files).map_err(io_to_error)?;
+        writeln!(out, "{} {noun} in {files} file(s)", found.len()).map_err(io_to_error)?;
     } else {
         writeln!(out, "{value}").map_err(io_to_error)?;
     }
     Ok(0)
+}
+
+// ---------------------------------------------------------------------------
+// colab calls / colab implementations
+// ---------------------------------------------------------------------------
+
+/// `colab calls`.
+#[derive(Parser, Debug)]
+#[command(group(clap::ArgGroup::new("target").required(true).args(["at", "symbol"])))]
+pub struct CallsArgs {
+    /// The function's position, `FILE:LINE:COL`.
+    #[arg(long, value_name = "FILE:LINE:COL", conflicts_with_all = ["symbol", "in_file"])]
+    at: Option<String>,
+
+    /// The function's name; its first whole-word occurrence in `--in` is used.
+    #[arg(long, value_name = "NAME", requires = "in_file")]
+    symbol: Option<String>,
+
+    /// The file `--symbol` is looked up in.
+    #[arg(long = "in", value_name = "FILE", id = "in_file")]
+    in_file: Option<PathBuf>,
+
+    /// What the function calls, instead of who calls it.
+    #[arg(long)]
+    outgoing: bool,
+
+    /// `human` (`path:line:col: line`) or `json`.
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    format: Format,
+
+    /// Report at most this many functions (the rest are counted as
+    /// `truncated`).
+    #[arg(long = "max-results", value_name = "N", default_value_t = colab_core::find::DEFAULT_MAX_RESULTS)]
+    max_results: usize,
+
+    #[arg(long, value_name = "CMD")]
+    lsp: Option<String>,
+
+    #[arg(long, value_name = "DIR")]
+    root: Option<PathBuf>,
+
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    change_dir: PathBuf,
+
+    #[arg(long, value_name = "SECS", default_value_t = 120)]
+    timeout: u64,
+}
+
+pub fn run_calls(args: CallsArgs) -> Result<u8> {
+    change_working_dir(&args.change_dir)?;
+    let cwd = std::env::current_dir().map_err(io_to_error)?;
+    let place = resolve_place(
+        args.at.as_deref(),
+        args.symbol.as_deref(),
+        args.in_file.as_deref(),
+        &cwd,
+    )?;
+    let server = server_for(args.lsp.as_deref(), &place.file)?;
+    let root = root_for(args.root.as_deref(), &place.file, &cwd)?;
+    let found = actions::calls(&server, &target(&place, root, args.timeout), args.outgoing)?;
+    let (key, noun) = if args.outgoing {
+        ("callees", "callee(s)")
+    } else {
+        ("callers", "caller(s)")
+    };
+    print_locations(key, noun, &found, &cwd, args.max_results, args.format)
+}
+
+/// `colab implementations`.
+#[derive(Parser, Debug)]
+#[command(group(clap::ArgGroup::new("target").required(true).args(["at", "symbol"])))]
+pub struct ImplementationsArgs {
+    /// The interface's, trait's or method's position, `FILE:LINE:COL`.
+    #[arg(long, value_name = "FILE:LINE:COL", conflicts_with_all = ["symbol", "in_file"])]
+    at: Option<String>,
+
+    /// Its name; the first whole-word occurrence in `--in` is used.
+    #[arg(long, value_name = "NAME", requires = "in_file")]
+    symbol: Option<String>,
+
+    /// The file `--symbol` is looked up in.
+    #[arg(long = "in", value_name = "FILE", id = "in_file")]
+    in_file: Option<PathBuf>,
+
+    /// `human` (`path:line:col: line`) or `json`.
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    format: Format,
+
+    /// Report at most this many implementations (the rest are counted as
+    /// `truncated`).
+    #[arg(long = "max-results", value_name = "N", default_value_t = colab_core::find::DEFAULT_MAX_RESULTS)]
+    max_results: usize,
+
+    #[arg(long, value_name = "CMD")]
+    lsp: Option<String>,
+
+    #[arg(long, value_name = "DIR")]
+    root: Option<PathBuf>,
+
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    change_dir: PathBuf,
+
+    #[arg(long, value_name = "SECS", default_value_t = 120)]
+    timeout: u64,
+}
+
+pub fn run_implementations(args: ImplementationsArgs) -> Result<u8> {
+    change_working_dir(&args.change_dir)?;
+    let cwd = std::env::current_dir().map_err(io_to_error)?;
+    let place = resolve_place(
+        args.at.as_deref(),
+        args.symbol.as_deref(),
+        args.in_file.as_deref(),
+        &cwd,
+    )?;
+    let server = server_for(args.lsp.as_deref(), &place.file)?;
+    let root = root_for(args.root.as_deref(), &place.file, &cwd)?;
+    let found = actions::implementations(&server, &target(&place, root, args.timeout))?;
+    print_locations(
+        "implementations",
+        "implementation(s)",
+        &found,
+        &cwd,
+        args.max_results,
+        args.format,
+    )
 }
 
 fn relative<'p>(path: &'p Path, cwd: &Path) -> &'p Path {
@@ -582,6 +727,12 @@ fn relative<'p>(path: &'p Path, cwd: &Path) -> &'p Path {
 /// references}, "truncated"?}` — the `colab find` shape, with the whole
 /// line as `text`.
 pub fn references_json(found: &[Reference], cwd: &Path, max: usize) -> Value {
+    locations_json("references", found, cwd, max)
+}
+
+/// [`references_json`]'s shape under another `key` (`callers`,
+/// `callees`, `implementations`), the count under the same key.
+pub fn locations_json(key: &str, found: &[Reference], cwd: &Path, max: usize) -> Value {
     let mut files: Vec<&Path> = found.iter().map(|r| r.path.as_path()).collect();
     files.dedup();
     let list: Vec<Value> = found
@@ -597,8 +748,8 @@ pub fn references_json(found: &[Reference], cwd: &Path, max: usize) -> Value {
         })
         .collect();
     let mut value = json!({
-        "references": list,
-        "summary": {"files": files.len(), "references": found.len()},
+        key: list,
+        "summary": {"files": files.len(), key: found.len()},
     });
     if found.len() > max {
         value["truncated"] = json!(found.len() - max);
@@ -735,6 +886,15 @@ impl colab_mcp::ToolProvider for LspTools {
         references["max_results"] =
             json!({"type": "integer", "default": colab_core::find::DEFAULT_MAX_RESULTS});
 
+        let mut calls = position_properties();
+        calls["outgoing"] = json!({"type": "boolean", "default": false, "description": "List what the function calls, instead of who calls it."});
+        calls["max_results"] =
+            json!({"type": "integer", "default": colab_core::find::DEFAULT_MAX_RESULTS});
+
+        let mut implementations = position_properties();
+        implementations["max_results"] =
+            json!({"type": "integer", "default": colab_core::find::DEFAULT_MAX_RESULTS});
+
         let mut rename = position_properties();
         rename["to"] = json!({"type": "string", "description": "The new name."});
         write_properties(&mut rename);
@@ -800,6 +960,18 @@ impl colab_mcp::ToolProvider for LspTools {
                 "inputSchema": {"type": "object", "properties": references, "additionalProperties": false}
             }),
             json!({
+                "name": "colab.calls",
+                "description": "Who calls a function (or, with `outgoing`, what it calls), from the language server's call hierarchy: each caller's or callee's declaration, as `{path, line, col, text}`. Read-only. Use to see a function's reach across files before changing its signature, or to find the code paths into it.",
+                "annotations": {"readOnlyHint": true},
+                "inputSchema": {"type": "object", "properties": calls, "additionalProperties": false}
+            }),
+            json!({
+                "name": "colab.implementations",
+                "description": "What implements an interface, trait or abstract method, as the language server resolves it (`textDocument/implementation`): each implementation's declaration as `{path, line, col, text}`. Read-only. Use before changing an interface to see every type that must follow.",
+                "annotations": {"readOnlyHint": true},
+                "inputSchema": {"type": "object", "properties": implementations, "additionalProperties": false}
+            }),
+            json!({
                 "name": "colab.rename",
                 "description": "Scope-aware rename via the language's server (rust-analyzer, gopls, clangd, …): renames the symbol at a position and every reference the server resolves to it — not other symbols that share the name. Returns the same report as colab.preview; set `write` to apply.",
                 "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false},
@@ -823,6 +995,8 @@ impl colab_mcp::ToolProvider for LspTools {
     fn call(&self, name: &str, args: &Value) -> Option<Result<Value>> {
         let run = match name {
             "colab.references" => mcp_references,
+            "colab.calls" => mcp_calls,
+            "colab.implementations" => mcp_implementations,
             "colab.rename" => mcp_rename,
             "colab.rename_symbol" => mcp_rename_symbol,
             "colab.action" => mcp_action,
@@ -1078,6 +1252,33 @@ fn mcp_references(args: &Value) -> Result<Value> {
             usize::try_from(n).unwrap_or(usize::MAX)
         });
     Ok(references_json(&found, &cwd, max))
+}
+
+fn mcp_max(args: &Value) -> usize {
+    args.get("max_results")
+        .and_then(Value::as_u64)
+        .map_or(colab_core::find::DEFAULT_MAX_RESULTS, |n| {
+            usize::try_from(n).unwrap_or(usize::MAX)
+        })
+}
+
+fn mcp_calls(args: &Value) -> Result<Value> {
+    let (cwd, place, server, root, timeout) = mcp_context(args)?;
+    let outgoing = flag(args, "outgoing");
+    let found = actions::calls(&server, &target(&place, root, timeout), outgoing)?;
+    let key = if outgoing { "callees" } else { "callers" };
+    Ok(locations_json(key, &found, &cwd, mcp_max(args)))
+}
+
+fn mcp_implementations(args: &Value) -> Result<Value> {
+    let (cwd, place, server, root, timeout) = mcp_context(args)?;
+    let found = actions::implementations(&server, &target(&place, root, timeout))?;
+    Ok(locations_json(
+        "implementations",
+        &found,
+        &cwd,
+        mcp_max(args),
+    ))
 }
 
 fn mcp_rename(args: &Value) -> Result<Value> {

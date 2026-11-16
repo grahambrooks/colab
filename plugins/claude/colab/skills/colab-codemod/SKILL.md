@@ -197,8 +197,11 @@ match js::pattern 'console.log($$$ARGS)' { delete }
   repeated one with `pattern test_func = '…'` and write `inside test_func`),
   each optionally preceded by `not`. To tell same-named APIs apart, ask
   the language server: `$F resolves "github.com/pkg/errors.Wrap"`,
-  `$X type "*os.File"` (CLI only; a missing server fails the run). Only
-  `pattern` takes them.
+  `$X type "*os.File"`, and across files `$F calls "pkg.Func"`,
+  `$F called_by "pkg.Func"`, `$T implements "io.Reader"` (CLI only; a
+  missing server fails the run). Only `pattern` takes them. `colab calls`
+  / `colab implementations` (MCP `colab.calls` / `colab.implementations`)
+  show the same answers before you write the rule.
 - **Rewrite inside a binding with `rewriter`.** `rewriter t = 'timeout: $V' -> 'timeoutMs: $V'`
   at the top, then `let $NEW = $$$OPTS | rewrite(t, …)` before the
   action: each match inside `$$$OPTS` is rewritten in place, the rest kept.

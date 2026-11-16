@@ -3925,6 +3925,100 @@ fn type_and_resolves_constraints_are_answered_by_the_server() {
 }
 
 #[test]
+fn calls_called_by_and_implements_are_answered_by_the_server_hierarchies() {
+    let root = workspace_temp("hierarchy");
+    write(
+        &root.join("alog/log.go"),
+        "package alog\n\ntype Writer interface{}\n\nfunc Print(s string) {}\n",
+    );
+    write(
+        &root.join("blog/log.go"),
+        "package blog\n\nfunc Print(s string) {}\n",
+    );
+    write(
+        &root.join("main.go"),
+        "package main\n\ntype T struct{} // implements: alog.Writer\n\ntype U struct{}\n\nfunc a() {\n\talog.Print(\"a\")\n}\n\nfunc b() {\n\tblog.Print(\"b\")\n}\n\nfunc c() {\n\ta()\n}\n",
+    );
+    let find = |rule: &str| {
+        let out = colab()
+            .current_dir(&root)
+            .args(["find", "-e", rule, "--lsp", &fake_lsp(), "main.go"])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let lines: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|l| l.split(": ").next().filter(|p| p.starts_with("main.go:")))
+            .map(str::to_string)
+            .collect();
+        lines
+    };
+    // `a` calls alog's Print; `b` calls blog's, a different function.
+    assert_eq!(
+        find(r#"match go::pattern 'func $F() { $$$B }' where $F calls "alog.Print" { delete }"#),
+        ["main.go:7:1"]
+    );
+    // Only `c` calls `a`.
+    assert_eq!(
+        find(r#"match go::pattern 'func $F() { $$$B }' where $F called_by "main.c" { delete }"#),
+        ["main.go:7:1"]
+    );
+    assert_eq!(
+        find(
+            r#"match go::pattern 'func $F() { $$$B }' where not $F called_by "main.c" { delete }"#
+        ),
+        ["main.go:11:1", "main.go:15:1"]
+    );
+    // `T` implements alog.Writer; `U` implements nothing.
+    assert_eq!(
+        find(
+            r#"match go::pattern 'type $T struct{}' where $T implements "alog.Writer" { delete }"#
+        ),
+        ["main.go:3:1"]
+    );
+
+    // The same answers as navigation commands.
+    let list = |args: &[&str]| {
+        let out = colab()
+            .current_dir(&root)
+            .args(args)
+            .args(["--lsp", &fake_lsp(), "--format", "json"])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    let callers = list(&["calls", "--symbol", "Print", "--in", "alog/log.go"]);
+    assert_eq!(callers["callers"][0]["path"], "main.go");
+    assert_eq!(callers["callers"][0]["text"], "func a() {");
+    assert_eq!(
+        callers["summary"]["callers"], 1,
+        "blog.Print's caller is not alog's: {callers}"
+    );
+    let callees = list(&["calls", "--symbol", "c", "--in", "main.go", "--outgoing"]);
+    assert_eq!(callees["callees"][0]["text"], "func a() {");
+    let implementations = list(&[
+        "implementations",
+        "--symbol",
+        "Writer",
+        "--in",
+        "alog/log.go",
+    ]);
+    assert_eq!(implementations["implementations"][0]["path"], "main.go");
+    assert_eq!(implementations["implementations"][0]["line"], 3);
+    assert_eq!(implementations["summary"]["implementations"], 1);
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn a_git_pack_is_fetched_at_its_pin_and_its_own_cases_must_pass() {
     let shared = workspace_temp("git-pack-shared");
     write(

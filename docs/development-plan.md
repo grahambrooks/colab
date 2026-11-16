@@ -104,7 +104,7 @@ whichever milestone touches the same code.
 | Constraints on a nested pattern: `inside` / `has` / … take a pattern, not a rule, so a scope cannot say "a `mod` that follows `#[cfg(test)]`" (a Rust attribute is the item's sibling). ast-grep's relational rules take a whole rule | M30 |
 | Packs that name the dependency range they apply to, so `colab fix` after a Renovate bump runs only the packs for what changed (each ecosystem's lockfile read for the version) | M31 |
 | A clean `fix --check` warns that a finding rule matched no files, and so does a `--baseline` run whose findings were all the ref's: for a check, matching nothing is the state wanted, so the warning could be worded by what the run means, or dropped for rules with a `message` | M31 |
-| `type` / `resolves` asked once per match; batching a file's questions (or a server's own type-of-range request) would cut the round trips. Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match | M32 |
+| Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match `type` (a file's questions are batched now, and answers kept for the run) | M32 |
 | `create "<path>" '<template>'`: a new file from a match, made as a `FileOp::Create` so undo and `--verify` reverse it, a file that exists a conflict. Needs file operations in the `refactor` write path, which writes text edits only | M35 |
 | Phased runs (scans) under `--bisect`, `--verify`, `--split-pr`, `--stdin`, `--changed-since` and MCP, which refuse them today | M35 |
 | Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
@@ -113,7 +113,6 @@ whichever milestone touches the same code.
 
 ## Unscheduled
 
-- Call and type hierarchy (`callHierarchy` / `typeHierarchy` on the language-server client), the last IntelliJ navigation gap. Read-only, and `colab references` covers most of the need; schedule it if M23 shows agents need caller trees. Cheap then: the client already makes this kind of request.
 - Property tests (`proptest`) for the DSL parser and tree-sitter edit
   application: random byte ranges must never produce invalid UTF-8
   boundaries ([Goal 4](completed-milestones.md#goal-4--operational-concerns)).
@@ -123,10 +122,11 @@ whichever milestone touches the same code.
 
 ## Non-goals (for now)
 
-- Whole-program semantic analysis. Colab is a syntactic rewriter; if a rule
-  needs type inference it belongs in a language-specific tool, not here. (M19 *delegates*
-  scope-aware rename to the language's own server; colab still computes
-  nothing semantic itself.)
+- Computing semantics itself. colab infers no types and resolves no names:
+  whole-program questions — a binding's type, what a name resolves to,
+  who calls a function, what implements an interface — are *asked* of
+  the language's own server (`type`, `resolves`, `calls`, `called_by`,
+  `implements`; `colab rename`, `references`, `calls`, `implementations`).
 - A colab-specific refactoring UI or editor extension. Preview, per-rule
   apply and undo are `colab server` code actions (see
   [`colab server`](cli.md#colab-server)), so any LSP editor shows them in
