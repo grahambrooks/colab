@@ -70,12 +70,15 @@ pub(crate) fn command_span(argv: &[String], subcommands: &[String]) -> telemetry
     });
     if let Some(sub) = sub {
         span.set("colab.subcommand", sub);
+        // habit's names for a CLI run (its `command` record).
+        span.set("habit.subcommand", sub);
     }
     let mut flags: Vec<String> = argv.iter().skip(1).filter_map(|a| flag_name(a)).collect();
     flags.sort();
     flags.dedup();
     if !flags.is_empty() {
-        span.set("colab.flags", flags);
+        span.set("colab.flags", flags.clone());
+        span.set("habit.flags", flags);
     }
     span
 }
@@ -201,8 +204,13 @@ impl OtlpHttp {
 
     /// The OTLP/JSON request for one trace.
     pub(crate) fn body(&self, trace: &[SpanData]) -> Json {
-        let attributes: Vec<Json> = self
-            .resource
+        let mut resource = self.resource.clone();
+        if !resource.iter().any(|(k, _)| k == "habit.kind")
+            && let Some(kind) = habit_kind(trace)
+        {
+            resource.push(("habit.kind".into(), kind.into()));
+        }
+        let attributes: Vec<Json> = resource
             .iter()
             .map(|(k, v)| json!({"key": k, "value": {"stringValue": v}}))
             .collect();
@@ -262,6 +270,21 @@ impl telemetry::Exporter for OtlpHttp {
                 self.host, self.port
             ),
         }
+    }
+}
+
+/// What a trace is to habit, by its root (`habit.kind` on the resource):
+/// a CLI run is a `command`, an MCP tool call `mcp`; anything else (a
+/// `colab server` walk) is a plain span. Other collectors ignore it.
+fn habit_kind(trace: &[SpanData]) -> Option<&'static str> {
+    let root = trace.iter().find(|s| s.parent.is_none())?;
+    let has = |key: &str| root.attributes.iter().any(|(k, _)| k == key);
+    if has("colab.mcp.tool") {
+        Some("mcp")
+    } else if has("process.exit.code") {
+        Some("command")
+    } else {
+        None
     }
 }
 
@@ -475,6 +498,13 @@ mod tests {
         );
         let resource = &body["resourceSpans"][0]["resource"]["attributes"];
         assert_eq!(resource[0]["value"]["stringValue"], "colab");
+        // A command's trace is habit's `command` record.
+        assert!(
+            resource
+                .to_string()
+                .contains(r#""key":"habit.kind","value":{"stringValue":"command"}"#),
+            "{resource}"
+        );
     }
 
     #[test]

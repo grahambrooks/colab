@@ -313,10 +313,15 @@ changes a command's output or exit code.
 **With habit.** `habit setup claude-code` already puts
 `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` into Claude Code's
 environment, so every colab command an agent runs reports to habit with
-no further setup; elsewhere, `export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`.
-habit keeps each command's root span as a `span` record (service `colab`,
-the span name, its outcome and duration) and drops the child spans;
-`habit status` shows them arriving.
+no further setup; for a terminal, `export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`.
+colab labels each trace in habit's terms, which other collectors ignore:
+a command's resource carries `habit.kind=command` and its root span
+`habit.subcommand` and `habit.flags`, so habit stores a `command` record
+(tool, subcommand, version, exit code, success, duration, flag names,
+repo); an MCP tool call's carries `habit.kind=mcp`; a `colab server` walk
+is a plain `span`. A `habit.kind` set in `OTEL_RESOURCE_ATTRIBUTES` wins.
+habit counts the child spans but does not store them; `habit status`
+shows the records arriving.
 
 ## When something looks wrong
 
