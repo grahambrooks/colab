@@ -1297,7 +1297,14 @@ struct ListRulesArgs {
 
 /// Parse CLI arguments and dispatch to the requested subcommand.
 /// Returns the success exit code (0 or 10).
+///
+/// The command is one [`colab_core::run::Run`]: its oracle, scan facts
+/// and unanswerable questions belong to it alone.
 pub fn run() -> Result<u8> {
+    colab_core::run::Run::new().enter(dispatch)
+}
+
+fn dispatch() -> Result<u8> {
     let argv: Vec<String> = std::env::args().collect();
     if let Some(value) = crate::help_json::requested(&Args::command(), &argv) {
         print_json(&value)?;

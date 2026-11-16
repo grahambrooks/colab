@@ -558,36 +558,46 @@ impl Backend {
         let handle = tokio::runtime::Handle::current();
         let mut seen = 0usize;
         let mut changing = 0usize;
+        // A run of its own: requests on other runtime workers never share
+        // its oracle, facts or failures.
+        let run = colab_core::run::Run::new();
         let changes = tokio::task::block_in_place(|| {
-            let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
-            for root in &roots {
-                walker::walk_with(&refactoring, root, &WalkOptions::default(), &mut |change| {
-                    seen += 1;
-                    changing += usize::from(change.changed());
-                    if let Some(token) = &progress
-                        && seen.is_multiple_of(PROGRESS_EVERY)
-                    {
-                        handle.block_on(self.report_progress(
-                            token,
-                            format!("{seen} file(s) scanned, {changing} to change"),
-                        ));
-                    }
-                    if change.changed()
-                        && let Some(url) = Uri::from_file_path(&change.path)
-                    {
-                        let end = position_at(&change.before, change.before.len());
-                        changes.insert(
-                            url,
-                            vec![TextEdit::new(
-                                Range::new(Position::new(0, 0), end),
-                                change.after.clone(),
-                            )],
-                        );
-                    }
-                    Ok(())
-                })?;
-            }
-            Ok::<_, Error>(changes)
+            run.enter(|| {
+                let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
+                for root in &roots {
+                    walker::walk_with(
+                        &refactoring,
+                        root,
+                        &WalkOptions::default(),
+                        &mut |change| {
+                            seen += 1;
+                            changing += usize::from(change.changed());
+                            if let Some(token) = &progress
+                                && seen.is_multiple_of(PROGRESS_EVERY)
+                            {
+                                handle.block_on(self.report_progress(
+                                    token,
+                                    format!("{seen} file(s) scanned, {changing} to change"),
+                                ));
+                            }
+                            if change.changed()
+                                && let Some(url) = Uri::from_file_path(&change.path)
+                            {
+                                let end = position_at(&change.before, change.before.len());
+                                changes.insert(
+                                    url,
+                                    vec![TextEdit::new(
+                                        Range::new(Position::new(0, 0), end),
+                                        change.after.clone(),
+                                    )],
+                                );
+                            }
+                            Ok(())
+                        },
+                    )?;
+                }
+                Ok::<_, Error>(changes)
+            })
         });
         if let Some(token) = progress {
             let message = match &changes {

@@ -20,7 +20,9 @@
 use std::cell::RefCell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
+
+use crate::run::Run;
 
 /// What a constraint asks about a binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,26 +59,20 @@ pub trait Oracle: Send + Sync {
     ) -> Result<bool, String>;
 }
 
-static ORACLE: RwLock<Option<Arc<dyn Oracle>>> = RwLock::new(None);
-static FAILURE: Mutex<Option<String>> = Mutex::new(None);
-
 thread_local! {
     static PATH: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
 
-/// Answer queries with `oracle` until [`uninstall`].
+/// Answer the current [`Run`]'s queries with `oracle` until [`uninstall`].
 pub fn install(oracle: Arc<dyn Oracle>) {
-    *ORACLE
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(oracle);
+    let run = Run::here();
+    run.set_oracle(Some(oracle));
     take_failure();
 }
 
-/// Stop answering queries; later ones fail.
+/// Stop answering the current run's queries; later ones fail.
 pub fn uninstall() {
-    *ORACLE
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    Run::here().set_oracle(None);
 }
 
 /// Run `f` with queries asked about the file at `path`.
@@ -98,10 +94,8 @@ pub fn at_path<T>(path: &Path, f: impl FnOnce() -> T) -> T {
 /// Whether the binding at `span` of `source` satisfies `query`. `false`
 /// when it cannot be told, with the reason kept for [`take_failure`].
 pub fn ask(source: &str, span: Range<usize>, query: &Query) -> bool {
-    let oracle = ORACLE
-        .read()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
+    let run = Run::here();
+    let oracle = run.oracle();
     let path = PATH.with(|p| p.borrow().clone());
     let answer = match (oracle, path) {
         (Some(oracle), Some(path)) => oracle.ask(&path, source, span, query),
@@ -114,7 +108,8 @@ pub fn ask(source: &str, span: Range<usize>, query: &Query) -> bool {
     match answer {
         Ok(holds) => holds,
         Err(why) => {
-            let mut failure = FAILURE
+            let mut failure = run
+                .semantic_failure()
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             failure.get_or_insert(why);
@@ -123,10 +118,12 @@ pub fn ask(source: &str, span: Range<usize>, query: &Query) -> bool {
     }
 }
 
-/// The first query that could not be answered since the last call, if
-/// any. A run that gets one must fail rather than report its matches.
+/// The first query the current run could not answer since the last
+/// call, if any. A run that gets one must fail rather than report its
+/// matches.
 pub fn take_failure() -> Option<String> {
-    FAILURE
+    Run::here()
+        .semantic_failure()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take()

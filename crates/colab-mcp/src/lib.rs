@@ -273,7 +273,18 @@ pub fn handle_with(
     }
 }
 
+/// One `tools/call`, as a run of its own: calls never share an oracle,
+/// scan facts or an unanswerable question.
 fn handle_call(
+    id: Option<Value>,
+    params: Option<&Value>,
+    backends: &BackendRegistry,
+    extra: &dyn ToolProvider,
+) -> Value {
+    colab_core::run::Run::new().enter(|| handle_call_in_run(id, params, backends, extra))
+}
+
+fn handle_call_in_run(
     id: Option<Value>,
     params: Option<&Value>,
     backends: &BackendRegistry,
@@ -441,7 +452,8 @@ fn handle_call_with_progress<W: Write>(
         token,
         last_emitted: 0,
     };
-    let outcome = run_script(&arguments, backends, mode, &mut sink);
+    let outcome =
+        colab_core::run::Run::new().enter(|| run_script(&arguments, backends, mode, &mut sink));
     Ok(tool_response(id, outcome))
 }
 

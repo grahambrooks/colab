@@ -301,13 +301,16 @@ where
     F: FnMut(FileChange) -> Result<()>,
 {
     let mut skipped = Vec::new();
+    // Workers are the pool's threads, not the caller's: each enters the
+    // caller's run, so its rules see that run's oracle and facts.
+    let run = crate::run::Run::current();
+    let compute = |p: &PathBuf| match &run {
+        Some(run) => run.enter(|| compute_change(transformer, p)),
+        None => compute_change(transformer, p),
+    };
     for chunk in paths.chunks(CHUNK_SIZE) {
-        let changes: Vec<std::result::Result<FileChange, SkippedFile>> = pool.install(|| {
-            chunk
-                .par_iter()
-                .map(|p| compute_change(transformer, p))
-                .collect()
-        });
+        let changes: Vec<std::result::Result<FileChange, SkippedFile>> =
+            pool.install(|| chunk.par_iter().map(compute).collect());
         for change in changes {
             let change = match change {
                 Ok(change) => change,
@@ -498,6 +501,50 @@ mod tests {
         })
         .unwrap();
         seen
+    }
+
+    /// Changes a file only if its text is a fact of the current run.
+    struct KnownToTheRun;
+
+    impl CodeTransformer for KnownToTheRun {
+        fn is_file_relevant(&self, path: &Path) -> bool {
+            path.extension().and_then(|s| s.to_str()) == Some("txt")
+        }
+        fn apply(&self, source: &str) -> String {
+            if crate::facts::contains("seen", "F", source) {
+                format!("{source}!")
+            } else {
+                source.to_string()
+            }
+        }
+    }
+
+    #[test]
+    fn workers_answer_from_the_run_that_started_the_walk() {
+        let root = temp_dir("run");
+        for i in 0..64 {
+            write_file(&root.join(format!("{i:02}.txt")), &format!("f{i}"));
+        }
+        let mut facts = crate::facts::Facts::default();
+        for i in 0..64 {
+            facts.add("seen", "F", &format!("f{i}"));
+        }
+        let run = crate::run::Run::new();
+        let opts = WalkOptions {
+            jobs: Some(4),
+            ..WalkOptions::default()
+        };
+        let mut changed = 0;
+        run.enter(|| {
+            crate::facts::install(facts);
+            walk_with(&KnownToTheRun, &root, &opts, &mut |change| {
+                changed += usize::from(change.changed());
+                Ok(())
+            })
+            .unwrap();
+        });
+        assert_eq!(changed, 64, "every worker saw the run's facts");
+        assert!(run.take_failure().is_none());
     }
 
     #[test]

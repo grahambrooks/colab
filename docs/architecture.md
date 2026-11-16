@@ -472,12 +472,36 @@ M35 relaxes "every rule acts on one file" for **reading** only.
 - Deferred: `create` (a new file from a match), which needs `FileOp`s in
   the `refactor` write path.
 
+## Run state
+
+`Operation::apply` is string in, string out, so the state a run's rules
+share — the semantic oracle, a phased run's scan facts, and the first
+question either could not answer — cannot be passed to them. It lives
+in a `colab_core::run::Run`, which a rule reads as the *current* run:
+
+- `Run::enter` makes a run current on a thread until it returns or
+  unwinds. The CLI enters one per command, `colab mcp` one per tool
+  call, `colab server` one per walk. A thread that never entered a run
+  gets a detached one of its own, so nothing is process-wide and two
+  overlapping requests in one server cannot see each other's oracle,
+  facts or failures.
+- The walker's workers are a rayon pool's threads, not the caller's;
+  each enters the caller's run (`Run::current`) before applying rules.
+  Any new thread or pool that applies rules must do the same.
+- `semantic::install` / `facts::install` set the current run's oracle
+  and facts; `semantic::ask` / `facts::contains` read them, recording a
+  failure in the run when they cannot answer; `Run::take_failure` is
+  what a run path checks before writing.
+
 ## Error handling
 
 Every fallible operation returns `colab_core::Result<T>`. I/O
-errors are wrapped with `Error::io_at(path, source)`. The CLI maps
-each error variant to a documented exit code (1/2/3/4) and emits
-one `error!` log line. Library code never panics on user input;
+errors are wrapped with `Error::io_at(path, source)`; there is no
+`From<io::Error>`, so a bare `?` cannot drop the path. `Config` means
+the request should change, `Server` that a language server failed, `Git`
+that a git command failed or the work tree is in the wrong state;
+`Error::kind` names each for MCP. The CLI maps each error variant to a
+documented exit code (1/2/3/4) and emits one `error!` log line. Library code never panics on user input;
 `expect`/`panic!` is reserved for genuinely unreachable conditions
 (e.g. failing to load a built-in tree-sitter grammar).
 

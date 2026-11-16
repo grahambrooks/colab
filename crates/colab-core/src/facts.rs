@@ -14,7 +14,8 @@
 //! rather than answer from an empty set ([`take_failure`]).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Mutex, RwLock};
+
+use crate::run::Run;
 
 /// Each scan's bindings: set name → metavariable (no sigil) → texts.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -52,52 +53,50 @@ impl Facts {
     }
 }
 
-static FACTS: RwLock<Option<Facts>> = RwLock::new(None);
-static FAILURE: Mutex<Option<String>> = Mutex::new(None);
-
-/// Answer `in` checks from `facts` until [`uninstall`].
+/// Answer the current [`Run`]'s `in` checks from `facts` until
+/// [`uninstall`].
 pub fn install(facts: Facts) {
-    *FACTS
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(facts);
+    Run::here().set_facts(Some(facts));
 }
 
+/// Stop answering the current run's `in` checks; later ones fail.
 pub fn uninstall() {
-    *FACTS
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    Run::here().set_facts(None);
 }
 
-/// Whether `text` was bound to `var` by the scan `set`. `false` when no
-/// facts are installed, the reason kept for [`take_failure`].
+/// Whether `text` was bound to `var` by the scan `set` in the current
+/// run. `false` when the run has no facts, the reason kept for
+/// [`take_failure`].
 pub fn contains(set: &str, var: &str, text: &str) -> bool {
-    let facts = FACTS
-        .read()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    match facts.as_ref() {
-        Some(facts) => facts
-            .sets
-            .get(set)
-            .and_then(|vars| vars.get(var))
-            .is_some_and(|values| values.contains(text)),
-        None => {
-            FAILURE
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get_or_insert_with(|| {
-                    format!(
-                        "`in {set}` needs the script's scan phases, which this run did not make; \
-                         run it with `colab refactor`, `colab fix` or `colab find`"
-                    )
-                });
-            false
-        }
-    }
+    let run = Run::here();
+    let found = run.with_facts(|facts| {
+        facts.map(|facts| {
+            facts
+                .sets
+                .get(set)
+                .and_then(|vars| vars.get(var))
+                .is_some_and(|values| values.contains(text))
+        })
+    });
+    found.unwrap_or_else(|| {
+        run.facts_failure()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_or_insert_with(|| {
+                format!(
+                    "`in {set}` needs the script's scan phases, which this run did not make; \
+                     run it with `colab refactor`, `colab fix` or `colab find`"
+                )
+            });
+        false
+    })
 }
 
-/// The first `in` check that had no facts to ask, since the last call.
+/// The first `in` check the current run had no facts to ask, since the
+/// last call.
 pub fn take_failure() -> Option<String> {
-    FAILURE
+    Run::here()
+        .facts_failure()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take()
