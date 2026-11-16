@@ -1786,7 +1786,24 @@ fn lsp_hover_and_workspace_code_action_round_trip() {
     let changes = resolved["result"]["edit"]["changes"].as_object().unwrap();
     let (uri, edits) = changes.iter().next().unwrap();
     assert!(uri.ends_with("/main.go"), "{uri}");
-    assert_eq!(edits[0]["newText"], GO_EXPECTED);
+    // Line hunks of the input; applied, they give the expected file.
+    let offset = |pos: &serde_json::Value| -> usize {
+        let line = usize::try_from(pos["line"].as_u64().unwrap()).unwrap();
+        let start: usize = GO_INPUT
+            .split_inclusive('\n')
+            .take(line)
+            .map(str::len)
+            .sum();
+        start + usize::try_from(pos["character"].as_u64().unwrap()).unwrap()
+    };
+    let mut text = GO_INPUT.to_string();
+    let mut hunks: Vec<&serde_json::Value> = edits.as_array().unwrap().iter().collect();
+    hunks.sort_by_key(|e| std::cmp::Reverse(offset(&e["range"]["start"])));
+    for e in hunks {
+        let (from, to) = (offset(&e["range"]["start"]), offset(&e["range"]["end"]));
+        text.replace_range(from..to, e["newText"].as_str().unwrap());
+    }
+    assert_eq!(text, GO_EXPECTED);
     assert_eq!(fs::read_to_string(root.join("main.go")).unwrap(), GO_INPUT);
 
     drop(lsp);

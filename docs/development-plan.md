@@ -127,8 +127,10 @@ whichever milestone touches the same code.
   needs type inference it belongs in a language-specific tool, not here. (M19 *delegates*
   scope-aware rename to the language's own server; colab still computes
   nothing semantic itself.)
-- Refactoring UI. The VS Code extension stays minimal — a thin wrapper over
-  the LSP and the CLI.
+- A colab-specific refactoring UI or editor extension. Preview, per-rule
+  apply and undo are `colab server` code actions (see
+  [`colab server`](cli.md#colab-server)), so any LSP editor shows them in
+  its own refactor preview.
 - Merging rules' edits with each other. Rules in one script are ordered
   and sequential, each seeing the previous one's output, so there is
   nothing to merge between them. (A file that changed on disk while a

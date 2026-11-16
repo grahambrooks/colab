@@ -64,6 +64,14 @@ fn error_range(err: &Error) -> Range {
     }
 }
 
+mod edits;
+
+/// The commands `colab server` executes (`workspace/executeCommand`).
+const APPLY_COMMAND: &str = "colab.apply";
+const UNDO_COMMAND: &str = "colab.undo";
+/// How many applied runs `colab: undo` can step back through.
+const UNDO_DEPTH: usize = 10;
+
 const STATIC_ACTIONS: &[(&str, &str)] = &[
     ("replace", "replace \"$0\""),
     ("delete", "delete"),
@@ -87,6 +95,15 @@ struct Backend {
     /// The client shows server-initiated progress
     /// (`window.workDoneProgress`), used while a workspace edit walks.
     progress: AtomicBool,
+    /// The client takes annotated document changes
+    /// (`workspace.workspaceEdit.changeAnnotationSupport`), so a preview
+    /// action can ask before applying, hunk by hunk.
+    annotations: AtomicBool,
+    /// The client applies server-sent edits (`workspace.applyEdit`), so
+    /// `colab: apply` runs as a command and can be undone.
+    apply_edit: AtomicBool,
+    /// Applied runs, newest last, for `colab: undo`.
+    undo: AsyncMutex<Vec<edits::Applied>>,
 }
 
 /// A progress report per this many files walked.
@@ -159,6 +176,9 @@ impl Backend {
             roots: AsyncMutex::new(Vec::new()),
             lazy_edits: AtomicBool::new(false),
             progress: AtomicBool::new(false),
+            annotations: AtomicBool::new(false),
+            apply_edit: AtomicBool::new(false),
+            undo: AsyncMutex::new(Vec::new()),
         }
     }
 
@@ -272,6 +292,15 @@ impl LanguageServer for Backend {
             .and_then(|w| w.work_done_progress)
             .unwrap_or(false);
         self.progress.store(progress, Ordering::Relaxed);
+        let workspace = params.capabilities.workspace.as_ref();
+        let annotations = workspace
+            .and_then(|w| w.workspace_edit.as_ref())
+            .is_some_and(|e| {
+                e.document_changes == Some(true) && e.change_annotation_support.is_some()
+            });
+        self.annotations.store(annotations, Ordering::Relaxed);
+        let apply_edit = workspace.and_then(|w| w.apply_edit) == Some(true);
+        self.apply_edit.store(apply_edit, Ordering::Relaxed);
 
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
@@ -296,6 +325,10 @@ impl LanguageServer for Backend {
                         ..Default::default()
                     },
                 )),
+                execute_command_provider: Some(ExecuteCommandOptions {
+                    commands: vec![APPLY_COMMAND.into(), UNDO_COMMAND.into()],
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             // clangd's UTF-8 offsets extension; positions here are UTF-16.
@@ -425,7 +458,9 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
         let offset = offset_at(&text, params.range.start);
-        let mut actions = Vec::new();
+        // What to offer the actions for: the rule under the cursor, then
+        // the whole script.
+        let mut targets: Vec<(String, Option<usize>)> = Vec::new();
         if let Some((index, check)) = checks
             .iter()
             .enumerate()
@@ -437,22 +472,57 @@ impl LanguageServer for Backend {
                 .ok()
                 .and_then(|rules| rules.first())
                 .map_or("", String::as_str);
-            actions.push(self.workspace_action(
-                format!("colab: apply `{description}` to the workspace"),
-                &uri,
-                Some(index),
-            ));
+            targets.push((format!("`{description}`"), Some(index)));
         }
-        actions.push(self.workspace_action(
-            "colab: apply the whole script to the workspace".into(),
-            &uri,
-            None,
-        ));
+        targets.push(("the whole script".into(), None));
+        let preview = self.annotations.load(Ordering::Relaxed);
+        let apply_edit = self.apply_edit.load(Ordering::Relaxed);
+        let mut actions = Vec::new();
+        for (what, rule) in &targets {
+            if preview {
+                actions.push(self.workspace_action(
+                    format!("colab: preview {what} across the workspace"),
+                    &uri,
+                    *rule,
+                    true,
+                ));
+            }
+            let title = format!("colab: apply {what} to the workspace");
+            actions.push(if apply_edit {
+                // A command, so the server sees the edit applied and can
+                // offer to undo it.
+                CodeAction {
+                    title: title.clone(),
+                    kind: Some(CodeActionKind::REFACTOR_REWRITE),
+                    command: Some(Command::new(
+                        title,
+                        APPLY_COMMAND.into(),
+                        Some(vec![serde_json::json!({
+                            "uri": uri.as_str(),
+                            "rule": rule,
+                            "label": what,
+                        })]),
+                    )),
+                    ..Default::default()
+                }
+            } else {
+                self.workspace_action(title, &uri, *rule, false)
+            });
+        }
+        if apply_edit && let Some(last) = self.undo.lock().await.last() {
+            let title = format!("colab: undo applying {}", last.label);
+            actions.push(CodeAction {
+                title: title.clone(),
+                kind: Some(CodeActionKind::REFACTOR_REWRITE),
+                command: Some(Command::new(title, UNDO_COMMAND.into(), None)),
+                ..Default::default()
+            });
+        }
         if !self.lazy_edits.load(Ordering::Relaxed) {
-            for action in &mut actions {
-                let rule = action_rule(action);
+            for action in actions.iter_mut().filter(|a| a.data.is_some()) {
+                let (rule, preview) = (action_rule(action), action_preview(action));
                 action.edit = Some(
-                    self.workspace_edit(&uri, &text, rule)
+                    self.edit_for(&uri, &text, rule, preview)
                         .await
                         .map_err(lsp_error)?,
                 );
@@ -481,13 +551,43 @@ impl LanguageServer for Backend {
         let Some(text) = self.documents.lock().await.get(&uri).cloned() else {
             return Ok(action);
         };
-        let rule = action_rule(&action);
+        let (rule, preview) = (action_rule(&action), action_preview(&action));
         action.edit = Some(
-            self.workspace_edit(&uri, &text, rule)
+            self.edit_for(&uri, &text, rule, preview)
                 .await
                 .map_err(lsp_error)?,
         );
         Ok(action)
+    }
+
+    async fn execute_command(
+        &self,
+        params: ExecuteCommandParams,
+    ) -> LspResult<Option<serde_json::Value>> {
+        match params.command.as_str() {
+            APPLY_COMMAND => {
+                let arg = params.arguments.first().cloned().unwrap_or_default();
+                let Some(uri) = arg["uri"].as_str().and_then(|u| u.parse::<Uri>().ok()) else {
+                    return Err(tower_lsp_server::jsonrpc::Error::invalid_params(
+                        "colab.apply takes {uri, rule?}",
+                    ));
+                };
+                let rule = arg["rule"].as_u64().and_then(|r| usize::try_from(r).ok());
+                let label = arg["label"].as_str().unwrap_or("the script").to_string();
+                let Some(text) = self.documents.lock().await.get(&uri).cloned() else {
+                    return Ok(None);
+                };
+                self.apply_and_remember(&uri, &text, rule, label).await?;
+                Ok(None)
+            }
+            UNDO_COMMAND => {
+                self.undo_last().await?;
+                Ok(None)
+            }
+            other => Err(tower_lsp_server::jsonrpc::Error::invalid_params(format!(
+                "unknown command `{other}`; colab server runs {APPLY_COMMAND} and {UNDO_COMMAND}"
+            ))),
+        }
     }
 }
 
@@ -501,6 +601,16 @@ fn action_rule(action: &CodeAction) -> Option<usize> {
         .and_then(|r| usize::try_from(r).ok())
 }
 
+/// Whether a workspace code action is the preview (annotated) variant.
+fn action_preview(action: &CodeAction) -> bool {
+    action
+        .data
+        .as_ref()
+        .and_then(|d| d.get("preview"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn lsp_error(err: Error) -> tower_lsp_server::jsonrpc::Error {
     let mut out = tower_lsp_server::jsonrpc::Error::internal_error();
     out.message = err.to_string().into();
@@ -508,25 +618,145 @@ fn lsp_error(err: Error) -> tower_lsp_server::jsonrpc::Error {
 }
 
 impl Backend {
-    fn workspace_action(&self, title: String, uri: &Uri, rule: Option<usize>) -> CodeAction {
+    fn workspace_action(
+        &self,
+        title: String,
+        uri: &Uri,
+        rule: Option<usize>,
+        preview: bool,
+    ) -> CodeAction {
         CodeAction {
             title,
             kind: Some(CodeActionKind::REFACTOR_REWRITE),
-            data: Some(serde_json::json!({ "uri": uri.as_str(), "rule": rule })),
+            data: Some(
+                serde_json::json!({ "uri": uri.as_str(), "rule": rule, "preview": preview }),
+            ),
             ..Default::default()
         }
     }
 
-    /// Run the script — or just rule `rule` — over every workspace root and
-    /// return the rewrites as one `WorkspaceEdit`, a whole-document edit
-    /// per changed file. Nothing is written: the editor applies it, after
-    /// whatever preview it offers.
+    /// The edit for running the script (or rule `rule`) over the
+    /// workspace: annotated for the editor's preview when `preview`.
+    async fn edit_for(
+        &self,
+        uri: &Uri,
+        text: &str,
+        rule: Option<usize>,
+        preview: bool,
+    ) -> colab_core::Result<WorkspaceEdit> {
+        Ok(edits::to_edit(&self.plan(uri, text, rule).await?, preview))
+    }
+
+    /// Run the script (or rule `rule`), have the client apply the result,
+    /// and keep it for `colab: undo`.
+    async fn apply_and_remember(
+        &self,
+        uri: &Uri,
+        text: &str,
+        rule: Option<usize>,
+        label: String,
+    ) -> LspResult<()> {
+        let files = self.plan(uri, text, rule).await.map_err(lsp_error)?;
+        if files.is_empty() {
+            self.client
+                .show_message(MessageType::INFO, format!("colab: {label} changes nothing"))
+                .await;
+            return Ok(());
+        }
+        let response = self
+            .client
+            .apply_edit(edits::to_edit(&files, false))
+            .await?;
+        if !response.applied {
+            let why = response
+                .failure_reason
+                .unwrap_or_else(|| "no reason given".into());
+            self.client
+                .show_message(
+                    MessageType::WARNING,
+                    format!("colab: the editor did not apply {label}: {why}"),
+                )
+                .await;
+            return Ok(());
+        }
+        let count = files.len();
+        let mut undo = self.undo.lock().await;
+        undo.push(edits::Applied {
+            label: label.clone(),
+            files,
+        });
+        let excess = undo.len().saturating_sub(UNDO_DEPTH);
+        undo.drain(..excess);
+        drop(undo);
+        self.client
+            .show_message(
+                MessageType::INFO,
+                format!("colab: {label} changed {count} file(s); `colab: undo` puts them back"),
+            )
+            .await;
+        Ok(())
+    }
+
+    /// Put back the newest applied run, keeping edits made since that do
+    /// not overlap it; a file whose later edits do is left alone, and named.
+    async fn undo_last(&self) -> LspResult<()> {
+        let Some(applied) = self.undo.lock().await.pop() else {
+            self.client
+                .show_message(MessageType::INFO, "colab: nothing to undo")
+                .await;
+            return Ok(());
+        };
+        let open = self.documents.lock().await.clone();
+        let (edit, skipped) = edits::undo_edit(&applied, |file| {
+            open.get(&file.uri)
+                .cloned()
+                .or_else(|| std::fs::read_to_string(&file.path).ok())
+        });
+        let response = self.client.apply_edit(edit).await?;
+        let mut message = if response.applied {
+            format!("colab: undid {}", applied.label)
+        } else {
+            format!(
+                "colab: the editor did not apply the undo of {}: {}",
+                applied.label,
+                response
+                    .failure_reason
+                    .unwrap_or_else(|| "no reason given".into())
+            )
+        };
+        if !skipped.is_empty() {
+            let names: Vec<String> = skipped.iter().map(|p| p.display().to_string()).collect();
+            let _ = write!(
+                message,
+                "; left alone, since they changed where the run did: {}",
+                names.join(", ")
+            );
+        }
+        self.client.show_message(MessageType::INFO, message).await;
+        Ok(())
+    }
+
+    /// Run the script — or just rule `rule` — over every workspace root
+    /// and return the rewrites as one `WorkspaceEdit` of line hunks.
+    /// Nothing is written: the editor applies it.
+    #[cfg(test)]
     async fn workspace_edit(
         &self,
         uri: &Uri,
         text: &str,
         rule: Option<usize>,
     ) -> colab_core::Result<WorkspaceEdit> {
+        self.edit_for(uri, text, rule, false).await
+    }
+
+    /// Each file the script (or rule `rule`) would change across the
+    /// workspace roots, with the rules that changed it.
+    async fn plan(
+        &self,
+        uri: &Uri,
+        text: &str,
+        rule: Option<usize>,
+    ) -> colab_core::Result<Vec<edits::Planned>> {
         let base = uri
             .to_file_path()
             .map_or_else(|| PathBuf::from("script.colab"), Cow::into_owned);
@@ -561,9 +791,10 @@ impl Backend {
         // A run of its own: requests on other runtime workers never share
         // its oracle, facts or failures.
         let run = colab_core::run::Run::new();
+        let labels: Vec<String> = refactoring.rules.iter().map(ToString::to_string).collect();
         let changes = tokio::task::block_in_place(|| {
             run.enter(|| {
-                let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
+                let mut changes: Vec<edits::Planned> = Vec::new();
                 for root in &roots {
                     walker::walk_with(
                         &refactoring,
@@ -581,16 +812,19 @@ impl Backend {
                                 ));
                             }
                             if change.changed()
-                                && let Some(url) = Uri::from_file_path(&change.path)
+                                && let Some(uri) = Uri::from_file_path(&change.path)
                             {
-                                let end = position_at(&change.before, change.before.len());
-                                changes.insert(
-                                    url,
-                                    vec![TextEdit::new(
-                                        Range::new(Position::new(0, 0), end),
-                                        change.after.clone(),
-                                    )],
-                                );
+                                changes.push(edits::Planned {
+                                    uri,
+                                    rules: change
+                                        .rules_fired
+                                        .iter()
+                                        .filter_map(|&i| labels.get(i).cloned())
+                                        .collect(),
+                                    path: change.path,
+                                    before: change.before,
+                                    after: change.after,
+                                });
                             }
                             Ok(())
                         },
@@ -606,10 +840,7 @@ impl Backend {
             };
             self.end_progress(token, message).await;
         }
-        Ok(WorkspaceEdit {
-            changes: Some(changes?),
-            ..Default::default()
-        })
+        changes
     }
 
     /// Start a progress report for a workspace edit, if the client shows
@@ -1252,6 +1483,154 @@ mod tests {
         assert_eq!(word_at(text, 5), Some("match"));
     }
 
+    /// Apply an LSP `changes` map to the files on disk, as an editor would.
+    fn apply_on_disk(edit: &serde_json::Value) {
+        for (uri, edits) in edit["changes"].as_object().into_iter().flatten() {
+            let path = uri
+                .parse::<Uri>()
+                .unwrap()
+                .to_file_path()
+                .unwrap()
+                .into_owned();
+            let mut text = std::fs::read_to_string(&path).unwrap();
+            let mut edits: Vec<TextEdit> = serde_json::from_value(edits.clone()).unwrap();
+            edits.sort_by_key(|e| std::cmp::Reverse((e.range.start.line, e.range.start.character)));
+            for e in edits {
+                let (from, to) = (
+                    offset_at(&text, e.range.start),
+                    offset_at(&text, e.range.end),
+                );
+                text.replace_range(from..to, &e.new_text);
+            }
+            std::fs::write(&path, text).unwrap();
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn apply_then_undo_keeps_a_later_edit_elsewhere_in_the_file() {
+        use futures::{SinkExt, StreamExt};
+        let root = std::env::temp_dir().join(format!("colab-lsp-undo-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("main.go");
+        std::fs::write(&file, "package main\n\nimport \"a\"\n\nfunc main() {}\n").unwrap();
+
+        let (service, socket) = LspService::new(|client| Backend::new(client, registry()));
+        // The editor: apply every `workspace/applyEdit` to disk, say yes.
+        let (mut requests, mut responses) = socket.split();
+        tokio::spawn(async move {
+            while let Some(request) = requests.next().await {
+                let applied = request.method() == "workspace/applyEdit";
+                if applied {
+                    apply_on_disk(&request.params().unwrap()["edit"]);
+                }
+                if let Some(id) = request.id().cloned() {
+                    let body = if applied {
+                        serde_json::json!({"applied": true})
+                    } else {
+                        serde_json::Value::Null
+                    };
+                    let _ = responses
+                        .send(tower_lsp_server::jsonrpc::Response::from_ok(id, body))
+                        .await;
+                }
+            }
+        });
+        let mut service = service;
+        let initialize = tower_lsp_server::jsonrpc::Request::build("initialize")
+            .params(serde_json::json!({
+                "capabilities": {"workspace": {
+                    "applyEdit": true,
+                    "workspaceEdit": {"documentChanges": true, "changeAnnotationSupport": {}},
+                }},
+                "rootUri": Uri::from_file_path(&root).unwrap(),
+            }))
+            .id(1)
+            .finish();
+        tower::ServiceExt::ready(&mut service).await.unwrap();
+        tower::Service::call(&mut service, initialize)
+            .await
+            .unwrap();
+        let initialized = tower_lsp_server::jsonrpc::Request::build("initialized")
+            .params(serde_json::json!({}))
+            .finish();
+        tower::Service::call(&mut service, initialized)
+            .await
+            .unwrap();
+        let backend = service.inner();
+
+        let uri = Uri::from_file_path(root.join("fix.colab")).unwrap();
+        let text = "refactor \"x\" { match go::import \"a\" { replace \"b\" } }\n";
+        backend
+            .documents
+            .lock()
+            .await
+            .insert(uri.clone(), text.into());
+        let titles = |actions: Option<CodeActionResponse>| -> Vec<String> {
+            actions
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| match a {
+                    CodeActionOrCommand::CodeAction(a) => a.title,
+                    CodeActionOrCommand::Command(c) => c.title,
+                })
+                .collect()
+        };
+        let ask = || CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range::new(Position::new(0, 20), Position::new(0, 20)),
+            context: CodeActionContext::default(),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+        let offered = titles(backend.code_action(ask()).await.unwrap());
+        assert!(
+            offered.iter().any(|t| t.starts_with("colab: preview `")),
+            "{offered:?}"
+        );
+        assert!(
+            offered.iter().any(|t| t.starts_with("colab: apply `")),
+            "{offered:?}"
+        );
+        assert!(!offered.iter().any(|t| t.contains("undo")), "{offered:?}");
+
+        let run = |command: &str, arguments: Vec<serde_json::Value>| ExecuteCommandParams {
+            command: command.into(),
+            arguments,
+            work_done_progress_params: Default::default(),
+        };
+        let rule = serde_json::json!({"uri": uri.as_str(), "rule": 0, "label": "`a -> b`"});
+        backend
+            .execute_command(run(APPLY_COMMAND, vec![rule]))
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "package main\n\nimport \"b\"\n\nfunc main() {}\n"
+        );
+        let offered = titles(backend.code_action(ask()).await.unwrap());
+        assert!(
+            offered.contains(&"colab: undo applying `a -> b`".to_string()),
+            "{offered:?}"
+        );
+
+        // A later edit, away from the run's: the undo keeps it.
+        std::fs::write(
+            &file,
+            "package main\n\nimport \"b\"\n\nfunc main() { run() }\n",
+        )
+        .unwrap();
+        backend
+            .execute_command(run(UNDO_COMMAND, vec![]))
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "package main\n\nimport \"a\"\n\nfunc main() { run() }\n"
+        );
+        assert!(backend.undo.lock().await.is_empty());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn a_long_workspace_edit_reports_progress() {
         use futures::{SinkExt, StreamExt};
@@ -1354,16 +1733,20 @@ mod tests {
         let all = backend.workspace_edit(&uri, text, None).await.unwrap();
         let only_second = backend.workspace_edit(&uri, text, Some(1)).await.unwrap();
         let file_uri = Uri::from_file_path(&file).unwrap();
-        let after_all = &all.changes.as_ref().unwrap()[&file_uri][0];
+        // Hunks, not the whole file: only the import lines change.
         assert_eq!(
-            after_all.new_text,
-            "package main\n\nimport \"b\"\nimport \"d\"\n"
+            all.changes.as_ref().unwrap()[&file_uri],
+            [TextEdit::new(
+                Range::new(Position::new(2, 0), Position::new(4, 0)),
+                "import \"b\"\nimport \"d\"\n".into()
+            )]
         );
-        assert_eq!(after_all.range.end, Position::new(4, 0));
-        let after_one = &only_second.changes.as_ref().unwrap()[&file_uri][0];
         assert_eq!(
-            after_one.new_text,
-            "package main\n\nimport \"a\"\nimport \"d\"\n"
+            only_second.changes.as_ref().unwrap()[&file_uri],
+            [TextEdit::new(
+                Range::new(Position::new(3, 0), Position::new(4, 0)),
+                "import \"d\"\n".into()
+            )]
         );
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),

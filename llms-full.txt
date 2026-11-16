@@ -2280,15 +2280,31 @@ Start the colab Language Server on stdio, for editing `.colab` files:
 - **Hover.** On `<lang>::<module>`: the module's description and every
   action it supports. On an action keyword: what it does *for that
   rule's module* — or that the module has no such action.
-- **Code actions: apply to the workspace.** On any rule of a script
-  that compiles, *colab: apply `<rule>` to the workspace* and *colab:
-  apply the whole script*. Each is a standard `WorkspaceEdit` (one
-  whole-file edit per changed file under the workspace roots), so the
-  editor shows its usual refactor preview before anything is written.
-  The edit is computed on `codeAction/resolve`; clients without lazy
-  resolution get it up front. While it walks the workspace, a client
-  that shows server-initiated progress (`window.workDoneProgress`) sees
-  `colab: <script>` with the files scanned so far, every 25 files.
+- **Code actions: preview, apply, undo.** On any rule of a script that
+  compiles, for that rule and for the whole script:
+  - *colab: preview `<rule>` across the workspace* — offered when the
+    client takes change annotations
+    (`workspace.workspaceEdit.changeAnnotationSupport` with
+    `documentChanges`). The edit's hunks are annotated with the rules
+    that made them, each marked `needsConfirmation`, so the editor opens
+    its refactor preview grouped by rule and applies only the hunks and
+    files kept there.
+  - *colab: apply `<rule>` to the workspace* — when the client applies
+    server-sent edits (`workspace.applyEdit`), a `colab.apply` command:
+    the server computes the edit, sends `workspace/applyEdit`, and keeps
+    what it changed. Otherwise the action carries the edit itself.
+  - *colab: undo applying `<rule>`* — after a `colab.apply`, the
+    `colab.undo` command puts the newest applied run back (up to ten
+    deep). Each file is three-way merged — the file now, the file before
+    the run, based on the file as the run left it — so edits made since
+    survive when they do not overlap the run's; a file whose later edits
+    do is left alone and named in a message.
+
+  Edits are minimal line hunks under the workspace roots, computed on
+  `codeAction/resolve` (up front for clients without lazy resolution).
+  While a walk runs, a client that shows server-initiated progress
+  (`window.workDoneProgress`) sees `colab: <script>` with the files
+  scanned so far, every 25 files.
 - **Go to definition** on an `include "<path>"` opens that script,
   resolved as the compiler resolves it (against the including file's
   directory); nothing happens when the file does not exist.
