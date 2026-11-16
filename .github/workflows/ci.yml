@@ -40,6 +40,8 @@ jobs:
       # colab's own packs (colab.toml): their cases, then the tree itself.
       - run: cargo run -q -p colab-cli --locked -- test
       - run: cargo run -q -p colab-cli --locked -- fix --check
+      # Links inside docs/ resolve, anchors included (exit 10 if not).
+      - run: cargo run -q -p colab-cli --locked -- links docs
       # The notices `colab licenses` prints match Cargo.lock.
       - run: scripts/third-party-licenses.py --check
 
