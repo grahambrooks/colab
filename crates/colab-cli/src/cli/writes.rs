@@ -59,13 +59,38 @@ pub(super) fn report_all(
     Ok(())
 }
 
-/// Write each change, saving its original under `backup` first.
-pub(super) fn write_changes(changes: &[FileChange], backup: Option<&Path>) -> Result<()> {
-    for change in changes {
+/// Re-read every file the run would write, before any is written
+/// ([`colab_core::merge::prepare_writes`]): a file changed on disk since
+/// the run read it is merged with the run's change when their edits do
+/// not overlap, and is a conflict when they do, so the conflict check
+/// that follows refuses the write.
+pub(super) fn prepare_writes(
+    changes: &[FileChange],
+    report: &mut RunReport,
+) -> Result<colab_core::merge::Prepared> {
+    let prepared = colab_core::merge::prepare_writes(
+        changes
+            .iter()
+            .filter(|c| c.changed())
+            .map(|c| (c.path.as_path(), c.before.as_str(), c.after.as_str())),
+    )?;
+    report.warnings.extend(prepared.merge_warning());
+    report.conflicts.extend(prepared.conflicts.iter().cloned());
+    Ok(prepared)
+}
+
+/// Write what [`prepare_writes`] cleared, saving each file as it was on
+/// disk under `backup` first. A file whose disk changes conflict with the
+/// run's is never written, even under `--allow-conflicts`.
+pub(super) fn write_changes(
+    prepared: &colab_core::merge::Prepared,
+    backup: Option<&Path>,
+) -> Result<()> {
+    for write in &prepared.writes {
         if let Some(dir) = backup {
-            write_backup_snapshot(dir, &change.path, &change.before)?;
+            write_backup_snapshot(dir, &write.path, &write.on_disk)?;
         }
-        fs::write(&change.path, &change.after).map_err(|e| Error::io_at(&change.path, e))?;
+        fs::write(&write.path, &write.text).map_err(|e| Error::io_at(&write.path, e))?;
     }
     Ok(())
 }

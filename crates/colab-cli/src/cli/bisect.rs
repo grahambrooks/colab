@@ -59,6 +59,7 @@ pub(super) fn run_refactor_per_rule(
         };
 
         let outcome = run_transformer(&single, args, targets, &mut visit)?;
+        let prepared = prepare_writes(&pending, &mut report)?;
         if refuse_conflicts(args, &mut report) {
             if idx > 0 {
                 report.warnings.push(format!(
@@ -74,12 +75,12 @@ pub(super) fn run_refactor_per_rule(
             reporter.finish(&report).map_err(io_to_error)?;
             return Ok(CONFLICT_EXIT);
         }
-        for change in &pending {
+        for write in &prepared.writes {
             backups
-                .entry(change.path.clone())
-                .or_insert_with(|| change.before.clone());
+                .entry(write.path.clone())
+                .or_insert_with(|| write.on_disk.clone());
         }
-        write_changes(&pending, args.backup.as_deref())?;
+        write_changes(&prepared, args.backup.as_deref())?;
         report_all(reporter.as_mut(), &pending)?;
         // Each rule re-walks the same tree, so only the first pass's
         // visit count is meaningful; the rest would multiply it by the
@@ -245,6 +246,7 @@ pub(super) fn run_refactor_bisect(
         }
         lsp_check(args, refactoring, &pending, &mut report)?;
         attribute_lines(args, refactoring, &pending, &mut report, reporter.as_mut());
+        let prepared = prepare_writes(&pending, &mut report)?;
         if refuse_conflicts(args, &mut report) {
             reporter.refused();
             report_all(reporter.as_mut(), &pending)?;
@@ -252,10 +254,10 @@ pub(super) fn run_refactor_bisect(
             reporter.finish(&report).map_err(io_to_error)?;
             return Ok(CONFLICT_EXIT);
         }
-        for change in &pending {
-            snapshots.insert(change.path.clone(), change.before.clone());
+        for write in &prepared.writes {
+            snapshots.insert(write.path.clone(), write.on_disk.clone());
         }
-        write_changes(&pending, args.backup.as_deref())?;
+        write_changes(&prepared, args.backup.as_deref())?;
         report_all(reporter.as_mut(), &pending)?;
     }
 

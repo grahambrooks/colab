@@ -129,8 +129,11 @@ whichever milestone touches the same code.
   nothing semantic itself.)
 - Refactoring UI. The VS Code extension stays minimal — a thin wrapper over
   the LSP and the CLI.
-- Conflict resolution between simultaneous edits. Rules in one script are
-  ordered and sequential; there is no "merge" semantic.
+- Merging rules' edits with each other. Rules in one script are ordered
+  and sequential, each seeing the previous one's output, so there is
+  nothing to merge between them. (A file that changed on disk while a
+  run was in progress *is* merged three ways before writing — see
+  [Conflicts](cli.md#conflicts).)
 - Plugin marketplace, or a hosted pack registry. Packs are shared as git
   sources (M33); backends live in the workspace.
 - Dynamic plugin loading (`libloading` / WASM). No one has asked to ship an out-of-tree backend, adding one in the workspace is cheap, and the cross-backend contract tests rely on every backend being in it. Revisit only if external contributors ask.

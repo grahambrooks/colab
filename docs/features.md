@@ -444,10 +444,12 @@ conflict with colab's syntactic-rewriter premise.
   language's own server (rust-analyzer, gopls, clangd, …) and reports,
   checks, backs up, and verifies the answer like any codemod. colab
   still does no name resolution of its own.
-- **Merging simultaneous edits.** Rules in one script are applied in
-  source order, sequentially. colab *detects* some conflicts (see
-  [Conflicts](cli.md#conflicts)) and refuses to write, but it never
-  merges edits.
+- **Merging rules' edits.** Rules in one script are applied in source
+  order, sequentially, so they never need merging; colab *detects* the
+  conflicts their changes can raise (see [Conflicts](cli.md#conflicts))
+  and refuses to write. What it does merge is a file that changed on
+  disk while the run was in progress: three ways, before writing, and
+  only when the two sides' edits do not overlap.
 - **Plugin marketplace.** Premature until `LanguageBackend` and the
   capability registry stabilise further.
 

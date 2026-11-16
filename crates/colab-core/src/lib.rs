@@ -14,6 +14,7 @@ pub mod fileops;
 pub mod find;
 pub mod followup;
 pub mod ignore;
+pub mod merge;
 pub mod near_miss;
 pub mod prose;
 pub mod render;

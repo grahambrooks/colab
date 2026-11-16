@@ -266,14 +266,19 @@ incomplete:
 | `<lang>::symbol` rename | The new name already occurs as an identifier in the file, so the rename would merge two names. |
 | `go::pattern`, `python::pattern` template | The template introduces a qualifier (`fmt.`, `pathlib.`) that the file did not use before and does not import afterwards. A `requires import`, or a later rule in the script that adds the import, clears it. Python builtins (`str.`, `dict.`) and wildcard imports never conflict. |
 | `--verify-lsp` | The file's language server reports an error after the change that it did not report before. Errors are compared by message, so code that moves does not count. Credited to the rule whose change holds the error's line, or to the only rule that changed the file; otherwise the whole file's. |
+| Changed on disk | A `--write` run re-reads every file just before writing. A file that changed since the run read it (an editor save, another agent, a formatter during a long `--verify`) is merged three ways — the file as read, as the run leaves it, and as it is now — and written with a warning when the two sides' edits do not overlap. Edits on the same or adjacent lines, as in git, are a conflict, and so is a file deleted since it was read. `colab rename` / `mv` / `action` check the same before moving or editing anything. |
 
 Conflicts are judged against the file as the whole script leaves it.
 They appear in every format: `conflicts` in JSON (`[{path, rule,
-message}]`, with `rule` absent for a `--verify-lsp` error), `conflict:`
+message}]`, with `rule` absent for a `--verify-lsp` error or a change on
+disk), `conflict:`
 lines in human output. A `--write` run that finds any **writes nothing**
 and exits **11**; fix the rules, or pass `--allow-conflicts`. Dry runs
 and `--check` report them and exit as usual. MCP `colab.apply` does the
-same, returning `applied: false` unless `allow_conflicts` is true.
+same, returning `applied: false` unless `allow_conflicts` is true. Even
+then, a file whose disk changes overlap the run's is never written:
+colab writes no conflict markers, and rerunning starts from the new
+text.
 
 ```
 conflict: a.go: `parse` already occurs in this file (line 9), so renaming `load` to it merges two names (rule 1)

@@ -197,6 +197,41 @@ pub(crate) fn run_change_set(
         reporter.file_op(op).map_err(io_to_error)?;
     }
 
+    // The server answered from the files as they were; one changed since
+    // (an editor save during a slow rename) is merged, or refuses the write.
+    if matches!(exec_mode, ExecMode::Write) {
+        let origins: Vec<PathBuf> = set
+            .edits
+            .iter()
+            .map(|e| set.origin_of(&e.path).unwrap_or_else(|| e.path.clone()))
+            .collect();
+        let fresh = colab_core::merge::prepare_writes(
+            set.edits
+                .iter()
+                .zip(&origins)
+                .filter(|(e, _)| e.changed())
+                .map(|(e, origin)| (origin.as_path(), e.before.as_str(), e.after.as_str())),
+        )?;
+        if !fresh.conflicts.is_empty() {
+            report.conflicts = fresh.conflicts;
+            report.warnings.push(format!(
+                "wrote nothing: {} file(s) changed on disk in ways that overlap this change; rerun it",
+                report.conflicts.len()
+            ));
+            reporter.refused();
+            report.elapsed = started.elapsed();
+            reporter.finish(&report).map_err(io_to_error)?;
+            return Ok(CONFLICT_EXIT);
+        }
+        report.warnings.extend(fresh.merge_warning());
+        for write in fresh.writes {
+            if let Some(i) = origins.iter().position(|o| *o == write.path) {
+                set.edits[i].before = write.on_disk;
+                set.edits[i].after = write.text;
+            }
+        }
+    }
+
     let applied = if matches!(exec_mode, ExecMode::Write) {
         Some(crate::apply::apply(
             &set,

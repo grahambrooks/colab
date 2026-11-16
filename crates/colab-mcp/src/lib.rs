@@ -706,12 +706,16 @@ fn run_script<P: ProgressSink>(
 
     let allow_conflicts = arg_bool(args, "allow_conflicts")?;
     // Writes wait for the whole walk, so a conflict anywhere stops them all.
-    let mut pending: Vec<(PathBuf, String)> = Vec::new();
+    let mut pending: Vec<(PathBuf, String, String)> = Vec::new();
     for target in &paths {
         let outcome = walker::walk(&refactoring, target, &mut |change| {
             report.record(&change);
             if change.changed() && matches!(mode, RunMode::Apply) {
-                pending.push((change.path.clone(), change.after.clone()));
+                pending.push((
+                    change.path.clone(),
+                    change.before.clone(),
+                    change.after.clone(),
+                ));
             }
             collector.push(&change);
             files_processed += 1;
@@ -721,6 +725,21 @@ fn run_script<P: ProgressSink>(
         .map_err(ToolError::from_error)?;
         report.record_walk(outcome);
     }
+    // A file changed on disk since the walk read it is merged, or is a
+    // conflict that stops the writes like any other.
+    let prepared = if matches!(mode, RunMode::Apply) {
+        let prepared = colab_core::merge::prepare_writes(
+            pending
+                .iter()
+                .map(|(path, before, after)| (path.as_path(), before.as_str(), after.as_str())),
+        )
+        .map_err(ToolError::from_error)?;
+        report.warnings.extend(prepared.merge_warning());
+        report.conflicts.extend(prepared.conflicts.iter().cloned());
+        prepared
+    } else {
+        colab_core::merge::Prepared::default()
+    };
     let mut mode = mode;
     if matches!(mode, RunMode::Apply) && !report.conflicts.is_empty() && !allow_conflicts {
         report.warnings.push(format!(
@@ -729,9 +748,9 @@ fn run_script<P: ProgressSink>(
         ));
         mode = RunMode::Preview;
     } else {
-        for (path, after) in &pending {
-            std::fs::write(path, after)
-                .map_err(|e| ToolError::from_error(colab_core::Error::io_at(path, e)))?;
+        for write in &prepared.writes {
+            std::fs::write(&write.path, &write.text)
+                .map_err(|e| ToolError::from_error(colab_core::Error::io_at(&write.path, e)))?;
         }
     }
     colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
@@ -1043,6 +1062,60 @@ fn make_error(id: Option<Value>, code: i64, message: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Rewrites `path` on disk at the first tick: someone saving the file
+    /// after the walk read it and before the run writes it.
+    struct EditsMidRun<'a> {
+        path: &'a Path,
+        text: &'a str,
+    }
+
+    impl ProgressSink for EditsMidRun<'_> {
+        fn tick(&mut self, _processed: u64) {
+            std::fs::write(self.path, self.text).unwrap();
+        }
+        fn finish(&mut self, _total: u64) {}
+    }
+
+    #[test]
+    fn apply_merges_a_file_changed_after_the_walk_read_it() {
+        let dir = std::env::temp_dir().join(format!("colab-mcp-stale-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("main.go");
+        let read = "package main\n\nimport \"old/pkg\"\n\nfunc main() {}\n";
+        let script = "refactor \"r\" { match go::import \"old/pkg\" { replace \"new/pkg\" } }";
+        let arguments = json!({"script": script, "paths": ["."], "cwd": dir.to_string_lossy()});
+
+        // Their edit is far from ours: both survive.
+        std::fs::write(&file, read).unwrap();
+        let theirs = "package main\n\nimport \"old/pkg\"\n\nfunc main() { run() }\n";
+        let mut sink = EditsMidRun {
+            path: &file,
+            text: theirs,
+        };
+        let value = run_script(&arguments, &registry(), RunMode::Apply, &mut sink).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "package main\n\nimport \"new/pkg\"\n\nfunc main() { run() }\n"
+        );
+        assert!(value.to_string().contains("merged with the run's changes"));
+
+        // Their edit is on our line: a conflict, and their text stands.
+        std::fs::write(&file, read).unwrap();
+        let theirs = "package main\n\nimport \"other/pkg\"\n\nfunc main() {}\n";
+        let mut sink = EditsMidRun {
+            path: &file,
+            text: theirs,
+        };
+        let value = run_script(&arguments, &registry(), RunMode::Apply, &mut sink).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), theirs);
+        assert!(
+            value
+                .to_string()
+                .contains("changed on disk after colab read it")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn registry() -> BackendRegistry {
         colab_backends::registry()

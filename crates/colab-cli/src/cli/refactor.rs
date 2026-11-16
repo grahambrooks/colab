@@ -265,11 +265,15 @@ pub(super) fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorAr
     }
     lsp_check(args, refactoring, &pending, &mut report)?;
     attribute_lines(args, refactoring, &pending, &mut report, reporter.as_mut());
-    let blocked = matches!(exec_mode, ExecMode::Write) && refuse_conflicts(args, &mut report);
+    let prepared = match exec_mode {
+        ExecMode::Write => Some(prepare_writes(&pending, &mut report)?),
+        _ => None,
+    };
+    let blocked = prepared.is_some() && refuse_conflicts(args, &mut report);
     if blocked {
         reporter.refused();
-    } else if matches!(exec_mode, ExecMode::Write) {
-        write_changes(&pending, args.backup.as_deref())?;
+    } else if let Some(prepared) = &prepared {
+        write_changes(prepared, args.backup.as_deref())?;
     }
     report_all(reporter.as_mut(), &pending)?;
     colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
