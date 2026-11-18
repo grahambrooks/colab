@@ -1668,6 +1668,7 @@ colab agent install                       # every agent found: claude, cursor, c
 colab agent install --claude --no-hook    # one, without the post-edit hook
 colab agent install --dry-run             # the diffs, nothing written
 colab agent uninstall                     # what install wrote, and nothing else
+colab agent install --user                # for every project of yours, not this one
 ```
 
 | Agent | What | Where |
@@ -1694,6 +1695,31 @@ colab agent uninstall                     # what install wrote, and nothing else
 - `--format json` gives `{action, dry_run, files: [{tool, path,
   status}]}`, `status` one of `created`, `updated`, `removed`,
   `unchanged`.
+
+With `--user` (not with `-C`), the same goes in for every project of
+the user's instead:
+
+| Agent | What | Where |
+| ----- | ---- | ----- |
+| Claude Code | MCP server `colab`, user scope | `claude mcp add --scope user colab -- colab mcp` (uninstall: `claude mcp remove --scope user colab`) |
+| Claude Code | the skill | `~/.claude/skills/colab-codemod/` (`$CLAUDE_CONFIG_DIR/skills/` when set) |
+| Cursor | MCP server `colab` | `~/.cursor/mcp.json`, key `mcpServers.colab` |
+| Codex | MCP server `colab` | `~/.codex/config.toml`, table `[mcp_servers.colab]` |
+| Codex | how to use colab | `~/.codex/AGENTS.md`, the managed block `colab` |
+
+- **Claude Code's own CLI changes its user config.** `~/.claude.json`
+  holds Claude Code's state and is rewritten while it runs, so colab only
+  reads it, to tell whether `colab` is registered, and leaves the write
+  to `claude mcp` (which must be on `PATH`). `--dry-run` shows the
+  command it would run.
+- **No post-edit hook.** A user-wide hook would run on every edit in
+  every project; add it per project with `colab agent install --claude`.
+- **No Cursor rule.** Cursor keeps user rules in its settings, not in
+  files.
+- **Rerun it after upgrading colab**: the skill is a copy of the
+  installed build's, and install replaces an older one.
+- `--format json` adds `scope: "user"` and `commands: [{tool, what,
+  status, command}]`, `command` `null` when nothing needs running.
 
 ### `colab hook post-edit`
 
@@ -3556,6 +3582,7 @@ colab agent install --claude     # or name them: --claude --cursor --codex
 colab agent install --no-hook    # without Claude Code's post-edit hook
 colab agent install --dry-run    # the diffs, nothing written
 colab agent uninstall            # take it out again
+colab agent install --user       # every project of yours: user-level MCP servers and skill, no hook
 ```
 
 | Agent | What | Where |
@@ -3739,11 +3766,13 @@ those of the language servers it runs.
 ## Upgrade and uninstall
 
 - **Upgrade**: `brew upgrade colab`, a newer archive, or rerun `cargo
-  install --git …`. A kept language server from the old build is not
+  install --git …`. After `colab agent install --user`, rerun it to
+  refresh the skill it copied. A kept language server from the old build is not
   reused (its socket name includes the build); `colab lsp-daemon --stop`
   clears old ones at once.
 - **Uninstall**: `colab agent uninstall` in each project (and once for
-  Codex's `~/.codex/config.toml`); remove the plugin from Claude Code's
+  Codex's `~/.codex/config.toml`), and `colab agent uninstall --user` if
+  you installed with `--user`; remove the plugin from Claude Code's
   `/plugin` menu; `colab lsp-daemon --stop`; delete the cache directory above; then
   `brew uninstall colab` or remove the binary.
 
@@ -3812,10 +3841,15 @@ changes a command's output or exit code.
 **With habit.** `habit setup claude-code` already puts
 `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` into Claude Code's
 environment, so every colab command an agent runs reports to habit with
-no further setup; elsewhere, `export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`.
-habit keeps each command's root span as a `span` record (service `colab`,
-the span name, its outcome and duration) and drops the child spans;
-`habit status` shows them arriving.
+no further setup; for a terminal, `export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`.
+colab labels each trace in habit's terms, which other collectors ignore:
+a command's resource carries `habit.kind=command` and its root span
+`habit.subcommand` and `habit.flags`, so habit stores a `command` record
+(tool, subcommand, version, exit code, success, duration, flag names,
+repo); an MCP tool call's carries `habit.kind=mcp`; a `colab server` walk
+is a plain `span`. A `habit.kind` set in `OTEL_RESOURCE_ATTRIBUTES` wins.
+habit counts the child spans but does not store them; `habit status`
+shows the records arriving.
 
 ## When something looks wrong
 

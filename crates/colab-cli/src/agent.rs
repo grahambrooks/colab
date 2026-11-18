@@ -13,6 +13,13 @@
 //! | Codex | MCP server `colab` | `~/.codex/config.toml`, table `[mcp_servers.colab]` |
 //! | Codex | how to use colab | `AGENTS.md`, the managed block `colab` |
 //!
+//! With `--user`, the same for every project of the user's instead of
+//! one: Claude Code's MCP server through `claude mcp add --scope user`
+//! (Claude Code owns `~/.claude.json`, so colab only reads it), the skill
+//! in `~/.claude/skills/`, no hook; Cursor's MCP server in
+//! `~/.cursor/mcp.json`; Codex's in `~/.codex/config.toml`, with the
+//! block in `~/.codex/AGENTS.md`.
+//!
 //! Install compares by meaning, not bytes, so a second run changes
 //! nothing and says so. Uninstall removes those keys, entries, blocks and
 //! files, keeps everything else in a file as it was, and deletes a file
@@ -59,6 +66,11 @@ struct Targets {
     /// The project to install into (default: the working directory).
     #[arg(short = 'C', long = "change-dir", default_value = ".")]
     project: PathBuf,
+    /// For every project of the user's, not one: user-level MCP servers,
+    /// the skill in `~/.claude/skills/`, and no post-edit hook. Rerun it
+    /// after upgrading colab to refresh the skill.
+    #[arg(long, conflicts_with = "project")]
+    user: bool,
     /// Show what would change, as diffs, and write nothing.
     #[arg(long = "dry-run")]
     dry_run: bool,
@@ -115,6 +127,89 @@ const SKILL: &[(&str, &str)] = &[
         ),
     ),
 ];
+
+/// A change made by running the agent's own CLI, for files colab must
+/// not rewrite itself (`~/.claude.json`, which Claude Code keeps
+/// rewriting).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandStep {
+    tool: Tool,
+    /// What it changes, for the report.
+    what: &'static str,
+    /// The command; `None` when nothing needs doing.
+    argv: Option<Vec<&'static str>>,
+    status: &'static str,
+}
+
+const CLAUDE_MCP_ADD: &[&str] = &[
+    "claude", "mcp", "add", "--scope", "user", "colab", "--", "colab", "mcp",
+];
+const CLAUDE_MCP_REMOVE: &[&str] = &["claude", "mcp", "remove", "--scope", "user", "colab"];
+
+/// Claude Code's user config: `$CLAUDE_CONFIG_DIR/.claude.json`, else
+/// `~/.claude.json`.
+fn claude_user_config(home: &Path) -> PathBuf {
+    std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map_or_else(|| home.to_path_buf(), PathBuf::from)
+        .join(".claude.json")
+}
+
+/// Claude Code's user directory (skills): `$CLAUDE_CONFIG_DIR`, else
+/// `~/.claude`.
+fn claude_user_dir(home: &Path) -> PathBuf {
+    std::env::var_os("CLAUDE_CONFIG_DIR").map_or_else(|| home.join(".claude"), PathBuf::from)
+}
+
+/// The user-scope MCP server, added or removed with `claude mcp`, judged
+/// by what `~/.claude.json` already holds.
+fn claude_user_mcp(config: &Path, install: bool) -> Result<CommandStep> {
+    let text = read(config)?;
+    let doc = parse_json(config, text.as_deref())?;
+    let entry = &doc["mcpServers"]["colab"];
+    let ours = entry["command"] == "colab" && entry["args"] == json!(["mcp"]);
+    let (argv, status) = match (install, entry.is_null(), ours) {
+        (true, _, true) | (false, true, _) => (None, "unchanged"),
+        // Someone else's `colab` entry: replace it, as `.mcp.json` does.
+        (true, false, false) => (
+            Some([CLAUDE_MCP_REMOVE, &["&&"], CLAUDE_MCP_ADD].concat()),
+            "updated",
+        ),
+        (true, true, _) => (Some(CLAUDE_MCP_ADD.to_vec()), "created"),
+        (false, false, _) => (Some(CLAUDE_MCP_REMOVE.to_vec()), "removed"),
+    };
+    Ok(CommandStep {
+        tool: Tool::Claude,
+        what: "user MCP server `colab`",
+        argv,
+        status,
+    })
+}
+
+/// Run a step's command(s), `&&`-separated; a failure names the command.
+fn run_step(step: &CommandStep) -> Result<()> {
+    let Some(argv) = &step.argv else {
+        return Ok(());
+    };
+    for cmd in argv.split(|a| *a == "&&") {
+        let shown = cmd.join(" ");
+        let out = std::process::Command::new(cmd[0])
+            .args(&cmd[1..])
+            .output()
+            .map_err(|e| {
+                Error::Config(format!(
+                    "could not run `{shown}` ({e}); is `{}` on PATH?",
+                    cmd[0]
+                ))
+            })?;
+        if !out.status.success() {
+            return Err(Error::Config(format!(
+                "`{shown}` failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+    }
+    Ok(())
+}
 
 /// The post-edit hook's command; uninstall finds the hook by it.
 const HOOK_COMMAND: &str = "colab hook post-edit 2>/dev/null || true";
@@ -383,6 +478,8 @@ fn home() -> Result<PathBuf> {
 /// The tools asked for, else those found: on `PATH`, or with their
 /// directory in the project or the home directory.
 fn tools(t: &Targets, project: &Path) -> Result<Vec<Tool>> {
+    // In user scope `project` is the home directory, so its `.claude`
+    // and `.cursor` are the user's.
     let asked: Vec<Tool> = [
         (t.claude, Tool::Claude),
         (t.cursor, Tool::Cursor),
@@ -422,7 +519,18 @@ fn tools(t: &Targets, project: &Path) -> Result<Vec<Tool>> {
     Ok(found)
 }
 
-fn plan(tools: &[Tool], t: &Targets, project: &Path, install: bool) -> Result<Vec<FileEdit>> {
+/// The files to change and the commands to run, in user scope (`--user`)
+/// with `base` the home directory, else with `base` the project.
+fn plan(
+    tools: &[Tool],
+    t: &Targets,
+    base: &Path,
+    install: bool,
+) -> Result<(Vec<FileEdit>, Vec<CommandStep>)> {
+    if t.user {
+        return plan_user(tools, base, install);
+    }
+    let project = base;
     let mut edits = Vec::new();
     for &tool in tools {
         match tool {
@@ -463,7 +571,35 @@ fn plan(tools: &[Tool], t: &Targets, project: &Path, install: bool) -> Result<Ve
             }
         }
     }
-    Ok(edits)
+    Ok((edits, Vec::new()))
+}
+
+fn plan_user(
+    tools: &[Tool],
+    home: &Path,
+    install: bool,
+) -> Result<(Vec<FileEdit>, Vec<CommandStep>)> {
+    let mut edits = Vec::new();
+    let mut commands = Vec::new();
+    for &tool in tools {
+        match tool {
+            Tool::Claude => {
+                commands.push(claude_user_mcp(&claude_user_config(home), install)?);
+                for (rel, content) in SKILL {
+                    let path = claude_user_dir(home).join("skills/colab-codemod").join(rel);
+                    edits.push(owned(tool, path, content, install)?);
+                }
+            }
+            // Cursor keeps user rules in its settings, not in files, so
+            // only the MCP server is user-wide.
+            Tool::Cursor => edits.push(mcp_json(tool, home.join(".cursor/mcp.json"), install)?),
+            Tool::Codex => {
+                edits.push(codex_config(home.join(".codex/config.toml"), install)?);
+                edits.push(agents_md(home.join(".codex/AGENTS.md"), install)?);
+            }
+        }
+    }
+    Ok((edits, commands))
 }
 
 /// Write each changed file, or remove it and the directories above it
@@ -510,20 +646,27 @@ pub fn run(args: AgentArgs) -> Result<u8> {
         AgentAction::Install(t) => (t, true),
         AgentAction::Uninstall(t) => (t, false),
     };
-    let project = t
-        .project
-        .canonicalize()
-        .map_err(|e| Error::io_at(&t.project, e))?;
+    let dir = if t.user { home()? } else { t.project.clone() };
+    let project = dir.canonicalize().map_err(|e| Error::io_at(&dir, e))?;
     let tools = tools(t, &project)?;
-    let edits = plan(&tools, t, &project, install)?;
+    let (edits, commands) = plan(&tools, t, &project, install)?;
     if !t.dry_run {
         let mut stop = vec![project.clone()];
         stop.extend(home().ok().and_then(|h| h.canonicalize().ok()));
+        if let Some(claude) = std::env::var_os("CLAUDE_CONFIG_DIR") {
+            stop.push(PathBuf::from(claude));
+        }
+        for step in &commands {
+            run_step(step)?;
+        }
         apply_within(&edits, &stop)?;
     }
-    let shown = |p: &Path| {
-        p.strip_prefix(&project)
-            .map_or_else(|_| p.to_path_buf(), Path::to_path_buf)
+    // Paths under the project are shown relative to it; in user scope,
+    // as `~/…`.
+    let shown = |p: &Path| match p.strip_prefix(&project) {
+        Ok(rel) if t.user => Path::new("~").join(rel),
+        Ok(rel) => rel.to_path_buf(),
+        Err(_) => p.to_path_buf(),
     };
     let mut out = std::io::stdout().lock();
     match t.format {
@@ -532,10 +675,27 @@ pub fn run(args: AgentArgs) -> Result<u8> {
                 .iter()
                 .map(|e| json!({"tool": e.tool.name(), "path": shown(&e.path), "status": status(e)}))
                 .collect();
-            writeln!(out, "{}", json!({"action": if install { "install" } else { "uninstall" }, "dry_run": t.dry_run, "files": files}))
+            let mut doc = json!({"action": if install { "install" } else { "uninstall" }, "dry_run": t.dry_run, "files": files});
+            if t.user {
+                doc["scope"] = json!("user");
+                doc["commands"] = commands
+                    .iter()
+                    .map(|c| json!({"tool": c.tool.name(), "what": c.what, "status": c.status, "command": c.argv.as_ref().map(|a| a.join(" "))}))
+                    .collect();
+            }
+            writeln!(out, "{doc}")
         }
         AgentFormat::Human => {
             let mut text = String::new();
+            for c in &commands {
+                let _ = write!(text, "{:<7} {:<10} {}", c.tool.name(), c.status, c.what);
+                match &c.argv {
+                    Some(argv) => {
+                        let _ = writeln!(text, " (`{}`)", argv.join(" "));
+                    }
+                    None => text.push('\n'),
+                }
+            }
             for e in &edits {
                 let _ = writeln!(text, "{:<7} {:<10} {}", e.tool.name(), status(e), shown(&e.path).display());
                 if t.dry_run && e.before != e.after {
@@ -547,7 +707,7 @@ pub fn run(args: AgentArgs) -> Result<u8> {
                     text.push_str(&diff);
                 }
             }
-            if install && tools.contains(&Tool::Claude) {
+            if install && !t.user && tools.contains(&Tool::Claude) {
                 text.push_str("For every project instead: /plugin marketplace add grahambrooks/colab, then /plugin install colab@colab\n");
             }
             write!(out, "{text}")

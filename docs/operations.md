@@ -57,6 +57,7 @@ colab agent install --claude     # or name them: --claude --cursor --codex
 colab agent install --no-hook    # without Claude Code's post-edit hook
 colab agent install --dry-run    # the diffs, nothing written
 colab agent uninstall            # take it out again
+colab agent install --user       # every project of yours: user-level MCP servers and skill, no hook
 ```
 
 | Agent | What | Where |
@@ -240,11 +241,13 @@ those of the language servers it runs.
 ## Upgrade and uninstall
 
 - **Upgrade**: `brew upgrade colab`, a newer archive, or rerun `cargo
-  install --git …`. A kept language server from the old build is not
+  install --git …`. After `colab agent install --user`, rerun it to
+  refresh the skill it copied. A kept language server from the old build is not
   reused (its socket name includes the build); `colab lsp-daemon --stop`
   clears old ones at once.
 - **Uninstall**: `colab agent uninstall` in each project (and once for
-  Codex's `~/.codex/config.toml`); remove the plugin from Claude Code's
+  Codex's `~/.codex/config.toml`), and `colab agent uninstall --user` if
+  you installed with `--user`; remove the plugin from Claude Code's
   `/plugin` menu; `colab lsp-daemon --stop`; delete the cache directory above; then
   `brew uninstall colab` or remove the binary.
 

@@ -4442,6 +4442,109 @@ fn agent_install_is_idempotent_and_uninstall_takes_back_only_its_own() {
     }
 }
 
+/// `--user`: Claude Code's MCP server through its own `claude mcp`
+/// (faked here, keeping `~/.claude.json` as the real one does), the skill
+/// in `~/.claude/skills/`, no hook; Cursor and Codex in their home files.
+#[cfg(unix)]
+#[test]
+fn agent_install_user_scope_goes_through_claude_mcp_and_writes_no_hook() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = workspace_temp("agent-user-home");
+    let bin = workspace_temp("agent-user-bin");
+    let log = bin.join("claude.log");
+    let fake = format!(
+        "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$2\" in\n  add) printf '{{\"numStartups\": 3, \"mcpServers\": {{\"colab\": {{\"type\": \"stdio\", \"command\": \"colab\", \"args\": [\"mcp\"], \"env\": {{}}}}}}}}' > \"$HOME/.claude.json\" ;;\n  remove) printf '{{\"numStartups\": 3, \"mcpServers\": {{}}}}' > \"$HOME/.claude.json\" ;;\nesac\n",
+        log = log.display()
+    );
+    write(&bin.join("claude"), &fake);
+    fs::set_permissions(bin.join("claude"), fs::Permissions::from_mode(0o755)).unwrap();
+    write(&home.join(".claude.json"), "{\"numStartups\": 3}");
+    write(
+        &home.join(".claude/settings.json"),
+        "{\"model\": \"opus\"}\n",
+    );
+    let agent = |action: &str| {
+        let out = colab()
+            .env("HOME", &home)
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .args([
+                "agent", action, "--user", "--claude", "--cursor", "--codex", "--format", "json",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    let calls = || fs::read_to_string(&log).unwrap_or_default();
+
+    let first = agent("install");
+    assert_eq!(first["scope"], "user");
+    assert_eq!(first["commands"][0]["status"], "created");
+    assert_eq!(calls(), "mcp add --scope user colab -- colab mcp\n");
+    let paths: Vec<&str> = first["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert!(
+        paths.contains(&"~/.claude/skills/colab-codemod/SKILL.md")
+            && paths.contains(&"~/.cursor/mcp.json")
+            && paths.contains(&"~/.codex/config.toml")
+            && paths.contains(&"~/.codex/AGENTS.md"),
+        "{paths:?}"
+    );
+    assert!(home.join(".claude/skills/colab-codemod/SKILL.md").is_file());
+    assert_eq!(
+        fs::read_to_string(home.join(".claude/settings.json")).unwrap(),
+        "{\"model\": \"opus\"}\n",
+        "no hook in user scope"
+    );
+
+    // A second install runs nothing and writes nothing.
+    let second = agent("install");
+    assert_eq!(second["commands"][0]["status"], "unchanged");
+    assert!(second["commands"][0]["command"].is_null());
+    assert!(
+        second["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["status"] == "unchanged"),
+        "{second}"
+    );
+    assert_eq!(calls().lines().count(), 1);
+
+    // Uninstall: `claude mcp remove`, and colab's files go.
+    let removed = agent("uninstall");
+    assert_eq!(removed["commands"][0]["status"], "removed");
+    assert_eq!(
+        calls().lines().last(),
+        Some("mcp remove --scope user colab")
+    );
+    assert!(!home.join(".claude/skills").exists());
+    assert!(!home.join(".cursor").exists() && !home.join(".codex").exists());
+    assert!(home.join(".claude/settings.json").is_file());
+    for dir in [&home, &bin] {
+        fs::remove_dir_all(dir).ok();
+    }
+}
+
+#[test]
+fn agent_user_scope_conflicts_with_a_project() {
+    let out = colab()
+        .args(["agent", "install", "--user", "-C", ".", "--dry-run"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot be used with"));
+}
+
 #[test]
 fn the_post_edit_hook_reports_a_broken_convention_to_the_model() {
     let root = workspace_temp("post-edit");

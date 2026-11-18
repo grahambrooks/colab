@@ -28,6 +28,7 @@ cargo run -p colab-cli -- fix --check --format github            # CI annotation
 cargo run -p colab-cli -- pack list                              # built-in packs (examples/packs/) + .colab/packs/
 cargo run -p colab-cli -- edit --symbol Config/load --in f.rs --replace-body --text-file new.rs  # one declaration by name path (--list: the file's)
 cargo run -p colab-cli -- agent install [--claude|--cursor|--codex] [--dry-run]  # wire colab into an agent; `agent uninstall` takes it out
+cargo run -p colab-cli -- agent install --user [--dry-run]   # every project of the user's: user MCP servers (`claude mcp add --scope user`), ~/.claude/skills/, no hook
 cargo run -p colab-cli -- hook post-edit [--file F]                # the colab.toml packs on one edited file (Claude Code PostToolUse hook)
 cargo run -p colab-cli -- fleet fleet.toml [--write [--pr]]            # one migration across many repos (canary first, a worktree each)
 cargo run -p colab-cli -- test [--bless]                         # each pack's <pack>.tests/<case>/{input,expected}/ (exit 12 on a failure)

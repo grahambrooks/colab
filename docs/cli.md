@@ -530,6 +530,7 @@ colab agent install                       # every agent found: claude, cursor, c
 colab agent install --claude --no-hook    # one, without the post-edit hook
 colab agent install --dry-run             # the diffs, nothing written
 colab agent uninstall                     # what install wrote, and nothing else
+colab agent install --user                # for every project of yours, not this one
 ```
 
 | Agent | What | Where |
@@ -556,6 +557,31 @@ colab agent uninstall                     # what install wrote, and nothing else
 - `--format json` gives `{action, dry_run, files: [{tool, path,
   status}]}`, `status` one of `created`, `updated`, `removed`,
   `unchanged`.
+
+With `--user` (not with `-C`), the same goes in for every project of
+the user's instead:
+
+| Agent | What | Where |
+| ----- | ---- | ----- |
+| Claude Code | MCP server `colab`, user scope | `claude mcp add --scope user colab -- colab mcp` (uninstall: `claude mcp remove --scope user colab`) |
+| Claude Code | the skill | `~/.claude/skills/colab-codemod/` (`$CLAUDE_CONFIG_DIR/skills/` when set) |
+| Cursor | MCP server `colab` | `~/.cursor/mcp.json`, key `mcpServers.colab` |
+| Codex | MCP server `colab` | `~/.codex/config.toml`, table `[mcp_servers.colab]` |
+| Codex | how to use colab | `~/.codex/AGENTS.md`, the managed block `colab` |
+
+- **Claude Code's own CLI changes its user config.** `~/.claude.json`
+  holds Claude Code's state and is rewritten while it runs, so colab only
+  reads it, to tell whether `colab` is registered, and leaves the write
+  to `claude mcp` (which must be on `PATH`). `--dry-run` shows the
+  command it would run.
+- **No post-edit hook.** A user-wide hook would run on every edit in
+  every project; add it per project with `colab agent install --claude`.
+- **No Cursor rule.** Cursor keeps user rules in its settings, not in
+  files.
+- **Rerun it after upgrading colab**: the skill is a copy of the
+  installed build's, and install replaces an older one.
+- `--format json` adds `scope: "user"` and `commands: [{tool, what,
+  status, command}]`, `command` `null` when nothing needs running.
 
 ### `colab hook post-edit`
 
