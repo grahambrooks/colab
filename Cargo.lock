@@ -326,6 +326,7 @@ dependencies = [
  "futures",
  "globset",
  "log",
+ "rayon",
  "serde_json",
  "similar",
  "tokio",

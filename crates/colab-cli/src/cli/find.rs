@@ -66,10 +66,10 @@ pub(super) fn run_find(args: FindArgs) -> Result<u8> {
     } else {
         args.paths.clone()
     };
-    let selector = Selector { rules };
+    let selector = Selector::new(rules, &report.script);
     for target in &targets {
         let outcome = walker::walk_with(&selector, target, &opts, &mut |change| {
-            report.record(rules, &change.path, &change.before);
+            report.record_found(&change.path, selector.take(&change.path));
             Ok(())
         })?;
         report.run.record_walk(outcome);

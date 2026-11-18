@@ -149,8 +149,35 @@ fn locate_each(
 /// A [`CodeTransformer`] that selects the files any rule is relevant to
 /// and changes nothing — so the ordinary walker (globs, `.gitignore`,
 /// parallel reads) can drive a read-only search.
+///
+/// It also does the search: `apply_at` runs on the walker's workers, in
+/// the caller's run, so each file's hits are located in parallel and
+/// held until the visitor, called in path order, [`take`](Self::take)s
+/// them. Locating in the visitor instead made `find` single-threaded.
 pub struct Selector<'a> {
-    pub rules: &'a [Box<dyn Operation>],
+    rules: &'a [Box<dyn Operation>],
+    script: String,
+    found: std::sync::Mutex<std::collections::HashMap<PathBuf, Vec<(usize, Located)>>>,
+}
+
+impl<'a> Selector<'a> {
+    /// `script` is the script's name, for `colab:ignore <name>` comments.
+    pub fn new(rules: &'a [Box<dyn Operation>], script: &str) -> Self {
+        Self {
+            rules,
+            script: script.to_string(),
+            found: Default::default(),
+        }
+    }
+
+    /// The hits located in `path`, removed from the store.
+    pub fn take(&self, path: &Path) -> Vec<(usize, Located)> {
+        self.found
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(path)
+            .unwrap_or_default()
+    }
 }
 
 impl CodeTransformer for Selector<'_> {
@@ -160,6 +187,17 @@ impl CodeTransformer for Selector<'_> {
 
     fn apply(&self, source_code: &str) -> String {
         source_code.to_string()
+    }
+
+    fn apply_at(&self, path: &Path, source_code: &str) -> crate::transformer::ApplyOutcome {
+        let found = locate_all(self.rules, path, source_code, &self.script);
+        if !found.is_empty() {
+            self.found
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(path.to_path_buf(), found);
+        }
+        crate::transformer::ApplyOutcome::untraced(source_code.to_string())
     }
 }
 
@@ -231,34 +269,39 @@ impl FindReport {
 
     /// Search one file and fold its hits in.
     pub fn record(&mut self, rules: &[Box<dyn Operation>], path: &Path, source: &str) {
+        let found = locate_all(rules, path, source, &self.script);
+        self.record_found(path, found);
+    }
+
+    /// Fold in one file's hits, located already (by a [`Selector`]).
+    pub fn record_found(&mut self, path: &Path, found: Vec<(usize, Located)>) {
+        // The rules with a hit here count as having fired, as a rule that
+        // changed a file does in a rewrite, so the near-miss probe does not
+        // re-examine a file for a rule that matched in it.
+        // `RunReport::record` counts them in each rule's `files_matched`.
+        let mut fired: Vec<usize> = found.iter().map(|(rule, _)| *rule).collect();
+        fired.sort_unstable();
+        fired.dedup();
         self.run.record(&crate::walker::FileChange {
             path: path.to_path_buf(),
             before: String::new(),
             after: String::new(),
-            rules_fired: Vec::new(),
+            rules_fired: fired,
             conflicts: Vec::new(),
         });
-        let found = locate_all(rules, path, source, &self.script);
         if found.is_empty() {
             return;
         }
         self.run.files_changed += 1;
-        let mut fired = vec![false; rules.len()];
         for (rule, located) in found {
             self.total += 1;
             self.matches_per_rule[rule] += 1;
-            fired[rule] = true;
             if self.hits.len() < self.max_results {
                 self.hits.push(Hit {
                     path: path.to_path_buf(),
                     rule,
                     located,
                 });
-            }
-        }
-        for (index, hit) in fired.into_iter().enumerate() {
-            if hit {
-                self.run.rules[index].files_matched += 1;
             }
         }
     }

@@ -3714,7 +3714,27 @@ paths with uncommitted changes unless `--allow-dirty`.
   (`colab lsp-daemon`) and reused by the next command, so only the first
   pays its start-up and indexing; it exits after 600 s without a client.
   `colab lsp-daemon --stop` stops every one; `COLAB_KEEP_SERVER=0` gives
-  each command its own.
+  each command its own. This is on by default only for a binary named
+  `colab`; a renamed copy (`colab-old`) needs `COLAB_KEEP_SERVER=1`.
+- **Waiting for a server.** colab asks only once the server is done
+  indexing. rust-analyzer says so (`experimental/serverStatus`), so after
+  it reports `quiescent` colab waits 50 ms; servers that report only
+  `$/progress` get 500 ms of silence.
+- **Measured** on colab's own repository (238 Rust files, 65k lines,
+  Apple M2 Max, 12 cores; median of 10 runs, the `dist` build):
+
+  | Command | Time |
+  | ------- | ---: |
+  | `rg -c '\.unwrap\(\)' crates` (for scale) | 15 ms |
+  | `find` `rust::pattern '$X.unwrap()'`: 1,128 hits in 82 files | 85 ms |
+  | `find` a `fn $F(…) -> Result<$T>` pattern `where $F matches` | 55 ms |
+  | `refactor` the `.unwrap()` rewrite, every diff (dry run) | 108 ms |
+  | `refactor` a `rust::symbol` rename (dry run) | 20 ms |
+  | `refactor` a dead `rust::symbol` rule, near misses included | 68 ms |
+  | `refactor` `text::literal` over all 870 files, 297 changed, links checked | 237 ms |
+  | `links docs` | 91 ms |
+  | `references` / `calls` through a kept rust-analyzer | 115 ms |
+  | `references` with a fresh rust-analyzer (`COLAB_KEEP_SERVER=0`) | 4.5 s |
 - **Semantic constraints** (`where $X type "…"`) cost one round trip to
   the server per match their other constraints keep: on colab's own
   workspace rust-analyzer took about 10 s to index, then classified 17

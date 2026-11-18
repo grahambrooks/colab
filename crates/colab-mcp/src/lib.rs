@@ -881,10 +881,10 @@ fn find(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
     let mut report = FindReport::new(rules, max_results, detail);
     refactoring.annotate(&mut report.run);
     report.script = refactoring.name.clone();
-    let selector = Selector { rules };
+    let selector = Selector::new(rules, &report.script);
     for target in &paths {
         let outcome = walker::walk(&selector, target, &mut |change| {
-            report.record(rules, &change.path, &change.before);
+            report.record_found(&change.path, selector.take(&change.path));
             Ok(())
         })
         .map_err(ToolError::from_error)?;

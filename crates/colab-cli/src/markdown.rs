@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use colab_core::{Error, Result};
 use colab_lang_markdown::outline::{self, Heading};
+use rayon::prelude::*;
 use serde_json::{Value, json};
 
 use crate::cli::io_to_error;
@@ -253,14 +254,21 @@ fn all_broken(paths: &[PathBuf]) -> Result<Vec<Value>> {
     let view = View {
         overlay: Default::default(),
     };
-    let mut cache = colab_lang_markdown::check::AnchorCache::default();
-    let mut out = Vec::new();
-    for (path, text) in markdown_files(paths)? {
-        let broken =
-            colab_lang_markdown::check::broken_links_cached(&path, &text, &view, &mut cache);
-        out.extend(broken_json(&path, &broken));
-    }
-    Ok(out)
+    // Files in parallel, each worker with its own anchor cache; results
+    // stay in file order.
+    let files = markdown_files(paths)?;
+    let per_file: Vec<Vec<Value>> = files
+        .par_iter()
+        .map_init(
+            colab_lang_markdown::check::AnchorCache::default,
+            |cache, (path, text)| {
+                let broken =
+                    colab_lang_markdown::check::broken_links_cached(path, text, &view, cache);
+                broken_json(path, &broken)
+            },
+        )
+        .collect();
+    Ok(per_file.into_iter().flatten().collect())
 }
 
 /// `colab links`: exit 10 when any link is broken.
@@ -318,33 +326,45 @@ pub fn check_links(
         overlay: overlay.clone(),
     };
     let key = |b: &Broken| (b.dest.clone(), b.reason.clone());
-    let (mut now_cache, mut after_cache) = (AnchorCache::default(), AnchorCache::default());
-    for (path, before_text) in markdown_files(roots)? {
-        let after_text = overlay
-            .get(&normalise(&path))
-            .copied()
-            .unwrap_or(&before_text);
-        let mut before: Vec<(String, String)> =
-            broken_links_cached(&path, &before_text, &now, &mut now_cache)
-                .iter()
-                .map(key)
-                .collect();
-        for b in broken_links_cached(&path, after_text, &after, &mut after_cache) {
-            match before.iter().position(|k| *k == key(&b)) {
-                Some(i) => {
-                    before.swap_remove(i);
+    // Each file is checked on its own, so files go in parallel, each
+    // worker with its own pair of anchor caches; conflicts are reported in
+    // file order. (Serially this check cost more than the run it guards.)
+    let files = markdown_files(roots)?;
+    let per_file: Vec<Vec<colab_core::Conflict>> = files
+        .par_iter()
+        .map_init(
+            || (AnchorCache::default(), AnchorCache::default()),
+            |(now_cache, after_cache), (path, before_text)| {
+                let after_text = overlay
+                    .get(&normalise(path))
+                    .copied()
+                    .unwrap_or(before_text);
+                let mut before: Vec<(String, String)> =
+                    broken_links_cached(path, before_text, &now, now_cache)
+                        .iter()
+                        .map(key)
+                        .collect();
+                let mut conflicts = Vec::new();
+                for b in broken_links_cached(path, after_text, &after, after_cache) {
+                    match before.iter().position(|k| *k == key(&b)) {
+                        Some(i) => {
+                            before.swap_remove(i);
+                        }
+                        None => conflicts.push(colab_core::Conflict {
+                            path: path.strip_prefix("./").unwrap_or(path).to_path_buf(),
+                            rule: None,
+                            message: format!(
+                                "this run would break the link `{}` on line {}: {}",
+                                b.dest, b.line, b.reason
+                            ),
+                        }),
+                    }
                 }
-                None => report.conflicts.push(colab_core::Conflict {
-                    path: path.strip_prefix("./").unwrap_or(&path).to_path_buf(),
-                    rule: None,
-                    message: format!(
-                        "this run would break the link `{}` on line {}: {}",
-                        b.dest, b.line, b.reason
-                    ),
-                }),
-            }
-        }
-    }
+                conflicts
+            },
+        )
+        .collect();
+    report.conflicts.extend(per_file.into_iter().flatten());
     Ok(())
 }
 

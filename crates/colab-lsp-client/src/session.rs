@@ -23,6 +23,10 @@ pub struct ResponseError {
     pub message: String,
 }
 
+/// The silence [`Session::wait_until_quiet`] waits for once the server has
+/// reported itself quiescent.
+pub const QUIESCENT_SETTLE: Duration = Duration::from_millis(50);
+
 pub struct Session {
     transport: Transport,
     name: String,
@@ -396,10 +400,24 @@ impl Session {
     /// for `settle`. A rename sent while a server is still indexing can
     /// come back *partial* — renaming only what it has seen — so this is a
     /// correctness wait, not a courtesy.
+    ///
+    /// A server that says when it is done — rust-analyzer's
+    /// `experimental/serverStatus` — needs no long silence once it has
+    /// said `quiescent: true` with no progress open: the window shrinks to
+    /// [`QUIESCENT_SETTLE`], long enough to see it turn busy again after a
+    /// `didOpen`. (A kept server's daemon replays its last status, so a warm
+    /// command does not pay the full `settle` each time.) Servers that
+    /// report only `$/progress` keep the full window.
     pub fn wait_until_quiet(&mut self, settle: Duration) -> Result<()> {
         loop {
             let busy = !self.active_progress.is_empty() || self.quiescent == Some(false);
-            let window = Instant::now() + settle;
+            let said_done = self.quiescent == Some(true) && self.active_progress.is_empty();
+            let window = Instant::now()
+                + if said_done {
+                    settle.min(QUIESCENT_SETTLE)
+                } else {
+                    settle
+                };
             match self.transport.recv_until(window.min(self.deadline)) {
                 Ok(message) => {
                     if message.get("method").is_some() {

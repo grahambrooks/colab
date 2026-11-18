@@ -13,6 +13,8 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use crate::backend::Operation;
 use crate::report::{NearMiss, RunReport, Unchanged};
 use crate::suggest;
@@ -30,10 +32,11 @@ pub const NEAR_MISS_LIMIT: usize = 3;
 /// `rules` must be the compiled script in the same order as
 /// `report.rules`. `read` loads a sampled path's current contents; a
 /// `None` (unreadable, vanished) just skips the file. Only paths a dead
-/// rule considers relevant are read, and at most [`PROBE_FILE_LIMIT`].
-pub fn probe<R>(rules: &[Box<dyn Operation>], report: &mut RunReport, mut read: R)
+/// rule considers relevant are read, and at most [`PROBE_FILE_LIMIT`]
+/// (an unreadable one still counts), in parallel.
+pub fn probe<R>(rules: &[Box<dyn Operation>], report: &mut RunReport, read: R)
 where
-    R: FnMut(&Path) -> Option<String>,
+    R: Fn(&Path) -> Option<String> + Sync,
 {
     // Every dead rule is probed for why it left matches unchanged; those
     // with a target are also probed for values resembling it.
@@ -54,71 +57,70 @@ where
         return;
     }
 
+    // The sample first, without reading anything: each file a dead or
+    // live rule should be probed in, and which rules, up to the limit.
+    let tasks: Vec<Task<'_>> = report
+        .scanned_sample
+        .iter()
+        .filter_map(|path| {
+            let relevant: Vec<(usize, bool)> = dead
+                .iter()
+                .filter(|&&(index, _)| rules[index].is_file_relevant(path))
+                .map(|&(index, target)| (index, target.is_some()))
+                .collect();
+            // A file the rule changed is not one it skipped. (Read alone on the
+            // original, a rule that builds on an earlier rule's output would
+            // look as if it had.)
+            let changed_here = report.fired.get(path);
+            let live_here: Vec<usize> = live
+                .iter()
+                .copied()
+                .filter(|&index| rules[index].is_file_relevant(path))
+                .filter(|index| !changed_here.is_some_and(|f| f.contains(index)))
+                .collect();
+            (!relevant.is_empty() || !live_here.is_empty()).then_some(Task {
+                path,
+                relevant,
+                live_here,
+            })
+        })
+        .take(PROBE_FILE_LIMIT)
+        .collect();
+
+    // Then each file read and probed on the pool's workers, in the
+    // caller's run (a rule's language server) and trace, as the walker's
+    // are: re-parsing up to 500 files one by one cost more than the walk.
+    let run = crate::run::Run::current();
+    let trace = crate::telemetry::current();
+    let probe_one = |task: &Task<'_>| {
+        let work = || probe_file(rules, task, &read);
+        let in_run = || match &run {
+            Some(run) => run.enter(work),
+            None => work(),
+        };
+        match &trace {
+            Some(trace) => trace.enter(in_run),
+            None => in_run(),
+        }
+    };
+    let found: Vec<Option<FileProbe>> = tasks.par_iter().map(probe_one).collect();
+
+    // Folded in path order, so the first reason given is the same on
+    // every run.
     // rule index -> observed value -> number of files it appeared in.
     let mut seen: BTreeMap<usize, BTreeMap<String, u64>> = BTreeMap::new();
     // rule index -> (first reason given, files that gave one).
     let mut unchanged: BTreeMap<usize, (String, u64)> = BTreeMap::new();
-    let mut files_read = 0;
-    for path in &report.scanned_sample {
-        if files_read >= PROBE_FILE_LIMIT {
-            break;
+    for file in found.into_iter().flatten() {
+        for (index, reason) in file.unchanged {
+            unchanged.entry(index).or_insert((reason, 0)).1 += 1;
         }
-        let relevant: Vec<(usize, bool)> = dead
-            .iter()
-            .filter(|&&(index, _)| rules[index].is_file_relevant(path))
-            .map(|&(index, target)| (index, target.is_some()))
-            .collect();
-        // A file the rule changed is not one it skipped. (Read alone on the
-        // original, a rule that builds on an earlier rule's output would
-        // look as if it had.)
-        let changed_here = report.fired.get(path);
-        let live_here: Vec<usize> = live
-            .iter()
-            .copied()
-            .filter(|&index| rules[index].is_file_relevant(path))
-            .filter(|index| !changed_here.is_some_and(|f| f.contains(index)))
-            .collect();
-        if relevant.is_empty() && live_here.is_empty() {
-            continue;
+        for (index, values) in file.observed {
+            let counts = seen.entry(index).or_default();
+            for value in values {
+                *counts.entry(value).or_default() += 1;
+            }
         }
-        let Some(source) = read(path) else {
-            continue;
-        };
-        files_read += 1;
-        // A rule that asks a language server asks it about this file.
-        crate::semantic::at_path(path, || {
-            for index in live_here {
-                let rule = &rules[index];
-                if rule
-                    .prefilter()
-                    .is_some_and(|literal| !source.contains(literal))
-                {
-                    continue;
-                }
-                // After a write the file holds the rule's own result, so "already
-                // as the rule asks" is its success, not a skip.
-                if let Some(reason) = rule
-                    .why_unchanged(&source)
-                    .filter(|r| !r.starts_with(crate::ALREADY))
-                {
-                    unchanged.entry(index).or_insert((reason, 0)).1 += 1;
-                }
-            }
-            for (index, has_target) in relevant {
-                if let Some(reason) = rules[index].why_unchanged(&source) {
-                    unchanged.entry(index).or_insert((reason, 0)).1 += 1;
-                }
-                if !has_target {
-                    continue;
-                }
-                let values: BTreeSet<String> =
-                    rules[index].observed_targets(&source).into_iter().collect();
-                let counts = seen.entry(index).or_default();
-                for value in values {
-                    *counts.entry(value).or_default() += 1;
-                }
-            }
-        });
     }
 
     for index in live {
@@ -135,6 +137,64 @@ where
         };
         report.rules[index].near_misses = rank(target, counts);
     }
+}
+
+/// One sampled file and the rules to probe in it.
+struct Task<'p> {
+    path: &'p Path,
+    /// Dead rules relevant here, and whether each has a target.
+    relevant: Vec<(usize, bool)>,
+    /// Live rules relevant here that did not change this file.
+    live_here: Vec<usize>,
+}
+
+/// What probing one file found.
+struct FileProbe {
+    /// (rule, why it left this file unchanged), in probing order.
+    unchanged: Vec<(usize, String)>,
+    /// (dead rule, the distinct values it saw here).
+    observed: Vec<(usize, BTreeSet<String>)>,
+}
+
+fn probe_file<R>(rules: &[Box<dyn Operation>], task: &Task<'_>, read: &R) -> Option<FileProbe>
+where
+    R: Fn(&Path) -> Option<String>,
+{
+    let source = read(task.path)?;
+    let mut out = FileProbe {
+        unchanged: Vec::new(),
+        observed: Vec::new(),
+    };
+    // A rule that asks a language server asks it about this file.
+    crate::semantic::at_path(task.path, || {
+        for &index in &task.live_here {
+            let rule = &rules[index];
+            if rule
+                .prefilter()
+                .is_some_and(|literal| !source.contains(literal))
+            {
+                continue;
+            }
+            // After a write the file holds the rule's own result, so "already
+            // as the rule asks" is its success, not a skip.
+            if let Some(reason) = rule
+                .why_unchanged(&source)
+                .filter(|r| !r.starts_with(crate::ALREADY))
+            {
+                out.unchanged.push((index, reason));
+            }
+        }
+        for &(index, has_target) in &task.relevant {
+            if let Some(reason) = rules[index].why_unchanged(&source) {
+                out.unchanged.push((index, reason));
+            }
+            if has_target {
+                let values = rules[index].observed_targets(&source).into_iter().collect();
+                out.observed.push((index, values));
+            }
+        }
+    });
+    Some(out)
 }
 
 /// [`probe`], reading sampled files from disk.
@@ -211,16 +271,20 @@ mod tests {
         scanned(&mut report, "two.fake");
         scanned(&mut report, "skip.other");
 
-        let mut reads = Vec::new();
+        let reads = std::sync::Mutex::new(Vec::new());
         probe(&rules, &mut report, |path| {
-            reads.push(path.to_path_buf());
+            reads.lock().unwrap().push(path.to_path_buf());
             Some(match path.to_str().unwrap() {
                 "one.fake" => "a/b/v2\nfmt\n".to_string(),
                 _ => "a/b/v2\na/c\n".to_string(),
             })
         });
 
-        assert_eq!(reads.len(), 2, "irrelevant files are not read");
+        assert_eq!(
+            reads.into_inner().unwrap().len(),
+            2,
+            "irrelevant files are not read"
+        );
         assert_eq!(
             report.rules[0].near_misses,
             vec![
