@@ -410,7 +410,9 @@ impl Reporter for NdjsonReporter {
 /// Unified diff per changed file. Intentionally uncapped and free of any
 /// summary so the output stays valid `patch` input.
 pub struct DiffReporter {
-    out: io::Stdout,
+    /// Buffered, and flushed after each file: a diff is many short lines,
+    /// and stdout alone makes a write call for each.
+    out: io::BufWriter<io::Stdout>,
     /// Where each moved or created file came from (`None`: created), so
     /// its edits diff against the old path, as `git apply` expects.
     origins: std::collections::HashMap<std::path::PathBuf, Option<std::path::PathBuf>>,
@@ -423,7 +425,7 @@ pub struct DiffReporter {
 impl DiffReporter {
     pub fn new() -> Self {
         Self {
-            out: io::stdout(),
+            out: io::BufWriter::new(io::stdout()),
             origins: Default::default(),
             pending: Vec::new(),
         }
@@ -450,7 +452,10 @@ impl Reporter for DiffReporter {
                 self.pending.push((path.clone(), op.clone()));
                 Ok(())
             }
-            FileOp::Delete { .. } => render::write_file_op_header(&mut self.out, op, false),
+            FileOp::Delete { .. } => {
+                render::write_file_op_header(&mut self.out, op, false)?;
+                self.out.flush()
+            }
         }
     }
 
@@ -476,7 +481,8 @@ impl Reporter for DiffReporter {
                 &change.before,
                 &change.after,
             ),
-        }
+        }?;
+        self.out.flush()
     }
 
     fn finish(&mut self, _report: &RunReport) -> io::Result<()> {

@@ -16,14 +16,16 @@
 //! - **Symlink-following** — off by default.
 //!
 //! Output ordering is deterministic: directory entries are walked
-//! in path-sorted order, then parallel processing preserves that
-//! order via `rayon::par_iter().collect()`. Two runs of the same
-//! script against the same tree emit identical event streams
-//! regardless of `--jobs`.
+//! in path-sorted order, files are processed in parallel, and their
+//! results are delivered in that order. Two runs of the same script
+//! against the same tree emit identical event streams regardless of
+//! `--jobs`.
 //!
-//! Files are processed in chunks of `CHUNK_SIZE` so even a
-//! 100k-file run only holds a bounded number of [`FileChange`]
-//! values in memory at once.
+//! Processing streams: a worker takes the next file as soon as it is
+//! free, and runs at most `WINDOW` files ahead of the delivery, so even
+//! a 100k-file run holds a bounded number of [`FileChange`] values in
+//! memory at once. (Chunks with a barrier each, as before, left most
+//! cores idle while each chunk's slowest file finished.)
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,16 +35,18 @@ use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
 use log::debug;
 use rayon::ThreadPool;
-use rayon::prelude::*;
 
 use crate::error::{Error, Result};
 use crate::report::SkippedFile;
 use crate::transformer::CodeTransformer;
 
-/// Files-per-batch when processing in parallel. Caps memory at
-/// roughly `CHUNK_SIZE × max_file_size` so even 100k+ file trees
-/// stream through without holding everything in RAM.
-const CHUNK_SIZE: usize = 256;
+/// How far ahead of the delivery workers may run, in files. Caps memory
+/// at roughly `WINDOW × max_file_size` so even 100k+ file trees stream
+/// through without holding everything in RAM. Wide enough that one slow
+/// file (a 2 MB generated table) does not idle the other workers while
+/// delivery waits for it: at 512 a registry corpus of 10k files kept 7 of
+/// 12 cores busy, at 4096 all of them, for about 10% more peak memory.
+const WINDOW: usize = 4096;
 
 /// Build a rayon thread pool sized for this walk. Each call to
 /// [`walk_with`] gets its own pool so back-to-back invocations with
@@ -314,9 +318,11 @@ fn collect_paths<T: CodeTransformer>(
     Ok((paths, visited))
 }
 
-/// Process / deliver phase: chunked parallel read + apply (on the
-/// supplied pool), then sequential delivery to the visitor in
-/// input (sorted) order.
+/// Process / deliver phase: files read and transformed on the pool's
+/// workers, each taking the next file as soon as it is free, and
+/// delivered to the visitor on the calling thread in input (sorted)
+/// order. A worker waits while it is `WINDOW` files ahead of delivery;
+/// a visitor error stops the workers and is returned.
 fn process_paths_parallel<T, F>(
     transformer: &T,
     paths: &[PathBuf],
@@ -327,6 +333,10 @@ where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
 {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Condvar, Mutex, PoisonError, mpsc};
+
+    type Computed = std::result::Result<FileChange, SkippedFile>;
     let mut skipped = Vec::new();
     // Workers are the pool's threads, not the caller's: each enters the
     // caller's run, so its rules see that run's oracle and facts.
@@ -344,25 +354,70 @@ where
             None => work(),
         }
     };
-    for chunk in paths.chunks(CHUNK_SIZE) {
-        let changes: Vec<std::result::Result<FileChange, SkippedFile>> =
-            pool.install(|| chunk.par_iter().map(compute).collect());
-        for change in changes {
-            let change = match change {
-                Ok(change) => change,
-                Err(skip) => {
-                    debug!("Skipping {}: {}", skip.path.display(), skip.reason);
-                    skipped.push(skip);
-                    continue;
+    let next = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
+    let delivered = (Mutex::new(0usize), Condvar::new());
+    let workers = pool.current_num_threads().clamp(1, paths.len().max(1));
+    let (tx, rx) = mpsc::channel::<(usize, Computed)>();
+    let mut outcome = Ok(());
+    pool.in_place_scope(|scope| {
+        for _ in 0..workers {
+            let tx = tx.clone();
+            let (next, stop, delivered, compute) = (&next, &stop, &delivered, &compute);
+            scope.spawn(move |_| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::SeqCst);
+                    if i >= paths.len() {
+                        break;
+                    }
+                    let (lock, ready) = delivered;
+                    let mut done = lock.lock().unwrap_or_else(PoisonError::into_inner);
+                    while i >= *done + WINDOW && !stop.load(Ordering::SeqCst) {
+                        done = ready.wait(done).unwrap_or_else(PoisonError::into_inner);
+                    }
+                    drop(done);
+                    if stop.load(Ordering::SeqCst) || tx.send((i, compute(&paths[i]))).is_err() {
+                        break;
+                    }
                 }
-            };
-            if change.before == change.after {
-                debug!("No changes for {}", change.path.display());
-            }
-            debug!("Processing {}", change.path.display());
-            visit(change)?;
+            });
         }
-    }
+        drop(tx);
+        // Results arrive in any order; each is delivered once those
+        // before it have been.
+        let mut pending: std::collections::BTreeMap<usize, Computed> = Default::default();
+        let mut want = 0;
+        for (i, computed) in &rx {
+            pending.insert(i, computed);
+            while let Some(computed) = pending.remove(&want) {
+                want += 1;
+                match computed {
+                    Ok(change) => {
+                        if change.before == change.after {
+                            debug!("No changes for {}", change.path.display());
+                        }
+                        debug!("Processing {}", change.path.display());
+                        if let Err(e) = visit(change) {
+                            outcome = Err(e);
+                            stop.store(true, Ordering::SeqCst);
+                            break;
+                        }
+                    }
+                    Err(skip) => {
+                        debug!("Skipping {}: {}", skip.path.display(), skip.reason);
+                        skipped.push(skip);
+                    }
+                }
+            }
+            let (lock, ready) = &delivered;
+            *lock.lock().unwrap_or_else(PoisonError::into_inner) = want;
+            ready.notify_all();
+            if outcome.is_err() {
+                break;
+            }
+        }
+    });
+    outcome?;
     Ok(skipped)
 }
 

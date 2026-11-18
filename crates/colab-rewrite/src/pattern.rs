@@ -509,9 +509,8 @@ impl StructuralPattern {
         let (cheap, asked) = self
             .checks
             .split_at(self.checks.partition_point(|c| !c.is_semantic()));
-        let mut found: Vec<_> = grep
-            .root()
-            .find_all(&self.pattern)
+        let mut found: Vec<_> = candidates(grep, source, &self.pattern)
+            .into_iter()
             .filter(|m| self.shape.fits(m.get_node()))
             .filter(|m| cheap.iter().all(|c| c.holds(m, source)))
             .collect();
@@ -562,11 +561,12 @@ impl StructuralPattern {
     /// Matches of this compilation only, not its `also` ones.
     fn find_own(&self, source: &str) -> Vec<Found> {
         let grep = parsed(&self.lang, source);
+        let mut lines = Lines::new(source);
         self.matches(&grep, source)
             .into_iter()
             .map(|m| {
                 let range = m.range();
-                let (line, column) = line_column(source, range.start);
+                let (line, column) = lines.at(range.start);
                 let env = m.get_env();
                 let mut captures: Vec<(String, String)> = env
                     .get_matched_variables()

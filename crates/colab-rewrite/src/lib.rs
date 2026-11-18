@@ -69,10 +69,29 @@ pub fn apply_edits(source: &str, mut edits: Vec<Edit>) -> String {
         return source.to_string();
     }
     edits.sort_by_key(|e| e.start);
-    let mut out = source.to_string();
-    for edit in edits.iter().rev() {
-        out.replace_range(edit.start..edit.end, &edit.text);
+    if edits.windows(2).any(|w| w[1].start < w[0].end) {
+        // Overlapping edits: applied last first, as they always were; the
+        // tree cannot be edited to match, so the next parse is a full one.
+        let mut out = source.to_string();
+        for edit in edits.iter().rev() {
+            out.replace_range(edit.start..edit.end, &edit.text);
+        }
+        return out;
     }
+    // One pass forward, rather than a `replace_range` (and a shift of the
+    // rest of the text) per edit.
+    let grown: usize = edits.iter().map(|e| e.text.len()).sum();
+    let mut out = String::with_capacity(source.len() + grown);
+    let mut at = 0;
+    for edit in &edits {
+        out.push_str(&source[at..edit.start]);
+        out.push_str(&edit.text);
+        at = edit.end;
+    }
+    out.push_str(&source[at..]);
+    // The next parse of `out` — the check that it still parses, the next
+    // rule — reuses the tree of `source` (`parse_cache`).
+    parse_cache::reparse_edited(source, &edits, &out);
     out
 }
 

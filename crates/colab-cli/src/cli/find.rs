@@ -82,11 +82,13 @@ pub(super) fn run_find(args: FindArgs) -> Result<u8> {
         if !args.group_by.is_empty() {
             table = crate::table::group(&table, &args.group_by)?;
         }
-        let mut out = io::stdout().lock();
+        // Buffered: a row per match, and stdout alone writes each line.
+        let mut out = io::BufWriter::new(io::stdout().lock());
         match format {
             crate::table::TableFormat::Csv => crate::table::write_csv(&mut out, &table),
             crate::table::TableFormat::Ndjson => crate::table::write_ndjson(&mut out, &table),
         }
+        .and_then(|()| out.flush())
         .map_err(io_to_error)?;
         if report.truncated() > 0 {
             log::warn!(
@@ -103,8 +105,10 @@ pub(super) fn run_find(args: FindArgs) -> Result<u8> {
             writeln!(out, "{}", render::find_json(&report)).map_err(io_to_error)?;
         }
         FindFormat::Human => {
-            let mut out = io::stdout().lock();
-            render::write_find_human(&mut out, &report).map_err(io_to_error)?;
+            let mut out = io::BufWriter::new(io::stdout().lock());
+            render::write_find_human(&mut out, &report)
+                .and_then(|()| out.flush())
+                .map_err(io_to_error)?;
         }
     }
     Ok(0)

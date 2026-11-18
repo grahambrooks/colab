@@ -16,6 +16,72 @@ pub(super) fn parsed(lang: &TsLang, source: &str) -> ast_grep_core::AstGrep<StrD
     }
 }
 
+/// Every match of `pattern` in `grep` (the tree of `source`), in pre-order:
+/// what `grep.root().find_all(pattern)` gives. When the tree is searched
+/// again (a second rule, another form of the pattern), the parse cache's
+/// kind index lets it visit only the nodes the pattern can start at,
+/// instead of walking the whole tree once per rule.
+pub(super) fn candidates<'t>(
+    grep: &'t ast_grep_core::AstGrep<StrDoc<TsLang>>,
+    source: &str,
+    pattern: &Pattern,
+) -> Vec<NodeMatch<'t, StrDoc<TsLang>>> {
+    use ast_grep_core::matcher::{Matcher, MatcherExt};
+    let root = grep.root();
+    let ts_root = root.get_inner_node();
+    if let Some(kinds) = pattern.potential_kinds()
+        && let Some(index) = crate::parse_cache::kind_index(source, ts_root)
+    {
+        let mut cursor = ts_root.walk();
+        return index
+            .positions(kinds.iter())
+            .into_iter()
+            .filter_map(|position| {
+                cursor.goto_descendant(position as usize);
+                pattern.match_node(grep.adopt(cursor.node()))
+            })
+            .collect();
+    }
+    root.find_all(pattern).collect()
+}
+
+/// Line and column (1-based, the column in characters) of offsets met in
+/// ascending order, counting each line break once rather than from the
+/// start of the text for every offset.
+pub(super) struct Lines<'s> {
+    source: &'s str,
+    at: usize,
+    line: usize,
+    line_start: usize,
+}
+
+impl<'s> Lines<'s> {
+    pub(super) fn new(source: &'s str) -> Self {
+        Self {
+            source,
+            at: 0,
+            line: 1,
+            line_start: 0,
+        }
+    }
+
+    pub(super) fn at(&mut self, offset: usize) -> (usize, usize) {
+        if offset < self.at {
+            return line_column(self.source, offset);
+        }
+        let skipped = &self.source[self.at..offset];
+        if let Some(last) = skipped.rfind('\n') {
+            self.line += skipped.matches('\n').count();
+            self.line_start = self.at + last + 1;
+        }
+        self.at = offset;
+        (
+            self.line,
+            self.source[self.line_start..offset].chars().count() + 1,
+        )
+    }
+}
+
 pub(super) fn parse_clean(
     grammar: &tree_sitter::Language,
     text: &str,
