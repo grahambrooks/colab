@@ -178,7 +178,7 @@ paths with uncommitted changes unless `--allow-dirty`.
 ## Performance
 
 - **Parallel.** The walker uses a thread per core; `--jobs N` or
-  `COLAB_JOBS` sets it.
+  `COLAB_JOBS` sets it, for `refactor`, `fix` and `find` alike.
 - **Prefilters.** A rule names a literal that must appear in a file for
   it to change anything; a file without it is not parsed for that rule.
 - **One parse per text.** Consecutive rules over a file share a parse
@@ -274,9 +274,9 @@ otherwise (495 MB against 439 MB for `$X.unwrap()`, 553 MB against
   - A match split across lines keeps its line break in colab
     (`.node_by_id(…)` then `.expect(…)` on the next line); ast-grep
     writes the template's text, joining them.
-- `colab find` has no `--jobs` and ignores `COLAB_JOBS`, so a
-  single-threaded comparison was not possible (ast-grep `-j 1`: 11.4 s
-  for the `$X.unwrap()` search).
+- One thread each (`colab find --jobs 1`, `ast-grep -j 1`), the
+  `$X.unwrap()` search on the 10k-file tree: colab 8.06 s against
+  ast-grep 11.4 s.
 
 ## Does it help? The evaluation suite
 

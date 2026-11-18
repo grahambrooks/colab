@@ -1571,6 +1571,54 @@ fn find_lists_pattern_matches_as_path_line_col() {
 }
 
 #[test]
+fn find_jobs_sets_the_workers_and_leaves_the_hits_alone() {
+    let root = workspace_temp("find-jobs");
+    for i in 0..40 {
+        write(
+            &root.join(format!("pkg{i:02}/main.go")),
+            &GO_WRAP.replace("\"read\"", &format!("\"read {i}\"")),
+        );
+    }
+    let find = |jobs: &[&str], env: Option<&str>| {
+        let mut command = colab();
+        command.args([
+            "find",
+            "--table",
+            "csv",
+            "-e",
+            "match go::pattern 'errors.Wrap($E, $M)' { delete }",
+        ]);
+        command.args(jobs).arg(&root);
+        match env {
+            Some(n) => command.env("COLAB_JOBS", n),
+            None => command.env_remove("COLAB_JOBS"),
+        };
+        let output = command.output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let default = find(&[], None);
+    assert_eq!(
+        default.lines().count(),
+        41,
+        "a header and 40 hits: {default}"
+    );
+    assert_eq!(find(&["--jobs", "1"], None), default);
+    assert_eq!(find(&["--jobs", "4"], None), default);
+    assert_eq!(
+        find(&[], Some("1")),
+        default,
+        "COLAB_JOBS when --jobs is not given"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn find_json_carries_captures_truncation_and_near_misses() {
     let root = workspace_temp("find-json");
     write(&root.join("a.go"), GO_WRAP);

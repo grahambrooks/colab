@@ -19,7 +19,7 @@ pub(super) fn run_find(args: FindArgs) -> Result<u8> {
             exclude: args.exclude.clone(),
             respect_gitignore: !args.no_ignore,
             follow_symlinks: false,
-            jobs: None,
+            jobs: resolve_jobs(args.jobs),
         };
         let targets = if args.paths.is_empty() {
             vec![PathBuf::from(".")]
@@ -59,7 +59,7 @@ pub(super) fn run_find(args: FindArgs) -> Result<u8> {
         exclude: args.exclude.clone(),
         respect_gitignore: !args.no_ignore,
         follow_symlinks: false,
-        jobs: None,
+        jobs: resolve_jobs(args.jobs),
     };
     let targets = if args.paths.is_empty() {
         vec![PathBuf::from(".")]

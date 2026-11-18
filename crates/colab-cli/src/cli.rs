@@ -637,6 +637,12 @@ struct FindArgs {
     #[arg(long = "no-ignore")]
     no_ignore: bool,
 
+    /// Worker thread count. Defaults to the available parallelism. Falls back to
+    /// the `COLAB_JOBS` env var when unset. Set to 1 to search one file at a
+    /// time. The results are the same, in the same order, for any count.
+    #[arg(long, value_name = "N")]
+    jobs: Option<usize>,
+
     /// Files or directories to search. Defaults to `.`.
     paths: Vec<PathBuf>,
 }

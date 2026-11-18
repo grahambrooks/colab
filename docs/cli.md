@@ -677,7 +677,7 @@ Read-only search: where does each rule match? Nothing is written.
 colab find (--script <path|-> | -e <rule>...) [--format human|json]
            [--detail concise|detailed] [--max-results <N>]
            [-C <dir>] [--include <glob>]... [--exclude <glob>]... [--no-ignore]
-           [paths...]
+           [--jobs <N>] [paths...]
 ```
 
 ```sh
@@ -698,6 +698,9 @@ cmd/main.go:22:15: errors.Wrap(err, "startup")
   rewrite would change.
 - Rules are searched independently against the original files, not run
   in sequence.
+- `--jobs N` (else `COLAB_JOBS`, else one per core) sets the worker
+  threads, as for `refactor`; `--jobs 1` searches one file at a time.
+  The hits and their order are the same for any count.
 - A rule that finds nothing is warned about, with
   [near misses](#near-misses) where its module saw something close.
 
