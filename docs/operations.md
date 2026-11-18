@@ -210,6 +210,57 @@ paths with uncommitted changes unless `--allow-dirty`.
   | `links docs` | 91 ms |
   | `references` / `calls` through a kept rust-analyzer | 115 ms |
   | `references` with a fresh rust-analyzer (`COLAB_KEEP_SERVER=0`) | 4.5 s |
+
+### Against ast-grep
+
+colab's patterns are ast-grep's engine (`ast-grep-core`) under colab's
+own walker, prefilter and checks, so the two were compared on the same
+patterns: colab 2026.11.15.70b21b0 (`dist` build) and ast-grep 0.51.3
+(Homebrew), on colab's `crates/` (238 files) and on 10,025 `.rs` files
+(458 crates, 4.1M lines) copied from a Cargo registry; Apple M2 Max,
+12 cores; median of 10 runs (5 on the larger tree); every match
+written as JSON (`colab find --table ndjson`, `ast-grep --json=stream`).
+
+| Task | `crates/`: colab | ast-grep | 10k files: colab | ast-grep |
+| ---- | ---: | ---: | ---: | ---: |
+| Start-up (`--version`) | 9 ms | 10 ms | — | — |
+| Search `$X.unwrap()` (24,278 matches on 10k) | 75 ms | 64 ms | 2.30 s | 2.15 s |
+| Search `fn $F($$$P) -> Result<$T> { $$$B }` | 59 ms | 64 ms | 1.42 s | 2.09 s |
+| Same, `$F` matching `^new` (colab `where`, ast-grep `constraints`) | 61 ms | 72 ms | 1.40 s | 2.59 s |
+| Search a pattern found nowhere | 16 ms | 57 ms | 0.25 s | 2.11 s |
+| Five rules in one run (56,620 matches) | 103 ms | 80 ms | 3.91 s | 2.45 s |
+| Rewrite `.unwrap()` → `.expect("bench")`, print the diff | 105 ms | 67 ms | 3.55 s | 2.13 s |
+| Same, written to disk | — | — | 3.63 s | 2.34 s |
+
+Peak memory on the 10k-file tree: about the same for a single search
+(~490 MB each); colab less when its prefilter skips files (181 MB
+against 388 MB for the `Result` search) and more for a rewrite (653 MB
+against 421 MB printing diffs, 746 MB against 426 MB writing).
+
+- **Where colab is faster:** a rule whose pattern holds a literal that
+  most files lack. colab parses only the files containing it (its
+  prefilter), so a pattern found nowhere costs a read, not a parse: 8×
+  on the large tree.
+- **Where it is slower:** several rules in one run, and rewrites. colab
+  applies rules one after another, each to the previous one's output,
+  and before writing checks conflicts, re-reads files changed on disk
+  and, after the run, explains the rules that left matches alone; none
+  of that was profiled apart for this comparison. Single searches are
+  within 10% of each other.
+- **The results differ in three places:**
+  - `if let Some($V) = $E { $$$B }`: colab 4,066 matches, ast-grep
+    6,171. ast-grep's default strictness ignores trailing children, so it
+    also matches 2,103 `if let … else` (a rewrite would drop the `else`);
+    colab's matches are a subset of ast-grep's.
+  - Nested matches (`a.unwrap().unwrap()`): ast-grep rewrites the outer
+    one only, leaving 1,417 `.unwrap()` after one pass and 119 after a
+    second; colab leaves none after one.
+  - A match split across lines keeps its line break in colab
+    (`.node_by_id(…)` then `.expect(…)` on the next line); ast-grep
+    writes the template's text, joining them.
+- `colab find` has no `--jobs` and ignores `COLAB_JOBS`, so a
+  single-threaded comparison was not possible (ast-grep `-j 1`: 11.3 s
+  for the `$X.unwrap()` search).
 - **Semantic constraints** (`where $X type "…"`) cost one round trip to
   the server per match their other constraints keep: on colab's own
   workspace rust-analyzer took about 10 s to index, then classified 17
