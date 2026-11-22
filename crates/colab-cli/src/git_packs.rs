@@ -103,8 +103,7 @@ pub fn checkout(url: &str, pin: &Pin) -> Result<PathBuf> {
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
+            .map_or_default(|d| d.as_nanos())
     ));
     std::fs::create_dir_all(&partial).map_err(|e| Error::io_at(&partial, e))?;
     let fetched = (|| {

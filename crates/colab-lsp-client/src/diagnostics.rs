@@ -100,10 +100,7 @@ fn errors(session: &mut Session, pull: bool, path: &Path) -> Result<Vec<Value>> 
             .cloned()
             .unwrap_or_default()
     } else {
-        session
-            .published(path)
-            .map(<[Value]>::to_vec)
-            .unwrap_or_default()
+        session.published(path).map_or_default(<[Value]>::to_vec)
     };
     log::debug!(
         "{} diagnostic(s) for {} ({}): {}",

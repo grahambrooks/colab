@@ -57,11 +57,9 @@ fn match_path_prefix(text: &str, from: &str) -> Option<usize> {
 /// near-miss reporting. The matcher segment-prefix-matches the target
 /// against this same text.
 pub(crate) fn use_paths(source: &str) -> Vec<String> {
-    crate::parse(source)
-        .map(|tree| {
-            colab_rewrite::field_texts(&tree, source, &["use_declaration"], Some("argument"), &[])
-        })
-        .unwrap_or_default()
+    crate::parse(source).map_or_default(|tree| {
+        colab_rewrite::field_texts(&tree, source, &["use_declaration"], Some("argument"), &[])
+    })
 }
 
 // ---------------------------------------------------------------------------

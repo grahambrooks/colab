@@ -1646,8 +1646,7 @@ fn blame(
     let holding: Vec<usize> = colab_core::render::blocks(change, spans)
         .into_iter()
         .find(|b| b.new.contains(&at) || (b.new.is_empty() && b.new.start == at))
-        .map(|b| b.rules)
-        .unwrap_or_default();
+        .map_or_default(|b| b.rules);
     match (holding.as_slice(), change.rules_fired.as_slice()) {
         ([one], _) => Some(*one),
         ([], [only]) => Some(*only),

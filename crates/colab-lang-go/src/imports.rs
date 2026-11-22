@@ -31,11 +31,9 @@ where
 
 /// Every import path in `source`, for near-miss reporting.
 pub(crate) fn import_paths(source: &str) -> Vec<String> {
-    crate::parse(source)
-        .map(|tree| {
-            colab_rewrite::field_texts(&tree, source, &["import_spec"], Some("path"), &['"'])
-        })
-        .unwrap_or_default()
+    crate::parse(source).map_or_default(|tree| {
+        colab_rewrite::field_texts(&tree, source, &["import_spec"], Some("path"), &['"'])
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -242,11 +240,7 @@ pub(crate) fn imported_names(source: &str) -> Vec<String> {
                         names.push(alias.to_string());
                     }
                 }
-                None => names.extend(
-                    spec_path(spec, source)
-                        .map(package_names)
-                        .unwrap_or_default(),
-                ),
+                None => names.extend(spec_path(spec, source).map_or_default(package_names)),
             }
         }
     }

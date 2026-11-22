@@ -381,12 +381,11 @@ fn main() {
                 let only: Vec<String> = params
                     .pointer("/context/only")
                     .and_then(Value::as_array)
-                    .map(|a| {
+                    .map_or_default(|a| {
                         a.iter()
                             .filter_map(|k| k.as_str().map(str::to_string))
                             .collect()
-                    })
-                    .unwrap_or_default();
+                    });
                 let actions: Vec<Value> = actions
                     .into_iter()
                     .filter(|a| {
@@ -556,8 +555,7 @@ fn main() {
                 let calls: Vec<Value> = funcs(&text)
                     .into_iter()
                     .find(|(n, _, _)| n == name)
-                    .map(|(_, _, body)| calls_in(&text, body))
-                    .unwrap_or_default()
+                    .map_or_default(|(_, _, body)| calls_in(&text, body))
                     .into_iter()
                     .filter_map(|(q, f)| declaration(&open, &root, &file, q.as_deref(), &f))
                     .map(|to| json!({"to": to, "fromRanges": []}))
@@ -624,8 +622,7 @@ fn main() {
                 let package = here
                     .parent()
                     .and_then(Path::file_name)
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
+                    .map_or_default(|n| n.to_string_lossy().into_owned());
                 let mut found = Vec::new();
                 if let Some((s, e)) = ident_at(text, at) {
                     let wanted = format!("{package}.{}", &text[s..e]);
@@ -662,8 +659,7 @@ fn main() {
                     .lines()
                     .find(|l| l.starts_with(&format!("type {name} ")))
                     .and_then(|l| l.split_once("// implements:"))
-                    .map(|(_, list)| list.to_string())
-                    .unwrap_or_default();
+                    .map_or_default(|(_, list)| list.to_string());
                 let supers: Vec<Value> = named
                     .split(',')
                     .filter_map(|q| q.trim().split_once('.'))

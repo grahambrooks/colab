@@ -63,15 +63,13 @@ impl Baseline {
         let canonical = cwd.canonicalize().unwrap_or(cwd.clone());
         let prefix = canonical
             .strip_prefix(repo.top())
-            .map(Path::to_path_buf)
-            .unwrap_or_default();
+            .map_or_default(Path::to_path_buf);
         let dir = std::env::temp_dir().join(format!(
             "colab-baseline-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or_default()
+                .map_or_default(|d| d.as_nanos())
         ));
         repo.add_worktree(&dir, reference).map_err(|e| match e {
             Error::Config(why) => Error::Config(format!("--baseline {reference}: {why}")),
@@ -166,12 +164,8 @@ fn keys(change: &FileChange, report: &RunReport) -> Vec<Key> {
             (
                 path.clone(),
                 rules,
-                old.get(block.old.clone())
-                    .map(<[&str]>::concat)
-                    .unwrap_or_default(),
-                new.get(block.new.clone())
-                    .map(<[&str]>::concat)
-                    .unwrap_or_default(),
+                old.get(block.old.clone()).map_or_default(<[&str]>::concat),
+                new.get(block.new.clone()).map_or_default(<[&str]>::concat),
             )
         })
         .collect()

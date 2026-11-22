@@ -76,8 +76,7 @@ pub fn resolve<'a>(
             let names: Vec<String> = all.iter().map(|f| f.path.join("/")).collect();
             let hint =
                 crate::suggest::closest(last, all.iter().map(|f| f.declaration.name.as_str()))
-                    .map(|n| format!(" (did you mean `{n}`?)"))
-                    .unwrap_or_default();
+                    .map_or_default(|n| format!(" (did you mean `{n}`?)"));
             let listed = if names.is_empty() {
                 "it has none".to_string()
             } else {

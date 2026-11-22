@@ -16,22 +16,22 @@ anstyle-parse 1.0.0             MIT OR Apache-2.0
 anstyle-query 1.1.5             MIT OR Apache-2.0
 anstyle-wincon 3.0.11           MIT OR Apache-2.0
 ascii-canvas 4.0.0              Apache-2.0/MIT
-ast-grep-core 0.51.2            MIT
+ast-grep-core 0.51.3            MIT
 bit-set 0.11.1                  Apache-2.0 OR MIT
 bit-vec 0.10.2                  Apache-2.0 OR MIT
 bitflags 2.13.2                 MIT OR Apache-2.0
 borrow-or-share 0.2.4           MIT-0
 borsh 1.8.1                     MIT OR Apache-2.0
 borsh-derive 1.8.1              Apache-2.0
-bstr 1.13.1                     MIT OR Apache-2.0
-bytes 1.12.1                    MIT
-cc 1.11.2                       MIT OR Apache-2.0
+bstr 1.14.0                     MIT OR Apache-2.0
+bytes 1.12.2                    MIT
+cc 1.11.3                       MIT OR Apache-2.0
 cfg-if 1.0.5                    MIT OR Apache-2.0
 cfg_aliases 0.2.2               MIT
-clap 4.6.7                      MIT OR Apache-2.0
+clap 4.6.9                      MIT OR Apache-2.0
 clap_builder 4.6.7              MIT OR Apache-2.0
-clap_derive 4.6.7               MIT OR Apache-2.0
-clap_lex 1.1.1                  MIT OR Apache-2.0
+clap_derive 4.6.9               MIT OR Apache-2.0
+clap_lex 1.1.2                  MIT OR Apache-2.0
 colorchoice 1.0.5               MIT OR Apache-2.0
 colored 3.1.1                   MPL-2.0
 cpufeatures 0.3.1               MIT OR Apache-2.0
@@ -43,8 +43,8 @@ dashmap 6.2.1                   MIT
 digest 0.11.3                   MIT OR Apache-2.0
 either 1.19.0                   MIT OR Apache-2.0
 ena 0.14.4                      MIT OR Apache-2.0
-env_filter 2.0.0                MIT OR Apache-2.0
-env_logger 0.11.11              MIT OR Apache-2.0
+env_filter 2.1.0                MIT OR Apache-2.0
+env_logger 0.11.12              MIT OR Apache-2.0
 equivalent 1.0.3                Apache-2.0 OR MIT
 find-msvc-tools 0.1.15          MIT OR Apache-2.0
 fixedbitset 0.5.9               MIT OR Apache-2.0
@@ -63,7 +63,7 @@ futures-util 0.3.34             MIT OR Apache-2.0
 globset 0.4.21                  Unlicense OR MIT
 hashbrown 0.14.5                MIT OR Apache-2.0
 hashbrown 0.15.5                MIT OR Apache-2.0
-hashbrown 0.17.1                MIT OR Apache-2.0
+hashbrown 0.17.2                MIT OR Apache-2.0
 heck 0.5.0                      MIT OR Apache-2.0
 httparse 1.10.1                 MIT OR Apache-2.0
 hybrid-array 0.4.15             MIT OR Apache-2.0
@@ -72,9 +72,9 @@ indexmap 2.14.2                 Apache-2.0 OR MIT
 is_terminal_polyfill 1.70.2     MIT OR Apache-2.0
 itertools 0.15.0                MIT OR Apache-2.0
 itoa 1.0.19                     MIT OR Apache-2.0
-jiff 0.2.43                     Unlicense OR MIT
-jiff-core 0.1.5                 Unlicense OR MIT
-jiff-static 0.2.43              Unlicense OR MIT
+jiff 1.0.2                      Unlicense OR MIT
+jiff-core 1.0.1                 Unlicense OR MIT
+jiff-static 1.0.2               Unlicense OR MIT
 keccak 0.2.2                    Apache-2.0 OR MIT
 lalrpop 0.23.2                  Apache-2.0 OR MIT
 lalrpop-util 0.23.2             Apache-2.0 OR MIT
@@ -92,7 +92,7 @@ percent-encoding 2.3.2          MIT OR Apache-2.0
 petgraph 0.8.3                  MIT OR Apache-2.0
 phf_shared 0.14.0               MIT
 pico-args 0.5.0                 MIT
-pin-project-lite 0.2.17         Apache-2.0 OR MIT
+pin-project-lite 0.2.18         Apache-2.0 OR MIT
 portable-atomic 1.15.0          Apache-2.0 OR MIT
 portable-atomic-util 0.2.8      Apache-2.0 OR MIT
 precomputed-hash 0.1.1          MIT
@@ -104,9 +104,9 @@ rayon-core 1.13.0               MIT OR Apache-2.0
 redox_syscall 0.5.18            MIT
 ref-cast 1.0.27                 MIT OR Apache-2.0
 ref-cast-impl 1.0.27            MIT OR Apache-2.0
-regex 1.13.1                    MIT OR Apache-2.0
-regex-automata 0.4.18           MIT OR Apache-2.0
-regex-syntax 0.8.11             MIT OR Apache-2.0
+regex 1.13.2                    MIT OR Apache-2.0
+regex-automata 0.4.19           MIT OR Apache-2.0
+regex-syntax 0.8.12             MIT OR Apache-2.0
 same-file 1.0.6                 Unlicense/MIT
 scopeguard 1.2.0                MIT OR Apache-2.0
 serde 1.0.229                   MIT OR Apache-2.0
@@ -118,7 +118,7 @@ shlex 2.0.1                     MIT OR Apache-2.0
 similar 3.2.1                   Apache-2.0
 siphasher 1.0.4                 MIT OR Apache-2.0
 slab 0.4.12                     MIT
-smallvec 1.16.5                 MIT OR Apache-2.0
+smallvec 1.16.6                 MIT OR Apache-2.0
 sponge-cursor 0.1.0             MIT OR Apache-2.0
 streaming-iterator 0.1.9        MIT OR Apache-2.0
 string_cache 0.11.0             MIT OR Apache-2.0
@@ -133,8 +133,8 @@ tokio 1.54.1                    MIT
 tokio-macros 2.7.2              MIT
 tokio-util 0.7.20               MIT
 toml_datetime 1.1.3+spec-1.1.0  MIT OR Apache-2.0
-toml_edit 0.25.19+spec-1.1.0    MIT OR Apache-2.0
-toml_parser 1.1.5+spec-1.1.0    MIT OR Apache-2.0
+toml_edit 0.25.20+spec-1.1.0    MIT OR Apache-2.0
+toml_parser 1.1.6+spec-1.1.0    MIT OR Apache-2.0
 toml_writer 1.2.0+spec-1.1.0    MIT OR Apache-2.0
 tower 0.5.3                     MIT
 tower-layer 0.3.3               MIT
@@ -145,7 +145,7 @@ tracing-attributes 0.1.31       MIT
 tracing-core 0.1.36             MIT
 tree-sitter 0.27.2              MIT
 tree-sitter-c 0.24.2            MIT
-tree-sitter-c-sharp 0.23.5      MIT
+tree-sitter-c-sharp 0.24.0      MIT
 tree-sitter-cpp 0.23.4          MIT
 tree-sitter-go 0.25.0           MIT
 tree-sitter-java 0.23.5         MIT
@@ -154,7 +154,7 @@ tree-sitter-json 0.24.8         MIT
 tree-sitter-kotlin-ng 1.1.0     MIT
 tree-sitter-language 0.1.9      MIT
 tree-sitter-md 0.5.4            MIT
-tree-sitter-php 0.25.1          MIT
+tree-sitter-php 0.25.2          MIT
 tree-sitter-python 0.25.0       MIT
 tree-sitter-ruby 0.23.1         MIT
 tree-sitter-rust 0.24.2         MIT
@@ -163,7 +163,7 @@ typenum 1.20.1                  MIT OR Apache-2.0
 unicode-ident 1.0.27            (MIT OR Apache-2.0) AND Unicode-3.0
 unicode-xid 0.2.6               MIT OR Apache-2.0
 utf8parse 0.2.2                 Apache-2.0 OR MIT
-walkdir 2.5.0                   Unlicense/MIT
+walkdir 2.5.1                   Unlicense/MIT
 winapi-util 0.1.11              Unlicense OR MIT
 windows-link 0.2.1              MIT OR Apache-2.0
 windows-sys 0.61.2              MIT OR Apache-2.0
@@ -175,12 +175,12 @@ zmij 1.0.23                     MIT
 Shipped by aho-corasick 1.1.5 (COPYING)
 Shipped by globset 0.4.21 (COPYING)
 Shipped by ignore 0.4.34 (COPYING)
-Shipped by jiff 0.2.43 (COPYING)
-Shipped by jiff-core 0.1.5 (COPYING)
-Shipped by jiff-static 0.2.43 (COPYING)
+Shipped by jiff 1.0.2 (COPYING)
+Shipped by jiff-core 1.0.1 (COPYING)
+Shipped by jiff-static 1.0.2 (COPYING)
 Shipped by memchr 2.8.3 (COPYING)
 Shipped by same-file 1.0.6 (COPYING)
-Shipped by walkdir 2.5.0 (COPYING)
+Shipped by walkdir 2.5.1 (COPYING)
 Shipped by winapi-util 0.1.11 (COPYING)
 
 This project is dual-licensed under the Unlicense and MIT licenses.
@@ -192,11 +192,11 @@ You may use this code under the terms of either license.
 Shipped by aho-corasick 1.1.5 (LICENSE-MIT)
 Shipped by globset 0.4.21 (LICENSE-MIT)
 Shipped by ignore 0.4.34 (LICENSE-MIT)
-Shipped by jiff 0.2.43 (LICENSE-MIT)
-Shipped by jiff-core 0.1.5 (LICENSE-MIT)
-Shipped by jiff-static 0.2.43 (LICENSE-MIT)
+Shipped by jiff 1.0.2 (LICENSE-MIT)
+Shipped by jiff-core 1.0.1 (LICENSE-MIT)
+Shipped by jiff-static 1.0.2 (LICENSE-MIT)
 Shipped by memchr 2.8.3 (LICENSE-MIT)
-Shipped by walkdir 2.5.0 (LICENSE-MIT)
+Shipped by walkdir 2.5.1 (LICENSE-MIT)
 
 The MIT License (MIT)
 
@@ -225,12 +225,12 @@ THE SOFTWARE.
 Shipped by aho-corasick 1.1.5 (UNLICENSE)
 Shipped by globset 0.4.21 (UNLICENSE)
 Shipped by ignore 0.4.34 (UNLICENSE)
-Shipped by jiff 0.2.43 (UNLICENSE)
-Shipped by jiff-core 0.1.5 (UNLICENSE)
-Shipped by jiff-static 0.2.43 (UNLICENSE)
+Shipped by jiff 1.0.2 (UNLICENSE)
+Shipped by jiff-core 1.0.1 (UNLICENSE)
+Shipped by jiff-static 1.0.2 (UNLICENSE)
 Shipped by memchr 2.8.3 (UNLICENSE)
 Shipped by same-file 1.0.6 (UNLICENSE)
-Shipped by walkdir 2.5.0 (UNLICENSE)
+Shipped by walkdir 2.5.1 (UNLICENSE)
 Shipped by winapi-util 0.1.11 (UNLICENSE)
 
 This is free and unencumbered software released into the public domain.
@@ -266,8 +266,6 @@ Shipped by anstyle-parse 1.0.0 (LICENSE-APACHE)
 Shipped by anstyle-query 1.1.5 (LICENSE-APACHE)
 Shipped by anstyle-wincon 3.0.11 (LICENSE-APACHE)
 Shipped by colorchoice 1.0.5 (LICENSE-APACHE)
-Shipped by env_filter 2.0.0 (LICENSE-APACHE)
-Shipped by env_logger 0.11.11 (LICENSE-APACHE)
 Shipped by is_terminal_polyfill 1.70.2 (LICENSE-APACHE)
 Shipped by once_cell_polyfill 1.70.2 (LICENSE-APACHE)
 Shipped by streaming-iterator 0.1.9 (LICENSE-APACHE)
@@ -481,18 +479,18 @@ Shipped by anstyle 1.0.14 (LICENSE-MIT)
 Shipped by anstyle-parse 1.0.0 (LICENSE-MIT)
 Shipped by anstyle-query 1.1.5 (LICENSE-MIT)
 Shipped by anstyle-wincon 3.0.11 (LICENSE-MIT)
-Shipped by clap 4.6.7 (LICENSE-MIT)
+Shipped by clap 4.6.9 (LICENSE-MIT)
 Shipped by clap_builder 4.6.7 (LICENSE-MIT)
-Shipped by clap_derive 4.6.7 (LICENSE-MIT)
-Shipped by clap_lex 1.1.1 (LICENSE-MIT)
+Shipped by clap_derive 4.6.9 (LICENSE-MIT)
+Shipped by clap_lex 1.1.2 (LICENSE-MIT)
 Shipped by colorchoice 1.0.5 (LICENSE-MIT)
-Shipped by env_filter 2.0.0 (LICENSE-MIT)
-Shipped by env_logger 0.11.11 (LICENSE-MIT)
+Shipped by env_filter 2.1.0 (LICENSE-MIT)
+Shipped by env_logger 0.11.12 (LICENSE-MIT)
 Shipped by is_terminal_polyfill 1.70.2 (LICENSE-MIT)
 Shipped by once_cell_polyfill 1.70.2 (LICENSE-MIT)
 Shipped by toml_datetime 1.1.3+spec-1.1.0 (LICENSE-MIT)
-Shipped by toml_edit 0.25.19+spec-1.1.0 (LICENSE-MIT)
-Shipped by toml_parser 1.1.5+spec-1.1.0 (LICENSE-MIT)
+Shipped by toml_edit 0.25.20+spec-1.1.0 (LICENSE-MIT)
+Shipped by toml_parser 1.1.6+spec-1.1.0 (LICENSE-MIT)
 Shipped by toml_writer 1.2.0+spec-1.1.0 (LICENSE-MIT)
 
 Copyright (c) Individual contributors
@@ -519,8 +517,8 @@ SOFTWARE.
 
 Shipped by ascii-canvas 4.0.0 (LICENSE-APACHE)
 Shipped by bitflags 2.13.2 (LICENSE-APACHE)
-Shipped by bstr 1.13.1 (LICENSE-APACHE)
-Shipped by cc 1.11.2 (LICENSE-APACHE)
+Shipped by bstr 1.14.0 (LICENSE-APACHE)
+Shipped by cc 1.11.3 (LICENSE-APACHE)
 Shipped by cfg-if 1.0.5 (LICENSE-APACHE)
 Shipped by crossbeam-deque 0.8.8 (LICENSE-APACHE)
 Shipped by crossbeam-epoch 0.9.21 (LICENSE-APACHE)
@@ -532,7 +530,7 @@ Shipped by find-msvc-tools 0.1.15 (LICENSE-APACHE)
 Shipped by fixedbitset 0.5.9 (LICENSE-APACHE)
 Shipped by hashbrown 0.14.5 (LICENSE-APACHE)
 Shipped by hashbrown 0.15.5 (LICENSE-APACHE)
-Shipped by hashbrown 0.17.1 (LICENSE-APACHE)
+Shipped by hashbrown 0.17.2 (LICENSE-APACHE)
 Shipped by heck 0.5.0 (LICENSE-APACHE)
 Shipped by httparse 1.10.1 (LICENSE-APACHE)
 Shipped by indexmap 2.14.2 (LICENSE-APACHE)
@@ -548,12 +546,12 @@ Shipped by percent-encoding 2.3.2 (LICENSE-APACHE)
 Shipped by petgraph 0.8.3 (LICENSE-APACHE)
 Shipped by rayon 1.12.0 (LICENSE-APACHE)
 Shipped by rayon-core 1.13.0 (LICENSE-APACHE)
-Shipped by regex 1.13.1 (LICENSE-APACHE)
-Shipped by regex-automata 0.4.18 (LICENSE-APACHE)
-Shipped by regex-syntax 0.8.11 (LICENSE-APACHE)
+Shipped by regex 1.13.2 (LICENSE-APACHE)
+Shipped by regex-automata 0.4.19 (LICENSE-APACHE)
+Shipped by regex-syntax 0.8.12 (LICENSE-APACHE)
 Shipped by scopeguard 1.2.0 (LICENSE-APACHE)
 Shipped by similar 3.2.1 (LICENSE)
-Shipped by smallvec 1.16.5 (LICENSE-APACHE)
+Shipped by smallvec 1.16.6 (LICENSE-APACHE)
 Shipped by string_cache 0.11.0 (LICENSE-APACHE)
 Shipped by term 1.2.1 (LICENSE-APACHE)
 Shipped by unicode-xid 0.2.6 (LICENSE-APACHE)
@@ -794,7 +792,7 @@ DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 
-Shipped by ast-grep-core 0.51.2 (none in the package; from https://github.com/ast-grep/ast-grep)
+Shipped by ast-grep-core 0.51.3 (none in the package; from https://github.com/ast-grep/ast-grep)
 
 MIT License
 
@@ -1060,9 +1058,9 @@ DEALINGS IN THE SOFTWARE.
 
 Shipped by bitflags 2.13.2 (LICENSE-MIT)
 Shipped by log 0.4.35 (LICENSE-MIT)
-Shipped by regex 1.13.1 (LICENSE-MIT)
-Shipped by regex-automata 0.4.18 (LICENSE-MIT)
-Shipped by regex-syntax 0.8.11 (LICENSE-MIT)
+Shipped by regex 1.13.2 (LICENSE-MIT)
+Shipped by regex-automata 0.4.19 (LICENSE-MIT)
+Shipped by regex-syntax 0.8.12 (LICENSE-MIT)
 
 Copyright (c) 2014 The Rust Project Developers
 
@@ -1326,7 +1324,7 @@ Shipped by borsh 1.8.1 (LICENSE-MIT)
 Shipped by borsh-derive 1.8.1 (LICENSE-MIT)
 Shipped by itoa 1.0.19 (LICENSE-MIT)
 Shipped by once_cell 1.21.4 (LICENSE-MIT)
-Shipped by pin-project-lite 0.2.17 (LICENSE-MIT)
+Shipped by pin-project-lite 0.2.18 (LICENSE-MIT)
 Shipped by portable-atomic 1.15.0 (LICENSE-MIT)
 Shipped by portable-atomic-util 0.2.8 (LICENSE-MIT)
 Shipped by proc-macro-crate 3.5.0 (LICENSE-MIT)
@@ -1371,7 +1369,7 @@ DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 
-Shipped by bstr 1.13.1 (COPYING)
+Shipped by bstr 1.14.0 (COPYING)
 
 This project is licensed under either of
 
@@ -1384,7 +1382,7 @@ at your option.
 
 ==============================================================================
 
-Shipped by bstr 1.13.1 (LICENSE-MIT)
+Shipped by bstr 1.14.0 (LICENSE-MIT)
 
 The MIT License (MIT)
 
@@ -1410,7 +1408,7 @@ THE SOFTWARE.
 
 ==============================================================================
 
-Shipped by bytes 1.12.1 (LICENSE)
+Shipped by bytes 1.12.2 (LICENSE)
 
 Copyright (c) 2018 Carl Lerche
 
@@ -1440,7 +1438,7 @@ DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 
-Shipped by cc 1.11.2 (LICENSE-MIT)
+Shipped by cc 1.11.3 (LICENSE-MIT)
 Shipped by cfg-if 1.0.5 (LICENSE-MIT)
 Shipped by find-msvc-tools 0.1.15 (LICENSE-MIT)
 
@@ -1517,13 +1515,15 @@ The `cfg_aliases!` macro uses a lot of the code from [`tectonic_cfg_support::tar
 
 ==============================================================================
 
-Shipped by clap 4.6.7 (LICENSE-APACHE)
+Shipped by clap 4.6.9 (LICENSE-APACHE)
 Shipped by clap_builder 4.6.7 (LICENSE-APACHE)
-Shipped by clap_derive 4.6.7 (LICENSE-APACHE)
-Shipped by clap_lex 1.1.1 (LICENSE-APACHE)
+Shipped by clap_derive 4.6.9 (LICENSE-APACHE)
+Shipped by clap_lex 1.1.2 (LICENSE-APACHE)
+Shipped by env_filter 2.1.0 (LICENSE-APACHE)
+Shipped by env_logger 0.11.12 (LICENSE-APACHE)
 Shipped by toml_datetime 1.1.3+spec-1.1.0 (LICENSE-APACHE)
-Shipped by toml_edit 0.25.19+spec-1.1.0 (LICENSE-APACHE)
-Shipped by toml_parser 1.1.5+spec-1.1.0 (LICENSE-APACHE)
+Shipped by toml_edit 0.25.20+spec-1.1.0 (LICENSE-APACHE)
+Shipped by toml_parser 1.1.6+spec-1.1.0 (LICENSE-APACHE)
 Shipped by toml_writer 1.2.0+spec-1.1.0 (LICENSE-APACHE)
 
                                  Apache License
@@ -2902,7 +2902,7 @@ DEALINGS IN THE SOFTWARE.
 
 Shipped by hashbrown 0.14.5 (LICENSE-MIT)
 Shipped by hashbrown 0.15.5 (LICENSE-MIT)
-Shipped by hashbrown 0.17.1 (LICENSE-MIT)
+Shipped by hashbrown 0.17.2 (LICENSE-MIT)
 
 Copyright (c) 2016 Amanieu d'Antras
 
@@ -3470,7 +3470,7 @@ THE SOFTWARE.
 
 ==============================================================================
 
-Shipped by pin-project-lite 0.2.17 (LICENSE-APACHE)
+Shipped by pin-project-lite 0.2.18 (LICENSE-APACHE)
 Shipped by portable-atomic 1.15.0 (LICENSE-APACHE)
 Shipped by portable-atomic-util 0.2.8 (LICENSE-APACHE)
 Shipped by sync_wrapper 1.0.2 (LICENSE)
@@ -4318,7 +4318,7 @@ DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 
-Shipped by smallvec 1.16.5 (LICENSE-MIT)
+Shipped by smallvec 1.16.6 (LICENSE-MIT)
 
 Copyright (c) 2018 The Servo Project Developers
 
@@ -4901,7 +4901,7 @@ SOFTWARE.
 
 ==============================================================================
 
-Shipped by tree-sitter-c-sharp 0.23.5 (LICENSE)
+Shipped by tree-sitter-c-sharp 0.24.0 (LICENSE)
 
 The MIT License (MIT)
 
@@ -5005,7 +5005,7 @@ SOFTWARE.
 
 ==============================================================================
 
-Shipped by tree-sitter-php 0.25.1 (LICENSE)
+Shipped by tree-sitter-php 0.25.2 (LICENSE)
 
 The MIT License (MIT)
 

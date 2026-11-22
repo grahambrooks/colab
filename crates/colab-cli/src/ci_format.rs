@@ -309,8 +309,7 @@ impl GithubReporter {
                 );
                 let see = lead_rule
                     .and_then(|r| r.url.as_deref())
-                    .map(|url| format!(" See {url}"))
-                    .unwrap_or_default();
+                    .map_or_default(|url| format!(" See {url}"));
                 out.push(format!(
                     "::{} file={file},line={},endLine={end},title={}::{}",
                     github_level(finding.severity),

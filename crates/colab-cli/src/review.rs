@@ -132,19 +132,16 @@ fn parse(text: &str) -> Result<Log> {
         match event["type"].as_str() {
             Some("file") => {
                 let diff = event["diff"].as_str().map(str::to_string);
-                let (added, removed) = diff.as_deref().map(count).unwrap_or_default();
+                let (added, removed) = diff.as_deref().map_or_default(count);
                 log.diffs |= diff.is_some();
                 log.files.push(File {
                     path: event["path"].as_str().unwrap_or("").to_string(),
-                    rules: event["rules"]
-                        .as_array()
-                        .map(|a| {
-                            a.iter()
-                                .filter_map(serde_json::Value::as_u64)
-                                .filter_map(|v| usize::try_from(v).ok())
-                                .collect()
-                        })
-                        .unwrap_or_default(),
+                    rules: event["rules"].as_array().map_or_default(|a| {
+                        a.iter()
+                            .filter_map(serde_json::Value::as_u64)
+                            .filter_map(|v| usize::try_from(v).ok())
+                            .collect()
+                    }),
                     diff,
                     added,
                     removed,

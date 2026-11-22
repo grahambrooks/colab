@@ -257,8 +257,7 @@ fn only_pattern_symbol_and_call_take_a_where_clause() {
             let err = backend
                 .build_rule_where(cap.module, spec, &unbound_constraint())
                 .err()
-                .map(|e| e.to_string())
-                .unwrap_or_default();
+                .map_or_default(|e| e.to_string());
             let rejected_as_unsupported = err.contains("does not take a `where` clause");
             if matches!(cap.module, "symbol" | "call") {
                 // A syntactic scope (`inside` / `not inside`) only.
@@ -317,8 +316,7 @@ fn a_symbol_rename_takes_a_syntactic_scope() {
         let err = backend
             .build_rule_where("symbol", spec(), &unbound_constraint())
             .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
+            .map_or_default(|e| e.to_string());
         assert!(err.contains("takes only `inside"), "{lang}: {err}");
     }
 }

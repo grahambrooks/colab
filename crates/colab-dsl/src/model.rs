@@ -204,8 +204,7 @@ impl Refactoring {
             {
                 let ids: Vec<&str> = self.notes.iter().filter_map(|n| n.id.as_deref()).collect();
                 let hint = colab_core::suggest::closest(selector, ids.iter().copied())
-                    .map(|id| format!(" (did you mean `{id}`?)"))
-                    .unwrap_or_default();
+                    .map_or_default(|id| format!(" (did you mean `{id}`?)"));
                 let known = if ids.is_empty() {
                     "no rule has an `id`; select by number (1 to {n}) or give rules `id \"…\"`"
                         .replace("{n}", &self.rules.len().to_string())

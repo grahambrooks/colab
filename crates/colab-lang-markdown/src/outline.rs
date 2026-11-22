@@ -197,9 +197,7 @@ pub fn resolve<'h>(headings: &'h [Heading], address: &str) -> Result<&'h Heading
         [one] => Ok(one),
         [] => Err(format!(
             "no section `{address}`{}",
-            nearest(headings, address)
-                .map(|n| format!("; did you mean `{n}`?"))
-                .unwrap_or_default()
+            nearest(headings, address).map_or_default(|n| format!("; did you mean `{n}`?"))
         )),
         many => Err(format!(
             "`{address}` is ambiguous: it matches {}; give more of its path",

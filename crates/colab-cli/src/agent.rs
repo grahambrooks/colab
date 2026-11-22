@@ -491,9 +491,7 @@ fn tools(t: &Targets, project: &Path) -> Result<Vec<Tool>> {
     if !asked.is_empty() {
         return Ok(asked);
     }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default();
+    let home = std::env::var_os("HOME").map_or_default(PathBuf::from);
     let found: Vec<Tool> = [
         (
             on_path("claude") || project.join(".claude").is_dir(),

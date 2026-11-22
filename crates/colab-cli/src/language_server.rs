@@ -225,15 +225,12 @@ impl Backend {
                 None => compile(text, &self.backends),
             };
             if let Err(err) = whole {
-                let range = text
-                    .find("include")
-                    .map(|at| {
-                        Range::new(
-                            position_at(text, at),
-                            position_at(text, at + "include".len()),
-                        )
-                    })
-                    .unwrap_or_default();
+                let range = text.find("include").map_or_default(|at| {
+                    Range::new(
+                        position_at(text, at),
+                        position_at(text, at + "include".len()),
+                    )
+                });
                 out.push(diagnostic(range, &err));
             }
         }

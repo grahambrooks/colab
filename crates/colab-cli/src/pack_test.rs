@@ -211,8 +211,7 @@ fn test_pack(pack: &Path, backends: &BackendRegistry, bless: bool) -> Result<Pac
     for case in entries {
         let name = case
             .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            .map_or_default(|n| n.to_string_lossy().into_owned());
         let input = case.join("input");
         if !input.is_dir() {
             cases.push(CaseResult {

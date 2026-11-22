@@ -233,8 +233,7 @@ impl Ready<'_> {
         };
         let name = offset_of(&text, line, character, self.session.encoding)
             .ok()
-            .map(|offset| identifier_at(&text, offset))
-            .unwrap_or_default();
+            .map_or_default(|offset| identifier_at(&text, offset));
         if resolves_to(target, &def, &name) {
             return Ok(true);
         }

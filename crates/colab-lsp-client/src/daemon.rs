@@ -276,8 +276,7 @@ impl Server {
             Some("$/progress") => {
                 let token = message
                     .pointer("/params/token")
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_default();
+                    .map_or_default(std::string::ToString::to_string);
                 match message
                     .pointer("/params/value/kind")
                     .and_then(Value::as_str)

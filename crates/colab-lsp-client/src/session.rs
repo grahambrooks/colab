@@ -477,8 +477,7 @@ impl Session {
             "$/progress" => {
                 let token = params
                     .get("token")
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_default();
+                    .map_or_default(std::string::ToString::to_string);
                 match params.pointer("/value/kind").and_then(Value::as_str) {
                     Some("begin") => {
                         self.active_progress.insert(token);

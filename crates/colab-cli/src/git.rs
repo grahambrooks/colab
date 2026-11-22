@@ -172,8 +172,7 @@ impl Repo {
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or_default()
+                .map_or_default(|d| d.as_nanos())
         ));
         let result = (|| {
             self.run_in(&index, &["read-tree", base], None)?;

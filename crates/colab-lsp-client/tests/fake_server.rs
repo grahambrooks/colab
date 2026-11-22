@@ -5,17 +5,19 @@ use std::time::Duration;
 
 use colab_lsp_client::{RenameRequest, ServerCommand, rename};
 
-/// `cargo test` builds this package's examples next to the test binary's
-/// `deps/` directory.
+/// `cargo test` builds this package's examples into the profile directory's
+/// `examples/`. With the older target layout the test binary sits in that
+/// profile directory's `deps/`; with the build-dir layout it sits deeper
+/// (`<profile>/build/<pkg>/<hash>/deps/`), so search the ancestors.
 fn fake_server() -> ServerCommand {
     let exe = std::env::current_exe().unwrap();
-    let dir = exe.parent().unwrap().parent().unwrap().join("examples");
-    let path = dir.join(format!("fake_lsp{}", std::env::consts::EXE_SUFFIX));
-    assert!(
-        path.exists(),
-        "fake_lsp example not built at {}",
-        path.display()
-    );
+    let name = format!("fake_lsp{}", std::env::consts::EXE_SUFFIX);
+    let path = exe
+        .ancestors()
+        .skip(1)
+        .map(|dir| dir.join("examples").join(&name))
+        .find(|candidate| candidate.exists())
+        .unwrap_or_else(|| panic!("fake_lsp example not built near {}", exe.display()));
     ServerCommand {
         program: path.to_string_lossy().into_owned(),
         args: Vec::new(),

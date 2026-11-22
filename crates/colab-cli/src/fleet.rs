@@ -176,8 +176,7 @@ fn parse(path: &Path, text: &str) -> Result<Manifest> {
         let name = get("name").unwrap_or_else(|| match &source {
             Source::Path(p) => p
                 .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
+                .map_or_default(|n| n.to_string_lossy().into_owned()),
             Source::Git(url) => url
                 .trim_end_matches('/')
                 .trim_end_matches(".git")
@@ -376,8 +375,7 @@ fn try_one(manifest: &Manifest, repo: &Repo, write: bool, pr: bool) -> Result<Ou
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or_default()
+            .map_or_default(|d| d.as_nanos())
     ));
     let dir_text = dir.to_string_lossy().into_owned();
     if write {

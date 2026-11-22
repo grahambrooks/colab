@@ -319,7 +319,7 @@ pub fn check(text: &str, backends: &BackendRegistry) -> Result<Vec<RuleCheck>> {
             let lowered = resolve_names(&mut m, &defs, includes.then_some("$_"))
                 .and_then(|()| resolve_in(&mut m.constraints, &scans, includes))
                 .and_then(|()| lower_match(m, backends));
-            let advice = lowered.as_ref().map(|(_, a)| a.clone()).unwrap_or_default();
+            let advice = lowered.as_ref().map_or_default(|(_, a)| a.clone());
             let outcome =
                 lowered.map(|(ops, _)| ops.iter().map(std::string::ToString::to_string).collect());
             RuleCheck {
@@ -532,8 +532,7 @@ fn resolve_in(
                     let mut known: Vec<&str> = scans.keys().map(String::as_str).collect();
                     known.sort_unstable();
                     let hint = suggest::closest(set, known.iter().copied())
-                        .map(|k| format!(" (did you mean `{k}`?)"))
-                        .unwrap_or_default();
+                        .map_or_default(|k| format!(" (did you mean `{k}`?)"));
                     return Err(Error::Config(format!(
                         "`{var} in {set}`: no scan named `{set}` before this rule{hint}; a rule reads the scans of its own stage and earlier ones"
                     )));
@@ -584,8 +583,7 @@ fn known_names<'a>(name: &str, names: impl Iterator<Item = &'a String>) -> (Stri
     let mut known: Vec<&str> = names.map(String::as_str).collect();
     known.sort_unstable();
     let hint = suggest::closest(name, known.iter().copied())
-        .map(|k| format!(" (did you mean `{k}`?)"))
-        .unwrap_or_default();
+        .map_or_default(|k| format!(" (did you mean `{k}`?)"));
     (hint, known)
 }
 
@@ -1837,8 +1835,7 @@ import (
         let err = |rule: &str| {
             compile(&format!("refactor \"t\" {{ {rule} }}"), &registry())
                 .err()
-                .map(|e| e.to_string())
-                .unwrap_or_default()
+                .map_or_default(|e| e.to_string())
         };
         let e = err(r#"match go::symbol "a" { let $N = $F | lower replace "b" }"#);
         assert!(e.contains("only `go::pattern` binds metavariables"), "{e}");
@@ -1858,8 +1855,7 @@ import (
         let err = |rule: &str| {
             compile(&format!("refactor \"t\" {{ {rule} }}"), &registry())
                 .err()
-                .map(|e| e.to_string())
-                .unwrap_or_default()
+                .map_or_default(|e| e.to_string())
         };
         let e = err(r#"match go::import "a" where $A is identifier { replace "b" }"#);
         assert!(

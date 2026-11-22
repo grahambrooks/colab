@@ -305,8 +305,7 @@ impl Check {
                 if language.grammar.id_for_node_kind(kind, true) == 0 {
                     let kinds = named_kinds(&language.grammar);
                     let hint = colab_core::suggest::closest(kind, kinds.iter().copied())
-                        .map(|k| format!(" (did you mean `{k}`?)"))
-                        .unwrap_or_default();
+                        .map_or_default(|k| format!(" (did you mean `{k}`?)"));
                     return Err(format!(
                         "`{var} is {kind}`: the grammar has no node kind `{kind}`{hint}; `colab ast` shows the kinds in a snippet"
                     ));
@@ -392,8 +391,7 @@ impl Check {
                         .filter_map(|id| language.grammar.field_name_for_id(id))
                         .collect();
                     let hint = colab_core::suggest::closest(name, fields.iter().copied())
-                        .map(|f| format!(" (did you mean `{f}`?)"))
-                        .unwrap_or_default();
+                        .map_or_default(|f| format!(" (did you mean `{f}`?)"));
                     return Err(format!(
                         "`{constraint}`: the grammar has no field `{name}`{hint}; `colab ast` shows the fields in a snippet"
                     ));
@@ -437,8 +435,7 @@ impl Check {
                     }
                 } else {
                     env.get_match(&var.name)
-                        .map(|n| n.text().into_owned())
-                        .unwrap_or_default()
+                        .map_or_default(|n| n.text().into_owned())
                 };
                 regex.is_match(&text)
             }
@@ -475,8 +472,7 @@ impl Check {
                     }
                 } else {
                     env.get_match(&var.name)
-                        .map(|n| n.text().into_owned())
-                        .unwrap_or_default()
+                        .map_or_default(|n| n.text().into_owned())
                 };
                 colab_core::facts::contains(set, field, &text)
             }

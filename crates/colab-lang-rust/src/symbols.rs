@@ -56,9 +56,9 @@ impl Operation for SymbolRename {
     }
 
     fn observed_targets(&self, source: &str) -> Vec<String> {
-        crate::parse(source)
-            .map(|tree| colab_rewrite::field_texts(&tree, source, RENAME_KINDS, None, &[]))
-            .unwrap_or_default()
+        crate::parse(source).map_or_default(|tree| {
+            colab_rewrite::field_texts(&tree, source, RENAME_KINDS, None, &[])
+        })
     }
 
     fn conflicts(&self, before: &str, _after: &str) -> Vec<String> {

@@ -12,13 +12,19 @@ use std::time::Duration;
 use colab_lsp_client::{RenameRequest, ServerCommand, rename};
 
 fn fake_server() -> ServerCommand {
+    // The example sits in the profile directory's `examples/`, which is
+    // `deps/..` with the old target layout and further up with the
+    // build-dir layout (`<profile>/build/<pkg>/<hash>/deps/`).
     let exe = std::env::current_exe().unwrap();
-    let dir = exe.parent().unwrap().parent().unwrap().join("examples");
+    let name = format!("fake_lsp{}", std::env::consts::EXE_SUFFIX);
+    let path = exe
+        .ancestors()
+        .skip(1)
+        .map(|dir| dir.join("examples").join(&name))
+        .find(|candidate| candidate.exists())
+        .unwrap_or_else(|| panic!("fake_lsp example not built near {}", exe.display()));
     ServerCommand {
-        program: dir
-            .join(format!("fake_lsp{}", std::env::consts::EXE_SUFFIX))
-            .to_string_lossy()
-            .into_owned(),
+        program: path.to_string_lossy().into_owned(),
         args: Vec::new(),
     }
 }

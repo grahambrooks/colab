@@ -681,8 +681,7 @@ pub fn write_find_human<W: Write>(out: &mut W, report: &crate::find::FindReport)
             .rules
             .get(hit.rule)
             .and_then(note_text)
-            .map(|n| format!(" {n} —"))
-            .unwrap_or_default();
+            .map_or_default(|n| format!(" {n} —"));
         writeln!(
             out,
             "{}:{}:{}:{}{} {}",
@@ -769,10 +768,7 @@ pub fn findings(change: &FileChange, report: &RunReport) -> Vec<Finding> {
         .map(|block| Finding {
             start_line: block.old.start + 1,
             end_line: block.old.end,
-            replacement: new
-                .get(block.new.clone())
-                .map(<[&str]>::concat)
-                .unwrap_or_default(),
+            replacement: new.get(block.new.clone()).map_or_default(<[&str]>::concat),
             severity: severity(&block.rules),
             rules: block.rules,
         })

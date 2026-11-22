@@ -35,7 +35,7 @@ rayon.workspace = true
 [dev-dependencies]
 futures = "0.3"
 tower = "0.5"
-assert_cmd = "2.0"
+assert_cmd = "2.2"
 criterion = { version = "0.8", default-features = false }
 tokio = { workspace = true, features = ["macros", "time"] }
 

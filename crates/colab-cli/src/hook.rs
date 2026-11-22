@@ -138,14 +138,12 @@ pub fn check(file: &Path, backends: &BackendRegistry) -> Result<Option<String>> 
     );
     for f in &findings {
         let rule = f.rules.first().and_then(|&i| report.rules.get(i));
-        let what = rule
-            .map(|r| match (&r.message, &r.id) {
-                (Some(m), Some(id)) => format!("{m} [{id}]"),
-                (Some(m), None) => m.clone(),
-                (None, Some(id)) => format!("[{id}] {}", r.rule),
-                (None, None) => r.rule.clone(),
-            })
-            .unwrap_or_default();
+        let what = rule.map_or_default(|r| match (&r.message, &r.id) {
+            (Some(m), Some(id)) => format!("{m} [{id}]"),
+            (Some(m), None) => m.clone(),
+            (None, Some(id)) => format!("[{id}] {}", r.rule),
+            (None, None) => r.rule.clone(),
+        });
         let line = if f.end_line > f.start_line {
             format!("{}-{}", f.start_line, f.end_line)
         } else {

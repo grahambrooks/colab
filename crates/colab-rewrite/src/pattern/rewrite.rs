@@ -98,8 +98,7 @@ impl Rewriter<'_, '_> {
             };
             let text = span
                 .clone()
-                .map(|span| self.rewrite_span(source, span, i))
-                .unwrap_or_default();
+                .map_or_default(|span| self.rewrite_span(source, span, i));
             nm.get_env_mut()
                 .insert_transformation(&var, &name, text.clone().into_bytes());
             values.push((name, var, text, span));

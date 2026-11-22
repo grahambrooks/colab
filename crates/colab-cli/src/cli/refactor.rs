@@ -155,9 +155,7 @@ pub(super) fn run_fix(args: FixArgs) -> Result<u8> {
 
 /// The `[formatters]` of the nearest `colab.toml`, for `--tidy`.
 pub(super) fn formatters() -> Result<std::collections::BTreeMap<String, String>> {
-    Ok(crate::config::find()?
-        .map(|c| c.formatters)
-        .unwrap_or_default())
+    Ok(crate::config::find()?.map_or_default(|c| c.formatters))
 }
 
 /// Run an already compiled script as `refactor` would, from the working

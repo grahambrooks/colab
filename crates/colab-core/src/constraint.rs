@@ -375,8 +375,7 @@ impl Transform {
             }
             _ => {
                 let hint = crate::suggest::closest(name, TRANSFORMS.iter().copied())
-                    .map(|t| format!(" (did you mean `{t}`?)"))
-                    .unwrap_or_default();
+                    .map_or_default(|t| format!(" (did you mean `{t}`?)"));
                 Err(format!(
                     "unknown transform `{name}`{hint}; a `let` takes {}",
                     TRANSFORMS

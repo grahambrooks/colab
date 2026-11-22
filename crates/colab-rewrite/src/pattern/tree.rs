@@ -60,10 +60,7 @@ pub(super) fn print_node(
     if node.is_named() || node.is_error() || node.is_missing() {
         *lines += 1;
         if *lines <= MAX_TREE_LINES {
-            let field = cursor
-                .field_name()
-                .map(|f| format!("{f}: "))
-                .unwrap_or_default();
+            let field = cursor.field_name().map_or_default(|f| format!("{f}: "));
             let pos = node.start_position();
             let kind = if node.is_missing() {
                 format!("MISSING {}", node.kind())

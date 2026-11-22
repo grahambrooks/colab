@@ -232,9 +232,7 @@ impl Reporter for HumanReporter {
                     rule.index + 1,
                     rule.files_matched,
                     rule.rule,
-                    render::note_text(rule)
-                        .map(|n| format!(" ({n})"))
-                        .unwrap_or_default()
+                    render::note_text(rule).map_or_default(|n| format!(" ({n})"))
                 )?;
             }
         }
