@@ -1,12 +1,25 @@
 //! OTLP export of colab's traces ([`colab_core::telemetry`]), configured
-//! only by the standard OpenTelemetry environment variables, so any
-//! collector can receive them — a local one such as habit, an OpenTelemetry
+//! by the standard OpenTelemetry environment variables and, beneath them,
+//! by the `[telemetry]` table of the user's config file, so any collector
+//! can receive them — a local one such as habit, an OpenTelemetry
 //! Collector, Jaeger.
 //!
 //! - **Off unless an endpoint is set**: `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
-//!   (used as given) or `OTEL_EXPORTER_OTLP_ENDPOINT` (`/v1/traces`
-//!   appended). `OTEL_SDK_DISABLED=true` or `OTEL_TRACES_EXPORTER=none`
-//!   turn it off again.
+//!   (used as given), `OTEL_EXPORTER_OTLP_ENDPOINT` (`/v1/traces`
+//!   appended), or the file's `endpoint` (a base URL, likewise); the
+//!   file's `enabled = true` alone sends to `http://127.0.0.1:4318`.
+//!   `OTEL_SDK_DISABLED=true`, `OTEL_TRACES_EXPORTER=none` or the file's
+//!   `enabled = false` turn it off again, whatever else is set.
+//! - **The file** is `$XDG_CONFIG_HOME/colab/config.toml`, else
+//!   `~/.config/colab/config.toml`: a user's setting, never a repo's
+//!   (`colab.toml` is not read for it). It exists because the processes an
+//!   agent starts (Claude Code's Bash tool, its MCP servers) do not inherit
+//!   the agent's `OTEL_*` variables. A missing file is no telemetry config;
+//!   an unreadable or malformed one is ignored, with a `debug` line.
+//!   Environment variables win over it key by key.
+//! - **Long-running commands** (`mcp`, `server`, `lsp-daemon`) export from
+//!   a background thread, so a request's response never waits on the
+//!   collector. A one-shot command exports at its end, within the timeout.
 //! - **OTLP/HTTP with JSON bodies**, over plain `http://` (colab ships no
 //!   TLS stack; an `https://` endpoint turns export off). A gRPC endpoint
 //!   on port 4317 — `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`, as Claude Code's
@@ -28,6 +41,9 @@ use colab_core::telemetry::{self, Kind, SpanData, Value};
 use log::debug;
 use serde_json::{Value as Json, json};
 
+/// Where `enabled = true` sends traces when no endpoint is set anywhere.
+const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:4318";
+
 /// The default budget for one export.
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
 
@@ -42,10 +58,128 @@ pub(crate) struct OtlpHttp {
     timeout: Duration,
 }
 
-/// Install the exporter when the environment asks for traces.
-pub(crate) fn init() {
-    if let Some(exporter) = OtlpHttp::from_env(&|key| std::env::var(key).ok()) {
-        telemetry::install(Box::new(exporter));
+/// Install the exporter when the environment or the user's config file
+/// asks for traces. `background`: export from a thread of its own, for a
+/// command that serves requests for as long as its client runs.
+pub(crate) fn init(background: bool) {
+    let file = FileConfig::load(&|key| std::env::var(key).ok());
+    if let Some(exporter) = OtlpHttp::configure(&|key| std::env::var(key).ok(), &file) {
+        if background {
+            telemetry::install(Box::new(Background::spawn(exporter)));
+        } else {
+            telemetry::install(Box::new(exporter));
+        }
+    }
+}
+
+/// Whether `argv` runs a long-running command, which gets no root span of
+/// its own and exports in the background.
+pub(crate) fn long_running(argv: &[String]) -> bool {
+    matches!(
+        argv.get(1).map(String::as_str),
+        Some("server" | "mcp" | "lsp-daemon")
+    )
+}
+
+/// The `[telemetry]` table of the user's config file.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct FileConfig {
+    enabled: Option<bool>,
+    endpoint: Option<String>,
+    service_name: Option<String>,
+    timeout_ms: Option<u64>,
+}
+
+impl FileConfig {
+    /// `$XDG_CONFIG_HOME/colab/config.toml`, else `~/.config/colab/config.toml`.
+    fn path(var: &dyn Fn(&str) -> Option<String>) -> Option<std::path::PathBuf> {
+        let set = |k: &str| var(k).filter(|v| !v.trim().is_empty());
+        let base = match set("XDG_CONFIG_HOME") {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => std::path::PathBuf::from(set("HOME")?).join(".config"),
+        };
+        Some(base.join("colab").join("config.toml"))
+    }
+
+    /// The file's telemetry settings; empty when there is no file, or it
+    /// cannot be read or parsed.
+    fn load(var: &dyn Fn(&str) -> Option<String>) -> Self {
+        let Some(path) = Self::path(var) else {
+            return Self::default();
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(text) => Self::parse(&text).unwrap_or_else(|why| {
+                debug!("telemetry: ignoring {}: {why}", path.display());
+                Self::default()
+            }),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(e) => {
+                debug!("telemetry: cannot read {}: {e}", path.display());
+                Self::default()
+            }
+        }
+    }
+
+    fn parse(text: &str) -> std::result::Result<Self, String> {
+        let doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+        let Some(table) = doc.get("telemetry") else {
+            return Ok(Self::default());
+        };
+        let table = table.as_table_like().ok_or("`telemetry` is not a table")?;
+        let string = |key: &str| -> std::result::Result<Option<String>, String> {
+            match table.get(key) {
+                None => Ok(None),
+                Some(v) => v
+                    .as_str()
+                    .map(|s| Some(s.trim().to_string()).filter(|s| !s.is_empty()))
+                    .ok_or_else(|| format!("telemetry.{key} is not a string")),
+            }
+        };
+        let enabled = match table.get("enabled") {
+            None => None,
+            Some(v) => Some(v.as_bool().ok_or("telemetry.enabled is not a boolean")?),
+        };
+        let timeout_ms = match table.get("timeout_ms") {
+            None => None,
+            Some(v) => Some(
+                v.as_integer()
+                    .and_then(|n| u64::try_from(n).ok())
+                    .ok_or("telemetry.timeout_ms is not a non-negative integer")?,
+            ),
+        };
+        Ok(Self {
+            enabled,
+            endpoint: string("endpoint")?,
+            service_name: string("service_name")?,
+            timeout_ms,
+        })
+    }
+}
+
+/// An exporter that hands each trace to a thread of its own, so the
+/// thread that ended the trace (an MCP request's) never waits on the
+/// collector. Traces still queued when the process exits are lost.
+struct Background {
+    queue: std::sync::mpsc::Sender<Vec<SpanData>>,
+}
+
+impl Background {
+    fn spawn(exporter: OtlpHttp) -> Self {
+        let (queue, traces) = std::sync::mpsc::channel::<Vec<SpanData>>();
+        let _ = std::thread::Builder::new()
+            .name("colab-telemetry".into())
+            .spawn(move || {
+                for trace in traces {
+                    telemetry::Exporter::export(&exporter, trace);
+                }
+            });
+        Self { queue }
+    }
+}
+
+impl telemetry::Exporter for Background {
+    fn export(&self, trace: Vec<SpanData>) {
+        let _ = self.queue.send(trace);
     }
 }
 
@@ -61,7 +195,7 @@ pub(crate) fn command_span(argv: &[String], subcommands: &[String]) -> telemetry
         .get(1)
         .filter(|a| subcommands.iter().any(|s| s == *a))
         .map(String::as_str);
-    if matches!(sub, Some("server" | "mcp" | "lsp-daemon")) {
+    if long_running(argv) {
         return telemetry::Span::inert();
     }
     let mut span = telemetry::root(match sub {
@@ -108,8 +242,18 @@ pub(crate) fn finish(span: &mut telemetry::Span, outcome: &colab_core::Result<u8
 }
 
 impl OtlpHttp {
-    /// The exporter `var` (an environment lookup) configures, if any.
+    /// The exporter `var` (an environment lookup) alone configures, if any.
+    #[cfg(test)]
     pub(crate) fn from_env(var: &dyn Fn(&str) -> Option<String>) -> Option<Self> {
+        Self::configure(var, &FileConfig::default())
+    }
+
+    /// The exporter `var` (an environment lookup) and the user's config
+    /// file configure, if any. The environment wins key by key.
+    pub(crate) fn configure(
+        var: &dyn Fn(&str) -> Option<String>,
+        file: &FileConfig,
+    ) -> Option<Self> {
         let get = |key: &str| {
             var(key)
                 .map(|v| v.trim().to_string())
@@ -122,12 +266,26 @@ impl OtlpHttp {
         if get("OTEL_TRACES_EXPORTER").is_some_and(|v| !v.split(',').any(|e| e.trim() == "otlp")) {
             return None;
         }
+        if file.enabled == Some(false) {
+            return None;
+        }
         let url = match get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
             Some(url) => url,
-            None => format!(
-                "{}/v1/traces",
-                get("OTEL_EXPORTER_OTLP_ENDPOINT")?.trim_end_matches('/')
-            ),
+            None => {
+                // `enabled = true` with no endpoint anywhere: the local
+                // OTLP/HTTP default.
+                let base = get("OTEL_EXPORTER_OTLP_ENDPOINT")
+                    .or_else(|| file.endpoint.clone())
+                    .or_else(|| {
+                        (file.enabled == Some(true)).then(|| DEFAULT_ENDPOINT.to_string())
+                    })?;
+                let base = base.trim_end_matches('/');
+                if base.ends_with("/v1/traces") {
+                    base.to_string()
+                } else {
+                    format!("{base}/v1/traces")
+                }
+            }
         };
         let Some(rest) = url.strip_prefix("http://") else {
             debug!(
@@ -166,6 +324,7 @@ impl OtlpHttp {
             "OTEL_EXPORTER_OTLP_TIMEOUT",
         )
         .and_then(|ms| ms.parse::<u64>().ok())
+        .or(file.timeout_ms)
         .map_or(DEFAULT_TIMEOUT, Duration::from_millis);
 
         // OTEL_SERVICE_NAME wins over a service.name in the attributes.
@@ -178,6 +337,7 @@ impl OtlpHttp {
                     .find(|(k, _)| k == "service.name")
                     .map(|(_, v)| v.clone())
             })
+            .or_else(|| file.service_name.clone())
             .unwrap_or_else(|| "colab".to_string());
         resource.retain(|(k, _)| k != "service.name");
         resource.insert(0, ("service.name".into(), service));
@@ -391,6 +551,140 @@ mod tests {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
         OtlpHttp::from_env(&|k| vars.get(k).cloned())
+    }
+
+    fn with_file(vars: &[(&str, &str)], file: &str) -> Option<OtlpHttp> {
+        let vars: HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let file = FileConfig::parse(file).expect("a valid config file");
+        OtlpHttp::configure(&|k| vars.get(k).cloned(), &file)
+    }
+
+    #[test]
+    fn the_config_file_alone_turns_export_on() {
+        let otlp = with_file(
+            &[],
+            "[telemetry]\nendpoint = \"http://127.0.0.1:4318\"\nservice_name = \"colab-dev\"\ntimeout_ms = 150\n",
+        )
+        .unwrap();
+        assert_eq!(
+            (otlp.host.as_str(), otlp.port, otlp.path.as_str()),
+            ("127.0.0.1", 4318, "/v1/traces")
+        );
+        assert_eq!(otlp.resource[0].1, "colab-dev");
+        assert_eq!(otlp.timeout, Duration::from_millis(150));
+        // A file naming a gRPC port is reached on OTLP/HTTP's, as the env is.
+        let grpc = with_file(&[], "[telemetry]\nendpoint = \"http://127.0.0.1:4317/\"\n").unwrap();
+        assert_eq!(grpc.port, 4318);
+        // A base URL that already names the traces path is not doubled.
+        let full = with_file(&[], "[telemetry]\nendpoint = \"http://h:9000/v1/traces\"\n").unwrap();
+        assert_eq!(full.path, "/v1/traces");
+    }
+
+    #[test]
+    fn the_environment_wins_over_the_file_key_by_key() {
+        let file = "[telemetry]\nendpoint = \"http://file:4318\"\nservice_name = \"from-file\"\ntimeout_ms = 150\n";
+        let otlp = with_file(
+            &[
+                ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://env:4318"),
+                ("OTEL_EXPORTER_OTLP_TIMEOUT", "300"),
+            ],
+            file,
+        )
+        .unwrap();
+        assert_eq!(otlp.host, "env");
+        assert_eq!(otlp.timeout, Duration::from_millis(300));
+        // Keys the environment leaves unset come from the file.
+        assert_eq!(otlp.resource[0].1, "from-file");
+        let named = with_file(&[("OTEL_SERVICE_NAME", "from-env")], file).unwrap();
+        assert_eq!(
+            (named.host.as_str(), named.resource[0].1.as_str()),
+            ("file", "from-env")
+        );
+    }
+
+    #[test]
+    fn disabled_in_the_file_or_the_environment_is_off_whatever_else_is_set() {
+        let env_endpoint = ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318");
+        let off = "[telemetry]\nenabled = false\nendpoint = \"http://127.0.0.1:4318\"\n";
+        assert!(with_file(&[env_endpoint], off).is_none());
+        assert!(with_file(&[], off).is_none());
+        let on = "[telemetry]\nenabled = true\nendpoint = \"http://127.0.0.1:4318\"\n";
+        assert!(with_file(&[], on).is_some());
+        assert!(with_file(&[("OTEL_SDK_DISABLED", "true")], on).is_none());
+        assert!(with_file(&[("OTEL_TRACES_EXPORTER", "none")], on).is_none());
+        // Enabled without an endpoint anywhere: the local OTLP/HTTP default.
+        let local = with_file(&[], "[telemetry]\nenabled = true\n").unwrap();
+        assert_eq!(
+            (local.host.as_str(), local.port, local.path.as_str()),
+            ("127.0.0.1", 4318, "/v1/traces")
+        );
+        // An endpoint in the environment still wins over that default.
+        let env = with_file(
+            &[("OTEL_EXPORTER_OTLP_ENDPOINT", "http://env:4318")],
+            "[telemetry]\nenabled = true\n",
+        )
+        .unwrap();
+        assert_eq!(env.host, "env");
+        // Neither enabled nor an endpoint: off.
+        assert!(with_file(&[], "[telemetry]\n").is_none());
+    }
+
+    #[test]
+    fn a_malformed_or_missing_file_is_ignored() {
+        assert!(FileConfig::parse("[telemetry\nendpoint = ").is_err());
+        assert!(FileConfig::parse("[telemetry]\nenabled = \"yes\"\n").is_err());
+        assert!(FileConfig::parse("telemetry = 3\n").is_err());
+        assert_eq!(
+            FileConfig::parse("[other]\nx = 1\n"),
+            Ok(FileConfig::default())
+        );
+
+        let dir = std::env::temp_dir().join(format!("colab-telemetry-{}", std::process::id()));
+        let config = dir.join("colab");
+        std::fs::create_dir_all(&config).unwrap();
+        let lookup = |k: &str| (k == "XDG_CONFIG_HOME").then(|| dir.to_string_lossy().into_owned());
+        // Missing: no telemetry config.
+        assert_eq!(FileConfig::load(&lookup), FileConfig::default());
+        // Malformed: ignored, not an error.
+        std::fs::write(config.join("config.toml"), "[telemetry\n").unwrap();
+        assert_eq!(FileConfig::load(&lookup), FileConfig::default());
+        std::fs::write(
+            config.join("config.toml"),
+            "[telemetry]\nendpoint = \"http://127.0.0.1:4318\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            FileConfig::load(&lookup).endpoint.as_deref(),
+            Some("http://127.0.0.1:4318")
+        );
+        // Without XDG_CONFIG_HOME, HOME's .config.
+        let home = |k: &str| (k == "HOME").then(|| "/h".to_string());
+        assert_eq!(
+            FileConfig::path(&home).unwrap(),
+            std::path::Path::new("/h/.config/colab/config.toml")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn long_running_commands_export_in_the_background() {
+        let argv = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert!(long_running(&argv(&["colab", "mcp"])));
+        assert!(long_running(&argv(&["colab", "server"])));
+        assert!(!long_running(&argv(&["colab", "find"])));
+        // The background exporter returns at once, even with nothing listening.
+        let otlp = configured(&[
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9"),
+            ("OTEL_EXPORTER_OTLP_TIMEOUT", "2000"),
+        ])
+        .unwrap();
+        let background = Background::spawn(otlp);
+        let started = std::time::Instant::now();
+        telemetry::Exporter::export(&background, Vec::new());
+        assert!(started.elapsed() < Duration::from_millis(50));
     }
 
     #[test]

@@ -2687,8 +2687,12 @@ colab refactor --script s.colab --write --verify "cargo check --quiet" --commit-
   expected output: corpus, evals, `llms-full.txt`, a pack's cases.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` (and the other standard `OTEL_*`
   variables) — send traces of colab's work to an OpenTelemetry collector;
-  off when unset. What a trace holds and every variable:
-  [operations.md#traces-opentelemetry](operations.md#traces-opentelemetry).
+  off when unset. The `[telemetry]` table of the user config file
+  (`$XDG_CONFIG_HOME/colab/config.toml`, else `~/.config/colab/config.toml`)
+  sets the same, beneath the variables; its `enabled = true` alone sends
+  to `http://127.0.0.1:4318`. What a trace holds, every variable
+  and key: [operations.md#traces-opentelemetry](operations.md#traces-opentelemetry).
+- `XDG_CONFIG_HOME` — where that user config file is read from.
 
 ## See also
 
@@ -3884,15 +3888,16 @@ so a binary copied out of a release archive still carries its notices.
 | `XDG_CACHE_HOME`, `HOME` | The cache's fallback location; `HOME` also locates `~/.codex`. |
 | `COLAB_BLESS` | `1`: tests rewrite their expected output (corpus, `colab test`, evals, `llms-full.txt`). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, … | Send traces of colab's work to an OpenTelemetry collector; see [Traces](#traces-opentelemetry). |
+| `XDG_CONFIG_HOME` | Where the user config file is read from (`$XDG_CONFIG_HOME/colab/config.toml`, else `~/.config/colab/config.toml`); today it holds only `[telemetry]`. |
 
 ## Traces (OpenTelemetry)
 
 colab can report what it does as OpenTelemetry traces, to any collector
 that takes OTLP over HTTP: a local usage service such as
 [habit](https://github.com/grahambrooks/habit), an OpenTelemetry
-Collector, Jaeger. It is **off** unless an endpoint is set, and it is
-configured only by the standard variables; colab has no collector of its
-own and no SDK dependency.
+Collector, Jaeger. It is **off** unless an endpoint is set, either by the
+standard variables or by the `[telemetry]` table of your user config
+file (where `enabled = true` alone means the local `http://127.0.0.1:4318`); colab has no collector of its own and no SDK dependency.
 
 **What a trace holds.** One trace per command — the root span
 `colab <subcommand>`, with `process.exit.code`, `error.type` when it
@@ -3918,16 +3923,51 @@ directory *name*, not its path.
 | `OTEL_EXPORTER_OTLP_TIMEOUT`, `…_TRACES_TIMEOUT` | Milliseconds one export may take (default 500). |
 | `OTEL_SDK_DISABLED=true`, `OTEL_TRACES_EXPORTER=none` | Off, whatever else is set. |
 
+**The config file.** The same settings can live in
+`$XDG_CONFIG_HOME/colab/config.toml` (else `~/.config/colab/config.toml`).
+That matters for agents: the processes Claude Code starts — its Bash
+tool's shells and its MCP servers — do not inherit the `OTEL_*` variables
+in its `settings.json`, so colab run there sees no endpoint unless the
+file names one.
+
+```toml
+[telemetry]
+endpoint = "http://127.0.0.1:4318"   # OTLP/HTTP base URL; /v1/traces is appended
+# enabled = true                     # on; alone, sends to http://127.0.0.1:4318
+# enabled = false                    # off, even when OTEL_* sets an endpoint
+# service_name = "colab"
+# timeout_ms = 500
+```
+
+| Key | Effect |
+| --- | ------ |
+| `endpoint` | The collector's base URL, as `OTEL_EXPORTER_OTLP_ENDPOINT` (a URL ending in `/v1/traces` is used as given; port 4317 is reached on 4318). |
+| `enabled` | `false`: off, whatever else is set. `true`: on, sending to the endpoint set here or in the environment, else `http://127.0.0.1:4318`. Absent: on only when an endpoint is set. |
+| `service_name` | The service name, below `OTEL_SERVICE_NAME` and a `service.name` in `OTEL_RESOURCE_ATTRIBUTES`. |
+| `timeout_ms` | Milliseconds one export may take, below `OTEL_EXPORTER_OTLP_(TRACES_)TIMEOUT`. |
+
+The environment wins key by key; `OTEL_SDK_DISABLED=true` and
+`OTEL_TRACES_EXPORTER=none` still turn export off. A missing file is no
+configuration; an unreadable or malformed one is ignored
+(`RUST_LOG=debug` says why). It is a user's setting: a repository's
+`colab.toml` is never read for telemetry, so a checkout cannot redirect
+your traces.
+
 Traces go as OTLP/JSON over plain `http://`; colab ships no TLS stack, so
 an `https://` endpoint turns export off (use a local collector to
 forward). An export that cannot be made — nothing listening, a timeout,
 an error answer — is dropped (`RUST_LOG=debug` says so) and never
-changes a command's output or exit code.
+changes a command's output or exit code. A one-shot command exports as
+it ends, within the timeout; `colab mcp`, `colab server` and
+`colab lsp-daemon` export from a background thread, so no response waits
+on the collector.
 
-**With habit.** `habit setup claude-code` already puts
+**With habit.** `habit setup claude-code` puts
 `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317` into Claude Code's
-environment, so every colab command an agent runs reports to habit with
-no further setup; for a terminal, `export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`.
+settings, but that reaches Claude Code itself, not the shells and MCP
+servers it starts. To have every colab run report to habit — yours and an
+agent's — set `enabled = true` (habit's address is the default) or
+`endpoint = "http://127.0.0.1:4318"` in the config file above; for one terminal, `export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`.
 colab labels each trace in habit's terms, which other collectors ignore:
 a command's resource carries `habit.kind=command` and its root span
 `habit.subcommand` and `habit.flags`, so habit stores a `command` record

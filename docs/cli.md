@@ -1549,8 +1549,12 @@ colab refactor --script s.colab --write --verify "cargo check --quiet" --commit-
   expected output: corpus, evals, `llms-full.txt`, a pack's cases.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` (and the other standard `OTEL_*`
   variables) — send traces of colab's work to an OpenTelemetry collector;
-  off when unset. What a trace holds and every variable:
-  [operations.md#traces-opentelemetry](operations.md#traces-opentelemetry).
+  off when unset. The `[telemetry]` table of the user config file
+  (`$XDG_CONFIG_HOME/colab/config.toml`, else `~/.config/colab/config.toml`)
+  sets the same, beneath the variables; its `enabled = true` alone sends
+  to `http://127.0.0.1:4318`. What a trace holds, every variable
+  and key: [operations.md#traces-opentelemetry](operations.md#traces-opentelemetry).
+- `XDG_CONFIG_HOME` — where that user config file is read from.
 
 ## See also
 
