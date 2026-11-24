@@ -453,7 +453,7 @@ shows the records arriving.
 | A pattern matches too much or too little | `colab find -e '<rule>' --detail detailed` (the bindings), then narrow with `where` |
 | Exit 11 | a rule reported a conflict (an identifier that already exists, an unimported qualifier); `--format json` lists them |
 | "still indexing at the timeout" | raise `--timeout` / `--lsp-timeout`; the first run on a large workspace pays the server's indexing |
-| A command refuses a script with `scan` | `--stdin`, `--bisect`, `--verify`, `--split-pr`, `--changed-since`, and MCP `colab.find` / `colab.test_rule` cannot run scan phases yet; run without them (MCP: use `colab.preview`) |
+| A command refuses a script with `scan` | `--bisect`, `--verify`, `--commit-per-rule`, `--split-pr`, `--changed-since` and `--staged` cannot run scan phases yet; run without them. (`--stdin` and the MCP tools run them.) |
 
 More: the skill's troubleshooting guide,
 [`plugins/claude/colab/skills/colab-codemod/references/troubleshooting.md`](../plugins/claude/colab/skills/colab-codemod/references/troubleshooting.md).

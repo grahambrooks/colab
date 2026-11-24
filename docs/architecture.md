@@ -502,10 +502,12 @@ M35 relaxes "every rule acts on one file" for **reading** only.
   facts installed it records a failure (the run fails at the end of the
   walk, before writes) rather than answer from an empty set.
 - Paths that cannot make a phased run refuse a script with scans:
-  `--stdin`, `--bisect`, `--verify`, `--commit-per-rule`, `--split-pr`,
-  `--changed-since` / `--staged`, and MCP `colab.find` / `colab.test_rule`
-  (MCP `colab.preview` / `colab.apply` run them, through the pipeline).
-  Facts are plain text; nothing
+  `--bisect`, `--verify`, `--commit-per-rule`, `--split-pr`, and
+  `--changed-since` / `--staged`. The rest run them through the pipeline:
+  MCP `colab.preview` / `colab.apply` over a walk, `--stdin` and MCP
+  `colab.test_rule` over their one text (so its scans read only that), and
+  `colab find` / MCP `colab.find` with `Source::visit_phased` before they
+  locate hits. Facts are plain text; nothing
   resolves names across files. Every edit is still one rule's in one
   file, so conflicts, `colab:ignore`, attribution and idempotency hold.
 - Deferred: `create` (a new file from a match), which needs `FileOp`s in

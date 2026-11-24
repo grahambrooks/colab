@@ -44,7 +44,7 @@ impl Drop for OracleGuard {
 
 /// The run paths a script with scans cannot take yet: each applies one
 /// rule at a time, or reads only some of the files (a scan must see them
-/// all), or reads one text.
+/// all). `--stdin` runs one: its scans read the one text.
 pub(super) fn refuse_phased(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Result<()> {
     if !refactoring.has_scans() {
         return Ok(());
@@ -56,7 +56,6 @@ pub(super) fn refuse_phased(refactoring: &codemod::Refactoring, args: &RefactorA
         (args.bisect.is_some(), "--bisect"),
         (args.changed_since.is_some(), "--changed-since"),
         (args.staged, "--staged"),
-        (args.stdin, "--stdin"),
     ]
     .into_iter()
     .find_map(|(on, name)| on.then_some(name));

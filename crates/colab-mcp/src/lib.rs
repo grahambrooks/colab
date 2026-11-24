@@ -67,7 +67,6 @@ use colab_core::BackendRegistry;
 use colab_core::render::{self, ChangeCollector, Detail, RenderOptions};
 use colab_core::report::RunReport;
 use colab_core::suggest;
-use colab_core::walker;
 use colab_dsl::compile;
 use serde_json::{Map, Value, json};
 
@@ -710,21 +709,6 @@ fn compile_script(
     Ok(refactoring)
 }
 
-/// A phased run reads every file before it edits one. `colab.preview` and
-/// `colab.apply` make one (through `colab_dsl::pipeline`); `tool` reads one
-/// snippet, or locates matches file by file, so it refuses the script.
-fn refuse_scans(refactoring: &colab_dsl::Refactoring, tool: &str) -> Result<(), ToolError> {
-    if !refactoring.has_scans() {
-        return Ok(());
-    }
-    Err(ToolError::from_error(
-        colab_core::Error::UnsupportedOperation(format!(
-            "a script with `scan` phases reads every file before it edits one, which {tool} \
-             does not do yet; run it with colab.preview, or the colab CLI (`colab find`)"
-        )),
-    ))
-}
-
 /// Where per-file progress goes while a script runs.
 ///
 /// The streaming and synchronous entry points differ *only* in this, so
@@ -852,7 +836,6 @@ fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolErro
 
     let refactoring =
         compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
-    refuse_scans(&refactoring, "colab.test_rule")?;
     let (change, report) = colab_dsl::pipeline::run_text(&refactoring, path.clone(), source)
         .map_err(ToolError::from_error)?;
 
@@ -913,20 +896,27 @@ fn find(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
 
     let refactoring =
         compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
-    refuse_scans(&refactoring, "colab.find")?;
+    let source = colab_dsl::pipeline::Source::walk(paths);
+    // Scans first, over every file and every stage, so `in` reads what
+    // colab.preview would; hits are still located in the files as they are.
+    if refactoring.has_scans() {
+        source
+            .visit_phased(&refactoring, &mut |_| Ok(()))
+            .map_err(ToolError::from_error)?;
+    }
     let rules = &refactoring.rules;
     let mut report = FindReport::new(rules, max_results, detail);
     refactoring.annotate(&mut report.run);
     report.script = refactoring.name.clone();
     let selector = Selector::new(rules, &report.script);
-    for target in &paths {
-        let outcome = walker::walk(&selector, target, &mut |change| {
+    let outcome = source
+        .visit(&selector, &mut |change: colab_core::FileChange| {
             report.record_found(&change.path, selector.take(&change.path));
             Ok(())
         })
         .map_err(ToolError::from_error)?;
-        report.run.record_walk(outcome);
-    }
+    report.run.record_walk(outcome);
+    colab_dsl::pipeline::semantic_failure().map_err(ToolError::from_error)?;
     colab_core::near_miss::probe_disk(rules, &mut report.run);
 
     // Report paths as the caller named them: relative to `cwd`.
@@ -1220,6 +1210,30 @@ mod tests {
         )
         .unwrap();
         assert_eq!(preview["summary"]["changed"], 1, "{preview}");
+        // colab.find reads the same facts: only the exported call. A tool
+        // call is a run of its own (`handle_call`); the walk's workers join it.
+        let found = colab_core::run::Run::new()
+            .enter(|| find(&arguments, &registry()))
+            .unwrap();
+        assert_eq!(found["summary"]["matches"], 1, "{found}");
+        assert!(found.to_string().contains("\"line\":4"), "{found}");
+        // colab.test_rule's scans read its one snippet.
+        let tested = test_rule(
+            &json!({
+                "script": script,
+                "path": "x.go",
+                "source": "package x\n\nfunc Exported() {}\n\nfunc main() { api.Exported(); api.internal() }\n",
+            }),
+            &registry(),
+        )
+        .unwrap();
+        assert!(
+            tested["output"]
+                .as_str()
+                .unwrap()
+                .contains("api.Exported(nil); api.internal()"),
+            "{tested}"
+        );
         run_script(
             &arguments,
             &registry(),
@@ -1231,12 +1245,6 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&main).unwrap(),
             "package main\n\nfunc main() {\n\tapi.Exported(nil)\n\tapi.internal()\n}\n"
-        );
-        // The tools that read file by file still refuse, naming themselves.
-        let e = find(&arguments, &registry()).unwrap_err();
-        assert!(
-            format!("{e:?}").contains("colab.find does not do yet"),
-            "{e:?}"
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

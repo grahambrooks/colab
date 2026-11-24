@@ -4434,6 +4434,33 @@ fn a_scan_reads_every_file_before_a_rule_edits_one() {
     let refused = run(&["--bisect", "true", "--write"]);
     assert!(!refused.status.success());
     assert!(String::from_utf8_lossy(&refused.stderr).contains("--bisect does not do yet"));
+    // `--stdin` runs it over the one text: its scans read that text.
+    let mut child = colab()
+        .current_dir(&root)
+        .args([
+            "refactor", "--script", "s.colab", "--stdin", "--path", "api/x.go",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write as _;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"package api\n\nfunc Exported() {}\n\nfunc f() { api.Exported() }\n")
+            .unwrap();
+    }
+    let piped = child.wait_with_output().unwrap();
+    assert!(
+        piped.status.success(),
+        "{}",
+        String::from_utf8_lossy(&piped.stderr)
+    );
+    assert!(String::from_utf8_lossy(&piped.stdout).contains("api.Exported(nil)"));
     fs::remove_dir_all(&root).ok();
 }
 
