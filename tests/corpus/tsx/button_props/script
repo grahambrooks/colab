@@ -1,0 +1,22 @@
+// TSX: a design system renames `Button`'s `onClick` to `onPress` and moves
+// to a scoped package, written with the TSX grammar (`tsx::`), which reads
+// JSX elements and type annotations together.
+//
+// - The import of the old package is replaced.
+// - Each `Button` with an `onClick` handler gets `onPress`; its other
+//   attributes and its children stay, self-closing or not.
+// - A component's `props: ButtonProps` annotation becomes `PressableProps`.
+refactor "tsx-on-press" {
+    match tsx::import "./ui" {
+        replace "@acme/ui"
+    }
+    match tsx::pattern '<Button onClick={$H} $$$A />' {
+        replace '<Button onPress={$H} $$$A />'
+    }
+    match tsx::pattern '<Button onClick={$H} $$$A>$$$C</Button>' {
+        replace '<Button onPress={$H} $$$A>$$$C</Button>'
+    }
+    match tsx::pattern 'ButtonProps' {
+        replace 'PressableProps'
+    }
+}

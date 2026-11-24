@@ -154,9 +154,10 @@ colab list-languages        # every registered backend
 colab list-rules go         # modules + actions for one backend
 ```
 
-The 17 backends: `c`, `cpp`, `csharp`, `go`, `java`, `js`, `kotlin`,
+The 18 backends: `c`, `cpp`, `csharp`, `go`, `java`, `js`, `kotlin`,
 `php`, `python`, `ruby`, `rust`, `swift`, `ts` (TypeScript's grammar:
-types, interfaces, member modifiers; `js` reads `.ts` too, without them)
+types, interfaces, member modifiers; `js` reads `.ts` too, without them),
+`tsx` (`.tsx`: the same, with JSX elements)
 for source, and `json`,
 `markdown`, `toml` for config, and `text` for a string in any file
 (`text::word ".codemod" { replace ".colab" }`): no grammar, so scope it.

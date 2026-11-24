@@ -991,6 +991,7 @@ table below summarises:
 | `js::symbol` | Identifier text (covers `identifier`, `property_identifier`, `shorthand_property_identifier`). | `"oldHelper"` |
 | `ts::import` | As `js::import`, in `.ts` / `.mts` / `.cts` files on the TypeScript grammar. | `"./callbacks"` |
 | `ts::symbol` | As `js::symbol`, plus `type_identifier` (a type's name). | `"Config"` |
+| `tsx::import` / `tsx::symbol` | As `ts::`, in `.tsx` files on the TSX grammar (a component's name in its JSX tags too). | `"./ui"`, `"Button"` |
 
 For the source modules, matching is on tree-sitter node text, not raw substrings
 — `tokio` does **not** match `my_tokio` and `another.module` does
@@ -1050,7 +1051,7 @@ match rust::use "old_crate::Thing" in "docs/**" in fences { replace "new_crate::
   files. `in fences` keeps only the second.
 - A fence belongs to a language by the first word of its info string,
   compared case-insensitively: ```` ```go ```` and ```` ```golang ````
-  for Go, ```` ```ts ```` for `js` and `ts`, and so on (each backend
+  for Go, ```` ```ts ```` for `js` and `ts`, ```` ```tsx ```` for `tsx`, and so on (each backend
   lists its names). Other fences, and the prose around them, are left alone.
 - Each fence is rewritten on its own. One indented inside a list item is
   dedented for the rule and re-indented after.

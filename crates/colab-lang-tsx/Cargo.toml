@@ -1,0 +1,20 @@
+[package]
+name = "colab-lang-tsx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "TSX language backend for colab: module specifiers, symbols, calls and patterns (JSX included) on the TSX grammar."
+
+[dependencies]
+colab-core = { workspace = true }
+colab-lang-js = { workspace = true }
+colab-lang-ts = { workspace = true }
+colab-rewrite = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-typescript = { workspace = true }
+
+[lints]
+workspace = true

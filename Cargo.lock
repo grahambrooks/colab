@@ -307,6 +307,7 @@ dependencies = [
  "colab-lang-text",
  "colab-lang-toml",
  "colab-lang-ts",
+ "colab-lang-tsx",
 ]
 
 [[package]]
@@ -521,6 +522,18 @@ version = "2026.11.24"
 dependencies = [
  "colab-core",
  "colab-lang-js",
+ "colab-rewrite",
+ "tree-sitter",
+ "tree-sitter-typescript",
+]
+
+[[package]]
+name = "colab-lang-tsx"
+version = "2026.11.24"
+dependencies = [
+ "colab-core",
+ "colab-lang-js",
+ "colab-lang-ts",
  "colab-rewrite",
  "tree-sitter",
  "tree-sitter-typescript",

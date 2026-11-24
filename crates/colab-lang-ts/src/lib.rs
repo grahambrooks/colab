@@ -8,15 +8,24 @@
 //! JavaScript's (`colab_lang_js::imports`), over this grammar.
 //!
 //! Applies to `.ts`, `.mts` and `.cts`. `.tsx` needs the TSX grammar, so
-//! it stays with `js` for now: one backend has one grammar.
+//! it is the `tsx` backend's (`colab-lang-tsx`), which takes this crate's
+//! pattern setup, modifiers and rename kinds: one backend has one grammar.
 
 mod patterns;
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
 use colab_rewrite::{CallShape, SourceLanguage};
 
+pub use patterns::MODIFIER_TOKENS;
+
+/// TypeScript's pattern setup (contexts, `also` readings, modifiers), for
+/// a backend on another TypeScript grammar to take with its own: `tsx`.
+pub fn pattern_language() -> colab_rewrite::pattern::PatternLanguage {
+    patterns::language()
+}
+
 /// Identifier kinds TypeScript adds to JavaScript's: a type's name.
-const RENAME_KINDS: &[&str] = &[
+pub const RENAME_KINDS: &[&str] = &[
     "identifier",
     "property_identifier",
     "shorthand_property_identifier",

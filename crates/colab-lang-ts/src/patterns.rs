@@ -54,7 +54,7 @@ pub(crate) fn language() -> PatternLanguage {
 /// `override`) and the keywords the grammar leaves anonymous. A pattern
 /// that leaves them out matches the item with any, and a rewrite keeps
 /// them.
-pub(crate) const MODIFIER_TOKENS: &[&str] = &[
+pub const MODIFIER_TOKENS: &[&str] = &[
     "accessibility_modifier",
     "override_modifier",
     "static",

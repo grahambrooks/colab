@@ -1,0 +1,10 @@
+toolbar.tsx:1:1: [0] import { Button, ButtonProps } from './ui';
+toolbar.tsx:1:18: [3] ButtonProps
+toolbar.tsx:3:35: [3] ButtonProps
+toolbar.tsx:5:5: [2] <Button onClick={props.onSave} kind="primary">\n      Save\n    </Button>
+    $A = kind="primary"
+    $C = \n      Save\n    
+    $H = props.onSave
+toolbar.tsx:15:7: [1] <Button onClick={reset} />
+    $A = 
+    $H = reset

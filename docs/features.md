@@ -71,6 +71,10 @@ just the readable form.
 | `ts::symbol` | ✅ |  |  |  |  |  |  | as `ts::import` |
 | `ts::call` |  |  |  | ✅ |  |  |  | as `ts::import` |
 | `ts::pattern` | ✅ | ✅ |  |  |  |  | ✅ | as `ts::import` |
+| `tsx::import` | ✅ | ✅ | ✅ |  |  |  |  | `.tsx` |
+| `tsx::symbol` | ✅ |  |  |  |  |  |  | as `tsx::import` |
+| `tsx::call` |  |  |  | ✅ |  |  |  | as `tsx::import` |
+| `tsx::pattern` | ✅ | ✅ |  |  |  |  | ✅ | as `tsx::import` |
 | `json::key`         |    | ✅ |    |    | ✅ | ✅ |    | `.json` |
 | `markdown::section` | ✅ | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
 | `markdown::frontmatter` |  | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
@@ -388,7 +392,8 @@ Powered by `tree-sitter-javascript`. The JavaScript grammar parses
 TypeScript module syntax well enough for specifier and identifier
 rewriting, and `js` still runs over `.ts` and `.tsx` files. For
 TypeScript code (types, interfaces, generics, member modifiers) use
-[`ts::`](#typescript-colab-lang-ts), which parses them.
+[`ts::`](#typescript-colab-lang-ts) (and [`tsx::`](#tsx-colab-lang-tsx)
+for `.tsx`, JSX included), which parse them.
 
 A method's modifiers (`static`, `async`, `get`, `*`) are anonymous
 tokens: `js::pattern 'f() {}'` matches `static async f() {}`, and a
@@ -425,8 +430,8 @@ Powered by `tree-sitter-typescript` (0.23), on `.ts`, `.mts` and `.cts`
 files. Type annotations, interfaces, generics, enums and member
 modifiers parse, so a pattern can name them: `function $F($$$A):
 Promise<$T> { $$$B }`, `interface $I { $$$M }`, `Promise<$T>`, `port:
-number`. `.tsx` files stay with `js` for now: one backend has one
-grammar, and TSX needs its own.
+number`. `.tsx` files are [`tsx::`](#tsx-colab-lang-tsx)'s: one backend
+has one grammar, and TSX's is its own.
 
 `js` also claims `.ts`, as `c` and `cpp` both claim `.h`, so existing
 `js::` scripts keep working; a bare `colab find '<pattern>'` over `.ts`
@@ -447,6 +452,30 @@ files picks `ts`.
   rewrite leaves it in place. A typed field pattern may end in its `;`
   (`count: number = $V;`); an untyped one is written without it
   (`name = $V`), since with it it reads as an assignment statement.
+
+---
+
+## TSX (`colab-lang-tsx`)
+
+Powered by `tree-sitter-typescript`'s TSX grammar, on `.tsx` files:
+TypeScript with JSX elements. Everything [`ts::`](#typescript-colab-lang-ts)
+reads parses here too, with the same pattern contexts, modifiers and
+rename kinds (this crate takes them from `colab-lang-ts`), and JSX parses
+as well: `<Button onClick={$H} $$$A />`, `<Button onClick={$H} $$$A>$$$C</Button>`.
+
+`js` also claims `.tsx`, as it does `.ts`, so existing `js::` scripts keep
+working; a bare `colab find '<pattern>'` over `.tsx` files picks `tsx`.
+
+- **`tsx::import`:** as [`js::import`](#jsimport), on this grammar.
+- **`tsx::symbol`:** as `ts::symbol`; a component's name in its JSX tags
+  (`<Button>`, `</Button>`) is an identifier, so it is renamed with its
+  declaration.
+- **`tsx::call`:** as `js::call`.
+- **`tsx::pattern`:** as `ts::pattern`, plus JSX: an element pattern
+  matches by its tag and the attributes it names, with `$$$A` for the
+  rest; a rewrite keeps the attributes and children its template passes
+  through. Self-closing (`<X />`) and open-and-close (`<X>…</X>`) elements
+  are different shapes, so a rule that means both is written once for each.
 
 ---
 

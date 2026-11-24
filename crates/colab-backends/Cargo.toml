@@ -27,6 +27,7 @@ colab-lang-swift = { workspace = true }
 colab-lang-text = { workspace = true }
 colab-lang-toml = { workspace = true }
 colab-lang-ts = { workspace = true }
+colab-lang-tsx = { workspace = true }
 
 [lints]
 workspace = true

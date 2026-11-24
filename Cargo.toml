@@ -20,6 +20,7 @@ members = [
     "crates/colab-lang-text",
     "crates/colab-lang-toml",
     "crates/colab-lang-ts",
+    "crates/colab-lang-tsx",
     "crates/colab-backends",
     "crates/colab-rewrite",
     "crates/colab-lsp-client",
@@ -56,6 +57,7 @@ colab-lang-swift = { path = "crates/colab-lang-swift" }
 colab-lang-text = { path = "crates/colab-lang-text" }
 colab-lang-toml = { path = "crates/colab-lang-toml" }
 colab-lang-ts = { path = "crates/colab-lang-ts" }
+colab-lang-tsx = { path = "crates/colab-lang-tsx" }
 colab-mcp = { path = "crates/colab-mcp" }
 colab-rewrite = { path = "crates/colab-rewrite" }
 colab-lsp-client = { path = "crates/colab-lsp-client" }

@@ -1,0 +1,4 @@
+1 tsx::import "./ui" -> "@acme/ui"
+1 tsx::pattern '<Button onClick={$H} $$$A />' -> '<Button onPress={$H} $$$A />'
+1 tsx::pattern '<Button onClick={$H} $$$A>$$$C</Button>' -> '<Button onPress={$H} $$$A>$$$C</Button>'
+1 tsx::pattern 'ButtonProps' -> 'PressableProps'

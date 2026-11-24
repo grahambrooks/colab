@@ -80,6 +80,45 @@ fn a_ts_field_pattern_may_end_in_its_semicolon() {
 }
 
 #[test]
+fn a_bare_pattern_over_typescript_picks_ts_or_tsx_by_the_files() {
+    // `js` claims `.ts` and `.tsx` too; the backend named after the files'
+    // extension is the one meant, and a JSX pattern parses only in `tsx`.
+    let root = workspace_temp("find-tsx");
+    write(
+        &root.join("app/button.tsx"),
+        "export const B = (p: Props) => <Button onClick={p.go} />;\n",
+    );
+    write(
+        &root.join("lib/store.ts"),
+        "export function load(p: string): Promise<Config> { return get(p); }\n",
+    );
+    let find = |dir: &str, pattern: &str| {
+        colab()
+            .current_dir(root.join(dir))
+            .args(["find", pattern, "."])
+            .output()
+            .unwrap()
+    };
+    let jsx = find("app", "<Button onClick={$H} />");
+    assert!(
+        jsx.status.success(),
+        "{}",
+        String::from_utf8_lossy(&jsx.stderr)
+    );
+    assert!(String::from_utf8_lossy(&jsx.stderr).contains("searching tsx files"));
+    assert!(String::from_utf8_lossy(&jsx.stdout).contains("button.tsx:1:"));
+    let typed = find("lib", "Promise<$T>");
+    assert!(
+        typed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&typed.stderr)
+    );
+    assert!(String::from_utf8_lossy(&typed.stderr).contains("searching ts files"));
+    assert!(String::from_utf8_lossy(&typed.stdout).contains("store.ts:1:"));
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn find_takes_a_bare_pattern_as_grep_takes_a_regex() {
     let root = workspace_temp("find-bare");
     write(&root.join("main.go"), GO_WRAP);
