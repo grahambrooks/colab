@@ -77,6 +77,20 @@ What the round above left, and what it found, in order.
 | 7 | ~~**`language_server.rs` (1,807 lines) and `pattern.rs` (2,157).**~~ | Done 2026-11-24: `language_server/{completion,hover,workspace}.rs` through rust-analyzer's assists (1,217 lines left, about 560 of them tests); `pattern.rs` a 281-line root over `compile.rs`, `find.rs`, `macros.rs`, `delete.rs`, `rewrite.rs` and `tests.rs`. |
 | 8 | ~~**Semantic dogfooding needs `rust-analyzer` for the pinned toolchain.**~~ | Done 2026-11-24: installed for 1.100; `docs/dogfooding.md` says how, and when to prefer `where $R type …` to a name regex. Used for real the same day: `lsp_commands.rs` and `language_server.rs` were split through rust-analyzer's assists. |
 
+### After the next round
+
+Found while doing the round above, in order.
+
+| Rank | Improvement | Why, and where |
+| ---- | ----------- | -------------- |
+| 1 | **A kept server sees colab's own writes before the next command.** After `colab action` "Extract Module" wrote two files, `colab rename` through the same kept rust-analyzer missed the new module's callers in other files, every time. | Likely the daemon's `didChangeWatchedFiles` for the files the previous command wrote arrives after the next request, or is not sent for a created file. Check `daemon.rs` (changed-since tracking, created files) against a fresh-server run of the same two commands (`tests/kept_server.rs`). |
+| 2 | **"Top level only" in a pattern rule.** Deleting an extracted module's imports with `use $$$X;` also deleted `use` lines inside function bodies. | A `where at top` (or `not inside` any function or block) constraint, so a rule can name "items of the file" without a hand-built pattern. |
+| 3 | **`replace` of an item takes its attached attributes and docs**, as `delete` now does. | The `pattern.rs` split's unwrap of `mod tests { $$$B }` left its `#[cfg(test)]` behind. |
+| 4 | **Check rust-analyzer's assists after `colab action`.** Its "Extract Module" inferred incomplete imports, emptied earlier re-exports and put `pub(crate)` on a trait impl method. | Offer `--verify-lsp` on `colab action` (new error diagnostics are conflicts, as for `refactor`), so a broken assist is refused before it is written. |
+| 5 | **Split `crates/colab-cli/tests/cli.rs`** (4,974 lines, one binary) by command. | The busiest test file; every CLI change touches it, and a split lets `cargo test -p colab-cli --test refactor` run one area. |
+| 6 | **`colab-dsl/src/compiler.rs`** (1,928 lines) **and `colab-mcp/src/lib.rs`'s tests** (most of its 1,915 lines). | The next-largest files: the compiler's lowering, constraint checks and include expansion split naturally; MCP's tests can move to `tests/`. |
+| 7 | **Release.** The 2026.11.4 release the M20 plugin pins is still waiting on the stable gate. | Everything since is on `main`, unreleased; see [Stable gate](#stable-gate-before-m20). |
+
 ## Stable gate before M20
 
 A version is pinned into Claude (plugin, MCP config, hook) when all of
