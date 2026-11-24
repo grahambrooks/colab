@@ -272,6 +272,8 @@ fn main() {
     // A server that cannot start: it says why on stderr, then exits, as a
     // rustup proxy without the component does.
     let crash = std::env::args().any(|a| a == "--crash-on-initialize");
+    // Whether the flaky action has failed its one resolve yet.
+    let mut flaked = false;
     let stdin = std::io::stdin();
     let mut input = BufReader::new(stdin.lock());
     let mut out = std::io::stdout().lock();
@@ -381,6 +383,9 @@ fn main() {
                            "disabled": {"reason": "not a function"}}),
                     json!({"title": "Organize imports", "kind": "source.organizeImports",
                            "data": {"uri": uri, "op": "organize"}}),
+                    // Sorts imports too, after one stale resolve.
+                    json!({"title": "Sort imports (flaky)", "kind": "source.sortImports",
+                           "data": {"uri": uri, "op": "flaky"}}),
                 ];
                 // A new file and its content in one edit, as rust-analyzer's
                 // "Extract module to file" sends: a `create`, then an edit of it.
@@ -429,6 +434,17 @@ fn main() {
                     send(
                         &mut out,
                         json!({"jsonrpc": "2.0", "id": id, "result": action}),
+                    );
+                    continue;
+                }
+                // rust-analyzer's answer when the file changed between the
+                // listing and the resolve: fail once, then resolve.
+                if data["op"] == "flaky" && !flaked {
+                    flaked = true;
+                    send(
+                        &mut out,
+                        json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32603,
+                               "message": "Mismatching assist at index 1 for the resolve parameters given. Resolve request assist id: sort_imports, actual id: extract_constant."}}),
                     );
                     continue;
                 }

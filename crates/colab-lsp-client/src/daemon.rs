@@ -389,6 +389,9 @@ impl Server {
         let mut pending: HashMap<String, Value> = HashMap::new();
         let mut opened: HashSet<String> = HashSet::new();
         let mut init_id: Option<String> = None;
+        // Whether this client starts with files changed under the server:
+        // then its last `serverStatus` ("quiescent") is out of date.
+        let mut reloading = false;
         if let Some(since) = self.last_client.take() {
             let changes = self.changed_since(since);
             if !changes.is_empty() {
@@ -397,6 +400,7 @@ impl Server {
                     "method": "workspace/didChangeWatchedFiles",
                     "params": {"changes": changes}
                 }))?;
+                reloading = true;
             }
         }
         let stop = loop {
@@ -420,7 +424,14 @@ impl Server {
                                 for begin in self.progress.values() {
                                     write_frame(&mut writer, begin)?;
                                 }
-                                if let Some(status) = &self.status {
+                                // A status from before the files changed
+                                // would say "quiescent" while the server is
+                                // still reloading them: the client would act
+                                // on the old text (rust-analyzer's
+                                // "Mismatching assist"). Without it the client
+                                // waits out its full settle window, in which
+                                // the server reports again.
+                                if let Some(status) = self.status.as_ref().filter(|_| !reloading) {
                                     write_frame(&mut writer, status)?;
                                 }
                             }

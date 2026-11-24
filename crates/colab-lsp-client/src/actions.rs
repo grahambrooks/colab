@@ -204,10 +204,49 @@ pub fn run_action(
     }
     let (session, text) = start(server, target)?;
     let mut session = require(session, "codeActionProvider", "code actions")?;
+    // A server that was still taking in a file changed on disk can resolve
+    // an action against another version of it than it listed it for
+    // (rust-analyzer: "Mismatching assist at index …"). Wait for it to
+    // settle and list again, once.
+    let mut retried = false;
+    loop {
+        let (chosen, summary) = match choose(&mut session, target, &text, select) {
+            Ok(found) => found,
+            Err(e) => {
+                session.shutdown();
+                return Err(e);
+            }
+        };
+        match perform(&mut session, chosen, &edit::Disk, target.file_operations) {
+            Err(Error::Server(message)) if !retried && message.contains("Mismatching assist") => {
+                retried = true;
+                log::info!("the server's actions changed under it ({message}); listing them again");
+                session.wait_until_quiet(Duration::from_millis(500))?;
+            }
+            outcome => {
+                let changes = outcome?;
+                session.shutdown();
+                return Ok(ActionOutcome {
+                    title: summary.title,
+                    kind: summary.kind,
+                    changes,
+                });
+            }
+        }
+    }
+}
+
+/// List the actions at `target` and pick the one `select` names.
+fn choose(
+    session: &mut Session,
+    target: &Target,
+    text: &str,
+    select: &Select,
+) -> Result<(Value, ActionSummary)> {
     let actions = request_actions(
-        &mut session,
+        session,
         &target.file,
-        &text,
+        text,
         (target.start, target.end),
         select.kind.as_deref(),
     )?;
@@ -237,22 +276,12 @@ pub fn run_action(
             });
             match exact {
                 Some(action) => (*action).clone(),
-                None => {
-                    let name = session.name().to_string();
-                    session.shutdown();
-                    return Err(no_single_action(&name, &actions, matching.len()));
-                }
+                None => return Err(no_single_action(session.name(), &actions, matching.len())),
             }
         }
     };
     let summary = summarize(&chosen);
-    let changes = perform(&mut session, chosen, &edit::Disk, target.file_operations)?;
-    session.shutdown();
-    Ok(ActionOutcome {
-        title: summary.title,
-        kind: summary.kind,
-        changes,
-    })
+    Ok((chosen, summary))
 }
 
 fn no_single_action(server: &str, actions: &[Value], matched: usize) -> Error {

@@ -565,6 +565,36 @@ fn an_action_that_creates_a_file_writes_it() {
 }
 
 #[test]
+fn an_action_the_server_resolved_against_a_stale_file_is_listed_again() {
+    // The fake answers the first resolve of this action as rust-analyzer
+    // does when the file changed under it: "Mismatching assist …".
+    let root = action_workspace("action-stale");
+    let output = lsp_cmd(
+        &root,
+        &[
+            "action",
+            "--at",
+            "a.rs:1:1",
+            "--title",
+            "Sort imports (flaky)",
+            "--write",
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        fs::read_to_string(root.join("a.rs"))
+            .unwrap()
+            .starts_with("use alpha;\nuse zeta;\n")
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn action_lists_and_picks_by_kind_and_title() {
     let root = action_workspace("action-pick");
     let output = lsp_cmd(
@@ -598,6 +628,7 @@ fn action_lists_and_picks_by_kind_and_title() {
             "Uppercase file",
             "Convert to async",
             "Organize imports",
+            "Sort imports (flaky)",
             "Extract to new file"
         ]
     );
