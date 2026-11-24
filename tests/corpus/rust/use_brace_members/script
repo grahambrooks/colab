@@ -1,0 +1,4 @@
+// Paths spread over a brace group: one member goes, one moves, one is renamed in place.
+match rust::use "tree_sitter::Parser" { delete }
+match rust::use "std::fmt::Debug" { replace "std::fmt::Display" }
+match rust::use "serde::Serialize" { replace "serde_json::Value" }

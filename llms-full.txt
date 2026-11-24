@@ -3083,10 +3083,20 @@ Edits to `use` declarations.
 
 - **Match string:** a leading **path prefix**, segment-wise. `tokio`
   matches `tokio`, `tokio::sync::Mutex`, `tokio as t`, and
-  `tokio::*`, but never `my_tokio` or `foo::tokio::bar`.
+  `tokio::*`, but never `my_tokio` or `foo::tokio::bar`. It is matched
+  against every path a declaration names, so a brace group's members
+  count: `use tree_sitter::{Parser, Tree};` names `tree_sitter::Parser`.
 - **`replace`:** rewrites the matched prefix. Multi-segment prefixes
-  work: `tokio::sync` → `tokio_v2::sync` rewrites only that prefix.
-- **`delete`:** removes the entire `use ...;` line.
+  work: `tokio::sync` → `tokio_v2::sync` rewrites only that prefix. A
+  member of a brace group is renamed in place when its new path is still
+  under the group (`a::b` → `a::x` in `use a::{b, c}` gives
+  `use a::{x, c}`), and otherwise moves to a `use` line of its own after
+  the declaration, keeping its alias.
+- **`delete`:** removes the entire `use ...;` line when everything it
+  names goes; otherwise only the matching members, with their commas.
+  A group left with one member loses its braces
+  (`use tree_sitter::Tree;`), and one left with only `self` becomes the
+  group's own path.
 - **`ensure`:** inserts `use <target>;` if no existing `use` already
   begins with the same path: just above the file's first top-level `use`
   (one with no attribute on it), so it joins that group, or, with no
