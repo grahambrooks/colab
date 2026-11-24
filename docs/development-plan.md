@@ -62,6 +62,21 @@ items, with their designs in [Follow-ups](#follow-ups-from-shipped-milestones).
 | 8 | ~~**Captures rendered verbatim** in `keep_layout`, plus "would not parse" naming the first match that breaks.~~ | Done 2026-11-24: each capture is laid out as one sentinel token and put back verbatim, re-indented with its line (reproduced with `swap($A, $B)` → `swapped($B, $A)`); text appended after a one-per-line sequence starts its own line; `why_unchanged` names the first match whose rewrite alone breaks the parse. |
 | 9 | ~~**More pattern contexts:** C# class members, switch / when cases (Go, JS, Kotlin), and a bare `$$$` in item lists.~~ | Done 2026-11-24: a bare-compiled pattern tries every context; Go / JS `switch` and Kotlin `when` contexts; a bare `$$$` is a placeholder; a node that owns its trailing newline (Go's `expression_case`) matches and is replaced without it. Corpus `go/pattern_switch_case`. |
 
+### Next round
+
+What the round above left, and what it found, in order.
+
+| Rank | Improvement | Why, and where |
+| ---- | ----------- | -------------- |
+| 1 | **Split `lsp_commands.rs`** (1,725 lines) into the CLI commands (`rename`, `references`, `calls`, `action`, `safe-delete`, `--tidy`, `--verify-lsp`) and the MCP `LspTools` provider. | The last item-4 file. Each half changes for different reasons, and the MCP half is the one agents hit. |
+| 2 | **Scan phases under the one-rule-at-a-time runs**, and under `--changed-since` / `--staged`. | `RuleRun` makes it a loop: scan once (`Source::visit_phased` with no rules), then each rule with the facts installed. For git-limited runs, scan every file and apply the rules to the changed ones. These are the last refusals. |
+| 3 | **Macro contents for constrained rules.** A rule with `inside` / `follows` / `nth` / `field` or a semantic check skips macro contents today. | Evaluate the relation from the macro node outward in the file's own tree, and map the position for the language server. The `RunReport` migration hand-edited about 30 reads that sat in macros for exactly this kind of rule. |
+| 4 | **User-listed expression macros** (`colab.toml` `[patterns] macros = ["my_assert"]`). | Only the standard, `log` / `tracing` and `anyhow` macros are read; a project's own `assert_*!` helpers are not. |
+| 5 | **The kept server's stderr.** A server that dies under `colab lsp-daemon` closes the socket, and the client re-runs `<program> --version` to learn why. | Have the daemon keep the server's last stderr lines and send them to waiting clients as the error, so a crash after start-up is explained too, not only one at start. |
+| 6 | **Verbatim layout for templates with `let`.** | A `let`-derived value still goes through the token-by-token layout. Lay it out against its base capture's span, as plain captures now are. |
+| 7 | **`language_server.rs` (1,807 lines) and `pattern.rs` (2,157).** | The next-largest high-churn files. The server's command handlers and its hover / completion halves split naturally; `pattern.rs` has the matcher, the contexts and the macro layer in one file. |
+| 8 | **Semantic dogfooding needs `rust-analyzer` for the pinned toolchain.** `rustup component add rust-analyzer` for 1.100, or document it in `docs/dogfooding.md`. | The `RunReport` migration fell back from `where $R type "RunReport"` to a name regex because the component was missing. |
+
 ## Stable gate before M20
 
 A version is pinned into Claude (plugin, MCP config, hook) when all of
