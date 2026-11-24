@@ -25,6 +25,7 @@ Whitespace is insignificant outside string literals.
 
 ```ebnf
 program     = "refactor" string "{" item* "}"
+            | item+                             -- bare items: see "Bare rules"
 item        = match | "include" string
             | "pattern" identifier "=" string   -- a pattern constraints name
             | "rewriter" identifier "=" string "->" string   -- what `rewrite(…)` does
@@ -717,22 +718,27 @@ x := errors.Wrap(err, "kept from this script only")
   a covered line is put back, so it needs no support from the backend. A
   `colab:ignore` inside a string counts too.
 
-## Inline rules
+## Bare rules
 
-The `refactor "<name>" { … }` wrapper is optional on the command line.
-Each `-e` / `--rule` value is one or more items (`match` blocks or an `include`); the CLI wraps them in
-`refactor "inline" { … }` and compiles them exactly like a file:
+The `refactor "<name>" { … }` wrapper is optional everywhere a script is
+read: a script may be bare items (`match`, `include`, `pattern`,
+`rewriter`, `scan`, `then`) instead. That holds for `-e` / `--rule`,
+`--script` files and stdin, an `include`d file, the MCP tools' `script`,
+and the `.colab` language server:
 
 ```sh
 colab refactor -e 'match go::import "old/pkg" { replace "new/pkg" }' .
 colab explain  -e 'match python::import "six" { delete }'
+printf '%s\n' 'match go::import "old/pkg" { replace "new/pkg" }' > move.colab
+colab refactor --script move.colab .
 ```
 
-Parse errors are reported against the rules as typed — rule N is line N,
-with the column inside that rule. The MCP tools take the same bare
-rules as their `script`, wrap them the same way, and report parse errors
-against the text sent; a script that starts with `refactor` (past
-comments) is compiled as written.
+Bare items are one block. A file's is named after the file (`move`
+above), as reports and `--split-pr` branches show it; `-e` rules, stdin
+and MCP scripts are named `inline`. Nothing is wrapped around the text,
+so parse errors point into it as written: each `-e` value is a line, so
+rule N is line N, with the column inside that rule. A script whose first
+token (past comments) is `refactor` is one named block, as before.
 
 ## Multi-rule scripts
 

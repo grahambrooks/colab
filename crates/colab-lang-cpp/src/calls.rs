@@ -12,12 +12,10 @@
 //! again on the next pass. Templates **must rename the function** to be
 //! safe to re-run; the corpus harness fails any rule that loops.
 
-#[cfg(test)]
 fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     crate::LANG.rewrite_calls(function, template, source_code)
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

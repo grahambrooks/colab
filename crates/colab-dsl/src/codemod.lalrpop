@@ -23,7 +23,10 @@ match {
 }
 
 pub Program: Command = {
-    "refactor" <name: StringLiteral> "{" <items: Item*> "}" => Command { refactor_name: name, items }
+    "refactor" <name: StringLiteral> "{" <items: Item*> "}" => Command { refactor_name: name, items },
+    // Bare items, as `-e` and an agent write them: the script is one
+    // block named `inline` (the compiler names a file's after the file).
+    <items: Item+> => Command { refactor_name: crate::inline::NAME.to_string(), items },
 };
 
 pub Item: Item = {

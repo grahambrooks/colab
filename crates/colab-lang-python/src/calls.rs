@@ -11,12 +11,10 @@
 //! output and re-applies on every pass. Rename the function to stay
 //! re-runnable.
 
-#[cfg(test)]
 fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     crate::LANG.rewrite_calls(function, template, source_code)
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -7,12 +7,10 @@
 //! nodes — those are excluded so a rule targeting `foo` does not
 //! collide with a method named `foo`.
 
-#[cfg(test)]
 fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     crate::LANG.rewrite_calls(function, template, source_code)
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

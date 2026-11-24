@@ -16,8 +16,8 @@
 //! Idempotency: templates that keep the callee text match their own
 //! output and will re-apply on every pass. Rename the function to stay
 //! re-runnable.
-use std::borrow::Cow;
 
+use std::borrow::Cow;
 use tree_sitter::Node;
 
 const CALL_KINDS: &[&str] = &[

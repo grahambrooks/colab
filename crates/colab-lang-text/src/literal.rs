@@ -105,6 +105,18 @@ fn bounded(source: &str, start: usize, end: usize) -> bool {
     !(first && before) && !(last && after)
 }
 
+/// The whole line, newline included, when `source[start..end]` is all
+/// that is on it besides whitespace.
+fn whole_line(source: &str, start: usize, end: usize) -> Option<(usize, usize)> {
+    let line_start = source[..start].rfind('\n').map_or(0, |p| p + 1);
+    let line_end = source[end..]
+        .find('\n')
+        .map_or(source.len(), |p| end + p + 1);
+    let blank = |s: &str| s.chars().all(char::is_whitespace);
+    (blank(&source[line_start..start]) && blank(&source[end..line_end]))
+        .then_some((line_start, line_end))
+}
+
 /// The word around `source[start..end]`: the range widened over word
 /// characters on either side.
 fn enclosing_word(source: &str, start: usize, end: usize) -> &str {
@@ -138,6 +150,12 @@ impl Operation for Literal {
         let mut out = String::with_capacity(source.len());
         let mut last = 0;
         for (start, end) in found {
+            // A deleted occurrence alone on its line takes the line with
+            // it, as a `pattern` delete does, rather than leave it blank.
+            let (start, end) = match self.replacement {
+                None => whole_line(source, start, end).unwrap_or((start, end)),
+                Some(_) => (start, end),
+            };
             out.push_str(&source[last..start]);
             out.push_str(with);
             last = end;
@@ -258,6 +276,18 @@ mod tests {
     fn delete_removes_the_text_only() {
         let op = op(Mode::Literal, " // TODO", None);
         assert_eq!(op.apply("x(); // TODO\ny();\n"), "x();\ny();\n");
+    }
+
+    #[test]
+    fn delete_takes_a_line_the_target_has_to_itself() {
+        let op = op(Mode::Literal, "#[cfg(test)]", None);
+        assert_eq!(
+            op.apply("a\n    #[cfg(test)]\nfn f() {}\n#[cfg(test)] mod t;\n#[cfg(test)]"),
+            "a\nfn f() {}\n mod t;\n"
+        );
+        // A replacement keeps the line.
+        let replace = super::tests::op(Mode::Literal, "#[cfg(test)]", Some("#[cfg(any())]"));
+        assert_eq!(replace.apply("  #[cfg(test)]\n"), "  #[cfg(any())]\n");
     }
 
     #[test]

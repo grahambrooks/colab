@@ -17,12 +17,10 @@
 //! while keeping the function name) are intentionally not
 //! idempotent and must be applied with a single `--write` pass.
 
-#[cfg(test)]
 fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     crate::LANG.rewrite_calls(function, template, source_code)
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

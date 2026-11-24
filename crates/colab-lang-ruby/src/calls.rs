@@ -17,8 +17,8 @@
 //! Idempotency: a template that keeps the callee text matches its own
 //! output and re-applies on every pass. Rename the method to stay
 //! re-runnable.
-use std::borrow::Cow;
 
+use std::borrow::Cow;
 use tree_sitter::Node;
 
 #[cfg(test)]

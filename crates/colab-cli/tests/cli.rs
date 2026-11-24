@@ -4334,6 +4334,55 @@ fn edit_finds_a_declaration_by_name_path_and_previews_like_any_run() {
 }
 
 #[test]
+fn a_script_file_of_bare_rules_runs_named_after_the_file() {
+    let root = workspace_temp("bare-script");
+    write(
+        &root.join("main.go"),
+        "package main\n\nimport \"old/pkg\"\n\nfunc main() {}\n",
+    );
+    write(
+        &root.join("move.colab"),
+        "// no refactor block around these\nmatch go::import \"old/pkg\" { replace \"new/pkg\" }\n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "refactor",
+            "--script",
+            "move.colab",
+            "--format",
+            "diff",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("+import \"new/pkg\""));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Running `move`"));
+    // A parse error points into the file as written: line 2.
+    write(
+        &root.join("bad.colab"),
+        "match go::import \"a\" { replace \"b\" }\nmatch go::import \"a\" { nope }\n",
+    );
+    let bad = colab()
+        .current_dir(&root)
+        .args(["refactor", "--script", "bad.colab", "."])
+        .output()
+        .unwrap();
+    assert_eq!(bad.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("parse error at line 2, column 24"),
+        "{}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn a_scan_reads_every_file_before_a_rule_edits_one() {
     let root = workspace_temp("scan-phases");
     write(

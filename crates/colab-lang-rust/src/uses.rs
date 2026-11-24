@@ -224,11 +224,27 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         return source_code.to_string();
     }
 
+    let root = tree.root_node();
+    // With `use` declarations already at the top level, join their group:
+    // before the first one, unless an attribute sits on it (`#[cfg(test)]
+    // use …;` would then cover the new line), in which case the next.
+    let first_use = root
+        .named_children(&mut root.walk())
+        .filter(|c| c.kind() == "use_declaration")
+        .find(|c| {
+            c.prev_named_sibling()
+                .is_none_or(|p| p.kind() != "attribute_item")
+        });
+    if let Some(first) = first_use {
+        let at = colab_rewrite::line_span(source_code, first.start_byte(), first.end_byte()).0;
+        let insertion = format!("use {target};\n");
+        return format!("{}{insertion}{}", &source_code[..at], &source_code[at..]);
+    }
+
     // Insert after the last leading inner attribute or inner doc
     // comment: both must precede every item. Plain comments among them
     // (a licence header) are looked past without moving the point. With
     // none, insert at byte 0.
-    let root = tree.root_node();
     let mut insert_at = 0usize;
     for child in root.named_children(&mut root.walk()) {
         let comment = matches!(child.kind(), "line_comment" | "block_comment");
@@ -246,7 +262,15 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         }
     }
 
-    let insertion = format!("use {target};\n");
+    // After the module's docs, set off by a blank line on each side, as
+    // rustfmt leaves a file: `//! …`, blank, `use …;`, blank, the items.
+    let insertion = if insert_at > 0 && source_code[insert_at..].starts_with('\n') {
+        format!("\nuse {target};\n")
+    } else if insert_at > 0 && !source_code[insert_at..].is_empty() {
+        format!("\nuse {target};\n\n")
+    } else {
+        format!("use {target};\n")
+    };
     let mut out = String::with_capacity(source_code.len() + insertion.len());
     out.push_str(&source_code[..insert_at]);
     out.push_str(&insertion);
@@ -346,24 +370,39 @@ mod tests {
     fn ensure_inserts_after_inner_attributes() {
         let src = "#![allow(dead_code)]\nfn main() {}\n";
         let out = ensure("std::fmt", src);
-        assert!(
-            out.starts_with("#![allow(dead_code)]\nuse std::fmt;\n"),
-            "got: {out}"
+        assert_eq!(
+            out,
+            "#![allow(dead_code)]\n\nuse std::fmt;\n\nfn main() {}\n"
         );
     }
 
     #[test]
-    fn ensure_inserts_after_inner_doc_comments() {
+    fn ensure_joins_the_existing_use_group() {
         // `//!` docs must precede every item; a `use` above them is E0753.
         let src = "//! Crate docs.\n// licence\n#![allow(dead_code)]\n\nuse std::io;\n";
         assert_eq!(
             ensure("std::fmt", src),
-            "//! Crate docs.\n// licence\n#![allow(dead_code)]\nuse std::fmt;\n\nuse std::io;\n"
+            "//! Crate docs.\n// licence\n#![allow(dead_code)]\n\nuse std::fmt;\nuse std::io;\n"
+        );
+        // Never under an attribute that belongs to another `use`.
+        let gated = "#[cfg(test)]\nuse a::b;\nuse c::d;\n";
+        assert_eq!(
+            ensure("std::fmt", gated),
+            "#[cfg(test)]\nuse a::b;\nuse std::fmt;\nuse c::d;\n"
+        );
+    }
+
+    #[test]
+    fn ensure_sets_the_use_off_from_inner_docs() {
+        let docs = "//! Docs.\n\nfn main() {}\n";
+        assert_eq!(
+            ensure("std::fmt", docs),
+            "//! Docs.\n\nuse std::fmt;\n\nfn main() {}\n"
         );
         let block = "/*! Docs. */\nfn main() {}\n";
         assert_eq!(
             ensure("std::fmt", block),
-            "/*! Docs. */\nuse std::fmt;\nfn main() {}\n"
+            "/*! Docs. */\n\nuse std::fmt;\n\nfn main() {}\n"
         );
     }
 

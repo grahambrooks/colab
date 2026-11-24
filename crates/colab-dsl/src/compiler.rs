@@ -162,7 +162,18 @@ fn compile_traced(
     backends: &BackendRegistry,
     base_path: Option<&Path>,
 ) -> Result<Refactoring> {
-    let command = parse(text)?;
+    let mut command = parse(text)?;
+    // A file of bare rules is named after the file, as reports and
+    // `--split-pr` branches show it; `<inline>`, `<stdin>` and MCP's
+    // `<script>` are not files, so their rules keep `inline`.
+    if crate::inline::is_bare(text)
+        && let Some(stem) = base_path
+            .and_then(|p| p.file_stem())
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.starts_with('<'))
+    {
+        command.refactor_name = stem.to_string();
+    }
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     if let Some(p) = base_path

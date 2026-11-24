@@ -15,8 +15,8 @@
 //!
 //! Idempotency: templates that keep the callee text match their own
 //! output. Rename the function to stay re-runnable.
-use std::borrow::Cow;
 
+use std::borrow::Cow;
 use tree_sitter::Node;
 
 #[cfg(test)]

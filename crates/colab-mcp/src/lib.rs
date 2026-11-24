@@ -690,20 +690,14 @@ fn compile_script(
     cwd: Option<&Path>,
     backends: &BackendRegistry,
 ) -> Result<colab_dsl::Refactoring, colab_core::Error> {
-    // Bare `match …` rules are wrapped as the CLI's `-e` wraps them, and a
-    // parse error is reported against the text the caller sent.
-    let wrapped = colab_dsl::inline::wrap(script);
-    let text = wrapped.as_deref().unwrap_or(script);
+    // Bare `match …` rules parse as they are (the grammar takes them), so
+    // a parse error points into the text the caller sent.
     let refactoring = match cwd {
         // `compile_at_path` resolves includes against the file's parent,
         // so point it at a notional script inside `cwd`.
-        Some(dir) => colab_dsl::compile_at_source(text, &dir.join("<script>"), backends),
-        None => compile(text, backends),
-    }
-    .map_err(|e| match wrapped {
-        Some(_) => colab_dsl::inline::relocate(script, e),
-        None => e,
-    })?;
+        Some(dir) => colab_dsl::compile_at_source(script, &dir.join("<script>"), backends),
+        None => compile(script, backends),
+    }?;
     // The MCP server starts no language server, so it cannot answer them.
     if refactoring.needs_oracle() {
         return Err(colab_core::Error::UnsupportedOperation(

@@ -962,32 +962,16 @@ impl ScriptArgs {
 
     fn compile(&self, backends: &BackendRegistry) -> Result<codemod::Refactoring> {
         let (text, base) = self.load()?;
-        codemod::compile_at_source(&text, &base, backends).map_err(|e| self.relocate(&text, e))
-    }
-
-    /// Re-anchor a parse error from the synthesised inline wrapper onto
-    /// the rules the user actually typed, so line, column, and caret
-    /// snippet all point into their `-e` text rather than the wrapper.
-    fn relocate(&self, text: &str, err: Error) -> Error {
-        if self.script_path.is_none() && text.starts_with(codemod::inline::PREFIX) {
-            codemod::inline::relocate(&self.rules.join("\n"), err)
-        } else {
-            err
-        }
+        codemod::compile_at_source(&text, &base, backends)
     }
 }
 
-/// Wrap inline `-e` rules in a `refactor` block.
-///
-/// The wrapper opens on the first rule's line so parse errors keep the
-/// line number the user sees in their own `-e` list (rule N is line N
-/// when each rule is a single line).
+/// The `-e` rules as one script, one per line: bare rules, which the
+/// grammar takes as they are, so a parse error's line is the rule's
+/// position in the `-e` list (when each rule is one line). A single `-e`
+/// may be a whole `refactor "…" { … }` script.
 fn inline_script(rules: &[String]) -> String {
-    let joined = rules.join("\n");
-    if let [_] = rules {
-        return codemod::inline::wrap(&joined).unwrap_or(joined);
-    }
-    format!("{}{joined}\n}}\n", codemod::inline::PREFIX)
+    rules.join("\n")
 }
 
 #[derive(Parser, Debug)]
