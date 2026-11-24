@@ -358,7 +358,11 @@ How it matches:
   however it ends, with a `,` or with a block (`Some(x) => { … }`), as the
   last arm or not. A trailing `,` that changes no syntax node is treated
   as optional in every language; where it means something (Python's `x,`
-  is a tuple), the pattern keeps it. Switch cases are patterns as well:
+  is a tuple), the pattern keeps it. A trailing `;` is dropped the same
+  way when the pattern reads the same without it, or is no single node
+  with it (a TypeScript class field's `;` is its sibling), and a
+  template's own trailing `;` then goes too, so it is not doubled; a
+  statement's `;` (`f(x);`) is kept. Switch cases are patterns as well:
   Go and JavaScript `case $X: $$$B` (a delete takes the case and its
   body), and a Kotlin `when` entry `$X -> $E`. A pattern that also parses
   on its own still matches in every wrapper it fits: C#'s `void $F() {}`

@@ -918,6 +918,11 @@ impl StructuralPattern {
             .as_ref()
             .map(|fields| shorthand_template(template, fields));
         let template = short.as_deref().unwrap_or(template);
+        let template = if self.loose_semicolon {
+            template.trim_end().strip_suffix(';').unwrap_or(template)
+        } else {
+            template
+        };
         let (template, names) = transformable_template(template);
         let fix = TemplateFix::with_transform(&template, &self.lang, &names);
         // A `let`'s `rewrite(<name>)` step: for each form the rewriter's

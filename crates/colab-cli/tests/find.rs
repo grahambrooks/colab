@@ -43,6 +43,43 @@ fn find_stdin_searches_one_text_named_by_path() {
 }
 
 #[test]
+fn a_ts_field_pattern_may_end_in_its_semicolon() {
+    let run = |args: &[&str]| {
+        let mut child = colab()
+            .args(args)
+            .args(["--stdin", "--path", "a.ts"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"class A {\n  private count: number = 0;\n}\n")
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    // The `;` is the field's sibling in the class body, not part of it.
+    let found = run(&["find", "private count: number = $V;"]);
+    assert!(
+        String::from_utf8_lossy(&found.stdout).contains("a.ts:2:3:"),
+        "{found:?}"
+    );
+    // And a template's own `;` is not doubled.
+    let out = run(&[
+        "refactor",
+        "-e",
+        "match ts::pattern 'count: number = $V;' { replace 'count: number = $V + 1;' }",
+    ]);
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "class A {\n  private count: number = 0 + 1;\n}\n"
+    );
+}
+
+#[test]
 fn find_takes_a_bare_pattern_as_grep_takes_a_regex() {
     let root = workspace_temp("find-bare");
     write(&root.join("main.go"), GO_WRAP);

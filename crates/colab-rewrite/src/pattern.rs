@@ -350,6 +350,10 @@ pub struct StructuralPattern {
     /// `text: $T`): `(field, metavariable)` pairs, so a template's `$T`
     /// becomes `text` and `text: text` is written back as `text`.
     shorthand: Option<Vec<(String, String)>>,
+    /// The pattern was written with a trailing `;` that is not part of
+    /// the node it matches (a TS class field's): a template's trailing
+    /// `;` is dropped too, or the rewrite would double it.
+    loose_semicolon: bool,
     /// The pattern's named structure, to refuse a match whose node has
     /// children the pattern does not account for (see [`Shape`]).
     shape: Shape,

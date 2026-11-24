@@ -373,6 +373,7 @@ fn led_forms(
                     qualified: None,
                     visible: None,
                     shorthand: form.shorthand.clone(),
+                    loose_semicolon: form.loose_semicolon,
                     shape: shape.clone(),
                     led: Some(k),
                 }
@@ -534,7 +535,32 @@ impl StructuralPattern {
     /// names every attempt, so a pattern that is not valid code in this
     /// language says so rather than silently matching nothing.
     pub fn compile(language: &PatternLanguage, text: &str) -> Result<Self, String> {
-        let mut primary = Self::readings(language, text)?;
+        // A trailing `;` that is not part of the node: a TypeScript class
+        // field's `;` is its sibling, so `count: number = $V;` is no single
+        // node in a class. When the pattern is refused with it, or reads the
+        // same without it, it is compiled without it (every form too), and
+        // still shown as written.
+        let read = Self::readings(language, text);
+        if let Some(stripped) = text.trim_end().strip_suffix(';')
+            && !stripped.trim().is_empty()
+            && !stripped.trim_end().ends_with(';')
+        {
+            let same = match &read {
+                Err(_) => true,
+                Ok(with) => Self::readings(language, stripped).is_ok_and(|w| w.tree == with.tree),
+            };
+            if same && let Ok(mut loose) = Self::compile(language, stripped) {
+                loose.text = text.to_string();
+                // The match no longer holds the `;`, so neither may the
+                // template: `x: T = $V;` → `x: T = f($V);` keeps one.
+                loose.loose_semicolon = true;
+                for form in &mut loose.also {
+                    form.loose_semicolon = true;
+                }
+                return Ok(loose);
+            }
+        }
+        let mut primary = read?;
         // `to_svg($A)` also as `$COLAB_PATH::to_svg($A)`: the callee
         // `svg::to_svg` is a scoped path, which a bare identifier never
         // matches, so without this a pattern silently misses every
@@ -675,6 +701,7 @@ impl StructuralPattern {
             qualified: self.qualified.clone(),
             visible: self.visible.clone(),
             shorthand: self.shorthand.clone(),
+            loose_semicolon: self.loose_semicolon,
             shape: self.shape.clone(),
             led: None,
         }
@@ -912,6 +939,7 @@ impl StructuralPattern {
             qualified: None,
             visible: None,
             shorthand: None,
+            loose_semicolon: false,
             shape,
             led: None,
         }

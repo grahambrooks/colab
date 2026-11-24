@@ -444,8 +444,9 @@ files picks `ts`.
   of its own is used as written, and a pattern that spells one (`private
   load()`) matches only members that have it. A decorator is the
   member's sibling in the grammar: a deleted member takes it along, and a
-  rewrite leaves it in place. A field pattern is written without its
-  `;` (`count: number = $V`).
+  rewrite leaves it in place. A typed field pattern may end in its `;`
+  (`count: number = $V;`); an untyped one is written without it
+  (`name = $V`), since with it it reads as an assignment statement.
 
 ---
 
