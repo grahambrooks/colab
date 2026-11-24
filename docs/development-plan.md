@@ -75,7 +75,7 @@ What the round above left, and what it found, in order.
 | 5 | ~~**The kept server's stderr.**~~ | Done 2026-11-24: `Transport` drains a server's stderr and keeps its last lines (a server that logs a lot can no longer block on a full pipe either); a session that started the server, and the daemon for a kept one (as the error of each pending request), report an exit with what it last said. The `--version` probe stays as the fallback for a server that said nothing. |
 | 6 | **Verbatim layout for templates with `let`.** | A `let`-derived value still goes through the token-by-token layout. Lay it out against its base capture's span, as plain captures now are. |
 | 7 | **`language_server.rs` (1,807 lines) and `pattern.rs` (2,157).** | `language_server.rs` done 2026-11-24 with rust-analyzer's assists: `language_server/{completion,hover,workspace}.rs`, 1,217 lines left (about 560 of them tests). `pattern.rs` is in progress. |
-| 8 | **Semantic dogfooding needs `rust-analyzer` for the pinned toolchain.** `rustup component add rust-analyzer` for 1.100, or document it in `docs/dogfooding.md`. | The `RunReport` migration fell back from `where $R type "RunReport"` to a name regex because the component was missing. |
+| 8 | ~~**Semantic dogfooding needs `rust-analyzer` for the pinned toolchain.**~~ | Done 2026-11-24: installed for 1.100; `docs/dogfooding.md` says how, and when to prefer `where $R type …` to a name regex. Used for real the same day: `lsp_commands.rs` and `language_server.rs` were split through rust-analyzer's assists. |
 
 ## Stable gate before M20
 

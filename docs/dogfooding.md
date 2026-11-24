@@ -20,8 +20,36 @@ after a commit whose tests pass, and when you want a feature you just
 built.
 
 `rust-analyzer` must be on `PATH` for `rename`, `mv`, `action`,
-`references` and `safe-delete`. The first call in a session takes about
-7 seconds while it indexes the workspace.
+`references` and `safe-delete`, and for the semantic constraints
+(`where $R type "RunReport"`, `resolves`, `calls`, …). The repo pins a
+toolchain (`rust-toolchain.toml`), and rustup's `rust-analyzer` proxy runs
+the pinned toolchain's copy, so install the component for it:
+
+```sh
+rustup component add rust-analyzer   # run inside the repo: it adds it to the pinned toolchain
+rust-analyzer --version              # must print the pinned version, e.g. 1.100.0
+```
+
+Without it, a semantic rule fails with "`rust-analyzer --version` says:
+error: Unknown binary 'rust-analyzer' in official toolchain …". The
+first call in a session takes about 7 seconds while it indexes the
+workspace; a type-constrained `find` over the CLI and DSL crates took
+4.7 seconds.
+
+Prefer a semantic constraint to a name regex when the same field or
+method name belongs to more than one type: `where $R type "RunReport"`
+keeps `WalkOutcome.files_visited` out without guessing from variable
+names. Rules with relational or semantic constraints skip macro
+contents for now (see `development-plan.md`), so check `cargo check`
+for the sites inside `assert_eq!` / `format!`.
+
+rust-analyzer's own assists run through `colab action`. To move a block
+of items into its own file: `--title "Extract Module"` over the line
+range, `colab rename` the new `modname`, then `--title "Extract module to
+file"` (with `--allow-dirty` when the file has your uncommitted changes).
+Check its work: it can miss callers in other files, infer an incomplete
+import list (replace it with `use super::*;`), and put `pub(crate)` on a
+trait impl's method.
 
 ## 2. Choose the tool by the shape of the change
 
