@@ -54,7 +54,14 @@ pub Item: Item = {
 // The optional `where` clause narrows a `<lang>::pattern` match; import
 // clauses after the action run only on the files the rule changed.
 pub Match: Match = {
-    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <constraints: Where?> "{" <lets: Let*> <action: Action> <clauses: Clause*> "}" <end: @R> =>? {
+    // Location clauses may come before the `where` list or after it, as
+    // agents write them either way.
+    <start: @L> "match" <namespace: Namespace> <string: StringLiteral> <locations: Location*> <tail: WhereTail?> "{" <lets: Let*> <action: Action> <clauses: Clause*> "}" <end: @R> =>? {
+        let mut locations = locations;
+        let constraints = tail.map(|tail| {
+            locations.extend(tail.locations);
+            tail.constraints
+        });
         let (scope, fences, prose) = crate::ast::locations(locations)
             .map_err(|error| ParseError::User { error })?;
         let crate::ast::Clauses { imports, message, severity, id, url } = crate::ast::clauses(clauses)
@@ -71,6 +78,10 @@ Location: Location = {
     "in" "fences" => Location::Fences(Fences::Only),
     "and" "fences" => Location::Fences(Fences::Also),
     "and" "prose" => Location::Prose,
+};
+
+WhereTail: crate::ast::WhereTail = {
+    <constraints: Where> <locations: Location*> => crate::ast::WhereTail { constraints, locations },
 };
 
 Where: Vec<Constraint> = {

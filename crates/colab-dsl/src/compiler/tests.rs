@@ -542,6 +542,45 @@ fn an_escaped_quote_says_the_dsl_has_no_escapes() {
 }
 
 #[test]
+fn a_quote_inside_a_string_says_the_string_ended_there() {
+    // From an agent's transcript: a description quoting a name.
+    let script = "match rust::pattern 'f($A)' { replace 'g($A) (e.g. 'emx') here' }";
+    let err = crate::parse(script).unwrap_err().to_string();
+    assert!(
+        err.contains("the string ended at the `'` just before `emx')`")
+            && err.contains("Quote it with \"…\""),
+        "{err}"
+    );
+    let doubled = r#"match rust::pattern "f("x")" { delete }"#;
+    let err = crate::parse(doubled).unwrap_err().to_string();
+    assert!(err.contains("Quote it with '…'"), "{err}");
+    // An error after a string and a space is some other mistake: no hint.
+    let spaced = "match rust::pattern 'f($A)' nope { delete }";
+    let err = crate::parse(spaced).unwrap_err().to_string();
+    assert!(!err.contains("the string ended"), "{err}");
+}
+
+#[test]
+fn clauses_may_follow_the_where_list() {
+    let backends = colab_backends::registry();
+    for script in [
+        r#"match rust::pattern 'f($A)' where not inside 'mod t { $$$B }' in "src/**" { delete }"#,
+        r#"match rust::pattern 'f($A)' in "src/**" where not inside 'mod t { $$$B }' { delete }"#,
+    ] {
+        let compiled = compile(script, &backends).unwrap();
+        assert_eq!(compiled.rules.len(), 1, "{script}");
+        assert!(
+            compiled.rules[0].to_string().contains("in \"src/**\""),
+            "{}",
+            compiled.rules[0]
+        );
+    }
+    // `$X in <set>` still reads as a constraint, not a scope.
+    let scan = "scan rust::pattern 'fn $F() {}' as fns\nmatch rust::pattern '$F()' where $F in fns { delete }";
+    assert!(compile(scan, &backends).is_ok());
+}
+
+#[test]
 fn a_raw_string_closed_early_says_where() {
     let script =
         "refactor \"r\" {\n  match toml::key \"a\" { set r#\"see \"#anchor\" here\"# }\n}\n";

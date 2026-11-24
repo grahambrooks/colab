@@ -100,6 +100,14 @@ pub enum Location {
     Prose,
 }
 
+/// A `match` header's `where` list and the location clauses written after
+/// it (`where … in "src/**"`), before they are folded into a [`Match`].
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct WhereTail {
+    pub constraints: Vec<colab_core::Constraint>,
+    pub locations: Vec<Location>,
+}
+
 /// `let $NEW = $FROM | step | …`: a value derived from a binding for a
 /// `<lang>::pattern` `replace` template. Steps are `(name, args)` as
 /// written; the compiler checks them ([`colab_core::Transform::parse`]).

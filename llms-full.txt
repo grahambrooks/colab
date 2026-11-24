@@ -40,7 +40,8 @@ item        = match | "include" string
             | "rewriter" identifier "=" string "->" string   -- what `rewrite(…)` does
             | "scan" namespace string location* [ where ] "as" identifier   -- a read-only phase
             | "then" "{" item* "}"               -- runs after everything before it
-match       = "match" namespace string location* [ where ] "{" let* action clause* "}"
+match       = "match" namespace string location* [ where location* ] "{" let* action clause* "}"
+                                         -- locations before the `where`, after it, or both
 location    = "in" string                -- path scope, at most once
             | "in" "fences"              -- only inside Markdown code fences
             | "and" "fences"             -- the rule's files, and fences

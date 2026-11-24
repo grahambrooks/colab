@@ -29,6 +29,26 @@ pub(crate) fn raw_string_hint(source: &str, detail: &ParseDetail) -> Option<Stri
                 .into(),
         );
     }
+    // A token right against a closing quote: the string's text held that
+    // quote (`'… (e.g. 'emx') …'`), which ended it there.
+    if offset < source.len()
+        && let Some(quote) = source[..offset]
+            .chars()
+            .next_back()
+            .filter(|c| matches!(c, '\'' | '"'))
+    {
+        let token: String = source[offset..]
+            .chars()
+            .take_while(|c| !c.is_whitespace())
+            .take(20)
+            .collect();
+        let other = if quote == '\'' { '"' } else { '\'' };
+        return Some(format!(
+            "; the string ended at the `{quote}` just before `{token}`: a string quoted with \
+             {quote}…{quote} cannot hold {quote}. Quote it with {other}…{other}, or r#\"…\"# when it \
+             holds both quotes"
+        ));
+    }
     let open = source[..offset].rfind("r#\"")?;
     if source[..open].ends_with('#') || source[open..].starts_with("r##") {
         return None;
