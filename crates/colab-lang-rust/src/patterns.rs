@@ -19,14 +19,16 @@ pub(crate) fn language() -> PatternLanguage {
         expando: 'µ',
         // The next two let a struct field (`pub conflicts: $T`) and a
         // struct-literal field (`conflicts: $C`) be patterns, e.g. in
-        // `where not has '…'`; the last, a match arm
-        // (`Some($X) => $E,`).
+        // `where not has '…'`; then a match arm (`Some($X) => $E,`); the
+        // last, a type on its own (`HashMap<PathBuf, String>`), which no
+        // other context parses.
         contexts: &[
             "@@PATTERN@@;",
             "fn f() {\n@@PATTERN@@\n}\n",
             "struct _S {\n@@PATTERN@@\n}\n",
             "fn f() {\n_S {\n@@PATTERN@@\n};\n}\n",
             "fn f() {\nmatch _m {\n@@PATTERN@@\n}\n}\n",
+            "type _T = @@PATTERN@@;\n",
         ],
         also: &[],
         qualified_calls: Some("::"),
@@ -86,6 +88,9 @@ const EXPRESSION_MACROS: &[&str] = &[
     "info",
     "warn",
     "error",
+    // serde_json: an object literal does not parse as arguments, so only
+    // `json!(expr)` and arrays are read.
+    "json",
 ];
 
 #[cfg(test)]
@@ -145,6 +150,62 @@ mod tests {
             .compile_pattern("y()", PatternAction::Replace("z()".into()), &[])
             .unwrap();
         assert_eq!(call.apply("pub fn x() { y(); }\n"), "pub fn x() { z(); }\n");
+    }
+
+    #[test]
+    fn a_type_alone_is_a_pattern() {
+        let op = crate::LANG
+            .compile_pattern(
+                "HashMap<PathBuf, $V>",
+                PatternAction::Replace("BTreeMap<PathBuf, $V>".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "fn f(m: HashMap<PathBuf, String>) -> HashMap<PathBuf, u8> {\n    let x: HashMap<PathBuf, ()> = g();\n    todo!()\n}\n";
+        assert_eq!(
+            op.apply(src),
+            "fn f(m: BTreeMap<PathBuf, String>) -> BTreeMap<PathBuf, u8> {\n    let x: BTreeMap<PathBuf, ()> = g();\n    todo!()\n}\n"
+        );
+        // Either leaf literal is a sound prefilter.
+        assert!(matches!(op.prefilter(), Some("HashMap" | "PathBuf")));
+    }
+
+    #[test]
+    fn a_struct_literal_pattern_matches_the_type_named_by_its_path_too() {
+        let op = crate::LANG
+            .compile_pattern(
+                "FileChange { $$$F conflicts: $C, }",
+                PatternAction::Replace("FileChange { $$$F conflicts: $C, created: false, }".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "fn f() {\n    let a = FileChange { path, conflicts: c, };\n    let b = crate::walker::FileChange { path, conflicts: c, };\n}\n";
+        assert_eq!(
+            op.apply(src),
+            "fn f() {\n    let a = FileChange { path, conflicts: c, created: false, };\n    let b = crate::walker::FileChange { path, conflicts: c, created: false, };\n}\n"
+        );
+        // A keyword's block is never a struct literal.
+        let block = crate::LANG
+            .compile_pattern("unsafe { $$$B }", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            block.apply("fn f() {\n    unsafe { g() }\n}\n"),
+            "fn f() {\n}\n"
+        );
+    }
+
+    #[test]
+    fn json_macro_arguments_are_read_when_they_are_expressions() {
+        let op = crate::LANG
+            .compile_pattern("old($A)", PatternAction::Replace("new($A)".into()), &[])
+            .unwrap();
+        // An object literal is not an expression list: left alone.
+        let src =
+            "fn f() {\n    json!(old(1));\n    json!([old(2)]);\n    json!({\"k\": old(3)});\n}\n";
+        assert_eq!(
+            op.apply(src),
+            "fn f() {\n    json!(new(1));\n    json!([new(2)]);\n    json!({\"k\": old(3)});\n}\n"
+        );
     }
 
     #[test]

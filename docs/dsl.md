@@ -280,7 +280,14 @@ of it (`render($A, &$B)` turns `svg::to_svg(c, d)` into
 (`Ok(to_svg($A, $B))`) or is not a call is used as written, so the path
 is dropped. A pattern whose callee is already a path
 (`svg::to_svg($A, $B)`) matches only that path. `$COLAB_PATH` is
-reserved for the matched path.
+reserved for the matched path. A struct literal of a type named bare
+(upper-case, `FileChange { $$$F }`) does the same: it also matches
+`crate::walker::FileChange { … }`, and a template that starts with the
+same type keeps the path.
+
+**Types (Rust).** A type on its own is a pattern too:
+`HashMap<PathBuf, $V>` matches it in a signature, a `let` annotation or
+a field, and `replace 'BTreeMap<PathBuf, $V>'` rewrites each.
 
 Names are upper-case letters, digits and `_`. A name used twice must bind
 identical text: `$A == $A` matches `x == x` but not `x == y`. Any other
@@ -366,7 +373,8 @@ How it matches:
   reads the contents of the standard and common logging and error macros
   (`assert!`, `assert_eq!`, `debug_assert*!`, `vec!`, `format!`,
   `print*!`, `write*!`, `panic!`, `todo!`, `unreachable!`, `dbg!`,
-  `anyhow!`, `bail!`, `ensure!`, `trace!` … `error!`) as call arguments,
+  `anyhow!`, `bail!`, `ensure!`, `trace!` … `error!`, and `json!` when
+  its contents are expressions, not an object literal) as call arguments,
   nested macros included: `is_relevant($P)` finds
   `assert!(is_relevant(p))` and `vec![f(x), vec![is_relevant(q)]]`, and
   `replace` and `delete` edit there (a deleted argument takes its comma).

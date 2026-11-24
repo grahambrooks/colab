@@ -53,9 +53,11 @@ const NOT_CALLEES: &[&str] = &[
 ];
 
 /// When `text` starts with a bare call (`f(`, or `f::<T>(` with `sep` =
-/// `::`), the same text with [`QUALIFIER`] and `sep` before it, and the
-/// callee's name. `None` for anything else: a metavariable callee, a
-/// path that is already qualified, a macro, a keyword.
+/// `::`) or a struct literal of a type named bare (`FileChange {`: an
+/// upper-case name, so a keyword's block never counts), the same text with
+/// [`QUALIFIER`] and `sep` before it, and the callee's (or type's) name.
+/// `None` for anything else: a metavariable callee, a path that is already
+/// qualified, a macro, a keyword.
 pub(super) fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t str)> {
     let body = text.trim_start();
     let lead = &text[..text.len() - body.len()];
@@ -71,7 +73,9 @@ pub(super) fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t 
     let turbofish = rest
         .strip_prefix(sep)
         .is_some_and(|r| r.trim_start().starts_with('<'));
-    (rest.starts_with('(') || turbofish).then(|| (format!("{lead}{QUALIFIER}{sep}{body}"), callee))
+    let literal = rest.starts_with('{') && first.is_uppercase();
+    (rest.starts_with('(') || turbofish || literal)
+        .then(|| (format!("{lead}{QUALIFIER}{sep}{body}"), callee))
 }
 
 /// What the qualified form of a bare-call pattern needs to rewrite.
