@@ -25,6 +25,7 @@
 
 pub mod block;
 pub mod check;
+pub mod column;
 pub mod frontmatter;
 pub mod link;
 pub mod list;
@@ -181,6 +182,24 @@ const CAPABILITIES: &[Capability] = &[
             ActionCapability {
                 name: "delete",
                 description: "Remove every matching row.",
+            },
+        ],
+    },
+    Capability {
+        module: "column",
+        description: "A column of a pipe table in a section's own text, by its header: `\"Matrix[create]\"`, compared as a reader sees it; `@2` picks the second table. A new column goes last, first with `^`, or before another with `\"Matrix[create] < [Applies to]\"`. Lines are spliced at their pipes, so other cells keep their spacing.",
+        actions: &[
+            ActionCapability {
+                name: "insert",
+                description: "Add the column, with this cell in every row, when no column has the header.",
+            },
+            ActionCapability {
+                name: "delete",
+                description: "Remove the column from every line of the table.",
+            },
+            ActionCapability {
+                name: "replace",
+                description: "Give the column this header.",
             },
         ],
     },
@@ -372,6 +391,19 @@ impl LanguageBackend for MarkdownBackend {
                 Ok(Box::new(table::RowEdit::insert(&target, &value)?))
             }
             ("row", RuleSpec::Delete { target }) => Ok(Box::new(table::RowEdit::delete(&target)?)),
+            ("column", RuleSpec::Insert { target, value }) => {
+                Ok(Box::new(column::ColumnEdit::insert(&target, &value)?))
+            }
+            ("column", RuleSpec::Delete { target }) => {
+                Ok(Box::new(column::ColumnEdit::delete(&target)?))
+            }
+            (
+                "column",
+                RuleSpec::Replace {
+                    target,
+                    replacement,
+                },
+            ) => Ok(Box::new(column::ColumnEdit::rename(&target, &replacement)?)),
             ("item", RuleSpec::Ensure { target }) => Ok(Box::new(list::ItemEdit::ensure(&target)?)),
             ("item", RuleSpec::Delete { target }) => Ok(Box::new(list::ItemEdit::delete(&target)?)),
             (

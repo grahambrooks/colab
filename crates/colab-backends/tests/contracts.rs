@@ -59,7 +59,7 @@ fn sentinel_rules(
                 let target = match (lang, capability.module) {
                     ("json", _) => format!("/{SENTINEL}"),
                     ("markdown", "row") => format!("{SENTINEL}[{SENTINEL}={SENTINEL}]"),
-                    ("markdown", "item" | "text") => format!("{SENTINEL}[{SENTINEL}]"),
+                    ("markdown", "item" | "text" | "column") => format!("{SENTINEL}[{SENTINEL}]"),
                     _ => SENTINEL.to_string(),
                 };
                 // A row's value names a cell; `1` is a valid value in every

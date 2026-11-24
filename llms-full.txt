@@ -2959,6 +2959,7 @@ just the readable form.
 | `text::literal` | ✅ | ✅ |  |  |  |  |    | any text file |
 | `text::word` | ✅ | ✅ |  |  |  |  |    | any text file |
 | `markdown::row` |  | ✅ |  |  | ✅ | ✅ |    | `.md`, `.markdown` |
+| `markdown::column` | ✅ | ✅ |  |  |  | ✅ |  | `.md`, `.markdown` |
 | `markdown::item` | ✅ | ✅ | ✅ |  |  |  |    | `.md`, `.markdown` |
 | `markdown::link` | ✅ | ✅ |  |  |  |  |    | `.md`, `.markdown` |
 
@@ -3668,6 +3669,27 @@ match markdown::row "Risks@2[Risk=Old]" { delete }
 - Cells get one space either side, and are padded to the column when
   every line of the table is aligned. `|` in a value is escaped.
   Other rows are never touched.
+
+### `markdown::column` — a table column
+
+```
+match markdown::column "At a glance[`create`] < [Applies to]" { insert '' }
+match markdown::row "At a glance[Namespace=rust::pattern]" { set '`create`=✅' }
+match markdown::column "Log[Owner]" { delete }
+match markdown::column "Log[Files]" { replace 'Applies to' }
+```
+
+- The target is a section address, then a column's header in brackets,
+  compared as a reader sees it. `@N` picks the section's Nth table.
+- `insert '<cell>'` adds the column, with that cell in every row, when
+  no column has the header: last, first with `^`, or before another
+  column with `< [Header]`. Give single rows their own value with a
+  `markdown::row` `set`, as above. `delete` removes the column from
+  every line; `replace '<header>'` renames it.
+- Each line is spliced at its pipes, so the other cells keep their
+  spacing; in an aligned table the new cells share one width. Only tables
+  whose lines start with `|` are edited, and a column already present
+  (or one already renamed) leaves the file unchanged.
 
 ### `markdown::item` — a list item
 

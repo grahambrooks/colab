@@ -109,15 +109,15 @@ Language backends and the modules each adds beyond the common floor
 | `colab-lang-swift`  | `swift`  | `import`  | — | `.swift` |
 
 Config-file backends edit data, not source. `json` and `toml` have one
-module, `key`; `markdown` has seven. Each module's target is an address,
+module, `key`; `markdown` has eight. Each module's target is an address,
 and they take `set` / `insert` / `delete` where they apply, Markdown
-adding `replace` (section, item, link, text) and `ensure` (item) (see
+adding `replace` (section, item, link, text, column) and `ensure` (item) (see
 [`docs/features.md`](docs/features.md#config-file-backends-colab-lang-json-colab-lang-markdown-colab-lang-toml)):
 
 | Crate | Namespace | Module | Address | Files |
 | ----- | --------- | ------ | ------- | ----- |
 | `colab-lang-json`     | `json`     | `key`   | JSON Pointer (`/a/b`) | `.json` |
-| `colab-lang-markdown` | `markdown` | `section`, `row`, `item`, `text`, `link`, `frontmatter`, `block` | heading path `"Parent > Child"` or `"#anchor"` (`"New < Sibling"` to place a new one); `"Section[Col=value]"` (row; `< [Col=value]` before a row); `"Section[item text]"` (item); `"Section[phrase]"` (text); a link destination; a front-matter key; a managed-block name | `.md`, `.markdown` |
+| `colab-lang-markdown` | `markdown` | `section`, `row`, `column`, `item`, `text`, `link`, `frontmatter`, `block` | heading path `"Parent > Child"` or `"#anchor"` (`"New < Sibling"` to place a new one); `"Section[Col=value]"` (row; `< [Col=value]` before a row); `"Section[Header]"` (column; `< [Header]` before a column); `"Section[item text]"` (item); `"Section[phrase]"` (text); a link destination; a front-matter key; a managed-block name | `.md`, `.markdown` |
 | `colab-lang-toml`     | `toml`     | `key`   | dotted path, `name[field=value]` selects an array element | `.toml` |
 
 `text` (`colab-lang-text`) has no grammar: `text::literal` (every

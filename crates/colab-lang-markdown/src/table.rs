@@ -55,16 +55,19 @@ pub struct RowEdit {
 }
 
 /// A parsed pipe table: its cells' text, and where its lines are.
-struct Table {
-    header: Vec<String>,
+pub(crate) struct Table {
+    pub(crate) header: Vec<String>,
     /// Each row's cells and the byte range of its line (newline included).
-    rows: Vec<(Vec<String>, Range<usize>)>,
+    pub(crate) rows: Vec<(Vec<String>, Range<usize>)>,
     /// Where a row goes at the top (after the delimiter line) and at the
     /// end (after the last row).
     top: usize,
     end: usize,
     /// Column widths when every existing line is padded to them.
-    widths: Option<Vec<usize>>,
+    pub(crate) widths: Option<Vec<usize>>,
+    /// Every line of the table, header and delimiter first, newline
+    /// included.
+    pub(crate) lines: Vec<Range<usize>>,
 }
 
 impl RowEdit {
@@ -399,7 +402,7 @@ fn parse_value(text: &str) -> std::result::Result<Value, String> {
 
 /// The cells of a `| a | b |` line, trimmed. As in GFM, only `\|`
 /// stays inside a cell, even within backticks.
-fn split_row(line: &str) -> Vec<String> {
+pub(crate) fn split_row(line: &str) -> Vec<String> {
     let inner = line.trim().trim_start_matches('|');
     let inner = inner
         .strip_suffix('|')
@@ -448,7 +451,7 @@ fn escape_pipes(cell: &str) -> String {
 }
 
 /// The `nth` (1-based) pipe table starting inside `own`.
-fn nth_table(source: &str, own: Range<usize>, nth: usize) -> Option<Table> {
+pub(crate) fn nth_table(source: &str, own: Range<usize>, nth: usize) -> Option<Table> {
     let tree = crate::parse(source)?;
     let tables = crate::nodes(&tree, |n| {
         n.kind() == "pipe_table" && own.contains(&n.start_byte())
@@ -494,6 +497,7 @@ fn nth_table(source: &str, own: Range<usize>, nth: usize) -> Option<Table> {
         top,
         end,
         widths,
+        lines,
     })
 }
 
