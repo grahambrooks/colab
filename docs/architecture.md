@@ -433,7 +433,8 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
 - **A run goes through `colab_dsl::pipeline`.** `Pipeline::execute` is
   the one implementation of walk → semantic gate → checks → merge →
   refuse or write → near-miss probe. `colab refactor`, `colab fix`,
-  `--bisect`'s first pass, `--stdin` (`run_text`), and MCP
+  `--bisect`'s first pass, `--stdin` (`run_text`), `colab server`'s
+  workspace edits (which refuse a conflict as `--write` does), and MCP
   `colab.preview` / `colab.apply` / `colab.test_rule` call it; the runs
   that apply one rule at a time (`--verify`, `--commit-per-rule`,
   `--split-pr`, the bisect search) compose its stage functions

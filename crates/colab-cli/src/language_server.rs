@@ -40,7 +40,7 @@ use tower_lsp_server::jsonrpc::Result as LspResult;
 use tower_lsp_server::ls_types::*;
 use tower_lsp_server::{Client, LanguageServer, LspService, Server};
 
-use colab_core::walker::{self, WalkOptions};
+use colab_core::walker::WalkOptions;
 use colab_core::{BackendRegistry, Error};
 use colab_dsl::{RuleCheck, compile, compile_at_source};
 
@@ -783,10 +783,38 @@ impl Backend {
         // The walk is blocking, CPU-bound work on a runtime worker; progress
         // reports go out from it through the runtime handle.
         let handle = tokio::runtime::Handle::current();
-        let mut seen = 0usize;
-        let mut changing = 0usize;
+        // Progress per file the walk produces, sent through the runtime.
+        struct Ticks<F: FnMut(usize, usize)> {
+            seen: usize,
+            changing: usize,
+            tick: F,
+        }
+        impl<F: FnMut(usize, usize)> colab_dsl::pipeline::Hooks for Ticks<F> {
+            fn filter(&mut self, change: colab_core::FileChange) -> colab_core::FileChange {
+                self.seen += 1;
+                self.changing += usize::from(change.changed());
+                if self.seen.is_multiple_of(PROGRESS_EVERY) {
+                    (self.tick)(self.seen, self.changing);
+                }
+                change
+            }
+        }
+        let mut ticks = Ticks {
+            seen: 0,
+            changing: 0,
+            tick: |seen: usize, changing: usize| {
+                if let Some(token) = &progress {
+                    handle.block_on(self.report_progress(
+                        token,
+                        format!("{seen} file(s) scanned, {changing} to change"),
+                    ));
+                }
+            },
+        };
         // A run of its own: requests on other runtime workers never share
-        // its oracle, facts or failures.
+        // its oracle, facts or failures. The pipeline gives it what every
+        // run has: scan phases, the semantic gate, and conflicts checked
+        // before the client is handed an edit.
         let run = colab_core::run::Run::new();
         let labels: Vec<String> = refactoring.rules.iter().map(ToString::to_string).collect();
         let changes = tokio::task::block_in_place(|| {
@@ -795,45 +823,42 @@ impl Backend {
                 // async task can move between threads at an `.await`.
                 let mut span = colab_core::telemetry::root("colab server walk");
                 span.set("colab.server.rule", rule.is_some());
-                let mut changes: Vec<edits::Planned> = Vec::new();
-                for root in &roots {
-                    walker::walk_with(
-                        &refactoring,
-                        root,
-                        &WalkOptions::default(),
-                        &mut |change| {
-                            seen += 1;
-                            changing += usize::from(change.changed());
-                            if let Some(token) = &progress
-                                && seen.is_multiple_of(PROGRESS_EVERY)
-                            {
-                                handle.block_on(self.report_progress(
-                                    token,
-                                    format!("{seen} file(s) scanned, {changing} to change"),
-                                ));
-                            }
-                            if change.changed()
-                                && let Some(uri) = Uri::from_file_path(&change.path)
-                            {
-                                changes.push(edits::Planned {
-                                    uri,
-                                    rules: change
-                                        .rules_fired
-                                        .iter()
-                                        .filter_map(|&i| labels.get(i).cloned())
-                                        .collect(),
-                                    path: change.path,
-                                    before: change.before,
-                                    after: change.after,
-                                });
-                            }
-                            Ok(())
-                        },
-                    )?;
+                let source = colab_dsl::pipeline::Source::Walk {
+                    targets: roots.clone(),
+                    options: WalkOptions::default(),
+                };
+                let outcome =
+                    colab_dsl::pipeline::Pipeline::new(&refactoring, source).execute(&mut ticks)?;
+                if let Some(first) = outcome.report.conflicts().first() {
+                    return Err(Error::Config(format!(
+                        "made no edit: {} conflict(s) found, the first in {}: {}",
+                        outcome.report.conflicts().len(),
+                        first.path.display(),
+                        first.message
+                    )));
                 }
-                Ok::<_, Error>(changes)
+                Ok::<Vec<edits::Planned>, Error>(
+                    outcome
+                        .changes
+                        .into_iter()
+                        .filter_map(|change| {
+                            Some(edits::Planned {
+                                uri: Uri::from_file_path(&change.path)?,
+                                rules: change
+                                    .rules_fired
+                                    .iter()
+                                    .filter_map(|&i| labels.get(i).cloned())
+                                    .collect(),
+                                path: change.path,
+                                before: change.before,
+                                after: change.after,
+                            })
+                        })
+                        .collect(),
+                )
             })
         });
+        let seen = ticks.seen;
         if let Some(token) = progress {
             let message = match &changes {
                 Ok(c) => format!("{} file(s) to change, of {seen} scanned", c.len()),
@@ -1715,6 +1740,29 @@ mod tests {
         assert_eq!(seen[1], "$/progress begin", "{seen:?}");
         assert!(seen.contains(&"$/progress report".to_string()), "{seen:?}");
         assert_eq!(seen.last().unwrap(), "$/progress end", "{seen:?}");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_workspace_edit_with_a_conflict_is_refused() {
+        let root = std::env::temp_dir().join(format!("colab-lsp-conflict-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        // Renaming `a` onto `b`, which the file already declares.
+        std::fs::write(
+            root.join("main.go"),
+            "package main\n\nfunc a() {}\n\nfunc b() {}\n",
+        )
+        .unwrap();
+        let (service, _) = LspService::new(|client| Backend::new(client, registry()));
+        let backend = service.inner();
+        *backend.roots.lock().await = vec![root.clone()];
+        let uri = Uri::from_file_path(root.join("fix.colab")).unwrap();
+        let err = backend
+            .workspace_edit(&uri, "match go::symbol \"a\" { replace \"b\" }", None)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("made no edit: 1 conflict(s)"), "{err}");
         std::fs::remove_dir_all(&root).ok();
     }
 
