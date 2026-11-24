@@ -237,7 +237,7 @@ pub enum RuleSpec {
 ```
 
 Adding a new action variant means: AST + grammar token, lower in
-`compiler::lower_match`, extend `RuleSpec::action_name` / `target`,
+`compiler::lower::lower_match`, extend `RuleSpec::action_name` / `target`,
 the JSON serializer in `explain_command` (`colab-cli/src/discover.rs`),
 and at least one backend that implements it.
 
@@ -382,7 +382,7 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
   `crates/colab-dsl/src/ast.rs`, add the token to
   `codemod.lalrpop`, add the matching `RuleSpec` variant in
   `colab_core::backend`, lower in
-  `colab_dsl::compiler::lower_match`, extend `RuleSpec::action_name` /
+  `colab_dsl::compiler::lower::lower_match`, extend `RuleSpec::action_name` /
   `target`, serialize in `explain_command` (`colab-cli/src/discover.rs`),
   then implement in whatever
   backends should support it.

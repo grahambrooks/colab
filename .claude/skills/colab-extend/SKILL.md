@@ -197,7 +197,7 @@ Grammar changes ripple further than backend changes. All of:
    triggers a rebuild via `build.rs`; generated code lands in `OUT_DIR`.
 2. `crates/colab-dsl/src/ast.rs` — the AST node.
 3. `colab_core::RuleSpec` + `action_name()` — the backend-neutral form.
-4. `compiler::lower_match` — AST to `RuleSpec`.
+4. `compiler::lower::lower_match` — AST to `RuleSpec`.
 5. `explain_command` in `crates/colab-cli/src/discover.rs` — the JSON IR
    serializer.
 6. At least one backend that implements it.
