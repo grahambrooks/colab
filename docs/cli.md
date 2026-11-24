@@ -685,8 +685,12 @@ Read-only search: where does each rule match? Nothing is written.
 colab find (--script <path|-> | -e <rule>... | [--pattern] <code> [--lang <lang>])
            [--format human|json] [--detail concise|detailed] [--max-results <N>]
            [-C <dir>] [--include <glob>]... [--exclude <glob>]... [--no-ignore]
-           [--jobs <N>] [paths...]
+           [--jobs <N>] [paths... | --stdin --path <name>]
 ```
+
+`--stdin --path <name>` searches the text on stdin instead of files:
+`--path` names it, for its language and any `in` scope, and locations are
+in that text (`echo 'fn f() { old(1); }' | colab find --stdin --path x.rs 'old($A)'`).
 
 A bare pattern is enough, as grep takes a regex: `colab find 'errors.Wrap($E,
 $M)' .` runs `match <lang>::pattern '…'`. The first argument that is not a

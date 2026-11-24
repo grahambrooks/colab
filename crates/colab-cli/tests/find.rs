@@ -6,6 +6,43 @@ use common::*;
 const GO_WRAP: &str = "package main\n\nfunc f() error {\n\treturn errors.Wrap(err, \"read\")\n}\n";
 
 #[test]
+fn find_stdin_searches_one_text_named_by_path() {
+    let run = |args: &[&str], text: &str| {
+        let mut child = colab()
+            .args(["find", "--stdin"])
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(text.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    // The language comes from --path, and locations are in the text.
+    let out = run(
+        &["--path", "src/x.go", "fmt.Println($A)"],
+        "package p\n\nfunc f() {\n\tfmt.Println(1)\n}\n",
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("src/x.go:4:2:"), "{stdout}");
+    // Paths alongside --stdin are refused, and --stdin needs --path.
+    let both = run(&["--path", "x.go", "fmt.Println($A)", "src"], "");
+    assert!(String::from_utf8_lossy(&both.stderr).contains("takes no paths"));
+    assert!(!run(&["fmt.Println($A)"], "").status.success());
+}
+
+#[test]
 fn find_takes_a_bare_pattern_as_grep_takes_a_regex() {
     let root = workspace_temp("find-bare");
     write(&root.join("main.go"), GO_WRAP);

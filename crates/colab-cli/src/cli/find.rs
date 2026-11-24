@@ -73,6 +73,20 @@ pub(super) struct FindArgs {
     #[arg(long, value_name = "N")]
     pub(super) jobs: Option<usize>,
 
+    /// Search the text on stdin instead of files; `--path` names it, for
+    /// the language (and any `in` scope). Locations are in that text.
+    #[arg(long, requires = "find_stdin_path")]
+    pub(super) stdin: bool,
+
+    /// The path `--stdin`'s text stands for, e.g. `src/lib.rs`.
+    #[arg(
+        long = "path",
+        value_name = "PATH",
+        id = "find_stdin_path",
+        requires = "stdin"
+    )]
+    pub(super) stdin_path: Option<PathBuf>,
+
     /// Files or directories to search. Defaults to `.`.
     pub(super) paths: Vec<PathBuf>,
 }
@@ -140,6 +154,45 @@ impl FindArgs {
         .compile(backends)
     }
 
+    /// The walk of the paths (`.` when none), with the filter flags.
+    fn walk(&self) -> Source {
+        Source::Walk {
+            targets: if self.paths.is_empty() {
+                vec![PathBuf::from(".")]
+            } else {
+                self.paths.clone()
+            },
+            options: WalkOptions {
+                include: self.include.clone(),
+                exclude: self.exclude.clone(),
+                respect_gitignore: !self.no_ignore,
+                follow_symlinks: false,
+                jobs: resolve_jobs(self.jobs),
+            },
+        }
+    }
+
+    /// What to search: stdin's text as `--path`, or the walk.
+    fn source(&self) -> Result<Source> {
+        let Some(path) = self.stdin_path.clone().filter(|_| self.stdin) else {
+            return Ok(self.walk());
+        };
+        if !self.paths.is_empty() {
+            return Err(Error::Config(format!(
+                "--stdin searches the text on stdin, so it takes no paths ({}); name the text with \
+                 --path",
+                self.paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        let mut text = String::new();
+        io::stdin().read_to_string(&mut text).map_err(io_to_error)?;
+        Ok(Source::Text { path, text })
+    }
+
     /// The language a bare pattern is in: the language most of the files
     /// under the paths are in (looking at the first few thousand), when the
     /// pattern parses in it.
@@ -197,21 +250,12 @@ impl FindArgs {
             counts: candidates.iter().map(|_| Default::default()).collect(),
             seen: Default::default(),
         };
-        Source::Walk {
-            targets: if self.paths.is_empty() {
-                vec![PathBuf::from(".")]
-            } else {
-                self.paths.clone()
-            },
-            options: WalkOptions {
-                include: self.include.clone(),
-                exclude: self.exclude.clone(),
-                respect_gitignore: !self.no_ignore,
-                follow_symlinks: false,
-                jobs: resolve_jobs(self.jobs),
-            },
+        if let Some(path) = self.stdin_path.as_deref().filter(|_| self.stdin) {
+            // The one text's language is its path's.
+            colab_core::CodeTransformer::is_file_relevant(&census, path);
+        } else {
+            self.walk().visit(&census, &mut |_| Ok(()))?;
         }
-        .visit(&census, &mut |_| Ok(()))?;
         // The languages present, most files first.
         let mut present: Vec<(&str, usize)> = candidates
             .iter()
@@ -321,20 +365,7 @@ pub(super) fn run_find(mut args: FindArgs) -> Result<u8> {
     let mut refactoring = args.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
     let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
-    let source = Source::Walk {
-        targets: if args.paths.is_empty() {
-            vec![PathBuf::from(".")]
-        } else {
-            args.paths.clone()
-        },
-        options: WalkOptions {
-            include: args.include.clone(),
-            exclude: args.exclude.clone(),
-            respect_gitignore: !args.no_ignore,
-            follow_symlinks: false,
-            jobs: resolve_jobs(args.jobs),
-        },
-    };
+    let source = args.source()?;
     // Scans first, over every file and every stage, so `in` reads what
     // `refactor` would; hits are still located in the files as they are.
     if refactoring.has_scans() {
@@ -361,7 +392,12 @@ pub(super) fn run_find(mut args: FindArgs) -> Result<u8> {
     })?;
     report.run.record_walk(outcome);
     semantic_failure()?;
-    colab_core::near_miss::probe_disk(rules, &mut report.run);
+    match &source {
+        Source::Text { path, text } => colab_core::near_miss::probe(rules, &mut report.run, |p| {
+            (p == path.as_path()).then(|| text.clone())
+        }),
+        _ => colab_core::near_miss::probe_disk(rules, &mut report.run),
+    }
 
     if let Some(format) = args.table {
         let mut table = crate::table::hits(&report);
