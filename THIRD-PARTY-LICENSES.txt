@@ -159,6 +159,7 @@ tree-sitter-python 0.25.0       MIT
 tree-sitter-ruby 0.23.1         MIT
 tree-sitter-rust 0.24.2         MIT
 tree-sitter-swift 0.7.4         MIT
+tree-sitter-typescript 0.23.2   MIT
 typenum 1.20.1                  MIT OR Apache-2.0
 unicode-ident 1.0.27            (MIT OR Apache-2.0) AND Unicode-3.0
 unicode-xid 0.2.6               MIT OR Apache-2.0
@@ -5115,6 +5116,32 @@ Shipped by tree-sitter-swift 0.7.4 (LICENSE)
 MIT License
 
 Copyright (c) 2021 alex-pinkus
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+
+Shipped by tree-sitter-typescript 0.23.2 (none in the package; from https://github.com/tree-sitter/tree-sitter-typescript)
+
+The MIT License (MIT)
+
+Copyright (c) 2017 Max Brunsfeld
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

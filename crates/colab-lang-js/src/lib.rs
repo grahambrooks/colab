@@ -6,13 +6,17 @@
 //! Applies to `.js`, `.mjs`, `.cjs`, `.ts`, `.tsx`, and `.jsx` files
 //! — the JavaScript grammar parses TypeScript module-syntax just
 //! well enough for specifier rewriting; type-aware operations are
-//! out of scope.
+//! out of scope here: the `ts` backend (`colab-lang-ts`) parses
+//! TypeScript with its own grammar.
 
 #[cfg(test)]
 mod calls;
 pub mod imports;
 mod patterns;
 mod symbols;
+
+pub use patterns::GLOBALS;
+pub use symbols::RENAME_KINDS;
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
 use colab_rewrite::{CallShape, SourceLanguage};
@@ -69,7 +73,7 @@ const CAPABILITIES: &[Capability] = &[
         }],
     },
     colab_rewrite::language::pattern_capability(
-        "Match code by shape: the target is JavaScript/TypeScript code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `$A.indexOf($B) !== -1`. An expression, statement, or declaration. Parsed with the JavaScript grammar, so TypeScript-only syntax cannot appear in a pattern.",
+        "Match code by shape: the target is JavaScript/TypeScript code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `$A.indexOf($B) !== -1`. An expression, statement, or declaration. Parsed with the JavaScript grammar, so TypeScript-only syntax cannot appear in a pattern: use `ts::pattern` for that.",
     ),
 ];
 
@@ -129,24 +133,9 @@ impl LanguageBackend for JsBackend {
     }
 
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>> {
-        match (module, spec) {
-            (
-                "import",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(imports::SpecifierRename {
-                from: target,
-                to: replacement,
-            })),
-            ("import", RuleSpec::Delete { target }) => {
-                Ok(Box::new(imports::SpecifierDelete { target }))
-            }
-            ("import", RuleSpec::Ensure { target }) => {
-                Ok(Box::new(imports::SpecifierEnsure { target }))
-            }
-            (module, spec) => LANG.build_rule(self, module, spec),
+        match (module, imports::build(&LANG, module, spec)) {
+            (_, Ok(op)) => Ok(op),
+            (module, Err(spec)) => LANG.build_rule(self, module, spec),
         }
     }
 }

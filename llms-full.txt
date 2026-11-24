@@ -428,8 +428,8 @@ How it matches:
   rewrite of those would drop the part the pattern never mentions. Add a
   metavariable for it (`if $C { $$$B } else { $$$E }`) to match it.
 - **Modifiers are the exception.** An item pattern written without
-  modifiers matches the item with any, in Rust, Java, Kotlin, Swift, C#
-  and PHP: `fn $F($$$A) -> $R { $$$B }` finds `pub(super) fn run(…)`,
+  modifiers matches the item with any, in Rust, Java, Kotlin, Swift, C#,
+  PHP, JavaScript and TypeScript: `fn $F($$$A) -> $R { $$$B }` finds `pub(super) fn run(…)`,
   `void $F() {}` finds `@Override public static void f() {}`, and
   `function $F() {}` finds `public static function f() {}`. Modifiers
   are visibility, `static`, `final`, `async` and the like, and the
@@ -442,9 +442,14 @@ How it matches:
   $F() {}` does not match `public static void f()`, and `@Test void $F()`
   does not match `@Test public void f()`. In C# and PHP each modifier is
   its own node; when a metavariable follows them (`$T $F() {}`), an item
-  with up to four is matched. JavaScript `export` already works, since
-  a pattern matches the declaration inside it; a `delete` leaves an
-  `export function` in place.
+  with up to four is matched. In JavaScript and TypeScript a member's
+  modifiers (`private`, `static`, `async`, `readonly`, `get`, `*`) are
+  keywords, matched the same way, up to four: `$M(): void {}` (`ts::`)
+  finds `private static async load(): void {}`, and a rewrite keeps them
+  in their order. A decorator is the member's sibling there, so a
+  rewrite leaves it in place. `export` already works, since a pattern
+  matches the declaration inside it; a `delete` leaves an `export
+  function` in place.
 - **Nested matches in one pass.** In `errors.Wrap(errors.Wrap(err, "a"),
   "b")` both calls match; the inner one is rewritten first and its result
   fills the outer template, so one run reaches the fixed point. Text the
@@ -989,6 +994,8 @@ table below summarises:
 | `python::symbol` | Identifier text. | `"old_helper"` |
 | `js::import` | Exact ES module specifier (the string after `from`). | `"lodash"` |
 | `js::symbol` | Identifier text (covers `identifier`, `property_identifier`, `shorthand_property_identifier`). | `"oldHelper"` |
+| `ts::import` | As `js::import`, in `.ts` / `.mts` / `.cts` files on the TypeScript grammar. | `"./callbacks"` |
+| `ts::symbol` | As `js::symbol`, plus `type_identifier` (a type's name). | `"Config"` |
 
 For the source modules, matching is on tree-sitter node text, not raw substrings
 — `tokio` does **not** match `my_tokio` and `another.module` does
@@ -1048,8 +1055,8 @@ match rust::use "old_crate::Thing" in "docs/**" in fences { replace "new_crate::
   files. `in fences` keeps only the second.
 - A fence belongs to a language by the first word of its info string,
   compared case-insensitively: ```` ```go ```` and ```` ```golang ````
-  for Go, ```` ```ts ```` for `js`, and so on (each backend lists its
-  names). Other fences, and the prose around them, are left alone.
+  for Go, ```` ```ts ```` for `js` and `ts`, and so on (each backend
+  lists its names). Other fences, and the prose around them, are left alone.
 - Each fence is rewritten on its own. One indented inside a list item is
   dedented for the rule and re-indented after.
 - An `in "<glob>"` clause narrows the Markdown files by path.
@@ -2966,6 +2973,10 @@ just the readable form.
 | `swift::symbol`     | ✅ |    |    |    |    |    |    | `.swift` |
 | `swift::call`       |    |    |    | ✅ |    |    |    | `.swift` |
 | `swift::pattern`    | ✅ | ✅ |    |    |    |    | ✅ | `.swift` |
+| `ts::import` | ✅ | ✅ | ✅ |  |  |  |  | `.ts`, `.mts`, `.cts` |
+| `ts::symbol` | ✅ |  |  |  |  |  |  | as `ts::import` |
+| `ts::call` |  |  |  | ✅ |  |  |  | as `ts::import` |
+| `ts::pattern` | ✅ | ✅ |  |  |  |  | ✅ | as `ts::import` |
 | `json::key`         |    | ✅ |    |    | ✅ | ✅ |    | `.json` |
 | `markdown::section` | ✅ | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
 | `markdown::frontmatter` |  | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
@@ -3281,7 +3292,15 @@ Powered by `tree-sitter-python`.
 
 Powered by `tree-sitter-javascript`. The JavaScript grammar parses
 TypeScript module syntax well enough for specifier and identifier
-rewriting; type-aware operations are out of scope.
+rewriting, and `js` still runs over `.ts` and `.tsx` files. For
+TypeScript code (types, interfaces, generics, member modifiers) use
+[`ts::`](#typescript-colab-lang-ts), which parses them.
+
+A method's modifiers (`static`, `async`, `get`, `*`) are anonymous
+tokens: `js::pattern 'f() {}'` matches `static async f() {}`, and a
+rewrite that leaves them out of its template keeps them
+(`f2() {}` gives `static async f2() {}`). A pattern that spells one is
+matched as written.
 
 ### `js::import`
 
@@ -3303,6 +3322,36 @@ rewriting; type-aware operations are out of scope.
   names, object keys, JSX component names.
 - **Excludes:** string literals, JSX text, regex literals.
 - **Caveat:** scope-blind. Narrow it to a function, `impl` or class with `where inside '<pattern>'` ([code scope](dsl.md#code-scope-where-inside-on-symbol-and-call)), or use `colab rename`.
+
+---
+
+## TypeScript (`colab-lang-ts`)
+
+Powered by `tree-sitter-typescript` (0.23), on `.ts`, `.mts` and `.cts`
+files. Type annotations, interfaces, generics, enums and member
+modifiers parse, so a pattern can name them: `function $F($$$A):
+Promise<$T> { $$$B }`, `interface $I { $$$M }`, `Promise<$T>`, `port:
+number`. `.tsx` files stay with `js` for now: one backend has one
+grammar, and TSX needs its own.
+
+`js` also claims `.ts`, as `c` and `cpp` both claim `.h`, so existing
+`js::` scripts keep working; a bare `colab find '<pattern>'` over `.ts`
+files picks `ts`.
+
+- **`ts::import`:** as [`js::import`](#jsimport), on this grammar
+  (`import type` included).
+- **`ts::symbol`:** as `js::symbol`, plus `type_identifier`, so a type's
+  name and its uses are renamed together.
+- **`ts::call`:** as `js::call`.
+- **`ts::pattern`:** a member pattern written without modifiers matches
+  the member with any: `load(): void {}` and `$M(): void {}` find
+  `private static async load(): void {}`. A rewrite whose template leaves
+  them out keeps them, in their order; a template that writes modifiers
+  of its own is used as written, and a pattern that spells one (`private
+  load()`) matches only members that have it. A decorator is the
+  member's sibling in the grammar: a deleted member takes it along, and a
+  rewrite leaves it in place. A field pattern is written without its
+  `;` (`count: number = $V`).
 
 ---
 
@@ -4234,8 +4283,8 @@ More: the skill's troubleshooting guide,
 A scripted, AST-aware code refactoring (codemod) tool. Point it at a
 repo, hand it a small `.colab` script, and it will rewrite source
 files deterministically — using tree-sitter for the matching, not
-regex — across twelve languages: **C, C++, C#, Go, Java,
-JavaScript/TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**. It
+regex — across thirteen languages: **C, C++, C#, Go, Java, JavaScript,
+TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**. It
 also edits **TOML, JSON and Markdown** configuration by key path, JSON
 Pointer or managed block, so a repository convention can be rolled out
 the same way (see [`examples/config`](examples/config/repo_migration/)).
@@ -4283,6 +4332,7 @@ import-equivalent, a symbol rename, call rewriting, and `pattern`
 | Go                      | `go`      | `import`, `package`, `symbol`, `struct_tag`, `call` |
 | Java                    | `java`    | `import`, `package`, `symbol`, `call`               |
 | JavaScript / TypeScript | `js`      | `import`, `symbol`, `call`                          |
+| TypeScript (types, modifiers) | `ts` | `import`, `symbol`, `call`                    |
 | Kotlin                  | `kotlin`  | `import`, `package`, `symbol`, `call`               |
 | PHP                     | `php`     | `use`, `namespace`, `symbol`, `call`                |
 | Python                  | `python`  | `import`, `symbol`, `call`                          |
@@ -4575,6 +4625,7 @@ crates/
   colab-lang-markdown/  # Markdown by structure (sections, rows, items, links, …)
   colab-lang-text/    # Any text file: a literal string or whole word
   colab-lang-toml/    # TOML (key by dotted path)
+  colab-lang-ts/      # TypeScript backend (tree-sitter-typescript; import from colab-lang-js)
   colab-lsp-client/   # colab as an LSP client: rename, mv, action, references, tidy, lsp-daemon
     colab-mcp/          # MCP server (20 tools; see docs/cli.md#colab-mcp)
   colab-cli/          # The `colab` binary: commands, colab fix, LSP server, `colab mcp`

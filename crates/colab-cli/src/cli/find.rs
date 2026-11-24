@@ -228,15 +228,26 @@ impl FindArgs {
             candidates: &'a [(String, codemod::Refactoring)],
             counts: Vec<std::sync::atomic::AtomicUsize>,
             seen: std::sync::atomic::AtomicUsize,
+            /// Files per extension, among those some candidate claims.
+            extensions: std::sync::Mutex<std::collections::BTreeMap<String, usize>>,
         }
         impl colab_core::CodeTransformer for Census<'_> {
             fn is_file_relevant(&self, path: &Path) -> bool {
                 use std::sync::atomic::Ordering::Relaxed;
                 if self.seen.fetch_add(1, Relaxed) < SAMPLE {
+                    let mut claimed = false;
                     for (i, (_, rules)) in self.candidates.iter().enumerate() {
                         if rules.is_file_relevant(path) {
                             self.counts[i].fetch_add(1, Relaxed);
+                            claimed = true;
                         }
+                    }
+                    if claimed && let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                        let mut extensions = self
+                            .extensions
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        *extensions.entry(ext.to_ascii_lowercase()).or_default() += 1;
                     }
                 }
                 false
@@ -249,6 +260,7 @@ impl FindArgs {
             candidates: &candidates,
             counts: candidates.iter().map(|_| Default::default()).collect(),
             seen: Default::default(),
+            extensions: Default::default(),
         };
         if let Some(path) = self.stdin_path.as_deref().filter(|_| self.stdin) {
             // The one text's language is its path's.
@@ -277,15 +289,33 @@ impl FindArgs {
             .filter(|(lang, n)| *n == files && parses(lang))
             .map(|(lang, _)| *lang)
             .collect();
+        // Two backends claiming the same files (`js` and `ts` over `.ts`):
+        // the one named after the files' most common extension is meant.
+        let extensions = census
+            .extensions
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let common = extensions
+            .iter()
+            .max_by_key(|(_, n)| **n)
+            .map(|(e, _)| e.as_str());
+        if tied.len() > 1
+            && let Some(named) = tied.iter().find(|lang| Some(**lang) == common)
+        {
+            log::info!("searching {named} files ({files} here; --lang chooses another language)");
+            return Ok((*named).to_string());
+        }
         if tied.len() > 1 {
             return Err(Error::Config(format!(
                 "{quoted} could be {} ({files} file(s) each); pass --lang",
                 tied.join(" or ")
             )));
         }
-        if parses(top) {
-            log::info!("searching {top} files ({files} here; --lang chooses another language)");
-            return Ok(top.to_string());
+        // Of the languages with the most files, the one the pattern parses
+        // in (`ts` for a typed pattern over `.ts`, which `js` also claims).
+        if let Some(lang) = tied.first().copied().or(parses(top).then_some(top)) {
+            log::info!("searching {lang} files ({files} here; --lang chooses another language)");
+            return Ok(lang.to_string());
         }
         // The files are mostly `top`, and the pattern is not `top` code.
         let elsewhere: Vec<&str> = present

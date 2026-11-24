@@ -303,6 +303,96 @@ fn modifier_forms(mut alt: StructuralPattern, visible: &Visible) -> Vec<Structur
         .collect()
 }
 
+/// The most leading modifiers a form for
+/// [`PatternLanguage::modifier_tokens`] reads (`private static async *`).
+const MOST_LED: usize = 4;
+
+/// For an item pattern of a language whose modifiers no sentinel can
+/// stand for ([`PatternLanguage::modifier_tokens`]), the forms that read
+/// `k` leading modifiers first, `k` = 1..=[`MOST_LED`]: `k` placeholders
+/// that match any child, each kept only when they are the item's
+/// modifiers (`led`). `None` when `form` is not an item that leaves its
+/// modifiers out: its first child is spelled (`static`, `private`,
+/// `function`), or it is not a member or a function.
+///
+/// ast-grep skips a candidate's anonymous tokens before a literal, but not
+/// before a metavariable, and never a named child: without these forms
+/// `$M() {}` misses `static m() {}`, and `m() {}` misses `private m() {}`.
+fn led_forms(
+    form: &StructuralPattern,
+    tokens: &'static [&'static str],
+) -> Option<Vec<StructuralPattern>> {
+    use ast_grep_core::matcher::PatternNode;
+    let root = form.tree.lines().next().unwrap_or("");
+    let item = ["method", "field", "function", "property", "signature"]
+        .iter()
+        .any(|w| root.contains(w));
+    let PatternNode::Internal { children, .. } = &form.pattern.node else {
+        return None;
+    };
+    // The very first child: a spelled `static` is an unnamed terminal,
+    // which ast-grep counts as trivial.
+    let first = children.first()?;
+    let leaves_them_out = match first {
+        PatternNode::MetaVar { .. } => true,
+        PatternNode::Terminal { is_named, .. } => *is_named,
+        PatternNode::Internal { .. } => false,
+    };
+    if !item || !leaves_them_out {
+        return None;
+    }
+    let shape = match &form.shape {
+        Shape::Node(goals) => Shape::Node(
+            std::iter::once(Shape::Modifiers(tokens))
+                .chain(goals.iter().cloned())
+                .collect(),
+        ),
+        other => other.clone(),
+    };
+    Some(
+        (1..=MOST_LED)
+            .map(|k| {
+                let mut pattern = form.pattern.clone();
+                if let PatternNode::Internal { children, .. } = &mut pattern.node {
+                    let placeholder = PatternNode::MetaVar {
+                        meta_var: MetaVariable::Dropped(false),
+                    };
+                    children.splice(0..0, std::iter::repeat_n(placeholder, k));
+                }
+                StructuralPattern {
+                    lang: form.lang.clone(),
+                    pattern,
+                    text: form.text.clone(),
+                    prefilter: form.prefilter.clone(),
+                    context: form.context.clone(),
+                    tree: form.tree.clone(),
+                    checks: Vec::new(),
+                    constraints: Vec::new(),
+                    lets: Vec::new(),
+                    also: Vec::new(),
+                    qualified: None,
+                    visible: None,
+                    shorthand: form.shorthand.clone(),
+                    shape: shape.clone(),
+                    led: Some(k),
+                }
+            })
+            .collect(),
+    )
+}
+
+/// How many of `node`'s leading children are modifiers, by `tokens`
+/// (anonymous keywords and named kinds alike).
+pub(super) fn leading_modifiers<D: ast_grep_core::Doc>(
+    node: &ast_grep_core::Node<'_, D>,
+    tokens: &[&str],
+) -> usize {
+    node.children()
+        .filter(|c| !c.is_extra())
+        .take_while(|c| tokens.contains(&c.kind().as_ref()))
+        .count()
+}
+
 /// The children of the pattern node whose first child is the `$$$`
 /// [`MODIFIERS`] capture.
 fn modifiers_parent(
@@ -495,6 +585,27 @@ impl StructuralPattern {
                 }
             }
         }
+        // `$M(): void {}` also as `• $M(): void {}`, `• • $M(): void {}`, …
+        // where a modifier is a token the grammar leaves anonymous
+        // (JavaScript's `static`) or a named one no text can stand for
+        // (TypeScript's `private`), so no sentinel form reads them.
+        if !language.modifier_tokens.is_empty() {
+            let mut added = Vec::new();
+            if let Some(led) = led_forms(&primary, language.modifier_tokens) {
+                primary.led = Some(0);
+                added.extend(led);
+            }
+            for alt in &mut primary.also {
+                if alt.visible.is_none()
+                    && alt.qualified.is_none()
+                    && let Some(led) = led_forms(alt, language.modifier_tokens)
+                {
+                    alt.led = Some(0);
+                    added.extend(led);
+                }
+            }
+            primary.also.extend(added);
+        }
         // A trailing `,` that changes no named node is a separator, not
         // structure: Rust's `Some($X) => $E,` then also matches the arm
         // written `Some(x) => { … }` (or last, without one). Where the comma
@@ -565,6 +676,7 @@ impl StructuralPattern {
             visible: self.visible.clone(),
             shorthand: self.shorthand.clone(),
             shape: self.shape.clone(),
+            led: None,
         }
     }
 
@@ -667,6 +779,7 @@ impl StructuralPattern {
             leading: language.leading,
             macro_contents: language.macro_contents,
             modifiers: language.modifiers,
+            modifier_tokens: language.modifier_tokens,
         };
         let expanded = expand(text, lang.expando);
 
@@ -800,6 +913,7 @@ impl StructuralPattern {
             visible: None,
             shorthand: None,
             shape,
+            led: None,
         }
     }
 

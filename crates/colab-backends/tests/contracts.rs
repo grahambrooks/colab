@@ -425,7 +425,7 @@ fn source_backends_name_their_code_fences() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 12);
+    assert_eq!(checked, 13);
     assert!(registry.get("markdown").unwrap().fence_locator().is_some());
 }
 
@@ -556,5 +556,5 @@ fn every_source_backend_has_the_common_floor() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 12);
+    assert_eq!(checked, 13);
 }

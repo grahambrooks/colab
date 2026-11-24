@@ -517,7 +517,7 @@ fn every_backend_advertises_import_symbol_and_call() {
         );
         assert!(modules.contains(&"call"), "{name} lacks call: {modules:?}");
     }
-    assert_eq!(source_backends, 12, "source backend count changed");
+    assert_eq!(source_backends, 13, "source backend count changed");
 }
 
 #[test]

@@ -25,6 +25,7 @@ pub(crate) fn language() -> PatternLanguage {
         macro_contents: None,
         modifiers: None,
         shorthand_fields: false,
+        modifier_tokens: &[],
     }
 }
 

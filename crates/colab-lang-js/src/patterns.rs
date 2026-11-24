@@ -30,6 +30,8 @@ pub(crate) fn language() -> PatternLanguage {
         macro_contents: None,
         modifiers: None,
         shorthand_fields: true,
+        // A method's modifiers are anonymous tokens: kept by a rewrite.
+        modifier_tokens: &["static", "async", "get", "set", "*", "accessor"],
     }
 }
 
@@ -40,54 +42,58 @@ pub(crate) const QUALIFIERS: Qualifiers = Qualifiers {
     kind: "member_expression",
     field: "object",
     imported: crate::imports::imported_names,
-    builtin: &[
-        "Array",
-        "Atomics",
-        "BigInt",
-        "Boolean",
-        "Buffer",
-        "DataView",
-        "Date",
-        "Error",
-        "Function",
-        "Intl",
-        "JSON",
-        "Map",
-        "Math",
-        "Number",
-        "Object",
-        "Promise",
-        "Proxy",
-        "Reflect",
-        "RegExp",
-        "Set",
-        "String",
-        "Symbol",
-        "URL",
-        "URLSearchParams",
-        "WeakMap",
-        "WeakSet",
-        "console",
-        "crypto",
-        "document",
-        "exports",
-        "fetch",
-        "global",
-        "globalThis",
-        "localStorage",
-        "location",
-        "module",
-        "navigator",
-        "performance",
-        "process",
-        "require",
-        "self",
-        "sessionStorage",
-        "super",
-        "this",
-        "window",
-    ],
+    builtin: GLOBALS,
 };
+
+/// The globals a qualified reference needs no import for, in JavaScript
+/// and TypeScript alike.
+pub const GLOBALS: &[&str] = &[
+    "Array",
+    "Atomics",
+    "BigInt",
+    "Boolean",
+    "Buffer",
+    "DataView",
+    "Date",
+    "Error",
+    "Function",
+    "Intl",
+    "JSON",
+    "Map",
+    "Math",
+    "Number",
+    "Object",
+    "Promise",
+    "Proxy",
+    "Reflect",
+    "RegExp",
+    "Set",
+    "String",
+    "Symbol",
+    "URL",
+    "URLSearchParams",
+    "WeakMap",
+    "WeakSet",
+    "console",
+    "crypto",
+    "document",
+    "exports",
+    "fetch",
+    "global",
+    "globalThis",
+    "localStorage",
+    "location",
+    "module",
+    "navigator",
+    "performance",
+    "process",
+    "require",
+    "self",
+    "sessionStorage",
+    "super",
+    "this",
+    "window",
+];
 
 #[cfg(test)]
 mod tests {
@@ -107,6 +113,32 @@ mod tests {
         assert_eq!(
             op.apply(src),
             "open({ host, port: 1 });\nopen({ host: h, port });\n"
+        );
+    }
+
+    #[test]
+    fn a_rewrite_keeps_static_and_async() {
+        // Matching skipped the anonymous `static async`, and the rewrite
+        // replaced the whole method, so they were silently dropped.
+        let op = crate::LANG
+            .compile_pattern("f() {}", PatternAction::Replace("f2() {}".into()), &[])
+            .unwrap();
+        assert_eq!(
+            op.apply("class A {\n  static async f() {}\n  f() {}\n}\n"),
+            "class A {\n  static async f2() {}\n  f2() {}\n}\n"
+        );
+        // A pattern that spells one is exact about it, and its template's
+        // choice stands.
+        let spelled = crate::LANG
+            .compile_pattern(
+                "static f() {}",
+                PatternAction::Replace("f() {}".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            spelled.apply("class A {\n  static f() {}\n}\n"),
+            "class A {\n  f() {}\n}\n"
         );
     }
 

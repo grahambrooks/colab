@@ -1,0 +1,20 @@
+// TypeScript: a service moving from callbacks to promises, written with
+// the TypeScript grammar (`ts::`), which reads type annotations, generics
+// and interfaces that the JavaScript grammar sees as errors.
+//
+// - The module the callbacks came from is replaced.
+// - A method's `Callback<$T>` parameter type becomes its return type,
+//   `Promise<$T>`; its modifiers (`static`, `async`) are kept, though the
+//   pattern does not spell them.
+// - The interface the callers implemented is renamed.
+refactor "ts-promises" {
+    match ts::import "./callbacks" {
+        replace "./promises"
+    }
+    match ts::pattern '$M($A: string, done: Callback<$T>): void { $$$B }' {
+        replace '$M($A: string): Promise<$T> { $$$B }'
+    }
+    match ts::pattern 'interface Handler { $$$M }' {
+        replace 'interface AsyncHandler { $$$M }'
+    }
+}

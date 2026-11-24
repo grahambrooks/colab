@@ -67,6 +67,10 @@ just the readable form.
 | `swift::symbol`     | ✅ |    |    |    |    |    |    | `.swift` |
 | `swift::call`       |    |    |    | ✅ |    |    |    | `.swift` |
 | `swift::pattern`    | ✅ | ✅ |    |    |    |    | ✅ | `.swift` |
+| `ts::import` | ✅ | ✅ | ✅ |  |  |  |  | `.ts`, `.mts`, `.cts` |
+| `ts::symbol` | ✅ |  |  |  |  |  |  | as `ts::import` |
+| `ts::call` |  |  |  | ✅ |  |  |  | as `ts::import` |
+| `ts::pattern` | ✅ | ✅ |  |  |  |  | ✅ | as `ts::import` |
 | `json::key`         |    | ✅ |    |    | ✅ | ✅ |    | `.json` |
 | `markdown::section` | ✅ | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
 | `markdown::frontmatter` |  | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
@@ -382,7 +386,15 @@ Powered by `tree-sitter-python`.
 
 Powered by `tree-sitter-javascript`. The JavaScript grammar parses
 TypeScript module syntax well enough for specifier and identifier
-rewriting; type-aware operations are out of scope.
+rewriting, and `js` still runs over `.ts` and `.tsx` files. For
+TypeScript code (types, interfaces, generics, member modifiers) use
+[`ts::`](#typescript-colab-lang-ts), which parses them.
+
+A method's modifiers (`static`, `async`, `get`, `*`) are anonymous
+tokens: `js::pattern 'f() {}'` matches `static async f() {}`, and a
+rewrite that leaves them out of its template keeps them
+(`f2() {}` gives `static async f2() {}`). A pattern that spells one is
+matched as written.
 
 ### `js::import`
 
@@ -404,6 +416,36 @@ rewriting; type-aware operations are out of scope.
   names, object keys, JSX component names.
 - **Excludes:** string literals, JSX text, regex literals.
 - **Caveat:** scope-blind. Narrow it to a function, `impl` or class with `where inside '<pattern>'` ([code scope](dsl.md#code-scope-where-inside-on-symbol-and-call)), or use `colab rename`.
+
+---
+
+## TypeScript (`colab-lang-ts`)
+
+Powered by `tree-sitter-typescript` (0.23), on `.ts`, `.mts` and `.cts`
+files. Type annotations, interfaces, generics, enums and member
+modifiers parse, so a pattern can name them: `function $F($$$A):
+Promise<$T> { $$$B }`, `interface $I { $$$M }`, `Promise<$T>`, `port:
+number`. `.tsx` files stay with `js` for now: one backend has one
+grammar, and TSX needs its own.
+
+`js` also claims `.ts`, as `c` and `cpp` both claim `.h`, so existing
+`js::` scripts keep working; a bare `colab find '<pattern>'` over `.ts`
+files picks `ts`.
+
+- **`ts::import`:** as [`js::import`](#jsimport), on this grammar
+  (`import type` included).
+- **`ts::symbol`:** as `js::symbol`, plus `type_identifier`, so a type's
+  name and its uses are renamed together.
+- **`ts::call`:** as `js::call`.
+- **`ts::pattern`:** a member pattern written without modifiers matches
+  the member with any: `load(): void {}` and `$M(): void {}` find
+  `private static async load(): void {}`. A rewrite whose template leaves
+  them out keeps them, in their order; a template that writes modifiers
+  of its own is used as written, and a pattern that spells one (`private
+  load()`) matches only members that have it. A decorator is the
+  member's sibling in the grammar: a deleted member takes it along, and a
+  rewrite leaves it in place. A field pattern is written without its
+  `;` (`count: number = $V`).
 
 ---
 

@@ -419,8 +419,8 @@ How it matches:
   rewrite of those would drop the part the pattern never mentions. Add a
   metavariable for it (`if $C { $$$B } else { $$$E }`) to match it.
 - **Modifiers are the exception.** An item pattern written without
-  modifiers matches the item with any, in Rust, Java, Kotlin, Swift, C#
-  and PHP: `fn $F($$$A) -> $R { $$$B }` finds `pub(super) fn run(…)`,
+  modifiers matches the item with any, in Rust, Java, Kotlin, Swift, C#,
+  PHP, JavaScript and TypeScript: `fn $F($$$A) -> $R { $$$B }` finds `pub(super) fn run(…)`,
   `void $F() {}` finds `@Override public static void f() {}`, and
   `function $F() {}` finds `public static function f() {}`. Modifiers
   are visibility, `static`, `final`, `async` and the like, and the
@@ -433,9 +433,14 @@ How it matches:
   $F() {}` does not match `public static void f()`, and `@Test void $F()`
   does not match `@Test public void f()`. In C# and PHP each modifier is
   its own node; when a metavariable follows them (`$T $F() {}`), an item
-  with up to four is matched. JavaScript `export` already works, since
-  a pattern matches the declaration inside it; a `delete` leaves an
-  `export function` in place.
+  with up to four is matched. In JavaScript and TypeScript a member's
+  modifiers (`private`, `static`, `async`, `readonly`, `get`, `*`) are
+  keywords, matched the same way, up to four: `$M(): void {}` (`ts::`)
+  finds `private static async load(): void {}`, and a rewrite keeps them
+  in their order. A decorator is the member's sibling there, so a
+  rewrite leaves it in place. `export` already works, since a pattern
+  matches the declaration inside it; a `delete` leaves an `export
+  function` in place.
 - **Nested matches in one pass.** In `errors.Wrap(errors.Wrap(err, "a"),
   "b")` both calls match; the inner one is rewritten first and its result
   fills the outer template, so one run reaches the fixed point. Text the
@@ -980,6 +985,8 @@ table below summarises:
 | `python::symbol` | Identifier text. | `"old_helper"` |
 | `js::import` | Exact ES module specifier (the string after `from`). | `"lodash"` |
 | `js::symbol` | Identifier text (covers `identifier`, `property_identifier`, `shorthand_property_identifier`). | `"oldHelper"` |
+| `ts::import` | As `js::import`, in `.ts` / `.mts` / `.cts` files on the TypeScript grammar. | `"./callbacks"` |
+| `ts::symbol` | As `js::symbol`, plus `type_identifier` (a type's name). | `"Config"` |
 
 For the source modules, matching is on tree-sitter node text, not raw substrings
 — `tokio` does **not** match `my_tokio` and `another.module` does
@@ -1039,8 +1046,8 @@ match rust::use "old_crate::Thing" in "docs/**" in fences { replace "new_crate::
   files. `in fences` keeps only the second.
 - A fence belongs to a language by the first word of its info string,
   compared case-insensitively: ```` ```go ```` and ```` ```golang ````
-  for Go, ```` ```ts ```` for `js`, and so on (each backend lists its
-  names). Other fences, and the prose around them, are left alone.
+  for Go, ```` ```ts ```` for `js` and `ts`, and so on (each backend
+  lists its names). Other fences, and the prose around them, are left alone.
 - Each fence is rewritten on its own. One indented inside a list item is
   dedented for the rule and re-indented after.
 - An `in "<glob>"` clause narrows the Markdown files by path.

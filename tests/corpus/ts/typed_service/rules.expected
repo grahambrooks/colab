@@ -1,0 +1,3 @@
+1 ts::import "./callbacks" -> "./promises"
+1 ts::pattern '$M($A: string, done: Callback<$T>): void { $$$B }' -> '$M($A: string): Promise<$T> { $$$B }'
+1 ts::pattern 'interface Handler { $$$M }' -> 'interface AsyncHandler { $$$M }'

@@ -1,0 +1,19 @@
+[package]
+name = "colab-lang-ts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "TypeScript language backend for colab: module specifiers, symbols, calls and patterns on the TypeScript grammar."
+
+[dependencies]
+colab-core = { workspace = true }
+colab-lang-js = { workspace = true }
+colab-rewrite = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-typescript = { workspace = true }
+
+[lints]
+workspace = true

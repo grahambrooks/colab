@@ -1,0 +1,13 @@
+service.ts:1:1: [0] import { Callback } from "./callbacks";
+service.ts:4:1: [2] interface Handler {\n  name: string;\n  run(input: string): void;\n}
+    $M = name: string;\n  run(input: string): void;
+service.ts:12:3: [1] static async load(path: string, done: Callback<Config>): void {\n    read(path);\n  }
+    $A = path
+    $B = read(path);
+    $M = load
+    $T = Config
+service.ts:16:3: [1] fetch(id: string, done: Callback<number>): void {\n    lookup(id);\n  }
+    $A = id
+    $B = lookup(id);
+    $M = fetch
+    $T = number

@@ -54,6 +54,7 @@ crates/
   colab-lang-ruby/    # Ruby backend (tree-sitter-ruby).
   colab-lang-rust/    # Rust backend (tree-sitter-rust + toml_edit).
   colab-lang-swift/   # Swift backend (tree-sitter-swift).
+  colab-lang-ts/      # TypeScript backend (tree-sitter-typescript); import via colab-lang-js.
   colab-lang-json/    # JSON config (tree-sitter-json): key by JSON Pointer.
   colab-lang-markdown/  # Markdown by structure (tree-sitter-md): section,
                       # row, item, text, link, frontmatter, block.

@@ -22,6 +22,10 @@ impl StructuralPattern {
         let mut found: Vec<_> = candidates(grep, source, &self.pattern)
             .into_iter()
             .filter(|m| self.shape.fits(m.get_node()))
+            .filter(|m| {
+                self.led
+                    .is_none_or(|k| leading_modifiers(m.get_node(), self.lang.modifier_tokens) == k)
+            })
             .filter_map(|mut m| {
                 self.visible
                     .as_ref()

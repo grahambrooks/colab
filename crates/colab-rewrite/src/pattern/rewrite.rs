@@ -18,6 +18,10 @@ pub(super) struct Rewriter<'a, 't> {
     /// match whose sequence capture is empty can be filled without the
     /// separator around it ([`tighten`]). `None` keeps `fix` for all.
     pub(super) template: Option<(&'a str, &'a TsLang, &'a [String])>,
+    /// The language's modifiers ([`PatternLanguage::modifier_tokens`]) and
+    /// the pattern's head, so a rewrite puts back a match's modifiers that
+    /// the template leaves out ([`keep_modifier_tokens`]). `None` for none.
+    pub(super) keep: Option<(&'static [&'static str], &'a str)>,
 }
 
 impl Rewriter<'_, '_> {
@@ -179,12 +183,15 @@ impl Rewriter<'_, '_> {
                 })
             })
             .collect();
-        if let Some(text) = self.render_verbatim(&nm, fix, source, start..end, &captures) {
-            return Edit::new(start, end, text);
-        }
-        let text = String::from_utf8_lossy(&edit.inserted_text);
-        let text = indent_with_tabs(source, edit.position, &text);
-        let text = keep_layout(&source[start..end], &strip_blank_line_indent(&text));
+        let text = match self.render_verbatim(&nm, fix, source, start..end, &captures) {
+            Some(text) => text,
+            None => {
+                let text = String::from_utf8_lossy(&edit.inserted_text);
+                let text = indent_with_tabs(source, edit.position, &text);
+                keep_layout(&source[start..end], &strip_blank_line_indent(&text))
+            }
+        };
+        let text = keep_modifier_tokens(nm.get_node(), source, text, self.keep);
         Edit::new(start, end, text)
     }
 
@@ -565,6 +572,96 @@ pub(super) fn strip_blank_line_indent(text: &str) -> String {
         .join("\n")
 }
 
+/// `text` (the rewrite of `node`) with `node`'s leading modifiers put back
+/// where the template leaves them out: `kinds` names them (anonymous
+/// keywords such as `static`, named kinds such as
+/// `accessibility_modifier`), and a pattern matches an item whatever its
+/// modifiers (`led_forms`), so `f2() {}` for `private static f() {}` gives
+/// `private static f2() {}`. A modifier the pattern spells (in `head`, the
+/// pattern before its first `(` or `{`) and the template does not is left
+/// out, as the template asks; one the template writes stays where it is.
+pub(super) fn keep_modifier_tokens<D: ast_grep_core::Doc>(
+    node: &ast_grep_core::Node<'_, D>,
+    source: &str,
+    text: String,
+    keep: Option<(&[&'static str], &str)>,
+) -> String {
+    let Some((kinds, head)) = keep else {
+        return text;
+    };
+    let mods: Vec<&str> = node
+        .children()
+        .filter(|c| !c.is_extra())
+        .take_while(|c| kinds.contains(&c.kind().as_ref()))
+        .map(|c| &source[c.range()])
+        .collect();
+    if mods.is_empty() {
+        return text;
+    }
+    let spelled = |m: &str| {
+        if m == "*" {
+            head.contains('*')
+        } else {
+            head.split_whitespace()
+                .any(|w| w.trim_start_matches('*') == m)
+        }
+    };
+    // The template's own leading words, up to the item's name: `get` and
+    // `static` in `static get v()`, nothing in `f()`, `x` in `x = 1`.
+    // Each leading word with where it starts in `text`.
+    let mut have: Vec<(&str, usize)> = Vec::new();
+    let mut at = 0;
+    loop {
+        let start = at + (text[at..].len() - text[at..].trim_start().len());
+        let t = &text[start..];
+        let end = t.find(char::is_whitespace).unwrap_or(t.len());
+        let word = &t[..end];
+        if word.is_empty()
+            || end == t.len()
+            || word.contains(['(', '{', ':', '=', '<', ';', '[', '*'])
+        {
+            at = start;
+            break;
+        }
+        have.push((word, start));
+        at = start + end;
+    }
+    let mut rest = text[at..].trim_start();
+    // In `x = 1` or `x: number`, `x` is the name, not a modifier.
+    if rest.starts_with(['=', ':', '?', '!', ';'])
+        && let Some((_, start)) = have.pop()
+    {
+        rest = &text[start..];
+    }
+    let have: Vec<&str> = have.into_iter().map(|(w, _)| w).collect();
+    // A template that writes modifiers of its own, beyond repeating the
+    // ones the pattern spells, is used as written.
+    if have.iter().any(|w| !spelled(w)) {
+        return text;
+    }
+    let mut words: Vec<&str> = Vec::new();
+    for m in &mods {
+        let written = have.contains(m) || (*m == "*" && rest.starts_with('*'));
+        if have.contains(m) || (!written && !spelled(m)) {
+            words.push(m);
+        }
+    }
+    words.extend(have.iter().filter(|w| !mods.contains(w)));
+    if words == have {
+        return text;
+    }
+    let mut out = String::with_capacity(text.len() + 16);
+    for word in &words {
+        out.push_str(word);
+        // `*gen()` is written against the name.
+        if *word != "*" {
+            out.push(' ');
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// `template` (as [`transformable_template`] writes it, `$NAME`) with each
 /// of `empty` (sequence captures that matched nothing) taken out together
 /// with the separator that would be left over: one of the spaces around
@@ -778,6 +875,28 @@ impl StructuralPattern {
         })
     }
 
+    /// What a rewrite with `template` needs to keep a match's modifiers:
+    /// the language's list and the pattern's head (before its first `(` or
+    /// `{`). `None` without a list, and for a template that only unwraps
+    /// (`$$$B`), which leaves no item to put them on.
+    fn kept_modifiers(&self, template: &str) -> Option<(&'static [&'static str], &str)> {
+        let tokens = self.lang.modifier_tokens;
+        // A template that is one metavariable unwraps the item.
+        let only = template.trim();
+        let unwraps = only.strip_prefix('$').is_some_and(|name| {
+            !name.is_empty()
+                && name
+                    .trim_start_matches('$')
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        });
+        if tokens.is_empty() || unwraps {
+            return None;
+        }
+        let text = self.text.as_str();
+        Some((tokens, &text[..text.find(['(', '{']).unwrap_or(text.len())]))
+    }
+
     /// The edits one compilation makes to `source`, outermost matches only.
     fn rewrite_edits(
         &self,
@@ -838,6 +957,7 @@ impl StructuralPattern {
                         subs: &[],
                         matches,
                         template: None,
+                        keep: None,
                     })
                     .collect()
             })
@@ -849,6 +969,7 @@ impl StructuralPattern {
             subs: &subs,
             matches: &matches,
             template: Some((&template, &self.lang, &names)),
+            keep: self.kept_modifiers(&template),
         };
         let edits: Vec<crate::Edit> = rewriter
             .outermost(0..source.len(), None)

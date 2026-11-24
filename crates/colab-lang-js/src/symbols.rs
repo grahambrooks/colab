@@ -11,7 +11,7 @@
 //! node kinds count as an identifier.
 
 /// Node kinds this backend treats as renameable identifiers.
-pub(crate) const RENAME_KINDS: &[&str] = &[
+pub const RENAME_KINDS: &[&str] = &[
     "identifier",
     "property_identifier",
     "shorthand_property_identifier",

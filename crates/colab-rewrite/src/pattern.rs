@@ -106,6 +106,13 @@ pub struct PatternLanguage {
     /// to `text`. `false` where that spelling means something else (Go's
     /// `T{a}` is positional, Python's `{a}` a set).
     pub shorthand_fields: bool,
+    /// Modifier keywords the grammar keeps as anonymous tokens of the
+    /// item (JavaScript's `static`, `async`, `get`). Matching skips
+    /// anonymous tokens, so `f() {}` matches `static async f() {}`; a
+    /// rewrite then puts back the ones leading the match that the pattern
+    /// does not spell, so `f2() {}` gives `static async f2() {}`, not
+    /// `f2() {}`. Empty where modifiers are named nodes.
+    pub modifier_tokens: &'static [&'static str],
 }
 
 /// An item's modifiers — visibility, `static`, annotations: Rust's `pub`,
@@ -214,6 +221,9 @@ struct TsLang {
     /// How an item's modifiers parse: a pattern's [`Modifiers::sentinel`]
     /// is the metavariable [`MODIFIERS`].
     modifiers: Option<Modifiers>,
+    /// Anonymous modifier keywords a rewrite keeps (not used by ast-grep;
+    /// see [`PatternLanguage::modifier_tokens`]).
+    modifier_tokens: &'static [&'static str],
 }
 
 impl Language for TsLang {
@@ -343,6 +353,10 @@ pub struct StructuralPattern {
     /// The pattern's named structure, to refuse a match whose node has
     /// children the pattern does not account for (see [`Shape`]).
     shape: Shape,
+    /// For a language with [`PatternLanguage::modifier_tokens`]: this form
+    /// matches an item only when exactly this many of its leading children
+    /// are modifiers (see `led_forms`). `None` checks nothing.
+    led: Option<usize>,
 }
 
 impl std::fmt::Debug for StructuralPattern {

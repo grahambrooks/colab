@@ -11,7 +11,36 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
+use colab_rewrite::SourceLanguage;
 use tree_sitter::{Node, Tree};
+
+/// The `import` module's operation for `spec` over `lang`'s files (a
+/// grammar with JavaScript's module syntax: JavaScript's or TypeScript's),
+/// or `spec` back when `module` is not `import` or the action is not one
+/// it takes, for the backend's next arm.
+pub fn build(
+    lang: &'static SourceLanguage,
+    module: &str,
+    spec: colab_core::RuleSpec,
+) -> std::result::Result<Box<dyn Operation>, colab_core::RuleSpec> {
+    use colab_core::RuleSpec;
+    match (module, spec) {
+        (
+            "import",
+            RuleSpec::Replace {
+                target,
+                replacement,
+            },
+        ) => Ok(Box::new(SpecifierRename {
+            lang,
+            from: target,
+            to: replacement,
+        })),
+        ("import", RuleSpec::Delete { target }) => Ok(Box::new(SpecifierDelete { lang, target })),
+        ("import", RuleSpec::Ensure { target }) => Ok(Box::new(SpecifierEnsure { lang, target })),
+        (_, spec) => Err(spec),
+    }
+}
 
 /// For each `import_statement` / `export_statement` whose `source`
 /// field is a string literal equal to `target`, invoke the visitor
@@ -51,7 +80,15 @@ where
 /// named bindings (the alias, when there is one), and the names a
 /// `require(…)` call is assigned to, destructured or not.
 pub(crate) fn imported_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    imported_names_in(&crate::LANG, source)
+}
+
+/// Every name `source`'s module imports bind, as JavaScript's own
+/// qualifier check reads them, for a grammar that shares JavaScript's
+/// module syntax (TypeScript's), as a backend's `Qualifiers::imported`
+/// calls it.
+pub fn imported_names_in(lang: &SourceLanguage, source: &str) -> Vec<String> {
+    let Some(tree) = lang.parse(source) else {
         return Vec::new();
     };
     let text = |n: Node<'_>| source[n.byte_range()].to_string();
@@ -119,8 +156,8 @@ pub(crate) fn imported_names(source: &str) -> Vec<String> {
     names
 }
 
-pub(crate) fn specifiers(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+pub fn specifiers(lang: &SourceLanguage, source: &str) -> Vec<String> {
+    let Some(tree) = lang.parse(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -165,23 +202,28 @@ fn string_inner_bytes<'a>(
 
 #[derive(Debug)]
 pub struct SpecifierRename {
+    pub lang: &'static SourceLanguage,
     pub from: String,
     pub to: String,
 }
 
 impl fmt::Display for SpecifierRename {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "js::import \"{}\" -> \"{}\"", self.from, self.to)
+        write!(
+            f,
+            "{}::import \"{}\" -> \"{}\"",
+            self.lang.namespace, self.from, self.to
+        )
     }
 }
 
 impl Operation for SpecifierRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::LANG.is_source(path)
+        self.lang.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
-        rename(&self.from, &self.to, source_code)
+        rename(self.lang, &self.from, &self.to, source_code)
     }
 
     fn prefilter(&self) -> Option<&str> {
@@ -193,12 +235,12 @@ impl Operation for SpecifierRename {
     }
 
     fn observed_targets(&self, source: &str) -> Vec<String> {
-        specifiers(source)
+        specifiers(self.lang, source)
     }
 }
 
-pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+pub fn rename(lang: &SourceLanguage, from: &str, to: &str, source_code: &str) -> String {
+    let Some(tree) = lang.parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -220,22 +262,27 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
 
 #[derive(Debug)]
 pub struct SpecifierDelete {
+    pub lang: &'static SourceLanguage,
     pub target: String,
 }
 
 impl fmt::Display for SpecifierDelete {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "js::import \"{}\" -> delete", self.target)
+        write!(
+            f,
+            "{}::import \"{}\" -> delete",
+            self.lang.namespace, self.target
+        )
     }
 }
 
 impl Operation for SpecifierDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::LANG.is_source(path)
+        self.lang.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
-        delete(&self.target, source_code)
+        delete(self.lang, &self.target, source_code)
     }
 
     fn prefilter(&self) -> Option<&str> {
@@ -247,12 +294,12 @@ impl Operation for SpecifierDelete {
     }
 
     fn observed_targets(&self, source: &str) -> Vec<String> {
-        specifiers(source)
+        specifiers(self.lang, source)
     }
 }
 
-pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+pub fn delete(lang: &SourceLanguage, target: &str, source_code: &str) -> String {
+    let Some(tree) = lang.parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -266,6 +313,18 @@ pub fn delete(target: &str, source_code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rename(from: &str, to: &str, source: &str) -> String {
+        super::rename(&crate::LANG, from, to, source)
+    }
+
+    fn delete(target: &str, source: &str) -> String {
+        super::delete(&crate::LANG, target, source)
+    }
+
+    fn specifiers(source: &str) -> Vec<String> {
+        super::specifiers(&crate::LANG, source)
+    }
 
     #[test]
     fn imported_names_cover_imports_and_require() {
@@ -334,6 +393,7 @@ mod tests {
     #[test]
     fn relevance_matches_js_ts_extensions() {
         let op = SpecifierRename {
+            lang: &crate::LANG,
             from: "a".into(),
             to: "b".into(),
         };
@@ -362,22 +422,27 @@ mod tests {
 /// default, namespace, or side-effect) counts as present.
 #[derive(Debug)]
 pub struct SpecifierEnsure {
+    pub lang: &'static SourceLanguage,
     pub target: String,
 }
 
 impl fmt::Display for SpecifierEnsure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "js::import \"{}\" -> ensure", self.target)
+        write!(
+            f,
+            "{}::import \"{}\" -> ensure",
+            self.lang.namespace, self.target
+        )
     }
 }
 
 impl Operation for SpecifierEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::LANG.is_source(path)
+        self.lang.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
-        ensure(&self.target, source_code)
+        ensure(self.lang, &self.target, source_code)
     }
 
     // No prefilter: `ensure` acts precisely when the target is absent.
@@ -385,8 +450,8 @@ impl Operation for SpecifierEnsure {
 
 /// Insert `import '<target>';` after the last existing import, or at the
 /// top of the file when there is none.
-pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+pub fn ensure(lang: &SourceLanguage, target: &str, source_code: &str) -> String {
+    let Some(tree) = lang.parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -419,7 +484,9 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 
 #[cfg(test)]
 mod ensure_tests {
-    use super::*;
+    fn ensure(target: &str, source: &str) -> String {
+        super::ensure(&crate::LANG, target, source)
+    }
 
     const SRC: &str = "import a from 'alpha';\nimport 'beta';\n\nconsole.log(a);\n";
 

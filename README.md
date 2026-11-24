@@ -7,8 +7,8 @@
 A scripted, AST-aware code refactoring (codemod) tool. Point it at a
 repo, hand it a small `.colab` script, and it will rewrite source
 files deterministically — using tree-sitter for the matching, not
-regex — across twelve languages: **C, C++, C#, Go, Java,
-JavaScript/TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**. It
+regex — across thirteen languages: **C, C++, C#, Go, Java, JavaScript,
+TypeScript, Kotlin, PHP, Python, Ruby, Rust, and Swift**. It
 also edits **TOML, JSON and Markdown** configuration by key path, JSON
 Pointer or managed block, so a repository convention can be rolled out
 the same way (see [`examples/config`](examples/config/repo_migration/)).
@@ -56,6 +56,7 @@ import-equivalent, a symbol rename, call rewriting, and `pattern`
 | Go                      | `go`      | `import`, `package`, `symbol`, `struct_tag`, `call` |
 | Java                    | `java`    | `import`, `package`, `symbol`, `call`               |
 | JavaScript / TypeScript | `js`      | `import`, `symbol`, `call`                          |
+| TypeScript (types, modifiers) | `ts` | `import`, `symbol`, `call`                    |
 | Kotlin                  | `kotlin`  | `import`, `package`, `symbol`, `call`               |
 | PHP                     | `php`     | `use`, `namespace`, `symbol`, `call`                |
 | Python                  | `python`  | `import`, `symbol`, `call`                          |
@@ -348,6 +349,7 @@ crates/
   colab-lang-markdown/  # Markdown by structure (sections, rows, items, links, …)
   colab-lang-text/    # Any text file: a literal string or whole word
   colab-lang-toml/    # TOML (key by dotted path)
+  colab-lang-ts/      # TypeScript backend (tree-sitter-typescript; import from colab-lang-js)
   colab-lsp-client/   # colab as an LSP client: rename, mv, action, references, tidy, lsp-daemon
     colab-mcp/          # MCP server (20 tools; see docs/cli.md#colab-mcp)
   colab-cli/          # The `colab` binary: commands, colab fix, LSP server, `colab mcp`

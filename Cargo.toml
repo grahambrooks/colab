@@ -19,6 +19,7 @@ members = [
     "crates/colab-lang-swift",
     "crates/colab-lang-text",
     "crates/colab-lang-toml",
+    "crates/colab-lang-ts",
     "crates/colab-backends",
     "crates/colab-rewrite",
     "crates/colab-lsp-client",
@@ -54,6 +55,7 @@ colab-lang-rust = { path = "crates/colab-lang-rust" }
 colab-lang-swift = { path = "crates/colab-lang-swift" }
 colab-lang-text = { path = "crates/colab-lang-text" }
 colab-lang-toml = { path = "crates/colab-lang-toml" }
+colab-lang-ts = { path = "crates/colab-lang-ts" }
 colab-mcp = { path = "crates/colab-mcp" }
 colab-rewrite = { path = "crates/colab-rewrite" }
 colab-lsp-client = { path = "crates/colab-lsp-client" }
@@ -82,6 +84,7 @@ tree-sitter-python = "0.25"
 tree-sitter-ruby = "0.23.1"
 tree-sitter-rust = "0.24"
 tree-sitter-swift = "0.7.4"
+tree-sitter-typescript = "0.23.2"
 toml_edit = "0.25"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "io-std", "sync"] }
 log = "0.4"
