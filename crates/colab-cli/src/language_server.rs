@@ -64,7 +64,17 @@ fn error_range(err: &Error) -> Range {
     }
 }
 
+// The server's parts: completion, hover, and the workspace edits a script
+// plans, applies and undoes (`edits` turns them into LSP `TextEdit`s).
+mod completion;
 mod edits;
+mod hover;
+mod workspace;
+
+#[cfg(test)]
+use completion::line_prefix;
+#[cfg(test)]
+use hover::word_at;
 
 /// The commands `colab server` executes (`workspace/executeCommand`).
 const APPLY_COMMAND: &str = "colab.apply";
@@ -385,7 +395,7 @@ impl LanguageServer for Backend {
         let Some(text) = docs.get(&uri) else {
             return Ok(None);
         };
-        let prefix = line_prefix(text, position);
+        let prefix = completion::line_prefix(text, position);
         Ok(Some(CompletionResponse::Array(
             self.completions_for(prefix),
         )))
@@ -517,11 +527,14 @@ impl LanguageServer for Backend {
         }
         if !self.lazy_edits.load(Ordering::Relaxed) {
             for action in actions.iter_mut().filter(|a| a.data.is_some()) {
-                let (rule, preview) = (action_rule(action), action_preview(action));
+                let (rule, preview) = (
+                    workspace::action_rule(action),
+                    workspace::action_preview(action),
+                );
                 action.edit = Some(
                     self.edit_for(&uri, &text, rule, preview)
                         .await
-                        .map_err(lsp_error)?,
+                        .map_err(workspace::lsp_error)?,
                 );
                 action.data = None;
             }
@@ -548,11 +561,14 @@ impl LanguageServer for Backend {
         let Some(text) = self.documents.lock().await.get(&uri).cloned() else {
             return Ok(action);
         };
-        let (rule, preview) = (action_rule(&action), action_preview(&action));
+        let (rule, preview) = (
+            workspace::action_rule(&action),
+            workspace::action_preview(&action),
+        );
         action.edit = Some(
             self.edit_for(&uri, &text, rule, preview)
                 .await
-                .map_err(lsp_error)?,
+                .map_err(workspace::lsp_error)?,
         );
         Ok(action)
     }
@@ -586,426 +602,6 @@ impl LanguageServer for Backend {
             ))),
         }
     }
-}
-
-/// The rule index a workspace code action was created for (`None` = all).
-fn action_rule(action: &CodeAction) -> Option<usize> {
-    action
-        .data
-        .as_ref()
-        .and_then(|d| d.get("rule"))
-        .and_then(serde_json::Value::as_u64)
-        .and_then(|r| usize::try_from(r).ok())
-}
-
-/// Whether a workspace code action is the preview (annotated) variant.
-fn action_preview(action: &CodeAction) -> bool {
-    action
-        .data
-        .as_ref()
-        .and_then(|d| d.get("preview"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-}
-
-fn lsp_error(err: Error) -> tower_lsp_server::jsonrpc::Error {
-    let mut out = tower_lsp_server::jsonrpc::Error::internal_error();
-    out.message = err.to_string().into();
-    out
-}
-
-impl Backend {
-    fn workspace_action(
-        &self,
-        title: String,
-        uri: &Uri,
-        rule: Option<usize>,
-        preview: bool,
-    ) -> CodeAction {
-        CodeAction {
-            title,
-            kind: Some(CodeActionKind::REFACTOR_REWRITE),
-            data: Some(
-                serde_json::json!({ "uri": uri.as_str(), "rule": rule, "preview": preview }),
-            ),
-            ..Default::default()
-        }
-    }
-
-    /// The edit for running the script (or rule `rule`) over the
-    /// workspace: annotated for the editor's preview when `preview`.
-    async fn edit_for(
-        &self,
-        uri: &Uri,
-        text: &str,
-        rule: Option<usize>,
-        preview: bool,
-    ) -> colab_core::Result<WorkspaceEdit> {
-        Ok(edits::to_edit(&self.plan(uri, text, rule).await?, preview))
-    }
-
-    /// Run the script (or rule `rule`), have the client apply the result,
-    /// and keep it for `colab: undo`.
-    async fn apply_and_remember(
-        &self,
-        uri: &Uri,
-        text: &str,
-        rule: Option<usize>,
-        label: String,
-    ) -> LspResult<()> {
-        let files = self.plan(uri, text, rule).await.map_err(lsp_error)?;
-        if files.is_empty() {
-            self.client
-                .show_message(MessageType::INFO, format!("colab: {label} changes nothing"))
-                .await;
-            return Ok(());
-        }
-        let response = self
-            .client
-            .apply_edit(edits::to_edit(&files, false))
-            .await?;
-        if !response.applied {
-            let why = response
-                .failure_reason
-                .unwrap_or_else(|| "no reason given".into());
-            self.client
-                .show_message(
-                    MessageType::WARNING,
-                    format!("colab: the editor did not apply {label}: {why}"),
-                )
-                .await;
-            return Ok(());
-        }
-        let count = files.len();
-        let mut undo = self.undo.lock().await;
-        undo.push(edits::Applied {
-            label: label.clone(),
-            files,
-        });
-        let excess = undo.len().saturating_sub(UNDO_DEPTH);
-        undo.drain(..excess);
-        drop(undo);
-        self.client
-            .show_message(
-                MessageType::INFO,
-                format!("colab: {label} changed {count} file(s); `colab: undo` puts them back"),
-            )
-            .await;
-        Ok(())
-    }
-
-    /// Put back the newest applied run, keeping edits made since that do
-    /// not overlap it; a file whose later edits do is left alone, and named.
-    async fn undo_last(&self) -> LspResult<()> {
-        let Some(applied) = self.undo.lock().await.pop() else {
-            self.client
-                .show_message(MessageType::INFO, "colab: nothing to undo")
-                .await;
-            return Ok(());
-        };
-        let open = self.documents.lock().await.clone();
-        let (edit, skipped) = edits::undo_edit(&applied, |file| {
-            open.get(&file.uri)
-                .cloned()
-                .or_else(|| std::fs::read_to_string(&file.path).ok())
-        });
-        let response = self.client.apply_edit(edit).await?;
-        let mut message = if response.applied {
-            format!("colab: undid {}", applied.label)
-        } else {
-            format!(
-                "colab: the editor did not apply the undo of {}: {}",
-                applied.label,
-                response
-                    .failure_reason
-                    .unwrap_or_else(|| "no reason given".into())
-            )
-        };
-        if !skipped.is_empty() {
-            let names: Vec<String> = skipped.iter().map(|p| p.display().to_string()).collect();
-            let _ = write!(
-                message,
-                "; left alone, since they changed where the run did: {}",
-                names.join(", ")
-            );
-        }
-        self.client.show_message(MessageType::INFO, message).await;
-        Ok(())
-    }
-
-    /// Run the script — or just rule `rule` — over every workspace root
-    /// and return the rewrites as one `WorkspaceEdit` of line hunks.
-    /// Nothing is written: the editor applies it.
-    #[cfg(test)]
-    async fn workspace_edit(
-        &self,
-        uri: &Uri,
-        text: &str,
-        rule: Option<usize>,
-    ) -> colab_core::Result<WorkspaceEdit> {
-        self.edit_for(uri, text, rule, false).await
-    }
-
-    /// Each file the script (or rule `rule`) would change across the
-    /// workspace roots, with the rules that changed it.
-    async fn plan(
-        &self,
-        uri: &Uri,
-        text: &str,
-        rule: Option<usize>,
-    ) -> colab_core::Result<Vec<edits::Planned>> {
-        let base = uri
-            .to_file_path()
-            .map_or_else(|| PathBuf::from("script.colab"), Cow::into_owned);
-        let mut refactoring = compile_at_source(text, &base, &self.backends)?;
-        if let Some(index) = rule {
-            // `rule` is a block; a block can lower to more than one rule
-            // (`and fences`), so keep that block's range of rules.
-            let checks = colab_dsl::check(text, &self.backends)?;
-            let count = |c: &colab_dsl::RuleCheck| c.outcome.as_ref().map_or(0, Vec::len);
-            let Some(block) = checks.get(index) else {
-                return Err(Error::Config(format!("the script has no rule {index}")));
-            };
-            let start: usize = checks[..index].iter().map(count).sum();
-            let end = start + count(block);
-            if end > refactoring.rules.len() {
-                return Err(Error::Config(format!("the script has no rule {index}")));
-            }
-            refactoring.rules = refactoring.rules.drain(start..end).collect();
-        }
-        let mut roots = self.roots.lock().await.clone();
-        if roots.is_empty()
-            && let Some(parent) = base.parent()
-        {
-            roots.push(parent.to_path_buf());
-        }
-        let progress = self.begin_progress(&refactoring.name).await;
-        // The walk is blocking, CPU-bound work on a runtime worker; progress
-        // reports go out from it through the runtime handle.
-        let handle = tokio::runtime::Handle::current();
-        // Progress per file the walk produces, sent through the runtime.
-        struct Ticks<F: FnMut(usize, usize)> {
-            seen: usize,
-            changing: usize,
-            tick: F,
-        }
-        impl<F: FnMut(usize, usize)> colab_dsl::pipeline::Hooks for Ticks<F> {
-            fn filter(&mut self, change: colab_core::FileChange) -> colab_core::FileChange {
-                self.seen += 1;
-                self.changing += usize::from(change.changed());
-                if self.seen.is_multiple_of(PROGRESS_EVERY) {
-                    (self.tick)(self.seen, self.changing);
-                }
-                change
-            }
-        }
-        let mut ticks = Ticks {
-            seen: 0,
-            changing: 0,
-            tick: |seen: usize, changing: usize| {
-                if let Some(token) = &progress {
-                    handle.block_on(self.report_progress(
-                        token,
-                        format!("{seen} file(s) scanned, {changing} to change"),
-                    ));
-                }
-            },
-        };
-        // A run of its own: requests on other runtime workers never share
-        // its oracle, facts or failures. The pipeline gives it what every
-        // run has: scan phases, the semantic gate, and conflicts checked
-        // before the client is handed an edit.
-        let run = colab_core::run::Run::new();
-        let labels: Vec<String> = refactoring.rules.iter().map(ToString::to_string).collect();
-        let changes = tokio::task::block_in_place(|| {
-            run.enter(|| {
-                // A trace per walk, opened and closed on this thread: an
-                // async task can move between threads at an `.await`.
-                let mut span = colab_core::telemetry::root("colab server walk");
-                span.set("colab.server.rule", rule.is_some());
-                let source = colab_dsl::pipeline::Source::Walk {
-                    targets: roots.clone(),
-                    options: WalkOptions::default(),
-                };
-                let outcome =
-                    colab_dsl::pipeline::Pipeline::new(&refactoring, source).execute(&mut ticks)?;
-                if let Some(first) = outcome.report.conflicts().first() {
-                    return Err(Error::Config(format!(
-                        "made no edit: {} conflict(s) found, the first in {}: {}",
-                        outcome.report.conflicts().len(),
-                        first.path.display(),
-                        first.message
-                    )));
-                }
-                Ok::<Vec<edits::Planned>, Error>(
-                    outcome
-                        .changes
-                        .into_iter()
-                        .filter_map(|change| {
-                            Some(edits::Planned {
-                                uri: Uri::from_file_path(&change.path)?,
-                                rules: change
-                                    .rules_fired
-                                    .iter()
-                                    .filter_map(|&i| labels.get(i).cloned())
-                                    .collect(),
-                                path: change.path,
-                                before: change.before,
-                                after: change.after,
-                            })
-                        })
-                        .collect(),
-                )
-            })
-        });
-        let seen = ticks.seen;
-        if let Some(token) = progress {
-            let message = match &changes {
-                Ok(c) => format!("{} file(s) to change, of {seen} scanned", c.len()),
-                Err(e) => format!("failed: {e}"),
-            };
-            self.end_progress(token, message).await;
-        }
-        changes
-    }
-
-    /// Start a progress report for a workspace edit, if the client shows
-    /// server-initiated progress; `None` otherwise (or if it declines).
-    async fn begin_progress(&self, script: &str) -> Option<NumberOrString> {
-        if !self.progress.load(Ordering::Relaxed) {
-            return None;
-        }
-        let n = PROGRESS_TOKENS.fetch_add(1, Ordering::Relaxed);
-        let token = NumberOrString::String(format!("colab-apply-{n}"));
-        self.client
-            .send_request::<request::WorkDoneProgressCreate>(WorkDoneProgressCreateParams {
-                token: token.clone(),
-            })
-            .await
-            .ok()?;
-        self.client
-            .send_notification::<notification::Progress>(ProgressParams {
-                token: token.clone(),
-                value: ProgressParamsValue::WorkDone(WorkDoneProgress::Begin(
-                    WorkDoneProgressBegin {
-                        title: format!("colab: `{script}`"),
-                        cancellable: Some(false),
-                        message: Some("scanning the workspace".into()),
-                        percentage: None,
-                    },
-                )),
-            })
-            .await;
-        Some(token)
-    }
-
-    async fn report_progress(&self, token: &NumberOrString, message: String) {
-        self.client
-            .send_notification::<notification::Progress>(ProgressParams {
-                token: token.clone(),
-                value: ProgressParamsValue::WorkDone(WorkDoneProgress::Report(
-                    WorkDoneProgressReport {
-                        cancellable: Some(false),
-                        message: Some(message),
-                        percentage: None,
-                    },
-                )),
-            })
-            .await;
-    }
-
-    async fn end_progress(&self, token: NumberOrString, message: String) {
-        self.client
-            .send_notification::<notification::Progress>(ProgressParams {
-                token,
-                value: ProgressParamsValue::WorkDone(WorkDoneProgress::End(WorkDoneProgressEnd {
-                    message: Some(message),
-                })),
-            })
-            .await;
-    }
-
-    /// Markdown for the token at byte `offset`, if colab knows it.
-    fn hover_at(&self, text: &str, offset: usize) -> Option<String> {
-        let word = word_at(text, offset)?;
-        if let Some((lang, module)) = word.split_once("::") {
-            let backend = self.backends.get(lang)?;
-            let cap = backend.capabilities().iter().find(|c| c.module == module)?;
-            let mut out = format!("**`{lang}::{module}`** — {}\n\nActions:\n", cap.description);
-            for action in cap.actions {
-                let _ = writeln!(out, "- `{}` — {}", action.name, action.description);
-            }
-            return Some(out);
-        }
-        if STATIC_ACTIONS.iter().any(|(name, _)| *name == word) {
-            let checks = colab_dsl::check(text, &self.backends).ok()?;
-            let check = checks
-                .iter()
-                .find(|c| c.span.start <= offset && offset <= c.span.end)?;
-            let (lang, module) = check.namespace.split_once("::")?;
-            let cap = self
-                .backends
-                .get(lang)?
-                .capabilities()
-                .iter()
-                .find(|c| c.module == module)?;
-            return match cap.actions.iter().find(|a| a.name == word) {
-                Some(action) => Some(format!(
-                    "**`{word}`** on `{}` — {}",
-                    check.namespace, action.description
-                )),
-                None => Some(format!(
-                    "`{}` has no `{word}` action; it supports {}.",
-                    check.namespace,
-                    cap.actions
-                        .iter()
-                        .map(|a| format!("`{}`", a.name))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )),
-            };
-        }
-        let keyword = match word {
-            "refactor" => {
-                "**`refactor \"<name>\" { … }`** — one named script; its `match` blocks run in order."
-            }
-            "match" => {
-                "**`match <lang>::<module> \"<target>\" [in \"<glob>\"] { <action> }`** — one rule."
-            }
-            "in" => {
-                "**`in \"<glob>\"`** — limit the rule to matching paths (a leading `./` is ignored)."
-            }
-            "include" => {
-                "**`include \"<path>\"`** — splice another script's rules in here, resolved relative to this file."
-            }
-            "pattern" => {
-                "**`pattern <name> = '<code>'`** — a pattern `where` clauses name: `inside <name>`, `has`, `follows`, `precedes`, `until`. Script-wide, shared through `include`."
-            }
-            "let" => {
-                "**`let $NEW = $FROM | step | …`** — before a `<lang>::pattern` rule's `replace`: a value derived from a binding, for the template. Steps: `lower`, `upper`, `capitalize`, `snake`, `kebab`, `camel`, `pascal`, `upper_snake`, `strip_prefix(\"…\")`, `strip_suffix(\"…\")`, `replace(/re/, \"with\")`, `substring(start, end)`."
-            }
-            _ => return None,
-        };
-        Some(keyword.to_string())
-    }
-}
-
-/// The `[A-Za-z0-9_:]` run around byte `offset`, if any.
-fn word_at(text: &str, offset: usize) -> Option<&str> {
-    let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == ':';
-    let offset = offset.min(text.len());
-    let start = text[..offset]
-        .char_indices()
-        .rev()
-        .take_while(|(_, c)| is_word(*c))
-        .last()
-        .map_or(offset, |(i, _)| i);
-    let end = text[offset..]
-        .char_indices()
-        .find(|(_, c)| !is_word(*c))
-        .map_or(text.len(), |(i, _)| offset + i);
-    let word = text[start..end].trim_matches(':');
-    (!word.is_empty()).then_some(word)
 }
 
 /// LSP position (0-based line, UTF-16 column) of byte `offset`.
@@ -1046,192 +642,6 @@ fn span_range(text: &str, check: &RuleCheck) -> Range {
         position_at(text, check.span.start),
         position_at(text, check.span.end),
     )
-}
-
-impl Backend {
-    fn completions_for(&self, prefix: &str) -> Vec<CompletionItem> {
-        let trimmed = prefix.trim_start();
-
-        // `match … { <cursor>` — we're inside an action block.
-        // Check this *before* the bare `match ` prefix because that
-        // line also starts with `match `.
-        if trimmed.starts_with("match ") && trimmed.contains('{') {
-            return action_completions();
-        }
-
-        // After `match <ns> "<target>" ` → the clauses that come before
-        // the braces: where the rule applies, and `where`.
-        if let Some(after_match) = trimmed.strip_prefix("match ")
-            && target_closed(after_match)
-        {
-            return CLAUSES
-                .iter()
-                .map(|(name, snippet, detail)| CompletionItem {
-                    label: (*name).into(),
-                    kind: Some(CompletionItemKind::KEYWORD),
-                    insert_text: Some((*snippet).into()),
-                    insert_text_format: Some(InsertTextFormat::SNIPPET),
-                    detail: Some((*detail).into()),
-                    ..Default::default()
-                })
-                .collect();
-        }
-
-        // After `match ` but no `{` yet → namespace / module.
-        if let Some(after_match) = trimmed.strip_prefix("match ") {
-            return self.namespace_or_module_completions(after_match.trim_start());
-        }
-
-        // Inside a `refactor … { <cursor>` block — suggest `match`.
-        if trimmed.contains('{') {
-            return vec![CompletionItem {
-                label: "match".into(),
-                kind: Some(CompletionItemKind::KEYWORD),
-                insert_text: Some("match $1::$2 \"$3\" { $0 }".into()),
-                insert_text_format: Some(InsertTextFormat::SNIPPET),
-                detail: Some("Match block".into()),
-                ..Default::default()
-            }];
-        }
-
-        // Top-level: only `refactor` is meaningful.
-        if "refactor".starts_with(trimmed) && !trimmed.is_empty() {
-            return vec![CompletionItem {
-                label: "refactor".into(),
-                kind: Some(CompletionItemKind::KEYWORD),
-                insert_text: Some("refactor \"$1\" {\n    $0\n}".into()),
-                insert_text_format: Some(InsertTextFormat::SNIPPET),
-                detail: Some("Top-level codemod block".into()),
-                ..Default::default()
-            }];
-        }
-        Vec::new()
-    }
-
-    /// Suggest a namespace (`<lang>`) when nothing follows yet, or
-    /// the available modules for that backend once `<lang>::` is
-    /// typed.
-    fn namespace_or_module_completions(&self, fragment: &str) -> Vec<CompletionItem> {
-        if let Some((lang, _module_prefix)) = fragment.split_once("::") {
-            let Some(backend) = self.backends.get(lang) else {
-                return Vec::new();
-            };
-            return backend
-                .capabilities()
-                .iter()
-                .map(|cap| CompletionItem {
-                    label: cap.module.into(),
-                    kind: Some(CompletionItemKind::MODULE),
-                    detail: Some(cap.description.into()),
-                    ..Default::default()
-                })
-                .collect();
-        }
-
-        // No `::` typed yet — suggest a language. Each entry inserts
-        // `<lang>::` so the next completion can offer modules.
-        self.backends
-            .languages()
-            .iter()
-            .map(|lang| CompletionItem {
-                label: (*lang).into(),
-                kind: Some(CompletionItemKind::MODULE),
-                insert_text: Some(format!("{lang}::")),
-                insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
-                detail: Some("colab backend namespace".into()),
-                ..Default::default()
-            })
-            .collect()
-    }
-}
-
-/// The clauses between a rule's target and its braces.
-const CLAUSES: &[(&str, &str, &str)] = &[
-    ("in \"<glob>\"", "in \"$0\"", "only files matching the glob"),
-    (
-        "in fences",
-        "in fences",
-        "only inside Markdown code fences of this language",
-    ),
-    (
-        "and fences",
-        "and fences",
-        "this language's files and its Markdown code fences",
-    ),
-    (
-        "where",
-        "where $0",
-        "constraints on a pattern's metavariables",
-    ),
-];
-
-/// `true` when `after_match` (the text after `match `) has a namespace,
-/// a whole target string, and a space after it: the cursor is where the
-/// clauses go.
-fn target_closed(after_match: &str) -> bool {
-    let Some((_namespace, rest)) = after_match.split_once(char::is_whitespace) else {
-        return false;
-    };
-    let rest = rest.trim_start();
-    let close = if let Some(raw) = rest.strip_prefix("r##\"") {
-        raw.find("\"##").map(|i| 4 + i + 3)
-    } else if let Some(raw) = rest.strip_prefix("r#\"") {
-        raw.find("\"#").map(|i| 3 + i + 2)
-    } else {
-        rest.chars()
-            .next()
-            .filter(|q| *q == '"' || *q == '\'')
-            .and_then(|q| rest[1..].find(q).map(|i| i + 2))
-    };
-    close.is_some_and(|end| rest[end..].starts_with(char::is_whitespace))
-}
-
-/// Import clauses, offered alongside the actions: they follow one inside
-/// the braces.
-const IMPORT_CLAUSES: &[(&str, &str)] = &[
-    ("requires import", "requires import \"$0\""),
-    ("drops import", "drops import \"$0\" when unused"),
-    ("message", "message \"$0\""),
-    ("severity", "severity ${1|error,warning,info|}"),
-    ("let", "let \\$${1:NAME} = \\$${2:FROM} | ${3:snake}"),
-];
-
-fn action_completions() -> Vec<CompletionItem> {
-    let item = |detail: &str, (name, snippet): &(&str, &str)| CompletionItem {
-        label: (*name).into(),
-        kind: Some(CompletionItemKind::KEYWORD),
-        insert_text: Some((*snippet).into()),
-        insert_text_format: Some(InsertTextFormat::SNIPPET),
-        detail: Some(detail.into()),
-        ..Default::default()
-    };
-    STATIC_ACTIONS
-        .iter()
-        .map(|a| item("DSL action", a))
-        .chain(
-            IMPORT_CLAUSES
-                .iter()
-                .map(|c| item("clause (`let` before the action, the rest after it)", c)),
-        )
-        .collect()
-}
-
-/// Return the slice of `text` from the start of the line up to
-/// `position.character`. Used to drive context-aware completion.
-fn line_prefix(text: &str, position: Position) -> &str {
-    let line_idx = position.line as usize;
-    let mut start = 0usize;
-    for _ in 0..line_idx {
-        match text[start..].find('\n') {
-            Some(p) => start += p + 1,
-            None => return "",
-        }
-    }
-    let rest = &text[start..];
-    let line_end = rest.find('\n').unwrap_or(rest.len());
-    let line = &rest[..line_end];
-    let char_offset = (position.character as usize).min(line.len());
-    &line[..char_offset]
 }
 
 /// Start the LSP server, serving requests over stdio until the client
