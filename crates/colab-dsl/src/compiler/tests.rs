@@ -480,6 +480,27 @@ fn a_rewrite_that_matches_its_own_output_is_advised_once() {
 }
 
 #[test]
+fn a_backslash_n_in_text_or_markdown_is_advised_and_in_code_is_not() {
+    let backends = colab_backends::registry();
+    let warned = |script: &str| {
+        let r = compile(script, &backends).unwrap();
+        r.report()
+            .warnings()
+            .iter()
+            .any(|w| w.contains("a backslash and an `n`"))
+    };
+    assert!(warned(r#"match text::literal "a\nb" { replace "c" }"#));
+    assert!(warned(
+        r#"match markdown::item "Log[x]" { replace "y\nz" }"#
+    ));
+    // A code template's `\n` is the language's own escape.
+    assert!(!warned(
+        r#"match rust::pattern 'println!("x")' { replace 'print!("x\n")' }"#
+    ));
+    assert!(!warned(r#"match text::literal "a" { replace "b" }"#));
+}
+
+#[test]
 fn and_fences_lowers_to_the_rule_and_its_fenced_twin() {
     let backends = colab_backends::registry();
     let both = compile(

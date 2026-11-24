@@ -121,6 +121,18 @@ pub(crate) fn lower_match_ops(
             "the template still calls `{target}`, so every run rewrites its own output again; apply it once (`--write`, then remove the rule), or rename the function in the template"
         ));
     }
+    // Text and Markdown write a value as it is: `\n` there is a backslash
+    // and an `n`, not a line break (code templates and JSON / TOML values
+    // have escapes of their own, so they are left alone).
+    if matches!(namespace.lang.as_str(), "text" | "markdown")
+        && spec_texts(&spec).iter().any(|t| t.contains("\\n"))
+    {
+        advice.push(
+            "the rule's text holds `\\n`, which colab writes as a backslash and an `n`: DSL strings \
+             have no escapes. If a line break was meant, write one inside the quotes"
+                .into(),
+        );
+    }
     // The rule's own advice, from the first operation built (a fenced twin
     // would only repeat it).
     let collected: std::cell::RefCell<Option<Vec<String>>> = std::cell::RefCell::new(None);
@@ -219,6 +231,19 @@ pub(crate) fn lower_match_ops(
 
 /// Wrap `operation` so its `requires import` / `drops import … when
 /// unused` clauses run after it, on the files it changed.
+/// The texts a rule writes or looks for: its target and its value.
+fn spec_texts(spec: &RuleSpec) -> Vec<&str> {
+    let mut out = vec![spec.target()];
+    match spec {
+        RuleSpec::Replace { replacement, .. } => out.push(replacement),
+        RuleSpec::Set { value, .. } | RuleSpec::Insert { value, .. } => out.push(value),
+        RuleSpec::ReplaceCall { template, .. } => out.push(template),
+        RuleSpec::Create { path, template, .. } => out.extend([path.as_str(), template]),
+        RuleSpec::Delete { .. } | RuleSpec::Ensure { .. } => {}
+    }
+    out
+}
+
 pub(crate) fn with_import_clauses(
     operation: Box<dyn Operation>,
     imports: &[ImportClause],
