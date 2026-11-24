@@ -534,6 +534,26 @@ If the colab MCP server is connected, the same loop maps onto tools.
 Always pass `cwd` — without it relative paths resolve against wherever
 the server process started, and `include "..."` does not work at all.
 
+**Prefer `rules` (JSON) to `script`.** Every tool below that takes
+`script` takes `rules` instead: one object per DSL `match`, with no
+quoting to get right. Each has `lang`, `match`, and one action:
+
+```json
+{"rules": [
+  {"lang": "go", "match": "errors.Wrap($E, $M)", "replace": "fmt.Errorf(\"%s: %w\", $M, $E)",
+   "where": [{"not_inside": "func init() { $$$B }"}], "in": "internal/**"},
+  {"lang": "toml", "module": "key", "match": "dependencies.regex", "set": "\"1.10\""},
+  {"lang": "rust", "match": "dbg!($$$A)", "delete": true, "message": "no dbg! left in"}
+]}
+```
+
+`module` defaults to `pattern`. `where` takes `{"inside"|"has"|"follows"|"precedes": pattern}`
+(or `not_inside`, …, with `"directly": true`), `{"var": "$X", "matches": regex}` (or `is`,
+`type`, `resolves`, `calls`, `count`, `in`, with `"not": true`), `{"any"|"all": [...]}`,
+`{"top": true}`, or any DSL constraint as a string. The reply carries the equivalent
+`script`: save it as a `.colab` file (for `colab fix`, a pack, CI) once the rules work.
+On the CLI the same JSON goes to `colab refactor --rules-json <file|->` and `colab find --rules-json`.
+
 | Step | Tool |
 | ---- | ---- |
 | discover | `colab.list_languages`, then `colab.list_rules {lang}` |

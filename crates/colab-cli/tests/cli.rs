@@ -1509,7 +1509,7 @@ fn help_json_works_on_a_subcommand_with_required_args() {
     assert!(write.get("value_name").is_none());
     assert_eq!(
         value["required_groups"][0]["one_of"],
-        serde_json::json!(["script_path", "rules"])
+        serde_json::json!(["script_path", "rules", "rules_json"])
     );
 }
 

@@ -107,6 +107,10 @@ pub(super) struct FindScript {
     #[arg(short = 'e', long = "rule", value_name = "RULE")]
     rules: Vec<String>,
 
+    /// Rules as JSON (a file, or `-` for stdin), as `refactor --rules-json`.
+    #[arg(long = "rules-json", value_name = "PATH")]
+    rules_json: Option<PathBuf>,
+
     /// A structural pattern to find, e.g. `errors.Wrap($E, $M)`: the
     /// rule `match <lang>::pattern '<it>'`, with `--lang` or the language
     /// inferred from the files.
@@ -120,8 +124,9 @@ impl FindArgs {
         let given = ScriptArgs {
             script_path: self.script.script_path.take(),
             rules: std::mem::take(&mut self.script.rules),
+            rules_json: self.script.rules_json.take(),
         };
-        if given.script_path.is_some() || !given.rules.is_empty() {
+        if given.script_path.is_some() || !given.rules.is_empty() || given.rules_json.is_some() {
             return given.compile(backends);
         }
         // `colab find '<pattern>' <paths>`: grep's shape. The pattern is
@@ -150,6 +155,7 @@ impl FindArgs {
         ScriptArgs {
             script_path: None,
             rules: vec![rule],
+            rules_json: None,
         }
         .compile(backends)
     }

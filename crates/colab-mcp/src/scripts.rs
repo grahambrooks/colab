@@ -83,7 +83,7 @@ pub(crate) fn run_script<P: ProgressSink>(
         }
     }
 
-    let script = arg_str(args, "script")?;
+    let script = crate::rules::script_arg(args)?;
     let cwd = arg_opt_path(args, "cwd")?;
     let paths = arg_paths(args, "paths", cwd.as_deref())?;
     let options = arg_render_options(args)?;
@@ -95,7 +95,7 @@ pub(crate) fn run_script<P: ProgressSink>(
     };
 
     let refactoring =
-        compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
+        compile_script(&script.text, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
 
     let mut progress = Progress(sink, 0);
     let outcome = Pipeline::new(&refactoring, Source::walk(paths))
@@ -117,7 +117,19 @@ pub(crate) fn run_script<P: ProgressSink>(
     } else {
         mode
     };
-    Ok(finish_report(&collector, &outcome.report, mode))
+    let mut value = finish_report(&collector, &outcome.report, mode);
+    with_script(&mut value, &script);
+    Ok(value)
+}
+
+/// A reply to `rules` carries the script they stand for, to save as a
+/// `.colab` file once the rules work.
+fn with_script(value: &mut Value, script: &crate::rules::ScriptArg) {
+    if script.generated
+        && let Some(object) = value.as_object_mut()
+    {
+        object.insert("script".into(), json!(script.text));
+    }
 }
 
 /// `colab.test_rule`: run a script over one in-memory snippet.
@@ -128,7 +140,7 @@ pub(crate) fn run_script<P: ProgressSink>(
 /// exactly as they would on disk — a rule that says `files: 0` here will
 /// say it in `colab.preview` too.
 pub(crate) fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
-    let script = arg_str(args, "script")?;
+    let script = crate::rules::script_arg(args)?;
     let source = arg_str(args, "source")?;
     let path = PathBuf::from(arg_str(args, "path")?);
     let cwd = arg_opt_path(args, "cwd")?;
@@ -139,7 +151,7 @@ pub(crate) fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Valu
     };
 
     let refactoring =
-        compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
+        compile_script(&script.text, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
     let (change, report) = colab_dsl::pipeline::run_text(&refactoring, path.clone(), source)
         .map_err(ToolError::from_error)?;
 
@@ -181,14 +193,16 @@ pub(crate) fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Valu
         out.insert("warnings".into(), json!(warnings));
     }
     out.insert("output".into(), json!(change.after));
-    Ok(Value::Object(out))
+    let mut value = Value::Object(out);
+    with_script(&mut value, &script);
+    Ok(value)
 }
 
 /// `colab.find`: read-only search, the twin of `colab find --format json`.
 pub(crate) fn find(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
     use colab_core::find::{FindDetail, FindReport, Hit, Selector};
 
-    let script = arg_str(args, "script")?;
+    let script = crate::rules::script_arg(args)?;
     let cwd = arg_opt_path(args, "cwd")?;
     let paths = arg_paths(args, "paths", cwd.as_deref())?;
     let detail = match args.get("detail") {
@@ -203,7 +217,7 @@ pub(crate) fn find(args: &Value, backends: &BackendRegistry) -> Result<Value, To
     let max_results = arg_usize(args, "max_results", colab_core::find::DEFAULT_MAX_RESULTS)?;
 
     let refactoring =
-        compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
+        compile_script(&script.text, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
     let source = colab_dsl::pipeline::Source::walk(paths);
     // Scans first, over every file and every stage, so `in` reads what
     // colab.preview would; hits are still located in the files as they are.
@@ -241,7 +255,9 @@ pub(crate) fn find(args: &Value, backends: &BackendRegistry) -> Result<Value, To
             })
             .collect();
     }
-    Ok(render::find_json(&report))
+    let mut value = render::find_json(&report);
+    with_script(&mut value, &script);
+    Ok(value)
 }
 
 /// `colab.ast`: a pattern's or a snippet's syntax tree.

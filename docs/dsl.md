@@ -215,6 +215,48 @@ match rust::pattern 'mod $M { $$$B }' { replace 'mod $M;' }
 > verify with `--format diff` first. The corpus harness will refuse a
 > case whose second pass is not a no-op.
 
+## Rules as JSON
+
+Every MCP tool that takes `script` (`colab.preview`, `colab.apply`,
+`colab.find`, `colab.test_rule`, `colab.lint_script`) takes `rules`
+instead, and the CLI's `refactor` / `find` take the same JSON with
+`--rules-json <file|->`: one object per `match`, so an agent writes JSON
+it knows rather than the DSL's syntax and quoting.
+
+```json
+{"rules": [
+  {"lang": "rust", "match": "old($A)", "replace": "new($A)",
+   "where": [{"not_inside": "mod tests { $$$B }"}, {"var": "$A", "matches": "^cfg"}],
+   "in": "src/**"},
+  {"lang": "toml", "module": "key", "match": "package.edition", "set": "\"2024\""},
+  {"lang": "go", "match": "fmt.Println($$$A)", "delete": true,
+   "message": "no prints", "severity": "warning"}
+]}
+```
+
+| Key | DSL |
+| --- | --- |
+| `lang`, `module` (default `pattern`), `match` | `match <lang>::<module> "<match>"` |
+| one of `replace`, `replace_call`, `set`, `insert` (a string), `delete` / `ensure` (`true`), `create` (`{"path", "template"}`) | the action |
+| `in` | `in "<glob>"` |
+| `and_fences`, `and_prose` (`true`) | `and fences`, `and prose` |
+| `where` | `where …, …` (below) |
+| `let` (strings, `"$N = $F \| snake"`) | `let …` |
+| `requires_import`, `message`, `severity`, `id`, `url` | the same clauses |
+
+A `where` entry is an object or, for anything else, a DSL constraint
+string: `{"inside"|"has"|"follows"|"precedes": "<pattern>"}` (or
+`not_inside`, …; `"directly": true`, `"until": "<pattern>"`),
+`{"var": "$X", "matches": "<regex>"}` (or `is`, `in`, `type`,
+`resolves`, `implements`, `calls`, `called_by`, `count`; `"not": true`),
+`{"any"|"all": [...]}`, `{"top": true}`, `{"nth": n}`, `{"field": "<name>"}`.
+
+Each rule is written as DSL, every string escaped so it reads back as
+itself, and compiled by the one compiler, so the two forms do the same.
+An unknown key or a missing action is an error naming the rule
+(`rules[1]: give exactly one action …`). The MCP reply carries the
+equivalent `script`, to save as a `.colab` file once the rules work.
+
 ## `include` directive
 
 Scripts are `.colab` files. The older `.codemod` extension is still

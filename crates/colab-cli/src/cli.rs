@@ -511,17 +511,40 @@ struct ScriptArgs {
     /// a whole `refactor "…" { … }` script is used as-is.
     #[arg(short = 'e', long = "rule", value_name = "RULE")]
     rules: Vec<String>,
+
+    /// Rules as JSON instead of DSL, from a file (`-` for stdin): an array
+    /// of `{"lang", "match", <action>, "where", "in", …}` objects, or
+    /// `{"rules": [...]}`, as the MCP tools take them. The equivalent DSL
+    /// is logged at debug level (`RUST_LOG=debug`).
+    #[arg(long = "rules-json", value_name = "PATH")]
+    rules_json: Option<PathBuf>,
 }
 
 impl ScriptArgs {
     /// `true` when the script itself is read from stdin (`--script -`).
     fn reads_stdin(&self) -> bool {
         self.script_path.as_deref() == Some(Path::new("-"))
+            || self.rules_json.as_deref() == Some(Path::new("-"))
     }
 
     /// The script text, plus the path `include "..."` resolves against.
     fn load(&self) -> Result<(String, PathBuf)> {
         let cwd = std::env::current_dir().map_err(io_to_error)?;
+        if let Some(path) = &self.rules_json {
+            let text = if path == Path::new("-") {
+                let mut text = String::new();
+                io::stdin().read_to_string(&mut text).map_err(io_to_error)?;
+                text
+            } else {
+                fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?
+            };
+            let document: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| Error::Config(format!("--rules-json: not JSON: {e}")))?;
+            let script = colab_mcp::script_from_rules_json(&document)
+                .map_err(|e| Error::Config(format!("--rules-json: {e}")))?;
+            log::debug!("--rules-json as a script:\n{script}");
+            return Ok((script, cwd.join("<rules-json>")));
+        }
         match &self.script_path {
             Some(_) if self.reads_stdin() => {
                 let mut text = String::new();

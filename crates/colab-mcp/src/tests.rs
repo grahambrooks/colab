@@ -18,6 +18,62 @@ impl ProgressSink for EditsMidRun<'_> {
 }
 
 #[test]
+fn rules_run_as_a_script_does_and_the_reply_holds_the_script() {
+    let dir = std::env::temp_dir().join(format!("colab-mcp-rules-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("main.go");
+    std::fs::write(
+        &file,
+        "package main\n\nfunc main() {\n\tlog.Print(\"a \\\"q\\\"\")\n\tdebug(1)\n}\n",
+    )
+    .unwrap();
+    // Quotes and backslashes in the values need no DSL quoting.
+    let arguments = json!({
+        "rules": [
+            {"lang": "go", "match": "log.Print($M)", "replace": "log.Println($M)"},
+            {"lang": "go", "match": "debug($$$A)", "delete": true,
+             "where": [{"inside": "func main() { $$$B }"}]}
+        ],
+        "paths": ["."],
+        "cwd": dir.to_string_lossy()
+    });
+    let value = run_script(
+        &arguments,
+        &registry(),
+        &NoTools,
+        RunMode::Apply,
+        &mut NoProgress,
+    )
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "package main\n\nfunc main() {\n\tlog.Println(\"a \\\"q\\\"\")\n}\n"
+    );
+    let script = value["script"].as_str().expect("the generated script");
+    assert!(
+        script.contains("match go::pattern \"log.Print($M)\""),
+        "{script}"
+    );
+    // The saved script compiles to the same rules.
+    assert_eq!(
+        colab_dsl::compile(script, &registry()).unwrap().rules.len(),
+        2
+    );
+    // A malformed rule is a tool error naming the rule.
+    let bad = json!({"rules": [{"lang": "go", "match": "f()"}], "paths": ["."]});
+    let err = run_script(
+        &bad,
+        &registry(),
+        &NoTools,
+        RunMode::Preview,
+        &mut NoProgress,
+    )
+    .unwrap_err();
+    assert!(format!("{err:?}").contains("rules[0]: give exactly one action"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn apply_merges_a_file_changed_after_the_walk_read_it() {
     let dir = std::env::temp_dir().join(format!("colab-mcp-stale-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

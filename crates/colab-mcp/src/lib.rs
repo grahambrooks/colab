@@ -73,6 +73,8 @@ use serde_json::{Map, Value, json};
 mod args;
 mod progress;
 pub mod resources;
+mod rules;
+pub use rules::script_from_rules_json;
 mod schema;
 mod scripts;
 mod tools;
@@ -110,11 +112,14 @@ comments and strings, and qualified calls (`svg::to_svg(x)`) match a bare patter
 (`to_svg($A)`).\n\
 \n\
 Workflow: colab.find (read-only) or colab.preview to see what a rule touches, then colab.apply. \
-Always pass `cwd`. A script can be bare rules:\n\
-  match rust::pattern 'serde_yaml::from_str($S)' { replace 'serde_saphyr::from_str($S)' }\n\
-  match toml::key \"package.edition\" { set '\"2024\"' }\n\
-`$X` binds one node, `$$$X` a sequence; `where` narrows (`where inside 'impl Foo { $$$B }'`). \
-A rule reported with `files: 0` matched nothing: fix the rule, do not fall back to sed.\n\
+Always pass `cwd`. Give `rules` as JSON (no DSL to learn):\n\
+  {\"rules\": [{\"lang\": \"rust\", \"match\": \"serde_yaml::from_str($S)\", \"replace\": \"serde_saphyr::from_str($S)\"},\n\
+             {\"lang\": \"toml\", \"module\": \"key\", \"match\": \"package.edition\", \"set\": \"\\\"2024\\\"\"}]}\n\
+`match` is code with `$X` (one node) and `$$$X` (a sequence); the action is one of replace, \
+delete: true, set, insert, …; `where` narrows: [{\"not_inside\": \"mod tests { $$$B }\"}, \
+{\"var\": \"$X\", \"matches\": \"^cfg\"}]; `in` takes a glob. The reply carries the equivalent \
+`script`, which you may also send instead of `rules`. A rule reported with `files: 0` matched \
+nothing: fix the rule, do not fall back to sed.\n\
 \n\
 Also: colab.rename_symbol / colab.rename (scope-aware, via the language server), \
 colab.edit_symbol (replace one declaration by name), colab.outline / colab.section / \
@@ -592,10 +597,10 @@ fn call_tool(
             None => Ok(colab_schema_json(backends)),
         },
         "colab.lint_script" => {
-            let script = arg_str(args, "script")?;
+            let script = crate::rules::script_arg(args)?;
             let cwd = arg_opt_path(args, "cwd")?;
-            let refactoring =
-                compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
+            let refactoring = compile_script(&script.text, cwd.as_deref(), backends)
+                .map_err(ToolError::from_error)?;
             let rules: Vec<String> = refactoring
                 .rules
                 .iter()
@@ -611,6 +616,9 @@ fn call_tool(
             let warnings = report.warnings();
             if !warnings.is_empty() {
                 doc["warnings"] = json!(warnings);
+            }
+            if script.generated {
+                doc["script"] = json!(script.text);
             }
             Ok(doc)
         }

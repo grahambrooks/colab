@@ -8,7 +8,7 @@
 use colab_core::render::{DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_FILES};
 use serde_json::{Value, json};
 
-const SCRIPT_PARAM: &str = "Codemod script source: the contents of a `.colab` file, or bare rules \
+const SCRIPT_PARAM: &str = "Give this or `rules` (JSON rules, no DSL to learn). Codemod script source: the contents of a `.colab` file, or bare rules \
      (`match rust::pattern 'f($A)' { replace 'g($A)' }`, one or more) with no `refactor` block \
      around them, as a `.colab` file may also be written.";
 const PATHS_PARAM: &str = "Files or directories to walk recursively. Each entry is processed in order. \
@@ -36,6 +36,7 @@ fn apply_properties() -> Value {
 fn run_properties() -> Value {
     json!({
         "script": { "type": "string", "description": SCRIPT_PARAM },
+                    "rules": crate::rules::rules_schema(),
         "paths": {
             "type": "array",
             "items": { "type": "string" },
@@ -144,9 +145,10 @@ pub fn list() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "script": { "type": "string", "description": SCRIPT_PARAM },
+                    "rules": crate::rules::rules_schema(),
                     "cwd": { "type": "string", "description": CWD_PARAM }
                 },
-                "required": ["script"],
+                "required": [],
                 "additionalProperties": false
             }
         }),
@@ -158,12 +160,13 @@ pub fn list() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "script": { "type": "string", "description": SCRIPT_PARAM },
+                    "rules": crate::rules::rules_schema(),
                     "source": { "type": "string", "description": "The snippet to transform, e.g. the contents of one source file." },
                     "path": { "type": "string", "description": "A file name for the snippet, e.g. `main.go`. Only its extension and shape matter: it decides which rules apply (and is matched against `in \"<glob>\"` scopes). Nothing is opened on disk." },
                     "expected": { "type": "string", "description": "Optional: the output you expect. The response reports whether it matched." },
                     "cwd": { "type": "string", "description": CWD_PARAM }
                 },
-                "required": ["script", "source", "path"],
+                "required": ["source", "path"],
                 "additionalProperties": false
             }
         }),
@@ -175,6 +178,7 @@ pub fn list() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "script": { "type": "string", "description": SCRIPT_PARAM },
+                    "rules": crate::rules::rules_schema(),
                     "paths": {
                         "type": "array",
                         "items": { "type": "string" },
@@ -195,7 +199,7 @@ pub fn list() -> Vec<Value> {
                         "description": "List at most this many matches; the rest are counted under `truncated`."
                     }
                 },
-                "required": ["script", "paths"],
+                "required": ["paths"],
                 "additionalProperties": false
             }
         }),
@@ -221,7 +225,7 @@ pub fn list() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": run_properties(),
-                "required": ["script", "paths"],
+                "required": ["paths"],
                 "additionalProperties": false
             }
         }),
@@ -280,7 +284,7 @@ pub fn list() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": apply_properties(),
-                "required": ["script", "paths"],
+                "required": ["paths"],
                 "additionalProperties": false
             }
         }),
