@@ -967,21 +967,10 @@ impl ScriptArgs {
     /// the rules the user actually typed, so line, column, and caret
     /// snippet all point into their `-e` text rather than the wrapper.
     fn relocate(&self, text: &str, err: Error) -> Error {
-        let Error::Parse(detail) = err else {
-            return err;
-        };
-        let rules = self.rules.join("\n");
-        match text.strip_prefix(INLINE_PREFIX) {
-            Some(_) if self.script_path.is_none() => {
-                let offset = detail.offset.saturating_sub(INLINE_PREFIX.len());
-                Error::Parse(colab_core::ParseDetail::at_offset(
-                    &rules,
-                    offset,
-                    detail.message,
-                    detail.expected,
-                ))
-            }
-            _ => Error::Parse(detail),
+        if self.script_path.is_none() && text.starts_with(codemod::inline::PREFIX) {
+            codemod::inline::relocate(&self.rules.join("\n"), err)
+        } else {
+            err
         }
     }
 }
@@ -992,16 +981,12 @@ impl ScriptArgs {
 /// line number the user sees in their own `-e` list (rule N is line N
 /// when each rule is a single line).
 fn inline_script(rules: &[String]) -> String {
-    if let [only] = rules
-        && only.trim_start().starts_with("refactor")
-    {
-        return only.clone();
+    let joined = rules.join("\n");
+    if let [_] = rules {
+        return codemod::inline::wrap(&joined).unwrap_or(joined);
     }
-    format!("{INLINE_PREFIX}{}\n}}\n", rules.join("\n"))
+    format!("{}{joined}\n}}\n", codemod::inline::PREFIX)
 }
-
-/// The wrapper `inline_script` puts before the first `-e` rule.
-const INLINE_PREFIX: &str = "refactor \"inline\" { ";
 
 #[derive(Parser, Debug)]
 struct ListRulesArgs {

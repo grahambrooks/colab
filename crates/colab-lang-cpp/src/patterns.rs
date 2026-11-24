@@ -28,6 +28,7 @@ pub(crate) fn language() -> PatternLanguage {
             "void _() {\n@@PATTERN@@;\n}\n",
         ],
         also: &[],
+        qualified_calls: None,
     }
 }
 

@@ -23,6 +23,7 @@ pub(crate) fn language() -> PatternLanguage {
             "package p\n@@PATTERN@@\n",
         ],
         also: &[],
+        qualified_calls: None,
     }
 }
 

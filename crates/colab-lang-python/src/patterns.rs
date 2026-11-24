@@ -28,6 +28,7 @@ pub(crate) fn language() -> PatternLanguage {
             "f(@@PATTERN@@)\n",
             "{@@PATTERN@@}\n",
         ],
+        qualified_calls: None,
     }
 }
 

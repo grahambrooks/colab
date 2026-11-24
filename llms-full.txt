@@ -244,6 +244,19 @@ refactor "modernise" {
 | `$$$NAME` | zero or more sibling nodes — e.g. the rest of an argument list — bound to `NAME` |
 | `$_` | one node, not bound |
 
+**Qualified calls (Rust).** A `rust::pattern` that starts with a bare
+call also matches the same call through any path: `to_svg($A, $B)`
+finds `to_svg(a, b)`, `svg::to_svg(a, b)` and
+`diagram_scene::svg::to_svg(a, b)`, but not the method call
+`x.to_svg(a, b)`. A `replace` template that starts with a bare call
+keeps the path it matched when it calls the same function or a rename
+of it (`render($A, &$B)` turns `svg::to_svg(c, d)` into
+`svg::render(c, &d)`). A template that wraps the call
+(`Ok(to_svg($A, $B))`) or is not a call is used as written, so the path
+is dropped. A pattern whose callee is already a path
+(`svg::to_svg($A, $B)`) matches only that path. `$COLAB_PATH` is
+reserved for the matched path.
+
 Names are upper-case letters, digits and `_`. A name used twice must bind
 identical text: `$A == $A` matches `x == x` but not `x == y`. Any other
 `$` — a PHP variable, a `$` inside a string — is literal.
@@ -725,9 +738,10 @@ colab explain  -e 'match python::import "six" { delete }'
 ```
 
 Parse errors are reported against the rules as typed — rule N is line N,
-with the column inside that rule. Over MCP every tool already takes the
-script as text, so the same one-liner works there wrapped in a
-`refactor` block.
+with the column inside that rule. The MCP tools take the same bare
+rules as their `script`, wrap them the same way, and report parse errors
+against the text sent; a script that starts with `refactor` (past
+comments) is compiled as written.
 
 ## Multi-rule scripts
 

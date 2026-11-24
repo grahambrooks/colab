@@ -90,6 +90,30 @@ const INVALID_PARAMS: i64 = -32602;
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
+/// What `initialize` tells the host about when to reach for colab. Hosts
+/// such as Claude Code put it in the agent's system prompt, beside the
+/// tool names, so it is the one description an agent reads before it
+/// decides between colab, its own edit tool and `sed`. Keep it short.
+pub const INSTRUCTIONS: &str = "\
+colab makes structural, syntax-aware edits (tree-sitter; 12 languages plus TOML, JSON and \
+Markdown). Use it instead of sed, perl -pi, a script that rewrites files, or a series of \
+single edits whenever the same change repeats: a rename or replacement that `grep -l` finds \
+in more than one file, an import path, a call-site shape, a config key. Its matches ignore \
+comments and strings, and qualified calls (`svg::to_svg(x)`) match a bare pattern \
+(`to_svg($A)`).\n\
+\n\
+Workflow: colab.find (read-only) or colab.preview to see what a rule touches, then colab.apply. \
+Always pass `cwd`. A script can be bare rules:\n\
+  match rust::pattern 'serde_yaml::from_str($S)' { replace 'serde_saphyr::from_str($S)' }\n\
+  match toml::key \"package.edition\" { set '\"2024\"' }\n\
+`$X` binds one node, `$$$X` a sequence; `where` narrows (`where inside 'impl Foo { $$$B }'`). \
+A rule reported with `files: 0` matched nothing: fix the rule, do not fall back to sed.\n\
+\n\
+Also: colab.rename_symbol / colab.rename (scope-aware, via the language server), \
+colab.edit_symbol (replace one declaration by name), colab.outline / colab.section / \
+colab.edit_markdown (Markdown by heading), colab.set_config_key, colab.move_import. \
+colab.schema / colab.list_rules list each language's modules; colab.lint_script checks a script.";
+
 /// Run the MCP server reading from `reader` and writing to
 /// `writer`. Returns when the client closes stdin (EOF) or sends an
 /// `exit` notification.
@@ -239,7 +263,8 @@ pub fn handle_with(
                 "serverInfo": {
                     "name": "colab-mcp",
                     "version": env!("CARGO_PKG_VERSION"),
-                }
+                },
+                "instructions": INSTRUCTIONS,
             }),
         )),
         // `initialized` is a notification: client tells server that
@@ -637,12 +662,20 @@ fn compile_script(
     cwd: Option<&Path>,
     backends: &BackendRegistry,
 ) -> Result<colab_dsl::Refactoring, colab_core::Error> {
+    // Bare `match …` rules are wrapped as the CLI's `-e` wraps them, and a
+    // parse error is reported against the text the caller sent.
+    let wrapped = colab_dsl::inline::wrap(script);
+    let text = wrapped.as_deref().unwrap_or(script);
     let refactoring = match cwd {
         // `compile_at_path` resolves includes against the file's parent,
         // so point it at a notional script inside `cwd`.
-        Some(dir) => colab_dsl::compile_at_source(script, &dir.join("<script>"), backends),
-        None => compile(script, backends),
-    }?;
+        Some(dir) => colab_dsl::compile_at_source(text, &dir.join("<script>"), backends),
+        None => compile(text, backends),
+    }
+    .map_err(|e| match wrapped {
+        Some(_) => colab_dsl::inline::relocate(script, e),
+        None => e,
+    })?;
     // A phased run reads every file before it edits one; the MCP tools
     // run file by file.
     if refactoring.has_scans() {
@@ -1171,6 +1204,63 @@ mod tests {
         assert_eq!(resp["id"], 1);
         assert_eq!(resp["result"]["protocolVersion"], PROTOCOL_VERSION);
         assert!(resp["result"]["capabilities"]["tools"].is_object());
+        let instructions = resp["result"]["instructions"].as_str().unwrap();
+        assert!(instructions.contains("instead of sed"), "{instructions}");
+    }
+
+    #[test]
+    fn instructions_name_only_tools_the_server_has() {
+        // The binary adds the LSP and Markdown tools; name those here.
+        let injected = [
+            "colab.rename_symbol",
+            "colab.rename",
+            "colab.edit_symbol",
+            "colab.outline",
+            "colab.section",
+        ];
+        let known: Vec<String> = tools::list()
+            .iter()
+            .filter_map(|t| t["name"].as_str().map(str::to_string))
+            .chain(injected.iter().map(ToString::to_string))
+            .collect();
+        for word in INSTRUCTIONS.split(|c: char| !(c.is_alphanumeric() || c == '.' || c == '_')) {
+            let word = word.trim_end_matches('.');
+            if word.starts_with("colab.") {
+                assert!(known.iter().any(|k| k == word), "{word} is not a tool");
+            }
+        }
+    }
+
+    #[test]
+    fn a_bare_rule_needs_no_refactor_block() {
+        let ok = call_ok(
+            "colab.test_rule",
+            json!({
+                "script": "match rust::pattern 'f($A)' { replace 'g($A)' }",
+                "source": "fn m() { f(1); }\n",
+                "path": "m.rs",
+            }),
+        );
+        assert_eq!(ok["changed"], true, "{ok}");
+
+        let req = json!({
+            "jsonrpc":"2.0","id":41,"method":"tools/call",
+            "params":{"name":"colab.test_rule","arguments": {
+                "script": "match rust::pattern 'f($A)' { nope }",
+                "source": "fn m() {}\n",
+                "path": "m.rs",
+            }}
+        });
+        let resp = handle(&req, &registry()).unwrap();
+        assert_eq!(resp["result"]["isError"], true, "{resp}");
+        let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+        let err: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(err["error"]["kind"], "parse", "{err}");
+        assert_eq!(err["error"]["line"], 1);
+        assert_eq!(
+            err["error"]["column"], 31,
+            "the column in the text sent, not the wrapper"
+        );
     }
 
     #[test]

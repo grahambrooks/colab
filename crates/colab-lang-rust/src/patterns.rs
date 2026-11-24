@@ -32,6 +32,7 @@ pub(crate) fn language() -> PatternLanguage {
             "fn f() {\n_S {\n@@PATTERN@@\n};\n}\n",
         ],
         also: &[],
+        qualified_calls: Some("::"),
     }
 }
 

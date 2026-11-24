@@ -23,6 +23,7 @@ pub(crate) fn language() -> PatternLanguage {
             "class C {\n@@PATTERN@@\n}\n",
         ],
         also: &[],
+        qualified_calls: None,
     }
 }
 

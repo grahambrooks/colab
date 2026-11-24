@@ -8,7 +8,9 @@
 use colab_core::render::{DEFAULT_MAX_DIFF_BYTES, DEFAULT_MAX_FILES};
 use serde_json::{Value, json};
 
-const SCRIPT_PARAM: &str = "Codemod script source (the contents of a `.colab` file).";
+const SCRIPT_PARAM: &str = "Codemod script source: the contents of a `.colab` file, or bare rules \
+     (`match rust::pattern 'f($A)' { replace 'g($A)' }`, one or more), which are wrapped in a \
+     `refactor` block as `colab refactor -e` wraps them.";
 const PATHS_PARAM: &str = "Files or directories to walk recursively. Each entry is processed in order. \
      Relative paths resolve against `cwd` when given, otherwise the server's \
      working directory.";

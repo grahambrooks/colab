@@ -20,6 +20,7 @@ pub(crate) fn language() -> PatternLanguage {
         expando: 'µ',
         contexts: &["fun f() {\n@@PATTERN@@\n}\n", "class C {\n@@PATTERN@@\n}\n"],
         also: &[],
+        qualified_calls: None,
     }
 }
 

@@ -65,7 +65,18 @@ pub struct PatternLanguage {
     /// `Optional[$T]` is a `subscript` in an expression but a
     /// `generic_type` in an annotation, and a pattern should find both.
     pub also: &'static [&'static str],
+    /// The language's path separator (`::` in Rust), when a call's
+    /// callee can be written bare or qualified. A pattern that starts
+    /// with a bare call, `to_svg($A)`, then also matches
+    /// `svg::to_svg(x)` and `crate::svg::to_svg(x)`, and a template that
+    /// starts with a bare call keeps the path it matched (see
+    /// [`QUALIFIER`]). `None` leaves callees compared as written.
+    pub qualified_calls: Option<&'static str>,
 }
+
+/// The metavariable a qualified-call form binds the matched path to.
+/// A user pattern cannot bind it by accident: it is reserved.
+pub const QUALIFIER: &str = "$COLAB_PATH";
 
 /// ast-grep's view of a [`PatternLanguage`].
 #[derive(Clone)]
@@ -149,6 +160,57 @@ fn is_var_start(c: char) -> bool {
     c.is_ascii_uppercase() || c == '_'
 }
 
+/// Words that can stand before `(` without being a callee.
+const NOT_CALLEES: &[&str] = &[
+    "as", "async", "await", "box", "break", "const", "crate", "dyn", "else", "fn", "for", "if",
+    "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "self",
+    "Self", "static", "super", "type", "unsafe", "use", "where", "while", "yield",
+];
+
+/// When `text` starts with a bare call (`f(`, or `f::<T>(` with `sep` =
+/// `::`), the same text with [`QUALIFIER`] and `sep` before it, and the
+/// callee's name. `None` for anything else: a metavariable callee, a
+/// path that is already qualified, a macro, a keyword.
+fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t str)> {
+    let body = text.trim_start();
+    let lead = &text[..text.len() - body.len()];
+    let end = body
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(body.len());
+    let callee = &body[..end];
+    let first = callee.chars().next()?;
+    if !(first.is_alphabetic() || first == '_') || callee == "_" || NOT_CALLEES.contains(&callee) {
+        return None;
+    }
+    let rest = body[end..].trim_start();
+    let turbofish = rest
+        .strip_prefix(sep)
+        .is_some_and(|r| r.trim_start().starts_with('<'));
+    (rest.starts_with('(') || turbofish).then(|| (format!("{lead}{QUALIFIER}{sep}{body}"), callee))
+}
+
+/// What the qualified form of a bare-call pattern needs to rewrite.
+#[derive(Debug, Clone)]
+struct Qualified {
+    separator: &'static str,
+    /// The pattern's callee, `to_svg` in `to_svg($A)`.
+    callee: String,
+}
+
+impl Qualified {
+    /// The template to fill for a qualified match: the matched path goes
+    /// before a template's own bare callee when it is the same function
+    /// (`to_svg($A, opts)`) or a rename of it (`render($A)`), so
+    /// `svg::to_svg(x)` becomes `svg::render(x)`. A template that wraps
+    /// the call (`Ok(to_svg($A))`) or is not a call (`$A.to_svg()`) is
+    /// used as written.
+    fn template(&self, template: &str) -> Option<String> {
+        let (qualified, callee) = qualify_call(template, self.separator)?;
+        let renamed = !template.contains(self.callee.as_str());
+        (callee == self.callee || renamed).then_some(qualified)
+    }
+}
+
 /// One place a pattern matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
@@ -181,6 +243,9 @@ pub struct StructuralPattern {
     lets: Vec<Derived>,
     /// The same pattern compiled in the language's `also` contexts.
     also: Vec<StructuralPattern>,
+    /// Set on the form compiled with [`QUALIFIER`] before a bare callee:
+    /// a template's own bare call gets the matched path back.
+    qualified: Option<Qualified>,
     /// The pattern's named structure, to refuse a match whose node has
     /// children the pattern does not account for (see [`Shape`]).
     shape: Shape,
@@ -293,6 +358,20 @@ impl StructuralPattern {
             {
                 primary.also.push(alt);
             }
+        }
+        // `to_svg($A)` also as `$COLAB_PATH::to_svg($A)`: the callee
+        // `svg::to_svg` is a scoped path, which a bare identifier never
+        // matches, so without this a pattern silently misses every
+        // qualified call to the function it names.
+        if let Some(sep) = language.qualified_calls
+            && let Some((qualified, callee)) = qualify_call(text, sep)
+            && let Ok(mut alt) = Self::compile_one(language, &qualified, true)
+        {
+            alt.qualified = Some(Qualified {
+                separator: sep,
+                callee: callee.to_string(),
+            });
+            primary.also.push(alt);
         }
         Ok(primary)
     }
@@ -447,6 +526,7 @@ impl StructuralPattern {
             constraints: Vec::new(),
             lets: Vec::new(),
             also: Vec::new(),
+            qualified: None,
             shape,
         }
     }
@@ -627,6 +707,8 @@ impl StructuralPattern {
         if matches.is_empty() {
             return source.to_string();
         }
+        let requalified = self.qualified.as_ref().and_then(|q| q.template(template));
+        let template = requalified.as_deref().unwrap_or(template);
         let (template, names) = transformable_template(template);
         let fix = TemplateFix::with_transform(&template, &self.lang, &names);
         // A `let`'s `rewrite(<name>)` step: for each form the rewriter's
@@ -835,6 +917,7 @@ mod tests {
             expando: 'µ',
             contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
             also: &[],
+            qualified_calls: None,
         }
     }
 
@@ -844,6 +927,7 @@ mod tests {
             expando: 'µ',
             contexts: &[],
             also: &["def _(x: @@PATTERN@@): pass\n"],
+            qualified_calls: None,
         }
     }
 
@@ -1289,6 +1373,7 @@ mod tests {
             expando: 'µ',
             contexts: &["fn f() { @@PATTERN@@ }"],
             also: &[],
+            qualified_calls: None,
         }
     }
 
@@ -1354,6 +1439,7 @@ mod tests {
             expando: 'µ',
             contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
             also: &[],
+            qualified_calls: None,
         };
         let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();
         let src = "package p\n\nfunc f() {\n\tif x {\n\t\tlog.Print(a)\n\t}\n}\n";
@@ -1394,6 +1480,71 @@ mod tests {
                 ("MSG".to_string(), "\"f failed\"".to_string())
             ]
         );
+    }
+
+    fn qualified_rust() -> PatternLanguage {
+        PatternLanguage {
+            qualified_calls: Some("::"),
+            ..rust()
+        }
+    }
+
+    const CALLS_SRC: &str = "fn f() {\n    to_svg(a, b);\n    svg::to_svg(c, d);\n    \
+                             diagram_scene::svg::to_svg(e, f);\n    x.to_svg(g, h);\n}\n";
+
+    #[test]
+    fn a_bare_call_pattern_also_finds_qualified_calls() {
+        let p = StructuralPattern::compile(&qualified_rust(), "to_svg($A, $B)").unwrap();
+        let found: Vec<_> = p.find(CALLS_SRC).into_iter().map(|f| f.text).collect();
+        assert_eq!(
+            found,
+            [
+                "to_svg(a, b)",
+                "svg::to_svg(c, d)",
+                "diagram_scene::svg::to_svg(e, f)"
+            ],
+            "the method call is not a call of the function"
+        );
+        // A user metavariable binds the same as before; the path's is internal.
+        let qualified = &p.find(CALLS_SRC)[1];
+        assert!(qualified.captures.contains(&("A".into(), "c".into())));
+    }
+
+    #[test]
+    fn a_rewrite_keeps_the_path_it_matched() {
+        let p = StructuralPattern::compile(&qualified_rust(), "to_svg($A, $B)").unwrap();
+        let renamed = p.rewrite(CALLS_SRC, "render($A, &$B)");
+        assert!(renamed.contains("    render(a, &b);"), "{renamed}");
+        assert!(renamed.contains("    svg::render(c, &d);"), "{renamed}");
+        assert!(
+            renamed.contains("diagram_scene::svg::render(e, &f);"),
+            "{renamed}"
+        );
+        assert!(renamed.contains("x.to_svg(g, h)"), "{renamed}");
+        assert_eq!(p.rewrite(&renamed, "render($A, &$B)"), renamed);
+        // A wrap keeps the call as matched inside it only when bare.
+        let method = p.rewrite(CALLS_SRC, "$A.to_svg($B)");
+        assert!(method.contains("    c.to_svg(d);"), "{method}");
+    }
+
+    #[test]
+    fn only_a_bare_callee_is_qualified() {
+        for text in [
+            "$F($A)",
+            "svg::to_svg($A)",
+            "println!($A)",
+            "if ($A) {}",
+            "x.f($A)",
+        ] {
+            assert!(qualify_call(text, "::").is_none(), "{text}");
+        }
+        assert_eq!(
+            qualify_call("parse::<T>($A)", "::").map(|q| q.0),
+            Some("$COLAB_PATH::parse::<T>($A)".into())
+        );
+        // Without the separator set, nothing changes.
+        let p = StructuralPattern::compile(&rust(), "to_svg($A, $B)").unwrap();
+        assert_eq!(p.find(CALLS_SRC).len(), 1);
     }
 
     #[test]

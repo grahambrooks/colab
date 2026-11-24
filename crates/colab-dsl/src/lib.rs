@@ -8,6 +8,7 @@
 
 pub mod ast;
 pub mod compiler;
+pub mod inline;
 pub mod model;
 
 pub use compiler::{RuleCheck, check, compile, compile_at_path, compile_at_source, parse};

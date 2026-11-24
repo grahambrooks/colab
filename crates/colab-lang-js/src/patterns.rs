@@ -22,6 +22,7 @@ pub(crate) fn language() -> PatternLanguage {
         // `debug: true` alone is a labelled statement; in an object it is
         // the property a pattern usually means. Match both.
         also: &["({@@PATTERN@@});\n"],
+        qualified_calls: None,
     }
 }
 
