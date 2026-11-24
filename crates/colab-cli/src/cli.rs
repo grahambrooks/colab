@@ -336,6 +336,16 @@ pub(crate) struct ApplyFlags {
     #[arg(long)]
     pub(crate) tidy: bool,
 
+    /// Before writing, open each changed file in its language server with
+    /// the change made, and treat every error diagnostic the change adds as
+    /// a conflict, which refuses the write (exit 11), as `refactor
+    /// --verify-lsp` does. Catches a server's own edit that does not build
+    /// (a moved item its callers can no longer see). `--verify-lsp='<cmd>'`
+    /// names the server.
+    #[arg(long = "verify-lsp", value_name = "CMD", num_args = 0..=1,
+          require_equals = true, default_missing_value = "")]
+    pub(crate) verify_lsp: Option<String>,
+
     /// `summary`, `counts`, or `diff`, as for `refactor`.
     #[arg(long, value_name = "LEVEL", value_parser = parse_detail)]
     detail: Option<Detail>,

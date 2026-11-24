@@ -49,7 +49,9 @@ range, `colab rename` the new `modname`, then `--title "Extract module to
 file"` (with `--allow-dirty` when the file has your uncommitted changes).
 Check its work: it can miss callers in other files, infer an incomplete
 import list (replace it with `use super::*;`), and put `pub(crate)` on a
-trait impl's method.
+trait impl's method. `--verify-lsp` refuses an action whose own files
+gain an error; add `--verify 'cargo check -q --workspace --tests'` for a
+caller elsewhere that it broke.
 
 ## 2. Choose the tool by the shape of the change
 

@@ -2307,6 +2307,43 @@ fn lsp_cmd(root: &std::path::Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
+fn an_action_whose_edit_adds_an_error_is_refused_with_verify_lsp() {
+    // "Uppercase file" turns `broken` into `BROKEN`, on which the fake
+    // server reports an error: --verify-lsp refuses the write.
+    let text = "fn broken() {}\n";
+    let root = git_workspace("action-verify-lsp", &[("a.rs", text)]);
+    let run = |extra: &[&str]| {
+        let mut args = vec![
+            "action",
+            "--at",
+            "a.rs:1:4",
+            "--title",
+            "Uppercase file",
+            "--write",
+        ];
+        args.extend_from_slice(extra);
+        lsp_cmd(&root, &args)
+    };
+    let verify = format!("--verify-lsp={}", fake_lsp());
+    let refused = run(&[verify.as_str()]);
+    assert_eq!(
+        refused.status.code(),
+        Some(11),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert_eq!(fs::read_to_string(root.join("a.rs")).unwrap(), text);
+    // Without it the edit is written.
+    let written = run(&[]);
+    assert_eq!(written.status.code(), Some(0));
+    assert_eq!(
+        fs::read_to_string(root.join("a.rs")).unwrap(),
+        "FN BROKEN() {}\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn an_action_that_creates_a_file_writes_it() {
     // rust-analyzer's "Extract module to file" creates a file and fills it
     // in one edit; the file is not on disk when the write is checked, so

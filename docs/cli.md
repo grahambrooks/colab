@@ -756,7 +756,7 @@ revertable.
 colab rename (--at FILE:LINE:COL | --symbol NAME --in FILE) --to NEW
              [--lsp '<command>'] [--root DIR] [-C DIR]
              [--format human|json|ndjson|diff] [--write|--dry-run|--check]
-             [--backup DIR] [--verify CMD] [--allow-dirty] [--commit-moves]
+             [--backup DIR] [--verify CMD] [--verify-lsp[=CMD]] [--allow-dirty] [--commit-moves]
              [--tidy] [--include-text] [--timeout SECS] [--detail LEVEL]
 ```
 
@@ -821,7 +821,7 @@ declaration and paths, TypeScript imports, Java packages).
 ```
 colab mv FROM TO [--lsp '<command>' | --no-lsp] [--root DIR] [-C DIR]
          [--format human|json|ndjson|diff] [--write|--dry-run|--check]
-         [--backup DIR] [--verify CMD] [--allow-dirty] [--commit-moves]
+         [--backup DIR] [--verify CMD] [--verify-lsp[=CMD]] [--allow-dirty] [--commit-moves]
          [--tidy] [--timeout SECS] [--detail LEVEL]
 ```
 
@@ -868,7 +868,7 @@ git-aware file operations as `rename`.
 colab action --at FILE:LINE:COL[-LINE:COL] (--list | [--kind KIND] [--title TEXT])
              [--lsp '<command>'] [--root DIR] [-C DIR] [--timeout SECS]
              [--format …] [--write|--dry-run|--check] [--backup DIR]
-             [--verify CMD] [--allow-dirty] [--commit-moves] [--tidy] [--detail LEVEL]
+             [--verify CMD] [--verify-lsp[=CMD]] [--allow-dirty] [--commit-moves] [--tidy] [--detail LEVEL]
 ```
 
 ```sh
@@ -1047,6 +1047,14 @@ only with git, so a mistake is recoverable and history survives:
   with git, removes created files, restores deleted ones, then restores
   contents. A failed `--verify` does the same, after dropping the
   `--commit-moves` commit if it is still `HEAD`.
+- **Checking the server's edit.** `rename`, `mv` and `action` take
+  `--verify-lsp` as `refactor` does: before anything is written, each
+  changed file is opened in its language server with the change made,
+  and every error the change adds is a conflict that refuses the write
+  (exit 11). It sees the changed files only; a change that breaks a file
+  it did not touch (rust-analyzer's "Extract Module" leaves callers in
+  other files pointing at a now-private item) needs `--verify 'cargo
+  check -q'`, which runs after the write and undoes it on failure.
 - **Output.** JSON gains `moved: [{from, to}]`, `created`, and `deleted`
   (plus counts in `summary`) only when there are file operations. ndjson
   emits `{"type": "move"|"create"|"delete", …}` events first. Diff output

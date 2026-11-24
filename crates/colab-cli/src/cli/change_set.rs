@@ -283,6 +283,37 @@ pub(crate) fn run_change_set(
         reporter.file_op(op).map_err(io_to_error)?;
     }
 
+    // The server's own edit can break the build (rust-analyzer's "Extract
+    // Module" leaves callers in other files pointing at a now-private
+    // item). With --verify-lsp, each error it adds is a conflict.
+    if let Some(command) = &flags.verify_lsp {
+        crate::lsp_commands::verify_lsp(
+            Some(command.as_str()).filter(|c| !c.is_empty()),
+            &set.edits,
+            &mut report,
+            None,
+        )?;
+        if matches!(exec_mode, ExecMode::Write) && !report.conflicts().is_empty() {
+            report.warn(format!(
+                "wrote nothing: the change adds {} error(s) the language server reports \
+                 (--verify-lsp); fix them in a follow-up rule, or rerun without --verify-lsp",
+                report.conflicts().len()
+            ));
+            for change in &set.edits {
+                let mut change = change.clone();
+                change.path = relative(&change.path);
+                report.record(&change);
+                reporter
+                    .report(&change)
+                    .map_err(|e| Error::io_at(&change.path, e))?;
+            }
+            reporter.refused();
+            report.set_elapsed(started.elapsed());
+            reporter.finish(&report).map_err(io_to_error)?;
+            return Ok(CONFLICT_EXIT);
+        }
+    }
+
     // The server answered from the files as they were; one changed since
     // (an editor save during a slow rename) is merged, or refuses the write.
     if matches!(exec_mode, ExecMode::Write) {
