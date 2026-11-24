@@ -27,6 +27,7 @@ pub(crate) fn language() -> PatternLanguage {
         leading: colab_rewrite::pattern::Leading::NONE,
         macro_contents: None,
         modifiers: None,
+        shorthand_fields: false,
     }
 }
 

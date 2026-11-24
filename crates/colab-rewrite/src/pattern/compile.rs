@@ -78,6 +78,85 @@ pub(super) fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t 
         .then(|| (format!("{lead}{QUALIFIER}{sep}{body}"), callee))
 }
 
+/// The fields of `text` written `name: $VAR` in a struct-literal place:
+/// right after `{` or `,` and right before `,` or `}` (whitespace aside),
+/// with `$VAR` a single metavariable the pattern names nowhere else. So
+/// `let x: $T = …` and `fn f(a: $T)` never count. Each is `(the bytes
+/// from the name to the end of $VAR, name, VAR)`.
+pub(super) fn shorthand_fields(text: &str) -> Vec<(std::ops::Range<usize>, String, String)> {
+    let bytes = text.as_bytes();
+    let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        // A name starts after a `{` or `,` (skipping whitespace).
+        if !(bytes[i].is_ascii_lowercase() || bytes[i] == b'_') || (i > 0 && ident(bytes[i - 1])) {
+            i += 1;
+            continue;
+        }
+        let before = text[..i].trim_end();
+        let start = i;
+        while i < bytes.len() && ident(bytes[i]) {
+            i += 1;
+        }
+        let name = &text[start..i];
+        if !(before.ends_with('{') || before.ends_with(',')) {
+            continue;
+        }
+        let Some(value) = text[i..].trim_start().strip_prefix(':') else {
+            continue;
+        };
+        if value.starts_with(':') {
+            continue; // a path, `a::b`
+        }
+        let Some(var) = value.trim_start().strip_prefix('$') else {
+            continue;
+        };
+        if var.starts_with('$') {
+            continue; // `$$$` takes many nodes
+        }
+        let len = var
+            .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'))
+            .unwrap_or(var.len());
+        let var_name = &var[..len];
+        let end = text.len() - var.len() + len;
+        let next = text[end..].trim_start();
+        let once = text.matches(&format!("${var_name}")).count() == 1;
+        if !var_name.is_empty() && once && (next.starts_with(',') || next.starts_with('}')) {
+            out.push((start..end, name.to_string(), var_name.to_string()));
+        }
+        i = end;
+    }
+    out
+}
+
+/// A template for a match of a shorthand form (see
+/// [`shorthand_fields`]): each `$VAR` is the field's name, and a field
+/// that ends up `name: name` is written `name`.
+pub(super) fn shorthand_template(template: &str, fields: &[(String, String)]) -> String {
+    let mut out = template.to_string();
+    for (name, var) in fields {
+        let token = format!("${var}");
+        let mut at = 0;
+        while let Some(found) = out[at..].find(&token) {
+            let start = at + found;
+            let end = start + token.len();
+            let longer = out[end..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+            if longer || out[..start].ends_with('$') {
+                at = end;
+                continue;
+            }
+            out.replace_range(start..end, name);
+            at = start + name.len();
+        }
+        out = out.replace(&format!("{name}: {name}"), name);
+    }
+    out
+}
+
 /// What the qualified form of a bare-call pattern needs to rewrite.
 #[derive(Debug, Clone)]
 pub(super) struct Qualified {
@@ -428,6 +507,41 @@ impl StructuralPattern {
             primary.pattern = loose.pattern;
             primary.context = loose.context;
         }
+        // `S { text: $T }` also as `S { text }`, the shorthand for a field
+        // set from a variable of its name: every subset of the fields
+        // written `name: $VAR` (up to three; all of them beyond), each a
+        // form only when it parses as a different tree.
+        if language.shorthand_fields {
+            let fields = shorthand_fields(text);
+            let subsets: Vec<Vec<usize>> = if fields.len() <= 3 {
+                (1..1usize << fields.len())
+                    .map(|bits| (0..fields.len()).filter(|i| bits & (1 << i) != 0).collect())
+                    .collect()
+            } else {
+                vec![(0..fields.len()).collect()]
+            };
+            for subset in subsets {
+                let mut alt_text = text.to_string();
+                for &i in subset.iter().rev() {
+                    let (range, name, _) = &fields[i];
+                    alt_text.replace_range(range.clone(), name);
+                }
+                if let Ok(mut alt) = Self::compile_one(language, &alt_text, true)
+                    && alt.tree != primary.tree
+                {
+                    // Only `: $VAR`s were taken out, so the pattern's
+                    // literals are all still there.
+                    alt.prefilter.clone_from(&primary.prefilter);
+                    alt.shorthand = Some(
+                        subset
+                            .iter()
+                            .map(|&i| (fields[i].1.clone(), fields[i].2.clone()))
+                            .collect(),
+                    );
+                    primary.also.push(alt);
+                }
+            }
+        }
         primary.prefilter = shared_prefilter(&primary);
         Ok(primary)
     }
@@ -449,6 +563,7 @@ impl StructuralPattern {
             also: Vec::new(),
             qualified: self.qualified.clone(),
             visible: self.visible.clone(),
+            shorthand: self.shorthand.clone(),
             shape: self.shape.clone(),
         }
     }
@@ -683,6 +798,7 @@ impl StructuralPattern {
             also: Vec::new(),
             qualified: None,
             visible: None,
+            shorthand: None,
             shape,
         }
     }
@@ -708,10 +824,19 @@ impl StructuralPattern {
             .sort_by_key(|c| matches!(c.kind, CheckKind::Semantic { .. }));
         self.lets = Derived::compile_all(language, &bound, constraints)?;
         self.constraints = constraints.to_vec();
-        self.also = std::mem::take(&mut self.also)
-            .into_iter()
-            .map(|alt| alt.constrain(language, constraints))
-            .collect::<Result<_, _>>()?;
+        let mut also = Vec::new();
+        for alt in std::mem::take(&mut self.also) {
+            let shorthand = alt.shorthand.is_some();
+            match alt.constrain(language, constraints) {
+                Ok(alt) => also.push(alt),
+                // A shorthand form binds no `$VAR` for the field it writes
+                // bare, so a constraint on it cannot be judged there: the
+                // form is left out, and the rule matches as written.
+                Err(_) if shorthand => {}
+                Err(e) => return Err(e),
+            }
+        }
+        self.also = also;
         Ok(self)
     }
 

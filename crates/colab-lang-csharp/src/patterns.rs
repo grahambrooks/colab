@@ -38,6 +38,7 @@ pub(crate) fn language() -> PatternLanguage {
             kinds: &["modifier", "attribute_list"],
             several: true,
         }),
+        shorthand_fields: false,
     }
 }
 

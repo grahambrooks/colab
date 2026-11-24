@@ -295,6 +295,15 @@ reserved for the matched path. A struct literal of a type named bare
 `crate::walker::FileChange { … }`, and a template that starts with the
 same type keeps the path.
 
+**Field shorthand (Rust, JS).** A field written `name: $VAR` in a struct
+or object literal also matches the shorthand `name` (a field set from a
+variable of its name): `Write { path: $P, text: $T }` finds
+`Write { path, text }` and `Write { path: p, text }` too. A rewrite of a
+shorthand match fills `$VAR` with the name and keeps the shorthand. Only
+a field after `{` or `,` and before `,` or `}` counts, so `let x: $T`
+and parameters are left alone, and a `where` on `$VAR` matches only the
+fields written out.
+
 **Types (Rust).** A type on its own is a pattern too:
 `HashMap<PathBuf, $V>` matches it in a signature, a `let` annotation or
 a field, and `replace 'BTreeMap<PathBuf, $V>'` rewrites each.

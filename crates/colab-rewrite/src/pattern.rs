@@ -100,6 +100,12 @@ pub struct PatternLanguage {
     /// keeps them. `None` where the language has none a pattern would
     /// leave out.
     pub modifiers: Option<Modifiers>,
+    /// Whether a struct or object literal can name a field by itself for
+    /// a variable of the same name (Rust's `S { text }`, JS's `{ text }`):
+    /// a pattern's `text: $T` then also matches `text`, with `$T` bound
+    /// to `text`. `false` where that spelling means something else (Go's
+    /// `T{a}` is positional, Python's `{a}` a set).
+    pub shorthand_fields: bool,
 }
 
 /// An item's modifiers — visibility, `static`, annotations: Rust's `pub`,
@@ -330,6 +336,10 @@ pub struct StructuralPattern {
     /// Set on the form compiled with a visibility before an item pattern
     /// written without one: a template for the same item gets it back.
     visible: Option<compile::Visible>,
+    /// Set on a form with struct fields written shorthand (`text` for
+    /// `text: $T`): `(field, metavariable)` pairs, so a template's `$T`
+    /// becomes `text` and `text: text` is written back as `text`.
+    shorthand: Option<Vec<(String, String)>>,
     /// The pattern's named structure, to refuse a match whose node has
     /// children the pattern does not account for (see [`Shape`]).
     shape: Shape,

@@ -29,6 +29,7 @@ pub(crate) fn language() -> PatternLanguage {
         },
         macro_contents: None,
         modifiers: None,
+        shorthand_fields: true,
     }
 }
 
@@ -92,6 +93,22 @@ pub(crate) const QUALIFIERS: Qualifiers = Qualifiers {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn an_object_field_pattern_matches_its_shorthand() {
+        let op = crate::LANG
+            .compile_pattern(
+                "connect({ host: $H, port: $P })",
+                PatternAction::Replace("open({ host: $H, port: $P })".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "connect({ host, port: 1 });\nconnect({ host: h, port });\n";
+        assert_eq!(
+            op.apply(src),
+            "open({ host, port: 1 });\nopen({ host: h, port });\n"
+        );
+    }
 
     #[test]
     fn a_deleted_declaration_takes_its_jsdoc() {

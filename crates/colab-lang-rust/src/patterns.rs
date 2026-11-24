@@ -54,6 +54,7 @@ pub(crate) fn language() -> PatternLanguage {
             kinds: &["visibility_modifier"],
             several: false,
         }),
+        shorthand_fields: true,
     }
 }
 
@@ -167,6 +168,35 @@ mod tests {
         let recursive = "fn new(n: u8) -> u8 {\n    if n == 0 { old(0) } else { new(n - 1) }\n}\n";
         let renamed = "fn new(n: u8) -> u8 {\n    if n == 0 { new2(0) } else { new(n - 1) }\n}\n";
         assert!(crate::LANG.new_self_calls(recursive, renamed).is_empty());
+    }
+
+    #[test]
+    fn a_field_pattern_matches_its_shorthand_and_keeps_it() {
+        let op = crate::LANG
+            .compile_pattern(
+                "Write { path: $P, text: $T, }",
+                PatternAction::Replace("Write { path: $P, text: $T, created: false, }".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "fn f() {\n    a(Write { path: p, text: t, });\n    b(Write { path, text, });\n    c(Write { path: p, text, });\n}\n";
+        assert_eq!(
+            op.apply(src),
+            "fn f() {\n    a(Write { path: p, text: t, created: false, });\n    b(Write { path, text, created: false, });\n    c(Write { path: p, text, created: false, });\n}\n"
+        );
+        // A `let`'s type and a parameter are not fields.
+        assert!(super::super::patterns::language().shorthand_fields);
+        let typed = crate::LANG
+            .compile_pattern(
+                "let $X: $T = $V;",
+                PatternAction::Replace("let $X = $V;".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            typed.apply("fn f() {\n    let y = 2;\n}\n"),
+            "fn f() {\n    let y = 2;\n}\n"
+        );
     }
 
     #[test]

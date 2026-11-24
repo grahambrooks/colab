@@ -43,6 +43,7 @@ pub(crate) fn language() -> PatternLanguage {
             ],
             several: true,
         }),
+        shorthand_fields: false,
     }
 }
 
