@@ -16,6 +16,7 @@ pub(crate) fn language() -> PatternLanguage {
         contexts: &["def _\n@@PATTERN@@\nend\n", "class C\n@@PATTERN@@\nend\n"],
         also: &[],
         qualified_calls: None,
+        leading: colab_rewrite::pattern::Leading::NONE,
     }
 }
 

@@ -1,0 +1,7 @@
+// A deleted item takes its `///` docs and `#[…]` attributes with it, and
+// leaves one blank line between its neighbours; a match arm is a pattern,
+// and its trailing comma is optional.
+refactor "delete-attached" {
+    match rust::pattern 'pub struct $S($$$F);' { delete }
+    match rust::pattern '("symbol", RuleSpec::Replace { $$$F }) => $E,' { delete }
+}

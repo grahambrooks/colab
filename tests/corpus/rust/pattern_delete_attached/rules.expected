@@ -1,0 +1,2 @@
+1 rust::pattern 'pub struct $S($$$F);' -> delete
+1 rust::pattern '("symbol", RuleSpec::Replace { $$$F }) => $E,' -> delete

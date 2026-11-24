@@ -2,7 +2,6 @@ import os
 import warnings
 
 
-
 def setting(name, fallback):
     value = os.environ.get(name)
     chosen = value or fallback

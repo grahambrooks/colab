@@ -18,6 +18,11 @@ pub(crate) fn language() -> PatternLanguage {
         // the property a pattern usually means. Match both.
         also: &["({@@PATTERN@@});\n"],
         qualified_calls: None,
+        // JSDoc documents the declaration after it.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["/**"],
+        },
     }
 }
 
@@ -81,6 +86,16 @@ pub(crate) const QUALIFIERS: Qualifiers = Qualifiers {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_deleted_declaration_takes_its_jsdoc() {
+        let op = crate::LANG
+            .compile_pattern("function $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        let src =
+            "// helpers\n/**\n * Old.\n */\nfunction old() {}\nfunction kept() { return 1; }\n";
+        assert_eq!(op.apply(src), "// helpers\nfunction kept() { return 1; }\n");
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

@@ -17,17 +17,25 @@ pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_rust::LANGUAGE.into(),
         expando: 'µ',
-        // The last two let a struct field (`pub conflicts: $T`) and a
+        // The next two let a struct field (`pub conflicts: $T`) and a
         // struct-literal field (`conflicts: $C`) be patterns, e.g. in
-        // `where not has '…'`.
+        // `where not has '…'`; the last, a match arm
+        // (`Some($X) => $E,`).
         contexts: &[
             "@@PATTERN@@;",
             "fn f() {\n@@PATTERN@@\n}\n",
             "struct _S {\n@@PATTERN@@\n}\n",
             "fn f() {\n_S {\n@@PATTERN@@\n};\n}\n",
+            "fn f() {\nmatch _m {\n@@PATTERN@@\n}\n}\n",
         ],
         also: &[],
         qualified_calls: Some("::"),
+        // `#[derive(…)]` and `///` / `/** */` docs belong to the item after
+        // them; `//!` documents the enclosing module, so it stays.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &["attribute_item"],
+            doc_comments: &["///", "/**"],
+        },
     }
 }
 
@@ -56,6 +64,63 @@ mod tests {
             .unwrap();
         let done = "fn f() { let c = FileChange { path: p, conflicts: x }; }\n";
         assert_eq!(lit.apply(done), done, "already has the field");
+    }
+
+    #[test]
+    fn a_deleted_item_takes_its_docs_and_attributes() {
+        let op = crate::LANG
+            .compile_pattern("pub struct $S($$$F);", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "//! The module.\n\nuse x::y;\n\n// About the next two.\n/// A pattern op.\n#[derive(Debug)]\n/** More. */\npub struct PatternOp(u8);\n\n/// Kept.\npub fn f() {}\n";
+        assert_eq!(
+            op.apply(src),
+            "//! The module.\n\nuse x::y;\n\n// About the next two.\n\n/// Kept.\npub fn f() {}\n"
+        );
+        // A blank line ends what belongs to the item.
+        let apart = "/// Orphaned docs.\n\n#[derive(Debug)]\npub struct A(u8);\n";
+        assert_eq!(op.apply(apart), "/// Orphaned docs.\n\n");
+    }
+
+    #[test]
+    fn deleting_items_leaves_one_blank_line_between_neighbours() {
+        let op = crate::LANG
+            .compile_pattern("fn $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "use a;\n\nfn one() {}\n\nfn two() {}\n\nconst K: u8 = 1;\n";
+        assert_eq!(op.apply(src), "use a;\n\nconst K: u8 = 1;\n");
+        // At the top of a file, the blank line after it goes too.
+        assert_eq!(
+            op.apply("fn one() {}\n\nconst K: u8 = 1;\n"),
+            "const K: u8 = 1;\n"
+        );
+        // Between lines with no blank around them, nothing else moves.
+        assert_eq!(
+            op.apply("const A: u8 = 1;\nfn one() {}\nconst B: u8 = 2;\n"),
+            "const A: u8 = 1;\nconst B: u8 = 2;\n"
+        );
+    }
+
+    #[test]
+    fn a_match_arm_is_a_pattern() {
+        let op = crate::LANG
+            .compile_pattern(
+                "(\"symbol\", RuleSpec::Replace { $$$F }) => $E,",
+                PatternAction::Delete,
+                &[],
+            )
+            .unwrap();
+        let src = "fn b(m: &str, s: RuleSpec) -> R {\n    match (m, s) {\n        (\"import\", RuleSpec::Delete { target }) => del(target),\n        (\"symbol\", RuleSpec::Replace { target, replacement }) => {\n            rename(target, replacement)\n        }\n        (\"symbol\", RuleSpec::Replace { target, replacement }) => rename(target, replacement),\n        (_, spec) => other(spec),\n    }\n}\n";
+        let found = op.locate(src).unwrap();
+        assert_eq!(found.len(), 2, "{found:?}");
+        let out = op.apply(src);
+        assert_eq!(
+            out,
+            "fn b(m: &str, s: RuleSpec) -> R {\n    match (m, s) {\n        (\"import\", RuleSpec::Delete { target }) => del(target),\n        (_, spec) => other(spec),\n    }\n}\n"
+        );
+        assert_eq!(op.apply(&out), out, "idempotent");
+        // The last arm, which needs no comma, matches a pattern written with one.
+        let last = "fn b(m: u8) -> u8 {\n    match m {\n        0 => 1,\n        (\"symbol\", RuleSpec::Replace { t }) => t\n    }\n}\n";
+        assert_eq!(op.locate(last).unwrap().len(), 1);
     }
 
     #[test]

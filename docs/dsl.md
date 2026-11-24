@@ -263,7 +263,13 @@ comma after it (`f(a, b, c)` → `f(a, c)`), and the last one the comma
 before it (`f(a, b)` → `f(a)`). A match with no comma beside it
 (`() => f(x)`, `return f(x)`, a sole argument) is left in place, since
 removing it would leave broken code; `colab find` still lists it, and
-`replace` can rewrite it.
+`replace` can rewrite it. A deleted declaration takes what belongs to it
+from just above: its doc comments (`///` and `/** */` in Rust, C#, Swift;
+`/** */` in JavaScript, Java, Kotlin, PHP), Rust's `#[…]` attributes and
+Python's decorators, up to the first blank line. A plain `//` or `#`
+comment stays, since it may be about the code around it. Deleting lines
+between two blank lines also removes one of the blanks, so deleting a run of
+items leaves a single blank line, not one per item.
 
 **Never writes broken code.** If a file parsed cleanly and a pattern
 rewrite would leave a syntax error in it — usually a template that is not
@@ -290,6 +296,11 @@ How it matches:
   fragment that parses in more than one wrapper means each: Rust's
   `legacy: $T` matches the field of a struct declaration and the field of
   a struct literal. The prefilter is then a literal every reading needs.
+  A Rust match arm is a pattern too: `Some($X) => $E,` matches the arm
+  however it ends, with a `,` or with a block (`Some(x) => { … }`), as the
+  last arm or not. A trailing `,` that changes no syntax node is treated
+  as optional in every language; where it means something (Python's `x,`
+  is a tuple), the pattern keeps it.
 - **Whitespace-only rewrites are not made.** A result that differs from
   what it matched only in whitespace outside quotes — `f($$$A)` →
   `f($$$A)` over a call whose arguments span lines — changes no token, so

@@ -19,6 +19,7 @@ pub(crate) fn language() -> PatternLanguage {
         ],
         also: &[],
         qualified_calls: None,
+        leading: colab_rewrite::pattern::Leading::NONE,
     }
 }
 
@@ -109,7 +110,8 @@ mod tests {
             .compile_pattern("var $NAME = $VALUE", PatternAction::Delete, &[])
             .unwrap();
         let out = op.apply("package p\n\nvar debug = true\n\nfunc main() {}\n");
-        assert_eq!(out, "package p\n\n\nfunc main() {}\n");
+        // One blank line stays between the neighbours, not both.
+        assert_eq!(out, "package p\n\nfunc main() {}\n");
     }
 
     #[test]

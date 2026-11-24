@@ -19,6 +19,11 @@ pub(crate) fn language() -> PatternLanguage {
         ],
         also: &[],
         qualified_calls: None,
+        // Doc comments document the declaration after them.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["///", "/**"],
+        },
     }
 }
 
@@ -26,6 +31,18 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_deleted_function_takes_its_doc_comment() {
+        let op = crate::LANG
+            .compile_pattern("func $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "// a note\n/// Old.\nfunc old() {}\nfunc kept() -> Int { return 1 }\n";
+        assert_eq!(
+            op.apply(src),
+            "// a note\nfunc kept() -> Int { return 1 }\n"
+        );
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

@@ -72,6 +72,33 @@ pub struct PatternLanguage {
     /// starts with a bare call keeps the path it matched (see
     /// [`QUALIFIER`]). `None` leaves callees compared as written.
     pub qualified_calls: Option<&'static str>,
+    /// What a deleted match takes with it from just before it: the doc
+    /// comments and attributes that belong to the item (see [`Leading`]).
+    pub leading: Leading,
+}
+
+/// The nodes just before an item that belong to it, so deleting the item
+/// deletes them too instead of leaving a doc comment documenting nothing.
+///
+/// A node counts when it is the item's previous sibling (or that one's,
+/// and so on), with no blank line between them, and is either one of
+/// `kinds` or a comment that starts with one of `doc_comments`. A plain
+/// comment is never taken: it may be about the code around it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Leading {
+    /// Node kinds that belong to the item after them: Rust's
+    /// `attribute_item`, Python's `decorator`.
+    pub kinds: &'static [&'static str],
+    /// Prefixes that make a comment a doc comment: `///`, `/**`.
+    pub doc_comments: &'static [&'static str],
+}
+
+impl Leading {
+    /// Nothing before an item belongs to it.
+    pub const NONE: Self = Self {
+        kinds: &[],
+        doc_comments: &[],
+    };
 }
 
 /// The metavariable a qualified-call form binds the matched path to.
@@ -83,6 +110,8 @@ pub const QUALIFIER: &str = "$COLAB_PATH";
 struct TsLang {
     grammar: tree_sitter::Language,
     expando: char,
+    /// What a deleted match takes with it (not used by ast-grep).
+    leading: Leading,
 }
 
 impl Language for TsLang {
@@ -396,6 +425,18 @@ impl StructuralPattern {
             });
             primary.also.push(alt);
         }
+        // A trailing `,` that changes no named node is a separator, not
+        // structure: Rust's `Some($X) => $E,` then also matches the arm
+        // written `Some(x) => { … }` (or last, without one). Where the comma
+        // means something (Python's `x,` is a tuple) the trees differ and
+        // the pattern is left as written.
+        if let Some(stripped) = text.trim_end().strip_suffix(',')
+            && let Ok(loose) = Self::compile_one(language, stripped, true)
+            && loose.tree == primary.tree
+        {
+            primary.pattern = loose.pattern;
+            primary.context = loose.context;
+        }
         primary.prefilter = shared_prefilter(&primary);
         Ok(primary)
     }
@@ -422,6 +463,7 @@ impl StructuralPattern {
         let lang = TsLang {
             grammar: language.grammar.clone(),
             expando: language.expando,
+            leading: language.leading,
         };
         let expanded = expand(text, lang.expando);
 
@@ -801,10 +843,23 @@ impl StructuralPattern {
     /// leave the code around it incomplete. Rewrite those with `replace`.
     pub fn delete(&self, source: &str) -> String {
         let mut tree = None;
+        let mut parsed = || {
+            tree.get_or_insert_with(|| crate::parse_cache::parse(&self.lang.grammar, source))
+                .clone()
+        };
+        let leading = self.lang.leading;
         let mut spans: Vec<(usize, usize)> = Vec::new();
         for found in self.find(source) {
-            let (line_start, line_end) = line_span(source, found.start, found.end);
-            let before = &source[line_start..found.start];
+            // An item's doc comments and attributes go with it.
+            let start = if leading.kinds.is_empty() && leading.doc_comments.is_empty() {
+                found.start
+            } else {
+                parsed().map_or(found.start, |t| {
+                    attached_start(&t, source, found.start, found.end, leading)
+                })
+            };
+            let (line_start, line_end) = line_span(source, start, found.end);
+            let before = &source[line_start..start];
             let after = &source[found.end..line_end];
             let alone = before.trim().is_empty()
                 && after
@@ -813,17 +868,13 @@ impl StructuralPattern {
                     .trim()
                     .is_empty();
             if alone {
-                spans.push((line_start, line_end));
+                spans.push((
+                    line_start,
+                    without_double_blank(source, line_start, line_end),
+                ));
                 continue;
             }
-            let tree = tree.get_or_insert_with(|| {
-                let mut parser = Parser::new();
-                parser
-                    .set_language(&self.lang.grammar)
-                    .ok()
-                    .and_then(|()| parser.parse(source, None))
-            });
-            if let Some(span) = tree
+            if let Some(span) = parsed()
                 .as_ref()
                 .and_then(|t| with_separator(t, found.start, found.end))
             {
@@ -849,6 +900,68 @@ impl StructuralPattern {
     /// `true` when `source` parses without a syntax error.
     fn parses_cleanly(&self, source: &str) -> bool {
         parse_clean(&self.lang.grammar, source).is_ok()
+    }
+}
+
+/// Where the item matched at `start..end` really starts: before the doc
+/// comments and attributes just above it that belong to it ([`Leading`]),
+/// each on its own line(s) with no blank line between it and the next.
+fn attached_start(
+    tree: &tree_sitter::Tree,
+    source: &str,
+    start: usize,
+    end: usize,
+    leading: Leading,
+) -> usize {
+    let Some(mut node) = tree.root_node().descendant_for_byte_range(start, end) else {
+        return start;
+    };
+    // The widest node over exactly the match: the item, not its first token.
+    while let Some(parent) = node.parent() {
+        if parent.byte_range() != node.byte_range() {
+            break;
+        }
+        node = parent;
+    }
+    let mut at = start;
+    let mut cursor = node;
+    while let Some(prev) = cursor.prev_sibling() {
+        let text = &source[prev.byte_range()];
+        let attached = leading.kinds.contains(&prev.kind())
+            || (prev.is_extra() && leading.doc_comments.iter().any(|p| text.starts_with(p)));
+        // Only up to the next item: whitespace and at most one line break
+        // between them, and nothing before it on its first line.
+        let prev_end = prev.start_byte() + text.trim_end().len();
+        let gap = &source[prev_end..at];
+        let line_start = source[..prev.start_byte()].rfind('\n').map_or(0, |p| p + 1);
+        if !attached
+            || !gap.trim().is_empty()
+            || gap.matches('\n').count() > 1
+            || !source[line_start..prev.start_byte()].trim().is_empty()
+        {
+            break;
+        }
+        at = prev.start_byte();
+        cursor = prev;
+    }
+    at
+}
+
+/// `line_end`, or past the blank line after it when the deleted lines
+/// `line_start..line_end` sit between two blank lines (or open the file
+/// before one): the deletion then leaves one blank line, not two.
+fn without_double_blank(source: &str, line_start: usize, line_end: usize) -> usize {
+    let blank_before = line_start == 0 || {
+        let prev = source[..line_start - 1].rfind('\n').map_or(0, |p| p + 1);
+        source[prev..line_start].trim().is_empty()
+    };
+    let rest = &source[line_end..];
+    let next_end = rest.find('\n').map_or(rest.len(), |p| p + 1);
+    let next = &rest[..next_end];
+    if blank_before && !next.is_empty() && next.trim().is_empty() && next.ends_with('\n') {
+        line_end + next_end
+    } else {
+        line_end
     }
 }
 
@@ -959,6 +1072,7 @@ mod tests {
             contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
             also: &[],
             qualified_calls: None,
+            leading: Leading::NONE,
         }
     }
 
@@ -969,6 +1083,7 @@ mod tests {
             contexts: &[],
             also: &["def _(x: @@PATTERN@@): pass\n"],
             qualified_calls: None,
+            leading: Leading::NONE,
         }
     }
 
@@ -1424,6 +1539,7 @@ mod tests {
             contexts: &["fn f() { @@PATTERN@@ }"],
             also: &[],
             qualified_calls: None,
+            leading: Leading::NONE,
         }
     }
 
@@ -1490,6 +1606,7 @@ mod tests {
             contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
             also: &[],
             qualified_calls: None,
+            leading: Leading::NONE,
         };
         let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();
         let src = "package p\n\nfunc f() {\n\tif x {\n\t\tlog.Print(a)\n\t}\n}\n";

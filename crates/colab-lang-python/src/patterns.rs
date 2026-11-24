@@ -24,6 +24,12 @@ pub(crate) fn language() -> PatternLanguage {
             "{@@PATTERN@@}\n",
         ],
         qualified_calls: None,
+        // A `def` or `class` match is the definition inside its
+        // `decorated_definition`, whose decorators come just before it.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &["decorator"],
+            doc_comments: &[],
+        },
     }
 }
 
@@ -59,6 +65,15 @@ const PYTHON_BUILTINS: &[&str] = &[
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_deleted_function_takes_its_decorators() {
+        let op = crate::LANG
+            .compile_pattern("def $F(): pass", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "# a note\n@cache\n@trace(level=2)\ndef old(): pass\ndef kept(): return 1\n";
+        assert_eq!(op.apply(src), "# a note\ndef kept(): return 1\n");
+    }
 
     #[test]
     fn python_qualifiers_count_imports_aliases_and_builtins() {

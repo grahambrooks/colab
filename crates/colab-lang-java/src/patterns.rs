@@ -25,6 +25,12 @@ pub(crate) fn language() -> PatternLanguage {
         ],
         also: &[],
         qualified_calls: None,
+        // Javadoc documents the declaration after it; annotations are
+        // already part of the declaration's modifiers.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["/**"],
+        },
     }
 }
 
@@ -32,6 +38,18 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_deleted_method_takes_its_javadoc() {
+        let op = crate::LANG
+            .compile_pattern("void $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "class A {\n    // a note\n    /** Old. */\n    void old() {}\n    int kept() { return 1; }\n}\n";
+        assert_eq!(
+            op.apply(src),
+            "class A {\n    // a note\n    int kept() { return 1; }\n}\n"
+        );
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

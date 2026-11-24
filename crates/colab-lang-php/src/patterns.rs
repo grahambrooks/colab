@@ -23,6 +23,11 @@ pub(crate) fn language() -> PatternLanguage {
         contexts: &["@@PATTERN@@;", "class C {\n@@PATTERN@@\n}\n"],
         also: &[],
         qualified_calls: None,
+        // PHPDoc documents the declaration after it.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["/**"],
+        },
     }
 }
 
@@ -30,6 +35,19 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_deleted_function_takes_its_phpdoc() {
+        let op = crate::LANG
+            .compile_pattern("function $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        let src =
+            "<?php\n// a note\n/** Old. */\nfunction old() {}\nfunction kept() { return 1; }\n";
+        assert_eq!(
+            op.apply(src),
+            "<?php\n// a note\nfunction kept() { return 1; }\n"
+        );
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

@@ -1,0 +1,9 @@
+lib.rs:7:1: [0] pub struct SymbolRename(String);
+    $F = String
+    $S = SymbolRename
+lib.rs:11:1: [0] pub struct PatternOp(String);
+    $F = String
+    $S = PatternOp
+lib.rs:17:9: [1] ("symbol", RuleSpec::Replace { target, replacement }) => {\n            rename(target, replacement)\n        }
+    $E = {\n            rename(target, replacement)\n        }
+    $F = target, replacement

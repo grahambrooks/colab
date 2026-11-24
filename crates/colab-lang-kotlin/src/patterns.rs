@@ -16,6 +16,11 @@ pub(crate) fn language() -> PatternLanguage {
         contexts: &["fun f() {\n@@PATTERN@@\n}\n", "class C {\n@@PATTERN@@\n}\n"],
         also: &[],
         qualified_calls: None,
+        // KDoc documents the declaration after it.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["/**"],
+        },
     }
 }
 
@@ -23,6 +28,15 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_deleted_function_takes_its_kdoc() {
+        let op = crate::LANG
+            .compile_pattern("fun $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "// a note\n/** Old. */\nfun old() {}\nfun kept() = 1\n";
+        assert_eq!(op.apply(src), "// a note\nfun kept() = 1\n");
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

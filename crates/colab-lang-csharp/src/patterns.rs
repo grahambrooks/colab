@@ -25,6 +25,12 @@ pub(crate) fn language() -> PatternLanguage {
         ],
         also: &[],
         qualified_calls: None,
+        // XML doc comments document the member after them; attributes are
+        // already part of the declaration.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["///", "/**"],
+        },
     }
 }
 
@@ -32,6 +38,18 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_deleted_method_takes_its_xml_docs() {
+        let op = crate::LANG
+            .compile_pattern("class $C {}", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "// a note\n/// <summary>Old.</summary>\n/// <remarks>Gone.</remarks>\nclass Old {}\nclass Kept { int K() { return 1; } }\n";
+        assert_eq!(
+            op.apply(src),
+            "// a note\nclass Kept { int K() { return 1; } }\n"
+        );
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {
