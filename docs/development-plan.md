@@ -154,7 +154,6 @@ whichever milestone touches the same code.
 | Packs that name the dependency range they apply to, so `colab fix` after a Renovate bump runs only the packs for what changed (each ecosystem's lockfile read for the version) | M31 |
 | Modifiers in item patterns, the rest (Rust, Java, Kotlin, Swift, C# and PHP done 2026-11-24 with one `$COLAB_MODS` sentinel form each): JS / TS, whose grammar here cannot parse TS member modifiers (`private f() {}`), and where `delete` of `function f` still leaves an `export function f`; C# matches at most four modifiers before a metavariable type (`$T $F() {}`); and in C++, `void $F() { $$$B }` is refused, since the grammar reads `void F() { x }` as a declaration with a brace initializer in every context (C# and PHP lone bodies fixed 2026-11-24) | dogfood 2026-11-24 |
 | Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match `type` (a file's questions are batched now, and answers kept for the run) | M32 |
-| `create`, the rest (built 2026-11-24 as a created `FileChange`, not a `FileOp`: undo, `--verify` and `--bisect` remove the file): the file is written untracked, where `git add` would let `--commit-per-rule` commit it | M35 |
 | Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
 ### Patterns inside macros
 

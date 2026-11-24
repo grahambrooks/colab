@@ -1782,6 +1782,39 @@ $$$B' }"#;
 }
 
 #[test]
+fn commit_per_rule_commits_the_files_a_rule_creates() {
+    let root = git_workspace(
+        "create-commit",
+        &[("lib.rs", "mod util {\n    pub fn f() {}\n}\n")],
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "refactor",
+            "-e",
+            r#"match rust::pattern 'mod $M { $$$B }' { create "$M.rs" '$$$B' }"#,
+            "-e",
+            r#"match rust::pattern 'mod $M { $$$B }' { replace 'mod $M;' }"#,
+            "--commit-per-rule",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The first rule's commit holds the new file; nothing is left over.
+    let first = git(&root, &["show", "--name-status", "--format=%s", "HEAD~1"]);
+    assert!(first.contains("A\tutil.rs"), "{first}");
+    let second = git(&root, &["show", "--name-status", "--format=%s", "HEAD"]);
+    assert!(second.contains("M\tlib.rs"), "{second}");
+    assert_eq!(git(&root, &["status", "--porcelain"]), "");
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn colab_ignore_holds_a_match_back_from_create() {
     let root = workspace_temp("create-ignore");
     write(

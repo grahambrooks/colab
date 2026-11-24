@@ -140,7 +140,13 @@ pub(super) fn run_refactor_per_rule(
         }
 
         if args.commit_per_rule && !backups.is_empty() {
-            commit_per_rule(&rule_label)?;
+            // A snapshot of `None` is a file this rule created.
+            let created: Vec<&Path> = backups
+                .iter()
+                .filter(|(_, before)| before.is_none())
+                .map(|(path, _)| path.as_path())
+                .collect();
+            commit_per_rule(&rule_label, &created)?;
         }
     }
 
@@ -179,23 +185,34 @@ pub(super) fn run_verify(cmd: &str) -> Result<bool> {
 /// step fails. The "nothing to commit" case is treated as success
 /// (a rule may have applied but produced no on-disk diff after
 /// idempotent re-runs).
-pub(super) fn commit_per_rule(rule_label: &str) -> Result<()> {
-    let add = std::process::Command::new("git")
-        .args(["add", "-u"])
-        .status()
-        .map_err(|e| Error::Config(format!("git add failed to spawn: {e}")))?;
-    if !add.success() {
-        return Err(Error::Config(format!(
-            "git add -u failed (exit {}) for rule `{}`",
-            add.code().unwrap_or(-1),
-            rule_label
-        )));
+/// Commit what the rule changed: tracked files (`git add -u`) and the
+/// files it `created`, which `-u` would leave out.
+pub(super) fn commit_per_rule(rule_label: &str, created: &[&Path]) -> Result<()> {
+    let git = |args: &[&std::ffi::OsStr]| -> Result<()> {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .status()
+            .map_err(|e| Error::Git(format!("git failed to spawn: {e}")))?;
+        if status.success() {
+            return Ok(());
+        }
+        Err(Error::Git(format!(
+            "git {} failed (exit {}) for rule `{rule_label}`",
+            args.first().map_or_default(|a| a.to_string_lossy()),
+            status.code().unwrap_or(-1),
+        )))
+    };
+    git(&["add".as_ref(), "-u".as_ref()])?;
+    if !created.is_empty() {
+        let mut args: Vec<&std::ffi::OsStr> = vec!["add".as_ref(), "--".as_ref()];
+        args.extend(created.iter().map(|p| p.as_os_str()));
+        git(&args)?;
     }
     let message = format!("colab: {rule_label}");
     let commit = std::process::Command::new("git")
         .args(["commit", "-m", &message])
         .output()
-        .map_err(|e| Error::Config(format!("git commit failed to spawn: {e}")))?;
+        .map_err(|e| Error::Git(format!("git commit failed to spawn: {e}")))?;
     if !commit.status.success() {
         let stderr = String::from_utf8_lossy(&commit.stderr);
         // "nothing to commit" is treated as success — a rule may
@@ -203,7 +220,7 @@ pub(super) fn commit_per_rule(rule_label: &str) -> Result<()> {
         if stderr.contains("nothing to commit") {
             return Ok(());
         }
-        return Err(Error::Config(format!(
+        return Err(Error::Git(format!(
             "git commit failed for rule `{}`: {}",
             rule_label,
             stderr.trim()

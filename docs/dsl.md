@@ -200,7 +200,8 @@ match rust::pattern 'mod $M { $$$B }' { replace 'mod $M;' }
   text conflict too: put a binding in the path.
 - The diff shows the file as new (`--- /dev/null`), `--check` counts it
   as a pending change, and writing makes its directories. The file is
-  written untracked, as edits are written unstaged. `--backup` records
+  written untracked, as edits are written unstaged; `--commit-per-rule`
+  commits it with its rule. `--backup` records
   it, so `colab undo` removes it, and `--verify` / `--bisect` remove it
   when they revert.
 - The path must be relative, and must use only the pattern's bindings.
