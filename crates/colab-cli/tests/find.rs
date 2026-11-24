@@ -80,6 +80,33 @@ fn a_ts_field_pattern_may_end_in_its_semicolon() {
 }
 
 #[test]
+fn an_untyped_field_pattern_with_its_semicolon_finds_fields_and_statements() {
+    let root = workspace_temp("ts-untyped-field");
+    write(
+        &root.join("g.ts"),
+        "class A {\n  name = \"x\";\n}\nname = \"y\";\nf(name);\n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args(["find", "--lang", "ts", "name = $V;", "g.ts"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("g.ts:2:3:") && stdout.contains("g.ts:4:1:"),
+        "{stdout}"
+    );
+    // A call statement is not a field, and keeps reading as a statement.
+    let call = colab()
+        .current_dir(&root)
+        .args(["find", "--lang", "ts", "f($A);", "g.ts"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&call.stdout).contains("1 match(es)"));
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn a_bare_pattern_over_typescript_picks_ts_or_tsx_by_the_files() {
     // `js` claims `.ts` and `.tsx` too; the backend named after the files'
     // extension is the one meant, and a JSX pattern parses only in `tsx`.

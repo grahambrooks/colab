@@ -561,6 +561,26 @@ impl StructuralPattern {
             }
         }
         let mut primary = read?;
+        // `name = $V;` reads as an assignment statement, but without its
+        // `;` it is also a class field (TypeScript, JavaScript): that
+        // reading is matched too, as text read differently in different
+        // places always is. Only field readings: `f(x);` stays a statement.
+        if let Some(stripped) = text.trim_end().strip_suffix(';')
+            && let Ok(loose) = Self::compile(language, stripped)
+        {
+            for mut form in loose.also {
+                let field = form
+                    .tree
+                    .lines()
+                    .next()
+                    .is_some_and(|k| k.contains("field"));
+                if field && primary.also.iter().all(|a| a.tree != form.tree) {
+                    form.loose_semicolon = true;
+                    form.prefilter.clone_from(&primary.prefilter);
+                    primary.also.push(form);
+                }
+            }
+        }
         // `to_svg($A)` also as `$COLAB_PATH::to_svg($A)`: the callee
         // `svg::to_svg` is a scoped path, which a bare identifier never
         // matches, so without this a pattern silently misses every
