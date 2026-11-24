@@ -141,7 +141,19 @@ pub fn stop(socket: &Path) -> io::Result<()> {
     write_frame(
         &mut stream,
         &json!({"jsonrpc": "2.0", "method": "colab/stop"}),
-    )
+    )?;
+    wait_gone(socket);
+    Ok(())
+}
+
+/// Wait (up to 5 s) until a stopping daemon has removed its socket, so a
+/// command started right after `colab lsp-daemon --stop` starts a fresh
+/// server instead of reaching the daemon on its way out.
+fn wait_gone(socket: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while socket.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// Ask every daemon of this user to stop, or with `root` only those
@@ -151,6 +163,7 @@ pub fn stop_all(root: Option<&Path>) -> usize {
         return 0;
     };
     let mut stopped = 0;
+    let mut stopping = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().is_none_or(|e| e != "sock") {
@@ -171,6 +184,7 @@ pub fn stop_all(root: Option<&Path>) -> usize {
                 .is_ok()
                 {
                     stopped += 1;
+                    stopping.push(path);
                 }
             }
             Err(_) => {
@@ -178,6 +192,10 @@ pub fn stop_all(root: Option<&Path>) -> usize {
                 let _ = std::fs::remove_file(path.with_extension("root"));
             }
         }
+    }
+    // Asked all at once, then waited for, so stopping several is not slower.
+    for socket in &stopping {
+        wait_gone(socket);
     }
     stopped
 }

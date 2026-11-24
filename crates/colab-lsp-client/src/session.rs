@@ -63,7 +63,18 @@ impl Session {
     ) -> Result<Self> {
         let mut span = colab_core::telemetry::client_span("lsp start");
         span.set("colab.lsp.server", server_name(program));
-        let session = Self::start_untraced(program, args, root, timeout, file_operations);
+        let session =
+            match Self::start_untraced(program, args, root, timeout, file_operations, true) {
+                // A kept server's daemon that closed before it answered (it was
+                // stopping, or died) said nothing: this command starts its own.
+                Err(Error::Server(message)) if kept_went_quiet(&message) => {
+                    log::warn!(
+                        "the kept `{program}` went away ({message}); starting one for this command"
+                    );
+                    Self::start_untraced(program, args, root, timeout, file_operations, false)
+                }
+                other => other,
+            };
         if let Err(e) = &session {
             span.fail(e.kind());
         }
@@ -76,8 +87,9 @@ impl Session {
         root: &Path,
         timeout: Duration,
         file_operations: bool,
+        allow_kept: bool,
     ) -> Result<Self> {
-        let transport = Self::transport(program, args, root, timeout)?;
+        let transport = Self::transport(program, args, root, timeout, allow_kept)?;
         let mut session = Self {
             transport,
             name: program.to_string(),
@@ -169,14 +181,15 @@ impl Session {
         args: &[String],
         root: &Path,
         timeout: Duration,
+        allow_kept: bool,
     ) -> Result<Transport> {
         // A kept server, unless that fails: then this command gets its own,
         // as it would with `COLAB_KEEP_SERVER=0`. Off Unix there are none,
         // and the start-up timeout is only the kept server's.
         #[cfg(not(unix))]
-        let _ = timeout;
+        let _ = (timeout, allow_kept);
         #[cfg(unix)]
-        if crate::daemon::enabled() {
+        if allow_kept && crate::daemon::enabled() {
             let kept = std::env::current_exe().and_then(|exe| {
                 crate::daemon::connect_or_start(&exe, program, args, root, timeout)
                     .and_then(Transport::over)
@@ -585,6 +598,17 @@ impl Session {
     fn io_error(&self, e: std::io::Error) -> Error {
         Error::Server(format!("lost the connection to `{}`: {e}", self.name))
     }
+}
+
+/// Whether `message` is a kept server's daemon that closed the connection
+/// before answering `initialize`, saying nothing: one stopping or dead,
+/// not a server that cannot start (that one says why, through the daemon).
+fn kept_went_quiet(message: &str) -> bool {
+    #[cfg(unix)]
+    let kept = crate::daemon::enabled();
+    #[cfg(not(unix))]
+    let kept = false;
+    kept && message.contains("exited while initialize") && !message.contains("said")
 }
 
 /// Why a server that exited during `initialize` would not start: the first

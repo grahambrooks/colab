@@ -95,8 +95,10 @@ fn a_kept_server_serves_commands_in_a_row_from_disk() {
     assert_eq!(second.old_name.as_deref(), Some("middle"));
 
     colab_lsp_client::daemon::stop(&socket).unwrap();
+    // `stop` returns once the daemon has let go of its socket, so a command
+    // started right after it starts a fresh server, never the dying one.
+    assert!(!socket.exists(), "the socket is gone when stop returns");
     daemon.join().unwrap().unwrap();
-    assert!(!socket.exists(), "the socket goes with the daemon");
 
     // A kept server that dies: the daemon answers the client's waiting
     // request with what the server last wrote to stderr.
