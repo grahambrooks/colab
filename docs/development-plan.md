@@ -157,8 +157,6 @@ whichever milestone touches the same code.
 | Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match `type` (a file's questions are batched now, and answers kept for the run) | M32 |
 | `create "<path>" '<template>'`: a new file from a match, made as a `FileOp::Create` so undo and `--verify` reverse it, a file that exists a conflict. Needs file operations in the `refactor` write path, which writes text edits only | M35 |
 | Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
-| `rust::use "tree_sitter::Parser" { delete }` does not remove one member of a brace list (`use tree_sitter::{Parser, Tree};`); a `rust::pattern` rule did | M10.6 |
-
 ### Patterns inside macros
 
 **Built 2026-11-24** (`colab_rewrite::pattern::MacroContents`, Rust
