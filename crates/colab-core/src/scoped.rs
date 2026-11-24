@@ -62,7 +62,7 @@ impl ScopedOperation {
 /// same file, so leading `./` components are not part of the match. An
 /// absolute path under the base loses the base; one outside it is matched
 /// whole, so a relative glob does not match it.
-fn scope_relative(path: &Path) -> PathBuf {
+pub(crate) fn scope_relative(path: &Path) -> PathBuf {
     if path.is_absolute() {
         let base = crate::run::Run::current()
             .and_then(|run| run.base())

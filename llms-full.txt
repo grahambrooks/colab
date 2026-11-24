@@ -1220,7 +1220,7 @@ colab refactor (--script <path|-> | -e <rule>...) [--write|--dry-run|--check]
 | `--stdin` | — | Read source from stdin instead of walking filesystem paths. Requires `--path`. |
 | `--path <hint>` | — | Filename hint for `--stdin`; drives "is this file relevant?" routing. |
 | `--include <glob>` | — | Whitelist files via gitignore-syntax glob. Repeatable. If any include is set, only matches are processed. |
-| `--exclude <glob>` | — | Blacklist files via gitignore-syntax glob. Repeatable. Applied after `--include`. |
+| `--exclude <glob>` | — | Blacklist files via gitignore-syntax glob. Repeatable. Applied after `--include`. Both read a glob as a rule's `in "<glob>"` does, relative to the working directory (`crates/json/**`), and also accept it relative to the walked target (`json/**` for target `crates`); an absolute target under the working directory reads the same. |
 | `--no-ignore` | — | Don't honour `.gitignore`, `.git/info/exclude`, or hidden-file rules. By default the walker behaves like `git ls-files`. |
 | `--changed-since <ref>` | — | Only files changed since the given git ref (`git diff --name-only --diff-filter=ACMRT <ref>`). Skips tree walking entirely. CI-friendly. |
 | `--baseline <ref>` | — | Report only findings new since the ref: the script also runs over the tree as it was there, and its findings there are left out (see [Findings new since a ref](#findings-new-since-a-ref---baseline)). Never writes; `fix` takes it too. |

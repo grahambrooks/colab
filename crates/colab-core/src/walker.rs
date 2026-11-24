@@ -444,9 +444,13 @@ fn compute_change<T: CodeTransformer>(
 /// against paths below its root, so `--exclude crates/x/**` walking
 /// `crates` would never match; written from the working directory, as a
 /// rule's `in "<glob>"` is, it means `x/**` there, and is rebased so.
+///
+/// An absolute root is first made relative to the run's base (MCP's
+/// `cwd`) or the working directory, as an `in` scope reads a path, so
+/// `--exclude crates/x/**` means the same when the target is `$PWD/crates`.
 fn rebase(pattern: &str, root: &Path) -> String {
     let pattern = pattern.strip_prefix("./").unwrap_or(pattern);
-    let root = root.strip_prefix("./").unwrap_or(root);
+    let root = crate::scoped::scope_relative(root);
     let root = root.to_string_lossy();
     let root = root.trim_end_matches('/');
     if root.is_empty() || root == "." {
@@ -460,8 +464,10 @@ fn rebase(pattern: &str, root: &Path) -> String {
 
 /// True if `path` passes any explicit `include` and is not blocked
 /// by `exclude`. `.gitignore` does not apply to directly-supplied
-/// files, only to tree walks.
+/// files, only to tree walks. The path is read as an `in` scope reads it
+/// (relative to the run's base, `./` dropped), so the two forms agree.
 fn file_matches_filters(path: &Path, opts: &WalkOptions) -> Result<bool> {
+    let path = &crate::scoped::scope_relative(path);
     if !opts.include.is_empty() {
         let mut any = false;
         for pattern in &opts.include {
@@ -536,6 +542,13 @@ mod tests {
         assert_eq!(rebase("json/**", Path::new("crates")), "json/**");
         assert_eq!(rebase("vendor/**", Path::new(".")), "vendor/**");
         assert_eq!(rebase("**/*.rs", Path::new("crates")), "**/*.rs");
+        // An absolute root under the working directory, or the run's base.
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(rebase("crates/json/**", &cwd.join("crates")), "json/**");
+        let base = std::env::temp_dir().join("colab-rebase-base");
+        let run = crate::run::Run::new();
+        run.set_base(Some(base.clone()));
+        run.enter(|| assert_eq!(rebase("crates/json/**", &base.join("crates")), "json/**"));
     }
     use std::io::Write;
     use std::path::Path;
