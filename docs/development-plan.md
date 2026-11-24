@@ -60,7 +60,7 @@ items, with their designs in [Follow-ups](#follow-ups-from-shipped-milestones).
 | 6 | ~~**One base for every path glob.**~~ Done 2026-11-24: `--include` / `--exclude` already took both forms for a relative target (`rebase`); an absolute target, and a file named directly, are now read relative to the run's base (or the working directory) first, as `in` scopes are. The target-relative form stays accepted without a warning: both forms name the same files. | — |
 | 7 | **Patterns inside macros** (Rust token trees). | The most frequent fallback to `text::literal` in the dogfood log. Design: [Patterns inside macros](#patterns-inside-macros). |
 | 8 | **Captures rendered verbatim** in `keep_layout`, plus "would not parse" naming the first match that breaks. | The two remaining pattern-output complaints. See the follow-up rows. |
-| 9 | **More pattern contexts:** C# class members, switch / when cases (Go, JS, Kotlin), and a bare `$$$` in item lists. | Each is a context entry in that backend's `patterns.rs`, plus a corpus case. |
+| 9 | ~~**More pattern contexts:** C# class members, switch / when cases (Go, JS, Kotlin), and a bare `$$$` in item lists.~~ | Done 2026-11-24: a bare-compiled pattern tries every context; Go / JS `switch` and Kotlin `when` contexts; a bare `$$$` is a placeholder; a node that owns its trailing newline (Go's `expression_case`) matches and is replaced without it. Corpus `go/pattern_switch_case`. |
 
 ## Stable gate before M20
 
@@ -131,10 +131,7 @@ whichever milestone touches the same code.
 | `rust::use "tree_sitter::Parser" { delete }` does not remove one member of a brace list (`use tree_sitter::{Parser, Tree};`); a `rust::pattern` rule did | M10.6 |
 | Patterns inside Rust macro calls (`assert!(is_relevant(p))`, `vec![f(x)]`, `format!("{}", g(y))`), which are token trees to tree-sitter, so no pattern sees them; see [Patterns inside macros](#patterns-inside-macros) below | dogfood 2026-11-24 |
 | `$$$` re-emitted in a template: a one-line capture was reported reflowed (`f(a, b,\n c\n)`) and could not be reproduced. The cause is probably `keep_layout`'s token diff aligning a capture's tokens with equal tokens elsewhere in a many-line match. A fix would render each capture's span apart and keep its text verbatim, aligning only the template's literal tokens. (Fixed meanwhile: a new element before a one-per-line list gets its own line.) | dogfood 2026-11-24 |
-| C# `void $F() {}` compiles as a local function, not a method, so it matches no class member: add a class-body context (as Rust has a struct and a match one) and check which kinds other backends' contexts select for members | dogfood 2026-11-24 |
-| Switch / when cases as patterns (Go `case $X:`, JS `case $X:`, Kotlin `$X -> $E`), as Rust match arms are now | dogfood 2026-11-24 |
 | `why_unchanged` "would not parse" names no site: a file of 5 matches where one rewrite broke (a struct literal with `..base`, after which a field cannot follow) reported only "the rewritten code would not parse". Report the line of the first match whose rewrite alone breaks the parse | dogfood 2026-11-24 |
-| A bare `$$$` in an item list (`mod tests { $$$ }`) does not parse in any Rust context, while `$$$B` does; treat the anonymous sequence like a named one there | dogfood 2026-11-24 |
 
 ### Patterns inside macros
 

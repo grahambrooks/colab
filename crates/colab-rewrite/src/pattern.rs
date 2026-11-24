@@ -392,12 +392,18 @@ impl StructuralPattern {
         // `also: $A` is a struct field in a declaration and in a literal.
         // The contexts after the one it compiled in are tried strictly, and
         // each that reads it as a different tree is matched as well.
-        if let Some(index) = primary
-            .context
-            .as_deref()
-            .and_then(|c| language.contexts.iter().position(|k| *k == c))
-        {
-            for context in &language.contexts[index + 1..] {
+        // A pattern that compiled bare (C#'s top-level statements take
+        // `void $F() {}` as a local function) is tried in every context.
+        let after = match primary.context.as_deref() {
+            None => Some(0),
+            Some(c) => language
+                .contexts
+                .iter()
+                .position(|k| *k == c)
+                .map(|index| index + 1),
+        };
+        if let Some(after) = after {
+            for context in &language.contexts[after..] {
                 let only = PatternLanguage {
                     contexts: std::slice::from_ref(context),
                     also: &[],
@@ -525,7 +531,8 @@ impl StructuralPattern {
             };
             let span = slot..slot + expanded.len();
             let trimmed = trim_span(&filled_expanded, span);
-            let Some(node) = deepest_covering(tree.root_node(), trimmed.clone()) else {
+            let Some(node) = deepest_covering(tree.root_node(), &filled_expanded, trimmed.clone())
+            else {
                 attempts.push(format!(
                     "in `{}`: the pattern is not a single syntax node there",
                     context.replace('\n', " ")
@@ -711,7 +718,10 @@ impl StructuralPattern {
         self.matches(&grep, source)
             .into_iter()
             .map(|m| {
-                let range = m.range();
+                let mut range = m.range();
+                // Some grammars give a node the newline that ends it (Go's
+                // `expression_case`); the match is the code, not that.
+                range.end = range.start + source[range.clone()].trim_end().len();
                 let (line, column) = lines.at(range.start);
                 let env = m.get_env();
                 let mut captures: Vec<(String, String)> = env

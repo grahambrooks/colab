@@ -8,12 +8,16 @@ use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 
 /// `$` is a legal JavaScript identifier character, so metavariables parse
 /// as identifiers unchanged. Expressions and statements parse on their own;
-/// the one context admits a class member such as a method.
+/// the contexts admit a class member such as a method, and a `switch`
+/// case (`case $X: $$$B`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_javascript::LANGUAGE.into(),
         expando: '$',
-        contexts: &["class C {\n@@PATTERN@@\n}\n"],
+        contexts: &[
+            "class C {\n@@PATTERN@@\n}\n",
+            "switch (_x) {\n@@PATTERN@@\n}\n",
+        ],
         // `debug: true` alone is a labelled statement; in an object it is
         // the property a pattern usually means. Match both.
         also: &["({@@PATTERN@@});\n"],
@@ -166,6 +170,18 @@ mod tests {
         let found = op.locate(src).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].text, "legacy_name");
+    }
+
+    #[test]
+    fn a_switch_case_is_a_pattern() {
+        let op = crate::LANG
+            .compile_pattern("case 1: $$$B", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "function f(x) {\n  switch (x) {\n    case 1:\n      g();\n      break;\n    case 2:\n      h();\n  }\n}\n";
+        assert_eq!(
+            op.apply(src),
+            "function f(x) {\n  switch (x) {\n    case 2:\n      h();\n  }\n}\n"
+        );
     }
 
     #[test]

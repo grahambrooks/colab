@@ -1,0 +1,2 @@
+1 go::pattern 'case "legacy": $$$B' -> delete
+1 go::pattern 'case "v1": $$$B' -> 'case "v1", "stable": $$$B'

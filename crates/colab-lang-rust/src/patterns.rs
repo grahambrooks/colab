@@ -232,6 +232,25 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_sequence_is_a_placeholder_in_an_item_list() {
+        let op = crate::LANG
+            .compile_pattern(
+                "f($X)",
+                PatternAction::Replace("g($X)".into()),
+                &[colab_core::Constraint {
+                    negated: false,
+                    test: colab_core::Test::Inside("mod tests { $$$ }".into()),
+                }],
+            )
+            .unwrap();
+        let src = "mod tests {\n    fn t() { f(1) }\n}\nfn g() { f(2) }\n";
+        assert_eq!(
+            op.apply(src),
+            "mod tests {\n    fn t() { g(1) }\n}\nfn g() { f(2) }\n"
+        );
+    }
+
+    #[test]
     fn invalid_pattern_is_an_unsupported_operation() {
         let err = crate::LANG
             .compile_pattern("fn (", PatternAction::Delete, &[])

@@ -8,7 +8,8 @@ use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 
 /// `$` cannot start a Go identifier, so metavariables are parsed as `µ`.
 /// The contexts are tried in order: a statement or expression inside a
-/// function body, then a top-level declaration.
+/// function body, a top-level declaration, then a `switch` case
+/// (`case $X: $$$B`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_go::LANGUAGE.into(),
@@ -16,6 +17,7 @@ pub(crate) fn language() -> PatternLanguage {
         contexts: &[
             "package p\nfunc _() {\n@@PATTERN@@\n}\n",
             "package p\n@@PATTERN@@\n",
+            "package p\nfunc _() {\nswitch {\n@@PATTERN@@\n}\n}\n",
         ],
         also: &[],
         qualified_calls: None,
@@ -112,6 +114,32 @@ mod tests {
         let out = op.apply("package p\n\nvar debug = true\n\nfunc main() {}\n");
         // One blank line stays between the neighbours, not both.
         assert_eq!(out, "package p\n\nfunc main() {}\n");
+    }
+
+    #[test]
+    fn a_switch_case_is_a_pattern() {
+        let src = "package p\n\nfunc f(x int) {\n\tswitch x {\n\tcase 1:\n\t\tg()\n\tcase 2:\n\t\th()\n\t}\n}\n";
+        let del = crate::LANG
+            .compile_pattern("case 1: $$$B", PatternAction::Delete, &[])
+            .unwrap();
+        let out = del.apply(src);
+        assert_eq!(
+            out,
+            "package p\n\nfunc f(x int) {\n\tswitch x {\n\tcase 2:\n\t\th()\n\t}\n}\n"
+        );
+        assert_eq!(del.apply(&out), out, "idempotent");
+        // A case owns the newline that ends it; a rewrite keeps it.
+        let swap = crate::LANG
+            .compile_pattern(
+                "case 1: $$$B",
+                PatternAction::Replace("case 3: $$$B".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            swap.apply(src),
+            "package p\n\nfunc f(x int) {\n\tswitch x {\n\tcase 3:\n\t\tg()\n\tcase 2:\n\t\th()\n\t}\n}\n"
+        );
     }
 
     #[test]

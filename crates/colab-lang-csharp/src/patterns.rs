@@ -134,6 +134,21 @@ mod tests {
     }
 
     #[test]
+    fn a_method_pattern_matches_class_members() {
+        // Bare, `void $F() {}` is a top-level local function; it is
+        // matched as a class member too.
+        let op = crate::LANG
+            .compile_pattern("void $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "class K {\n    void Old() {}\n    int Keep() { return 1; }\n}\n";
+        assert_eq!(op.locate(src).unwrap().len(), 1);
+        assert_eq!(
+            op.apply(src),
+            "class K {\n    int Keep() { return 1; }\n}\n"
+        );
+    }
+
+    #[test]
     fn invalid_pattern_is_an_unsupported_operation() {
         let err = crate::LANG
             .compile_pattern("class (", PatternAction::Delete, &[])

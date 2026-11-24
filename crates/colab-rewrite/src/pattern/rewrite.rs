@@ -125,6 +125,9 @@ impl Rewriter<'_, '_> {
         let text = String::from_utf8_lossy(&edit.inserted_text);
         let text = indent_with_tabs(source, edit.position, &text);
         let (start, end) = (edit.position, edit.position + edit.deleted_length);
+        // A node that owns the newline ending it (Go's `expression_case`)
+        // keeps that newline: the template replaces the code only.
+        let end = start + source[start..end].trim_end().len();
         let text = keep_layout(&source[start..end], &strip_blank_line_indent(&text));
         Edit::new(start, end, text)
     }

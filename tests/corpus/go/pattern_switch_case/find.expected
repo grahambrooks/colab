@@ -1,0 +1,4 @@
+route.go:5:2: [0] case "legacy":\n		warn("legacy")\n		return "old"
+    $B = warn("legacy")\n		return "old"
+route.go:8:2: [1] case "v1":\n		return "v1"
+    $B = return "v1"

@@ -300,7 +300,13 @@ How it matches:
   however it ends, with a `,` or with a block (`Some(x) => { … }`), as the
   last arm or not. A trailing `,` that changes no syntax node is treated
   as optional in every language; where it means something (Python's `x,`
-  is a tuple), the pattern keeps it.
+  is a tuple), the pattern keeps it. Switch cases are patterns as well:
+  Go and JavaScript `case $X: $$$B` (a delete takes the case and its
+  body), and a Kotlin `when` entry `$X -> $E`. A pattern that also parses
+  on its own still matches in every wrapper it fits: C#'s `void $F() {}`
+  is a top-level local function bare, and matches class methods too. A
+  bare `$$$` is an anonymous sequence wherever `$$$B` is accepted, so
+  `where inside 'mod tests { $$$ }'` scopes a Rust rule to a test module.
 - **Whitespace-only rewrites are not made.** A result that differs from
   what it matched only in whitespace outside quotes — `f($$$A)` →
   `f($$$A)` over a call whose arguments span lines — changes no token, so

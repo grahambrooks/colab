@@ -123,7 +123,11 @@ pub(super) fn parse_pattern(
         let t = node.utf8_text(text.as_bytes()).unwrap_or("").trim();
         t.strip_prefix(expando).is_some_and(|rest| {
             let name = rest.trim_start_matches(expando);
-            !name.is_empty() && name.chars().all(|c| is_var_start(c) || c.is_ascii_digit())
+            // A bare `$$$` (three expandos, no name) is the anonymous
+            // sequence, as much a placeholder as `$$$B`.
+            let anonymous = name.is_empty() && t.chars().count() == 3;
+            anonymous
+                || (!name.is_empty() && name.chars().all(|c| is_var_start(c) || c.is_ascii_digit()))
         })
     };
     let mut stack = vec![tree.root_node()];
@@ -148,11 +152,24 @@ pub(super) fn trim_span(text: &str, span: std::ops::Range<usize>) -> std::ops::R
 }
 
 /// The deepest named node whose byte range is exactly `span`.
-pub(super) fn deepest_covering(root: Node<'_>, span: std::ops::Range<usize>) -> Option<Node<'_>> {
+pub(super) fn deepest_covering<'t>(
+    root: Node<'t>,
+    text: &str,
+    span: std::ops::Range<usize>,
+) -> Option<Node<'t>> {
     let mut node = root.named_descendant_for_byte_range(span.start, span.end)?;
-    if node.byte_range() != span {
+    // A node may take the whitespace after it into its range (Go's
+    // `expression_case` ends at the newline that terminates it); past the
+    // pattern there must be nothing else.
+    let trailing_space = node.start_byte() == span.start
+        && node.end_byte() > span.end
+        && text
+            .get(span.end..node.end_byte())
+            .is_some_and(|t| t.trim().is_empty());
+    if node.byte_range() != span && !trailing_space {
         return None;
     }
+    let span = node.byte_range();
     // Descend through single-child wrappers that cover the same span
     // (`expression_statement` → `call_expression`).
     loop {

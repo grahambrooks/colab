@@ -1,0 +1,4 @@
+// A `switch` case is a pattern: a dead case is deleted with its body, and
+// another renamed, its body and the newline that ends it kept.
+match go::pattern 'case "legacy": $$$B' { delete }
+match go::pattern 'case "v1": $$$B' { replace 'case "v1", "stable": $$$B' }
