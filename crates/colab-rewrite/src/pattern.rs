@@ -95,6 +95,13 @@ pub struct PatternLanguage {
     /// [`MacroContents`]); `None` where the grammar parses macro arguments
     /// as code already (C, C++) or the language has none.
     pub macro_contents: Option<MacroContents>,
+    /// The visibilities an item can be written with (Rust: `pub`,
+    /// `pub(crate)`, …). An item pattern written without one also matches
+    /// the item with each, and a rewrite of such a match keeps it, so `fn
+    /// $F($$$A) { $$$B }` finds `pub(super) fn f() {}` too. A pattern that
+    /// spells one (`pub fn …`) matches exactly. Empty where a visibility is
+    /// not a child of the item's node.
+    pub visibilities: &'static [&'static str],
 }
 
 /// Macro calls whose arguments the grammar keeps as an unparsed token
@@ -240,6 +247,9 @@ pub struct StructuralPattern {
     /// Set on the form compiled with [`QUALIFIER`] before a bare callee:
     /// a template's own bare call gets the matched path back.
     qualified: Option<Qualified>,
+    /// Set on the form compiled with a visibility before an item pattern
+    /// written without one: a template for the same item gets it back.
+    visible: Option<compile::Visible>,
     /// The pattern's named structure, to refuse a match whose node has
     /// children the pattern does not account for (see [`Shape`]).
     shape: Shape,

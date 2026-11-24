@@ -47,6 +47,7 @@ pub(crate) fn language() -> PatternLanguage {
             macros: EXPRESSION_MACROS,
             wrapper: "fn _w() {\n_m(@@PATTERN@@);\n}\n",
         }),
+        visibilities: &["pub", "pub(crate)", "pub(super)", "pub(self)"],
     }
 }
 
@@ -87,6 +88,60 @@ const EXPRESSION_MACROS: &[&str] = &[
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn an_item_pattern_without_a_visibility_matches_any_and_keeps_it() {
+        let src = "fn a() {}\npub fn b() {}\npub(super) fn c() {}\npub(crate) struct S;\n";
+        // A delete finds every visibility.
+        let any = crate::LANG
+            .compile_pattern("fn $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(any.apply(src), "pub(crate) struct S;\n");
+        // A rename keeps the visibility each item had.
+        let rename = crate::LANG
+            .compile_pattern(
+                "fn $F() {}",
+                PatternAction::Replace("fn $F() { todo!() }".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            rename.apply(src),
+            "fn a() { todo!() }\npub fn b() { todo!() }\npub(super) fn c() { todo!() }\npub(crate) struct S;\n"
+        );
+        // A template that spells its own visibility is used as written.
+        let publish = crate::LANG
+            .compile_pattern(
+                "fn $F() {}",
+                PatternAction::Replace("pub(crate) fn $F() {}".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            publish.apply(src),
+            "pub(crate) fn a() {}\npub(crate) fn b() {}\npub(crate) fn c() {}\npub(crate) struct S;\n"
+        );
+        // A pattern that spells one matches exactly.
+        let exact = crate::LANG
+            .compile_pattern("pub fn $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            exact.apply(src),
+            "fn a() {}\npub(super) fn c() {}\npub(crate) struct S;\n"
+        );
+        // A struct pattern too, and a non-item pattern gains no forms.
+        let structs = crate::LANG
+            .compile_pattern("struct $S;", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            structs.apply(src),
+            "fn a() {}\npub fn b() {}\npub(super) fn c() {}\n"
+        );
+        let call = crate::LANG
+            .compile_pattern("y()", PatternAction::Replace("z()".into()), &[])
+            .unwrap();
+        assert_eq!(call.apply("pub fn x() { y(); }\n"), "pub fn x() { z(); }\n");
+    }
 
     #[test]
     fn struct_and_literal_fields_are_patterns() {

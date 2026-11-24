@@ -731,6 +731,8 @@ impl StructuralPattern {
         }
         let requalified = self.qualified.as_ref().and_then(|q| q.template(template));
         let template = requalified.as_deref().unwrap_or(template);
+        let revisible = self.visible.as_ref().and_then(|v| v.template(template));
+        let template = revisible.as_deref().unwrap_or(template);
         let (template, names) = transformable_template(template);
         let fix = TemplateFix::with_transform(&template, &self.lang, &names);
         // A `let`'s `rewrite(<name>)` step: for each form the rewriter's

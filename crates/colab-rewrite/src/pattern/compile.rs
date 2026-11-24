@@ -96,6 +96,39 @@ impl Qualified {
     }
 }
 
+/// What the form of an item pattern compiled with a visibility (`pub fn
+/// …` for a pattern written `fn …`) needs to rewrite.
+#[derive(Debug, Clone)]
+pub(super) struct Visible {
+    /// The visibility this form matches, `pub(crate)`.
+    visibility: &'static str,
+    /// The pattern's first word, `fn` in `fn $F() {}`.
+    keyword: String,
+}
+
+impl Visible {
+    /// The template to fill for a match of this form: an item template
+    /// that starts as the pattern does (`fn …` for `fn …`) and spells no
+    /// visibility gets the matched one back, so a rewrite keeps a `pub`.
+    /// Any other template (`$$$B`, which unwraps the item, or one that
+    /// spells its own visibility) is used as written.
+    pub(super) fn template(&self, template: &str) -> Option<String> {
+        let trimmed = template.trim_start();
+        (first_word(trimmed) == self.keyword && !spells_visibility(trimmed))
+            .then(|| format!("{} {trimmed}", self.visibility))
+    }
+}
+
+/// The first whitespace-delimited word of `text`.
+fn first_word(text: &str) -> &str {
+    text.split_whitespace().next().unwrap_or("")
+}
+
+/// Whether an item's text starts with a visibility (`pub`, `pub(…)`).
+fn spells_visibility(text: &str) -> bool {
+    text.starts_with("pub ") || text.starts_with("pub(") || text.starts_with("pub\t")
+}
+
 /// The named structure of a compiled pattern.
 ///
 /// ast-grep's default strictness ignores a candidate's *trailing*
@@ -239,6 +272,31 @@ impl StructuralPattern {
                 callee: callee.to_string(),
             });
             primary.also.push(alt);
+        }
+        // `fn $F() {}` also as `pub fn $F() {}`, `pub(crate) fn …`: a
+        // visibility is a named child of the item, which a pattern without
+        // one never matches, so `fn f` would silently miss `pub fn f`. A
+        // pattern that spells a visibility stays exact; one that is not an
+        // item does not compile with the prefix and gets no forms.
+        let trimmed = text.trim_start();
+        if !spells_visibility(trimmed) {
+            for &visibility in language.visibilities {
+                if let Ok(mut alt) =
+                    Self::compile_one(language, &format!("{visibility} {trimmed}"), true)
+                    && alt.tree != primary.tree
+                {
+                    alt.visible = Some(Visible {
+                        visibility,
+                        keyword: first_word(trimmed).to_string(),
+                    });
+                    // The form is the pattern plus a visibility, so the
+                    // pattern's literal is in every file it matches: its own
+                    // longest literal may be `crate`, which the pattern's
+                    // other forms do not need.
+                    alt.prefilter.clone_from(&primary.prefilter);
+                    primary.also.push(alt);
+                }
+            }
         }
         // A trailing `,` that changes no named node is a separator, not
         // structure: Rust's `Some($X) => $E,` then also matches the arm
@@ -410,6 +468,7 @@ impl StructuralPattern {
             lets: Vec::new(),
             also: Vec::new(),
             qualified: None,
+            visible: None,
             shape,
         }
     }

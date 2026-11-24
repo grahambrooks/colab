@@ -364,6 +364,14 @@ How it matches:
   `new $C<$T>()` does not match an anonymous class `new C<T>() { … }`: a
   rewrite of those would drop the part the pattern never mentions. Add a
   metavariable for it (`if $C { $$$B } else { $$$E }`) to match it.
+- **Visibility is the exception.** A Rust item pattern written without a
+  visibility matches the item with any (`pub`, `pub(crate)`,
+  `pub(super)`, `pub(self)`): `fn $F($$$A) -> $R { $$$B }` finds
+  `pub(super) fn run(…)` too. A rewrite whose template starts as the
+  pattern does (`fn …`) keeps the visibility it matched; a template that
+  spells one, or one that unwraps the item (`$$$B`), is used as written.
+  Spell the visibility in the pattern (`pub fn $F() {}`) to match only
+  that one.
 - **Nested matches in one pass.** In `errors.Wrap(errors.Wrap(err, "a"),
   "b")` both calls match; the inner one is rewritten first and its result
   fills the outer template, so one run reaches the fixed point. Text the
