@@ -928,6 +928,58 @@ fn mv_section_moves_a_section_and_its_links() {
 }
 
 #[test]
+fn mv_section_moves_a_section_within_its_file() {
+    let root = workspace_temp("mv-section-within");
+    let doc = "# D\n\nSee [C](#c).\n\n## A\n\na\n\n## B\n\nb\n\n## C\n\nc\n";
+    write(&root.join("doc.md"), doc);
+    let mv = |extra: &[&str]| {
+        colab()
+            .current_dir(&root)
+            .args(["mv-section", "doc.md", "D > C", "--to", "doc.md", "--write"])
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let out = mv(&["--before", "D > A"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("doc.md")).unwrap(),
+        "# D\n\nSee [C](#c).\n\n## C\n\nc\n\n## A\n\na\n\n## B\n\nb\n"
+    );
+    // Re-levelled under a sibling; the anchor keeps working.
+    let out = mv(&["--under", "D > B"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("doc.md")).unwrap(),
+        "# D\n\nSee [C](#c).\n\n## A\n\na\n\n## B\n\nb\n\n### C\n\nc\n"
+    );
+    // A section cannot go under itself.
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "mv-section",
+            "doc.md",
+            "D > B",
+            "--to",
+            "doc.md",
+            "--under",
+            "D > B > C",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn mv_section_refuses_to_break_a_link_it_cannot_repoint() {
     // Across directories the README link's path would differ per file, so
     // it is not rewritten: the link check stops the move.

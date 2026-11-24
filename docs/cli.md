@@ -1469,7 +1469,13 @@ Move a Markdown section, subsections and all, to another file:
 colab mv-section docs/plan.md "Old item" --to docs/done.md --under "Shipped" --format diff
 colab mv-section docs/plan.md "#old-item" --to docs/done.md --before "Earlier" --write
 colab mv-section docs/plan.md "Old item" --to docs/done.md --show-script
+colab mv-section docs/plan.md "Old item" --to docs/plan.md --under "Done" --write   # within the file
 ```
+
+- With `--to` the same file, the section is moved within it: deleted
+  first, so where it lands is planned in the file without it, then
+  inserted. Links stay as they are, apart from anchors to it when its
+  new level gives it a new slug. A section cannot go under itself.
 
 - Rules act on one file each, so a move is a script colab writes for
   you and runs like `refactor`: a `markdown::section` insert in the

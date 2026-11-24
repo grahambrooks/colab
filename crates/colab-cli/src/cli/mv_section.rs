@@ -1,5 +1,5 @@
-//! `colab mv-section`: move a Markdown section to another file, repointing
-//! the links to it.
+//! `colab mv-section`: move a Markdown section to another file (or within
+//! its own), repointing the links to it.
 
 use super::*;
 
@@ -115,9 +115,7 @@ pub(super) fn run_mv_section(args: MvSectionArgs) -> Result<u8> {
     let canonical = |p: &Path| fs::canonicalize(p).map_err(|e| Error::io_at(p, e));
     let (source_path, target_path) = (canonical(&args.file)?, canonical(&args.to)?);
     if source_path == target_path {
-        return Err(Error::Config(
-            "the section is already in that file; to move it within a file, use `markdown::section` rules".into(),
-        ));
+        return move_within_file(&args, &cwd, &source_path);
     }
     let rel = |p: &Path| {
         p.strip_prefix(&cwd)
@@ -223,6 +221,79 @@ pub(super) fn run_mv_section(args: MvSectionArgs) -> Result<u8> {
         }
     }
     script.push_str("}\n");
+    run_script(&args, &cwd, &script)
+}
+
+/// A section moved within its own file: removed first, so where it lands
+/// is planned in the file without it, then inserted. Its links (and the
+/// file's other links) stay as they are, apart from anchors to it when
+/// its new level gives it a new slug.
+fn move_within_file(args: &MvSectionArgs, cwd: &Path, path: &Path) -> Result<u8> {
+    use colab_lang_markdown::moving::{Placement, plan};
+    let rel = path
+        .strip_prefix(cwd)
+        .map(|r| r.to_string_lossy().replace('\\', "/"))
+        .map_err(|_| {
+            Error::Config(format!(
+                "{} is outside the working directory",
+                path.display()
+            ))
+        })?;
+    let source = fs::read_to_string(path).map_err(|e| Error::io_at(path, e))?;
+    let delete = colab_lang_markdown::section::SectionEdit::delete(&args.section)?;
+    let without = colab_core::Operation::apply(&delete, &source);
+    if without == source {
+        return Err(Error::Config(format!(
+            "`{}`: {}",
+            args.section,
+            colab_core::Operation::why_unchanged(&delete, &source)
+                .unwrap_or_else(|| "no such section".into())
+        )));
+    }
+    let placement = match (&args.under, &args.before) {
+        (Some(parent), _) => Placement::Under(parent),
+        (None, Some(sibling)) => Placement::Before(sibling),
+        (None, None) => Placement::End,
+    };
+    let moved = plan(&source, &args.section, &without, placement).map_err(Error::Config)?;
+    let quote = |text: &str| -> Result<String> {
+        if text.contains("\"##") {
+            return Err(Error::Config(
+                "the section holds `\"##`, which the generated script cannot quote".into(),
+            ));
+        }
+        Ok(format!("r##\"{text}\"##"))
+    };
+    let mut script = format!(
+        "// colab mv-section: `{}` within {rel}.\nrefactor \"mv-section\" {{\n",
+        args.section
+    );
+    let _ = writeln!(
+        script,
+        "    match markdown::section {} in \"{rel}\" {{ delete }}",
+        quote(&args.section)?
+    );
+    let _ = writeln!(
+        script,
+        "    match markdown::section {} in \"{rel}\" {{ insert {} }}",
+        quote(&moved.insert_address)?,
+        quote(&moved.body)?
+    );
+    let old = format!("#{}", moved.old_slug);
+    if moved.old_slug != moved.new_slug && source.contains(&format!("]({old}")) {
+        let _ = writeln!(
+            script,
+            "    match markdown::link \"{old}\" in \"{rel}\" {{ replace \"#{}\" }}",
+            moved.new_slug
+        );
+    }
+    script.push_str("}\n");
+    run_script(args, cwd, &script)
+}
+
+/// Print the generated script (`--show-script`), or run it as `refactor`
+/// would, over the whole tree so the link check sees every Markdown file.
+fn run_script(args: &MvSectionArgs, cwd: &Path, script: &str) -> Result<u8> {
     if args.show_script {
         print!("{script}");
         return Ok(0);
@@ -251,6 +322,6 @@ pub(super) fn run_mv_section(args: MvSectionArgs) -> Result<u8> {
     argv.extend(["--".into(), ".".into()]);
     let refactor = RefactorArgs::try_parse_from(&argv).map_err(|e| Error::Config(e.to_string()))?;
     let backends = default_backends();
-    let refactoring = codemod::compile_at_source(&script, &cwd.join("<mv-section>"), &backends)?;
+    let refactoring = codemod::compile_at_source(script, &cwd.join("<mv-section>"), &backends)?;
     run_compiled(&refactoring, &refactor)
 }

@@ -153,8 +153,9 @@ enum Commands {
     Outline(crate::markdown::OutlineArgs),
     /// Print one Markdown section, by heading path or anchor.
     Section(crate::markdown::SectionArgs),
-    /// Move a Markdown section, subsections and all, to another file:
-    /// re-levelled where it lands, links to it repointed, as one run.
+    /// Move a Markdown section, subsections and all, to another file or
+    /// elsewhere in its own: re-levelled where it lands, links to it
+    /// repointed, as one run.
     MvSection(MvSectionArgs),
     /// List broken links in Markdown files (missing files or anchors);
     /// exit 10 when there are any.
