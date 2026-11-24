@@ -110,6 +110,44 @@ whichever milestone touches the same code.
 | Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
 | `--include` / `--exclude` match paths relative to the walked target (`colab-lang-json/**` for target `crates`), while a rule's `in "<glob>"` matches paths relative to the working directory; one of them should accept the other's form | M10.6 |
 | `rust::use "tree_sitter::Parser" { delete }` does not remove one member of a brace list (`use tree_sitter::{Parser, Tree};`); a `rust::pattern` rule did | M10.6 |
+| Patterns inside Rust macro calls (`assert!(is_relevant(p))`, `vec![f(x)]`, `format!("{}", g(y))`), which are token trees to tree-sitter, so no pattern sees them; see [Patterns inside macros](#patterns-inside-macros) below | dogfood 2026-11-24 |
+| `$$$` re-emitted in a template: a one-line capture was reported reflowed (`f(a, b,\n c\n)`) and could not be reproduced. The cause is probably `keep_layout`'s token diff aligning a capture's tokens with equal tokens elsewhere in a many-line match. A fix would render each capture's span apart and keep its text verbatim, aligning only the template's literal tokens. (Fixed meanwhile: a new element before a one-per-line list gets its own line.) | dogfood 2026-11-24 |
+| C# `void $F() {}` compiles as a local function, not a method, so it matches no class member: add a class-body context (as Rust has a struct and a match one) and check which kinds other backends' contexts select for members | dogfood 2026-11-24 |
+| Switch / when cases as patterns (Go `case $X:`, JS `case $X:`, Kotlin `$X -> $E`), as Rust match arms are now | dogfood 2026-11-24 |
+| `why_unchanged` "would not parse" names no site: a file of 5 matches where one rewrite broke (a struct literal with `..base`, after which a field cannot follow) reported only "the rewritten code would not parse". Report the line of the first match whose rewrite alone breaks the parse | dogfood 2026-11-24 |
+| A bare `$$$` in an item list (`mod tests { $$$ }`) does not parse in any Rust context, while `$$$B` does; treat the anonymous sequence like a named one there | dogfood 2026-11-24 |
+
+### Patterns inside macros
+
+tree-sitter parses a macro call's arguments as a `token_tree`, so
+`rust::pattern 'is_relevant($P)'` misses `assert!(is_relevant(p))`, and
+agents fall back to `text::literal`. A sound design:
+
+1. For each `macro_invocation` that a file holds and whose token tree
+   contains the pattern's prefilter literal, take the tree's contents
+   and parse them in a wrapper as call arguments (`fn _w() { _m(<contents>); }`).
+   Only contents that parse cleanly are used: `assert!`, `vec!`,
+   `format!`, `println!` and most expression macros. `macro_rules!`
+   bodies, `matches!(x, Some(_))` patterns, and DSL macros (`html!`,
+   `sqlx::query!`) fail to parse, so they are skipped, never guessed at.
+2. Match the pattern in each parsed wrapper. Each `Found` maps back by
+   one offset (wrapper position → token-tree start), and nested macros
+   recurse.
+3. Rewrite and delete run on the wrapper text. Their edits are mapped
+   back into the file, and a delete's comma handling (`with_separator`)
+   uses the wrapper's tree, where the arguments are real `arguments`.
+4. Constraints have to be defined there. `inside` / `has` / `follows`
+   would see the wrapper, not the file, so a rule with a relational
+   constraint should skip macro contents, or evaluate the relation on
+   the file's tree from the macro node out. Semantic constraints need
+   the mapped position for the language server. Until both are
+   defined, matching inside macros should apply only to rules without
+   such constraints.
+5. Opt-in per pattern language (`PatternLanguage::macro_contents:
+   Option<MacroSpec { invocation, token_tree, wrapper }>`), so only
+   Rust (and later C/C++ macro calls, which are already
+   `call_expression`s) pays the extra parse, and only on files whose
+   macro bodies hold the prefilter literal.
 
 ## Unscheduled
 

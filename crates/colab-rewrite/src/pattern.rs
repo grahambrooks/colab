@@ -1131,6 +1131,16 @@ mod tests {
         );
         // A string is one token: its spaces are never taken from the old.
         assert_eq!(keep_layout("f(\"a  b\")", "f(\"a b\")"), "f(\"a b\")");
+        // An element added before a list laid out one per line gets its
+        // own line; added to a one-line list, it stays on that line.
+        assert_eq!(
+            keep_layout("build(\n    a,\n    b,\n)", "make(extra, a,\n    b,\n)"),
+            "make(\n    extra,\n    a,\n    b,\n)"
+        );
+        assert_eq!(
+            keep_layout("build(a, b)", "make(extra, a, b)"),
+            "make(extra, a, b)"
+        );
         // A token the template joins to the one before stays joined, though
         // it replaces one the original spaced: no `a:: b` from `a: b`.
         assert_eq!(

@@ -178,7 +178,18 @@ pub(super) fn keep_layout(old: &str, new: &str) -> String {
                     && !o.is_empty()
                     && !a[o.start].0.is_empty()
                     && !space.is_empty();
-                if in_place {
+                // A new list element put before one that starts its own
+                // line (`f(\n    a,` → `f(extra, a,`) gets a line of its
+                // own, indented like it, rather than joining the line
+                // above while the rest keep theirs.
+                let own_line = k == 0
+                    && n.start != 0
+                    && o.is_empty()
+                    && !space.contains('\n')
+                    && b[n.clone()].last().is_some_and(|t| t.1 == ",")
+                    && a.get(o.start).is_some_and(|next| next.0.contains('\n'))
+                    && b.get(n.end).is_some_and(|next| !next.0.contains('\n'));
+                if in_place || own_line {
                     emit(&mut out, &mut original_line, a[o.start].0, token, true);
                 } else {
                     emit(&mut out, &mut original_line, space, token, false);
