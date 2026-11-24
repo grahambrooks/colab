@@ -1,0 +1,3 @@
+1 csharp::pattern 'void Log() {}' -> delete
+1 csharp::pattern '$T $F() { throw new NotImplementedException(); }' -> '$T $F() { throw new NotSupportedException(); }'
+1 csharp::pattern 'private void $F() { Count(); }' -> 'void $F() { Count(); }'

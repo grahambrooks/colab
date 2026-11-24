@@ -26,7 +26,12 @@ pub(crate) fn language() -> PatternLanguage {
             doc_comments: &["/**"],
         },
         macro_contents: None,
-        visibilities: &[],
+        // One `modifiers` node holds the keywords and annotations alike.
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            sentinel: "@ColabMods",
+            kinds: &["modifiers"],
+            several: false,
+        }),
     }
 }
 
@@ -34,6 +39,33 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_function_pattern_without_modifiers_matches_any_and_keeps_them() {
+        let src = "class A {\n    fun a() {}\n    private suspend fun b() {}\n    @JvmStatic internal fun c() {}\n    fun d() = 1\n}\n";
+        let any = crate::LANG
+            .compile_pattern("fun $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(any.apply(src), "class A {\n    fun d() = 1\n}\n");
+        let fill = crate::LANG
+            .compile_pattern(
+                "fun $F() {}",
+                PatternAction::Replace("fun $F() { run() }".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            fill.apply(src),
+            "class A {\n    fun a() { run() }\n    private suspend fun b() { run() }\n    @JvmStatic internal fun c() { run() }\n    fun d() = 1\n}\n"
+        );
+        let exact = crate::LANG
+            .compile_pattern("private fun $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            exact.apply("class A {\n    fun a() {}\n    private fun b() {}\n    private suspend fun c() {}\n}\n"),
+            "class A {\n    fun a() {}\n    private suspend fun c() {}\n}\n"
+        );
+    }
 
     #[test]
     fn a_deleted_function_takes_its_kdoc() {

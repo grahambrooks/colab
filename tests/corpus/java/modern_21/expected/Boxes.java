@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 public class Boxes {
-    private final Map<String, List<Integer>> index = new HashMap<String, List<Integer>>();
+    private final Map<String, List<Integer>> index = new HashMap<>();
     private List<String> names;
 
     public Boxes() {

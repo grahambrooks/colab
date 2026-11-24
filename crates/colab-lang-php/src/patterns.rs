@@ -29,7 +29,20 @@ pub(crate) fn language() -> PatternLanguage {
             doc_comments: &["/**"],
         },
         macro_contents: None,
-        visibilities: &[],
+        // A node per keyword, and the attribute list before them.
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            sentinel: "#[ColabMods]",
+            kinds: &[
+                "attribute_list",
+                "visibility_modifier",
+                "static_modifier",
+                "final_modifier",
+                "abstract_modifier",
+                "readonly_modifier",
+                "var_modifier",
+            ],
+            several: true,
+        }),
     }
 }
 
@@ -37,6 +50,36 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_method_pattern_without_modifiers_matches_any_and_keeps_them() {
+        let src = "<?php\nclass A {\n    function a() {}\n    public static function b() {}\n    #[Pure]\n    final protected function c() {}\n    function d() { return 1; }\n}\n";
+        let any = crate::LANG
+            .compile_pattern("function $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            any.apply(src),
+            "<?php\nclass A {\n    function d() { return 1; }\n}\n"
+        );
+        let fill = crate::LANG
+            .compile_pattern(
+                "function $F() {}",
+                PatternAction::Replace("function $F() { run(); }".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            fill.apply(src),
+            "<?php\nclass A {\n    function a() { run(); }\n    public static function b() { run(); }\n    #[Pure]\n    final protected function c() { run(); }\n    function d() { return 1; }\n}\n"
+        );
+        let exact = crate::LANG
+            .compile_pattern("static function $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            exact.apply("<?php\nclass A {\n    static function a() {}\n    public static function b() {}\n}\n"),
+            "<?php\nclass A {\n    public static function b() {}\n}\n"
+        );
+    }
 
     #[test]
     fn a_deleted_function_takes_its_phpdoc() {

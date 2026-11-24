@@ -1,3 +1,9 @@
+Boxes.java:10:5: [8] private final Map<String, List<Integer>> index = new HashMap<String, List<Integer>>();
+    $A = String, List<Integer>
+    $B = 
+    $C = HashMap
+    $T = Map<String, List<Integer>>
+    $V = index
 Boxes.java:14:9: [9] names = new ArrayList<String>()
     $A = String
     $B = 

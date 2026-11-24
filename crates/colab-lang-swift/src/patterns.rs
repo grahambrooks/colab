@@ -25,7 +25,12 @@ pub(crate) fn language() -> PatternLanguage {
             doc_comments: &["///", "/**"],
         },
         macro_contents: None,
-        visibilities: &[],
+        // One `modifiers` node holds the keywords and attributes alike.
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            sentinel: "@ColabMods",
+            kinds: &["modifiers"],
+            several: false,
+        }),
     }
 }
 
@@ -33,6 +38,36 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_function_pattern_without_modifiers_matches_any_and_keeps_them() {
+        let src = "class A {\n    func a() {}\n    public static func b() {}\n    @objc private func c() {}\n    func d() -> Int { return 1 }\n}\n";
+        let any = crate::LANG
+            .compile_pattern("func $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            any.apply(src),
+            "class A {\n    func d() -> Int { return 1 }\n}\n"
+        );
+        let fill = crate::LANG
+            .compile_pattern(
+                "func $F() {}",
+                PatternAction::Replace("func $F() { run() }".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            fill.apply(src),
+            "class A {\n    func a() { run() }\n    public static func b() { run() }\n    @objc private func c() { run() }\n    func d() -> Int { return 1 }\n}\n"
+        );
+        let exact = crate::LANG
+            .compile_pattern("public func $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            exact.apply("class A {\n    func a() {}\n    public func b() {}\n    public static func c() {}\n}\n"),
+            "class A {\n    func a() {}\n    public static func c() {}\n}\n"
+        );
+    }
 
     #[test]
     fn a_deleted_function_takes_its_doc_comment() {

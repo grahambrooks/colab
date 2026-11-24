@@ -12,7 +12,7 @@ fn go() -> PatternLanguage {
         qualified_calls: None,
         leading: Leading::NONE,
         macro_contents: None,
-        visibilities: &[],
+        modifiers: None,
     }
 }
 
@@ -25,7 +25,7 @@ fn python() -> PatternLanguage {
         qualified_calls: None,
         leading: Leading::NONE,
         macro_contents: None,
-        visibilities: &[],
+        modifiers: None,
     }
 }
 
@@ -533,7 +533,7 @@ fn rust() -> PatternLanguage {
         qualified_calls: None,
         leading: Leading::NONE,
         macro_contents: None,
-        visibilities: &[],
+        modifiers: None,
     }
 }
 
@@ -602,7 +602,7 @@ fn a_multi_line_template_follows_tab_indentation() {
         qualified_calls: None,
         leading: Leading::NONE,
         macro_contents: None,
-        visibilities: &[],
+        modifiers: None,
     };
     let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();
     let src = "package p\n\nfunc f() {\n\tif x {\n\t\tlog.Print(a)\n\t}\n}\n";

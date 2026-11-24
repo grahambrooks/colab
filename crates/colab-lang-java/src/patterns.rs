@@ -32,7 +32,12 @@ pub(crate) fn language() -> PatternLanguage {
             doc_comments: &["/**"],
         },
         macro_contents: None,
-        visibilities: &[],
+        // One `modifiers` node holds the keywords and annotations alike.
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            sentinel: "@ColabMods",
+            kinds: &["modifiers"],
+            several: false,
+        }),
     }
 }
 
@@ -40,6 +45,46 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_method_pattern_without_modifiers_matches_any_and_keeps_them() {
+        let src = "class A {\n    void a() {}\n    @Override\n    public static void b() {}\n    private final void c() {}\n    int d() { return 1; }\n}\n";
+        let any = crate::LANG
+            .compile_pattern("void $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(any.apply(src), "class A {\n    int d() { return 1; }\n}\n");
+        let fill = crate::LANG
+            .compile_pattern(
+                "void $F() {}",
+                PatternAction::Replace("void $F() { run(); }".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            fill.apply(src),
+            "class A {\n    void a() { run(); }\n    @Override\n    public static void b() { run(); }\n    private final void c() { run(); }\n    int d() { return 1; }\n}\n"
+        );
+        // A template that spells its own modifiers is used as written.
+        let hide = crate::LANG
+            .compile_pattern(
+                "void $F() {}",
+                PatternAction::Replace("private void $F() {}".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            hide.apply("class A {\n    public static void b() {}\n}\n"),
+            "class A {\n    private void b() {}\n}\n"
+        );
+        // A pattern that spells them matches exactly.
+        let exact = crate::LANG
+            .compile_pattern("public void $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            exact.apply("class A {\n    void a() {}\n    public void b() {}\n    public static void c() {}\n}\n"),
+            "class A {\n    void a() {}\n    public static void c() {}\n}\n"
+        );
+    }
 
     #[test]
     fn a_deleted_method_takes_its_javadoc() {

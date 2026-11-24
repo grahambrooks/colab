@@ -1,0 +1,13 @@
+Service.cs:5:5: [0] void Log() {}
+Service.cs:7:5: [0] [Obsolete]\n    public static void Log() {}
+Service.cs:10:5: [1] int Count() { throw new NotImplementedException(); }
+    $F = Count
+    $T = int
+Service.cs:12:5: [1] [Obsolete("use Size")]\n    public static async Task<int> Length() { throw new NotImplementedException(); }
+    $F = Length
+    $T = Task<int>
+Service.cs:15:5: [1] protected internal virtual string Name() { throw new NotImplementedException(); }
+    $F = Name
+    $T = string
+Service.cs:17:5: [2] private void Reset() { Count(); }
+    $F = Reset

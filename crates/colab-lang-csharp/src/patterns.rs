@@ -32,7 +32,12 @@ pub(crate) fn language() -> PatternLanguage {
             doc_comments: &["///", "/**"],
         },
         macro_contents: None,
-        visibilities: &[],
+        // A `modifier` node per keyword, and the attribute lists before them.
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            sentinel: "[ColabMods]",
+            kinds: &["modifier", "attribute_list"],
+            several: true,
+        }),
     }
 }
 
@@ -40,6 +45,46 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_method_pattern_without_modifiers_matches_any_and_keeps_them() {
+        let src = "class A {\n    int A() {}\n    [Obsolete]\n    public static int B() {}\n    public static async Task C() {}\n    int D() { return 1; }\n}\n";
+        // A literal after the modifiers, and a metavariable, which ends a
+        // `$$$` capture at once and so is read by the fixed-count forms.
+        for pattern in ["int $F() {}", "$T $F() {}"] {
+            let any = crate::LANG
+                .compile_pattern(pattern, PatternAction::Delete, &[])
+                .unwrap();
+            let left = any.apply(src);
+            assert!(
+                !left.contains(" B()") && left.contains("D()"),
+                "{pattern}: {left}"
+            );
+        }
+        let fill = crate::LANG
+            .compile_pattern(
+                "$T $F() {}",
+                PatternAction::Replace("$T $F() { Run(); }".into()),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            fill.apply(src),
+            "class A {\n    int A() { Run(); }\n    [Obsolete]\n    public static int B() { Run(); }\n    public static async Task C() { Run(); }\n    int D() { return 1; }\n}\n"
+        );
+        // The bindings are the pattern's own; the modifiers are not one.
+        let found = fill.locate(src).unwrap();
+        let names: Vec<&str> = found[1].captures.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["F", "T"]);
+        // A pattern that spells one matches exactly.
+        let exact = crate::LANG
+            .compile_pattern("public void $F() {}", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            exact.apply("class A {\n    void A() {}\n    public void B() {}\n    public static void C() {}\n}\n"),
+            "class A {\n    void A() {}\n    public static void C() {}\n}\n"
+        );
+    }
 
     #[test]
     fn a_deleted_method_takes_its_xml_docs() {

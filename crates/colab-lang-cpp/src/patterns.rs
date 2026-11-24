@@ -26,7 +26,7 @@ pub(crate) fn language() -> PatternLanguage {
         qualified_calls: None,
         leading: colab_rewrite::pattern::Leading::NONE,
         macro_contents: None,
-        visibilities: &[],
+        modifiers: None,
     }
 }
 

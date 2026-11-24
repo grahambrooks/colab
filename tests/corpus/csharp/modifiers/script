@@ -1,0 +1,13 @@
+// A member pattern written without modifiers matches the members that
+// have them (`public static`, `[Obsolete]`), and the rewrite keeps them.
+// A pattern that spells a modifier matches only that one.
+refactor "modifiers" {
+    // A literal after the modifiers, and a metavariable.
+    match csharp::pattern 'void Log() {}' { delete }
+    match csharp::pattern '$T $F() { throw new NotImplementedException(); }' {
+        replace '$T $F() { throw new NotSupportedException(); }'
+    }
+    match csharp::pattern 'private void $F() { Count(); }' {
+        replace 'void $F() { Count(); }'
+    }
+}

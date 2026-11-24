@@ -21,10 +21,11 @@ reports 9 deprecation warnings before the pack (one per boxing constructor it re
 - **`valueOf` is not `new`.** `valueOf` may return a cached instance, so
   code comparing boxes with `==`, or locking on them, behaves
   differently. Such code was already wrong; search for it first.
-- **The diamond in fields, `var` declarations, method arguments and
-  `return`s.** With `var` it would infer `Object`; as an argument it can
-  change which overload is chosen. Only typed locals and assignments are
-  rewritten.
+- **The diamond in `var` declarations, method arguments and `return`s.**
+  With `var` it would infer `Object`; as an argument it can change which
+  overload is chosen. Only typed declarations (locals and fields, with
+  any modifiers: `private final Map<K, V> m = new HashMap<>()`) and
+  assignments are rewritten.
 - **Anonymous classes** (`new Comparator<String>() { … }`) keep their
   type arguments.
 - **Language features that need types**: records, switch expressions,

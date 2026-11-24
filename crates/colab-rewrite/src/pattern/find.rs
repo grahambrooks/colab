@@ -22,6 +22,12 @@ impl StructuralPattern {
         let mut found: Vec<_> = candidates(grep, source, &self.pattern)
             .into_iter()
             .filter(|m| self.shape.fits(m.get_node()))
+            .filter_map(|mut m| {
+                self.visible
+                    .as_ref()
+                    .is_none_or(|v| v.bound(&mut m))
+                    .then_some(m)
+            })
             .filter(|m| cheap.iter().all(|c| c.holds(m, source, frame)))
             .collect();
         for check in asked {
@@ -83,6 +89,13 @@ impl StructuralPattern {
                 let mut captures: Vec<(String, String)> = env
                     .get_matched_variables()
                     .filter_map(|var| match var {
+                        // An item's modifiers bound by the form that reads
+                        // them: colab's, not the pattern's.
+                        MetaVariable::Capture(name, _) | MetaVariable::MultiCapture(name)
+                            if name == MODIFIERS =>
+                        {
+                            None
+                        }
                         MetaVariable::Capture(name, _) => env
                             .get_match(&name)
                             .map(|node| (name.clone(), node.text().into_owned())),

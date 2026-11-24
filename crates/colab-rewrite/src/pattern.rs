@@ -95,14 +95,43 @@ pub struct PatternLanguage {
     /// [`MacroContents`]); `None` where the grammar parses macro arguments
     /// as code already (C, C++) or the language has none.
     pub macro_contents: Option<MacroContents>,
-    /// The visibilities an item can be written with (Rust: `pub`,
-    /// `pub(crate)`, …). An item pattern written without one also matches
-    /// the item with each, and a rewrite of such a match keeps it, so `fn
-    /// $F($$$A) { $$$B }` finds `pub(super) fn f() {}` too. A pattern that
-    /// spells one (`pub fn …`) matches exactly. Empty where a visibility is
-    /// not a child of the item's node.
-    pub visibilities: &'static [&'static str],
+    /// How an item's modifiers parse (see [`Modifiers`]): an item pattern
+    /// written without them then matches the item with any, and a rewrite
+    /// keeps them. `None` where the language has none a pattern would
+    /// leave out.
+    pub modifiers: Option<Modifiers>,
 }
+
+/// An item's modifiers — visibility, `static`, annotations: Rust's `pub`,
+/// Java's `@Override public static` — which a pattern for the item
+/// usually leaves out. `fn $F($$$A) { $$$B }` then also matches
+/// `pub(super) fn f() {}`, and `void $F() {}` matches `public static void
+/// f() {}`.
+///
+/// An item pattern that spells no modifiers is compiled once more with
+/// `sentinel` in front, which parses as the modifiers and becomes the
+/// reserved metavariable [`MODIFIERS`], so one more form matches every
+/// combination. That form refuses an item with none (the pattern as
+/// written matches those), and a rewrite whose template is an item that
+/// spells none gets the matched ones back. A pattern that spells one
+/// (`pub fn …`, `static function …`) is matched as written.
+#[derive(Clone, Copy, Debug)]
+pub struct Modifiers {
+    /// Text no code contains that parses where an item's modifiers go:
+    /// Java's `@ColabMods`, Rust's `pub(in colab_mods)`.
+    pub sentinel: &'static str,
+    /// The node kinds an item's modifiers parse as, the sentinel's
+    /// included: Java's `modifiers`; C#'s `modifier` and `attribute_list`.
+    pub kinds: &'static [&'static str],
+    /// Whether the modifiers are several sibling nodes (C#, PHP: one per
+    /// keyword), captured as a `$$$` sequence, rather than one node that
+    /// holds them all (Java's `modifiers`).
+    pub several: bool,
+}
+
+/// The metavariable an item's modifiers are bound to in the form compiled
+/// with [`Modifiers::sentinel`]. Reserved, like [`QUALIFIER`].
+pub const MODIFIERS: &str = "COLAB_MODS";
 
 /// Macro calls whose arguments the grammar keeps as an unparsed token
 /// tree (Rust's `assert!(…)`, `vec![…]`), which a pattern would otherwise
@@ -176,9 +205,25 @@ struct TsLang {
     leading: Leading,
     /// Macro calls a match may be inside (not used by ast-grep).
     macro_contents: Option<MacroContents>,
+    /// How an item's modifiers parse: a pattern's [`Modifiers::sentinel`]
+    /// is the metavariable [`MODIFIERS`].
+    modifiers: Option<Modifiers>,
 }
 
 impl Language for TsLang {
+    fn extract_meta_var(&self, source: &str) -> Option<MetaVariable> {
+        if let Some(modifiers) = self.modifiers
+            && source == modifiers.sentinel
+        {
+            return Some(if modifiers.several {
+                MetaVariable::MultiCapture(MODIFIERS.to_string())
+            } else {
+                MetaVariable::Capture(MODIFIERS.to_string(), true)
+            });
+        }
+        meta_variable(source, self.expando)
+    }
+
     fn pre_process_pattern<'q>(&self, query: &'q str) -> Cow<'q, str> {
         if self.expando == '$' {
             Cow::Borrowed(query)
@@ -210,6 +255,41 @@ impl LanguageExt for TsLang {
     fn get_ts_language(&self) -> TSLanguage {
         self.grammar.clone()
     }
+}
+
+/// ast-grep's own reading of a metavariable (`$A`, `$_`, `$$$`, `$$$A`,
+/// `$$A`), which is crate-private there and so repeated here for
+/// [`TsLang`]'s `extract_meta_var`, which adds the modifiers sentinel.
+fn meta_variable(src: &str, expando: char) -> Option<MetaVariable> {
+    let valid_first = |c: char| matches!(c, 'A'..='Z' | '_');
+    let valid = |c: char| matches!(c, 'A'..='Z' | '_' | '0'..='9');
+    let ellipsis: String = std::iter::repeat_n(expando, 3).collect();
+    if src == ellipsis {
+        return Some(MetaVariable::Multiple);
+    }
+    if let Some(name) = src.strip_prefix(&ellipsis) {
+        if !name.starts_with(valid_first) || !name.chars().all(valid) {
+            return None;
+        }
+        return Some(if name.starts_with('_') {
+            MetaVariable::Multiple
+        } else {
+            MetaVariable::MultiCapture(name.to_owned())
+        });
+    }
+    let rest = src.strip_prefix(expando)?;
+    let (name, named) = match rest.strip_prefix(expando) {
+        Some(name) => (name, false),
+        None => (rest, true),
+    };
+    if !name.starts_with(valid_first) || !name.chars().all(valid) {
+        return None;
+    }
+    Some(if name.starts_with('_') {
+        MetaVariable::Dropped(named)
+    } else {
+        MetaVariable::Capture(name.to_owned(), named)
+    })
 }
 
 /// One place a pattern matched.

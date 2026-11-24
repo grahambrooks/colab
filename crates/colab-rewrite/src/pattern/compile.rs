@@ -96,37 +96,156 @@ impl Qualified {
     }
 }
 
-/// What the form of an item pattern compiled with a visibility (`pub fn
-/// …` for a pattern written `fn …`) needs to rewrite.
-#[derive(Debug, Clone)]
+/// What the form of an item pattern compiled with the modifiers sentinel
+/// (`@ColabMods void f()` for a pattern written `void f()`) needs.
+#[derive(Clone)]
 pub(super) struct Visible {
-    /// The visibility this form matches, `pub(crate)`.
-    visibility: &'static str,
-    /// The pattern's first word, `fn` in `fn $F() {}`.
-    keyword: String,
+    /// The language, to read a template as code.
+    language: PatternLanguage,
+    modifiers: Modifiers,
+    /// For [`Modifiers::several`]: `Some(k)` on a form that reads exactly
+    /// `k` modifiers, one placeholder each (see [`modifier_forms`]); `None`
+    /// on the one whose `$$$` capture reads them all.
+    count: Option<usize>,
 }
 
 impl Visible {
-    /// The template to fill for a match of this form: an item template
-    /// that starts as the pattern does (`fn …` for `fn …`) and spells no
-    /// visibility gets the matched one back, so a rewrite keeps a `pub`.
-    /// Any other template (`$$$B`, which unwraps the item, or one that
-    /// spells its own visibility) is used as written.
+    /// The template to fill for a match of this form: a template that is
+    /// an item which spells no modifiers — it parses with the sentinel in
+    /// front, as the modifiers — gets the matched ones back, so a rewrite
+    /// keeps a `public static`. Any other template (`$$$B`, which unwraps
+    /// the item; one that spells its own; one that is not an item) is used
+    /// as written.
     pub(super) fn template(&self, template: &str) -> Option<String> {
         let trimmed = template.trim_start();
-        (first_word(trimmed) == self.keyword && !spells_visibility(trimmed))
-            .then(|| format!("{} {trimmed}", self.visibility))
+        if trimmed.starts_with("$$$") || self.leads_with_modifiers(trimmed) {
+            return None;
+        }
+        let prefixed = format!("{} {trimmed}", self.modifiers.sentinel);
+        let sigil = if self.modifiers.several { "$$$" } else { "$" };
+        self.takes_modifiers(&prefixed)
+            .then(|| format!("{sigil}{MODIFIERS} {trimmed}"))
+    }
+
+    /// Whether `text`, read as a pattern, starts with modifiers.
+    fn leads_with_modifiers(&self, text: &str) -> bool {
+        StructuralPattern::compile_one(&self.language, text, true)
+            .is_ok_and(|p| leads_with(&p.tree, self.modifiers.kinds))
+    }
+
+    /// Whether `text`, written with the sentinel in front, reads with the
+    /// sentinel as its modifiers: the [`MODIFIERS`] metavariable, first.
+    fn takes_modifiers(&self, text: &str) -> bool {
+        StructuralPattern::compile_one(&self.language, text, true)
+            .is_ok_and(|p| self.reads_as_modifiers(&p))
+    }
+
+    /// Whether a compiled form starts with the sentinel as its modifiers.
+    pub(super) fn reads_as_modifiers(&self, form: &StructuralPattern) -> bool {
+        leads_with(&form.tree, self.modifiers.kinds)
+            && form.pattern.defined_vars().contains(MODIFIERS)
+    }
+
+    /// `false` for a match of this form that binds no modifiers: the
+    /// sentinel's `$$$` capture also matches none, and the pattern as
+    /// written matches those items already. A form that reads exactly `k`
+    /// keeps a match only when the item's leading modifiers are those `k`,
+    /// and binds them as [`MODIFIERS`] for the template.
+    pub(super) fn bound<D: ast_grep_core::Doc>(&self, m: &mut NodeMatch<'_, D>) -> bool {
+        if !self.modifiers.several {
+            return true;
+        }
+        let Some(k) = self.count else {
+            return !m.get_env().get_multiple_matches(MODIFIERS).is_empty();
+        };
+        let leading: Vec<_> = m
+            .get_node()
+            .children()
+            .filter(|c| c.is_named() && !c.is_extra())
+            .take_while(|c| self.modifiers.kinds.contains(&c.kind().as_ref()))
+            .collect();
+        leading.len() == k && m.get_env_mut().insert_multi(MODIFIERS, leading).is_some()
     }
 }
 
-/// The first whitespace-delimited word of `text`.
-fn first_word(text: &str) -> &str {
-    text.split_whitespace().next().unwrap_or("")
+/// The most modifiers a form reads one placeholder each for (`[Obsolete]
+/// public static async`): an item with more is matched only by a pattern
+/// that spells some of them.
+const MOST_MODIFIERS: usize = 4;
+
+/// The form or forms that read [`Modifiers::several`] modifiers, from
+/// `alt`, compiled with the sentinel as a `$$$` [`MODIFIERS`] capture.
+///
+/// ast-grep ends an ellipsis at the first later goal a candidate child
+/// matches, after skipping the goal's anonymous tokens. When the goal is a
+/// keyword (PHP's `$$$M function $F() {}`), marking it named makes it the
+/// goal: it matches only the candidate's own `function`, so the capture
+/// takes every modifier before it, and one form does. When the goal is a
+/// metavariable (C#'s `$$$M $T $F() {}`), it matches the first modifier,
+/// so no capture can end in the right place: then the form is `k` named
+/// placeholders, for each `k` up to [`MOST_MODIFIERS`], and
+/// [`Visible::bound`] keeps a match only when they are the item's `k`
+/// modifiers.
+fn modifier_forms(mut alt: StructuralPattern, visible: &Visible) -> Vec<StructuralPattern> {
+    use ast_grep_core::matcher::PatternNode;
+    let Some(children) = modifiers_parent(&mut alt.pattern.node) else {
+        return Vec::new();
+    };
+    let next = children[1..].iter().find(|c| !c.is_trivial());
+    if !matches!(next, Some(PatternNode::MetaVar { .. })) {
+        for child in children.iter_mut().skip(1) {
+            match child {
+                PatternNode::Terminal { is_named, .. } if !*is_named => *is_named = true,
+                _ => break,
+            }
+        }
+        alt.visible = Some(visible.clone());
+        return vec![alt];
+    }
+    (1..=MOST_MODIFIERS)
+        .map(|k| {
+            let mut form = alt.clone_form();
+            if let Some(children) = modifiers_parent(&mut form.pattern.node) {
+                let placeholder = PatternNode::MetaVar {
+                    meta_var: MetaVariable::Dropped(true),
+                };
+                children.splice(0..1, std::iter::repeat_n(placeholder, k));
+            }
+            form.visible = Some(Visible {
+                count: Some(k),
+                ..visible.clone()
+            });
+            form
+        })
+        .collect()
 }
 
-/// Whether an item's text starts with a visibility (`pub`, `pub(…)`).
-fn spells_visibility(text: &str) -> bool {
-    text.starts_with("pub ") || text.starts_with("pub(") || text.starts_with("pub\t")
+/// The children of the pattern node whose first child is the `$$$`
+/// [`MODIFIERS`] capture.
+fn modifiers_parent(
+    node: &mut ast_grep_core::matcher::PatternNode,
+) -> Option<&mut Vec<ast_grep_core::matcher::PatternNode>> {
+    use ast_grep_core::matcher::PatternNode;
+    let PatternNode::Internal { children, .. } = node else {
+        return None;
+    };
+    let leads = matches!(
+        children.first(),
+        Some(PatternNode::MetaVar { meta_var: MetaVariable::MultiCapture(name) }) if name == MODIFIERS
+    );
+    if leads {
+        return Some(children);
+    }
+    children.iter_mut().find_map(modifiers_parent)
+}
+
+/// Whether the item a printed pattern tree ([`print_tree`]) starts with
+/// has a first child of one of `kinds`: its modifiers.
+fn leads_with(tree: &str, kinds: &[&str]) -> bool {
+    tree.lines()
+        .nth(1)
+        .and_then(|line| line.split_whitespace().find(|w| !w.ends_with(':')))
+        .is_some_and(|kind| kinds.contains(&kind))
 }
 
 /// The named structure of a compiled pattern.
@@ -144,13 +263,40 @@ pub(super) enum Shape {
     Any,
     /// A `$$$` sequence.
     Many,
+    /// The modifiers sentinel as a `$$$` sequence ([`Modifiers::several`]):
+    /// it absorbs a candidate's leading children of these kinds, and no
+    /// others, so the rest of the item is held to the pattern still.
+    Modifiers(&'static [&'static str]),
+    /// A modifiers node the pattern spells (`public` in `public void
+    /// f()`), with this many tokens: its keywords are anonymous, which
+    /// ast-grep lets trail, so without the count `public` would match
+    /// `public static`.
+    Tokens(usize),
     /// An inner node and its named, non-comment children.
     Node(Vec<Shape>),
 }
 
 impl Shape {
-    fn of(node: Node<'_>, source: &str, expando: char) -> Self {
+    fn of(node: Node<'_>, source: &str, lang: &TsLang) -> Self {
+        let expando = lang.expando;
         let text = node.utf8_text(source.as_bytes()).unwrap_or("").trim();
+        if let Some(modifiers) = lang.modifiers
+            && text == modifiers.sentinel
+        {
+            return if modifiers.several {
+                Self::Modifiers(modifiers.kinds)
+            } else {
+                Self::Any
+            };
+        }
+        if let Some(modifiers) = lang.modifiers
+            && !modifiers.several
+            && modifiers.kinds.contains(&node.kind())
+            && node.child_count() > 0
+        {
+            let mut cursor = node.walk();
+            return Self::Tokens(node.children(&mut cursor).filter(|c| !c.is_extra()).count());
+        }
         if let Some(rest) = text.strip_prefix(expando) {
             let many = rest.starts_with(expando);
             let name = rest.trim_start_matches(expando);
@@ -168,7 +314,7 @@ impl Shape {
         Self::Node(
             node.children(&mut cursor)
                 .filter(|c| !c.is_missing() && (c.is_error() || (c.is_named() && !c.is_extra())))
-                .map(|c| Self::of(c, source, expando))
+                .map(|c| Self::of(c, source, lang))
                 .collect(),
         )
     }
@@ -179,16 +325,27 @@ impl Shape {
         &self,
         candidate: &ast_grep_core::Node<'_, D>,
     ) -> bool {
-        let Self::Node(goals) = self else {
-            return true;
+        let goals = match self {
+            Self::Node(goals) => goals,
+            Self::Tokens(n) => return candidate.children().filter(|c| !c.is_extra()).count() == *n,
+            _ => return true,
+        };
+        let (goals, absorbed) = match goals.split_first() {
+            Some((Self::Modifiers(kinds), rest)) => (rest, *kinds),
+            _ => (goals.as_slice(), &[][..]),
         };
         if goals.contains(&Self::Many) {
             return true;
         }
-        let named: Vec<_> = candidate
+        let mut named: Vec<_> = candidate
             .children()
             .filter(|c| c.is_named() && !c.is_extra())
             .collect();
+        let modifiers = named
+            .iter()
+            .take_while(|c| absorbed.contains(&c.kind().as_ref()))
+            .count();
+        named.drain(..modifiers);
         if named.len() != goals.len() {
             return named.len() < goals.len();
         }
@@ -204,6 +361,97 @@ impl StructuralPattern {
     /// names every attempt, so a pattern that is not valid code in this
     /// language says so rather than silently matching nothing.
     pub fn compile(language: &PatternLanguage, text: &str) -> Result<Self, String> {
+        let mut primary = Self::readings(language, text)?;
+        // `to_svg($A)` also as `$COLAB_PATH::to_svg($A)`: the callee
+        // `svg::to_svg` is a scoped path, which a bare identifier never
+        // matches, so without this a pattern silently misses every
+        // qualified call to the function it names.
+        if let Some(sep) = language.qualified_calls
+            && let Some((qualified, callee)) = qualify_call(text, sep)
+            && let Ok(mut alt) = Self::compile_one(language, &qualified, true)
+        {
+            alt.qualified = Some(Qualified {
+                separator: sep,
+                callee: callee.to_string(),
+            });
+            primary.also.push(alt);
+        }
+        // `void $F() {}` also as `@ColabMods void $F() {}`, the sentinel
+        // reading as the modifiers and binding them: an item's modifiers
+        // are named children, which a pattern without them never matches,
+        // so `fn f` would silently miss `pub fn f`. A pattern that spells
+        // modifiers stays exact (its tree leads with them, and the sentinel
+        // joins them rather than standing for them); one that is not an
+        // item does not read the sentinel as modifiers and gets no form.
+        // Each reading of the sentinel text that takes it as modifiers is a
+        // form (C#: a local function, and a method in a class).
+        if let Some(modifiers) = language.modifiers
+            && !leads_with(&primary.tree, modifiers.kinds)
+        {
+            let visible = Visible {
+                language: language.clone(),
+                modifiers,
+                count: None,
+            };
+            let prefixed = format!("{} {}", modifiers.sentinel, text.trim_start());
+            if let Ok(mut first) = Self::readings(language, &prefixed) {
+                let others = std::mem::take(&mut first.also);
+                for mut alt in std::iter::once(first).chain(others) {
+                    if visible.reads_as_modifiers(&alt) {
+                        // The form's literals are the pattern's (the
+                        // sentinel is a metavariable), so the pattern's
+                        // prefilter holds for it.
+                        alt.prefilter.clone_from(&primary.prefilter);
+                        if modifiers.several {
+                            primary.also.extend(modifier_forms(alt, &visible));
+                        } else {
+                            alt.visible = Some(visible.clone());
+                            primary.also.push(alt);
+                        }
+                    }
+                }
+            }
+        }
+        // A trailing `,` that changes no named node is a separator, not
+        // structure: Rust's `Some($X) => $E,` then also matches the arm
+        // written `Some(x) => { … }` (or last, without one). Where the comma
+        // means something (Python's `x,` is a tuple) the trees differ and
+        // the pattern is left as written.
+        if let Some(stripped) = text.trim_end().strip_suffix(',')
+            && let Ok(loose) = Self::compile_one(language, stripped, true)
+            && loose.tree == primary.tree
+        {
+            primary.pattern = loose.pattern;
+            primary.context = loose.context;
+        }
+        primary.prefilter = shared_prefilter(&primary);
+        Ok(primary)
+    }
+
+    /// A copy of a form as compiled, before any `where` constraint or
+    /// `also` form is added (those are compiled for each form after).
+    fn clone_form(&self) -> Self {
+        debug_assert!(self.checks.is_empty() && self.lets.is_empty() && self.also.is_empty());
+        Self {
+            lang: self.lang.clone(),
+            pattern: self.pattern.clone(),
+            text: self.text.clone(),
+            prefilter: self.prefilter.clone(),
+            context: self.context.clone(),
+            tree: self.tree.clone(),
+            checks: Vec::new(),
+            constraints: Vec::new(),
+            lets: Vec::new(),
+            also: Vec::new(),
+            qualified: self.qualified.clone(),
+            visible: self.visible.clone(),
+            shape: self.shape.clone(),
+        }
+    }
+
+    /// `text` compiled in the first context it parses in, with every other
+    /// context that reads it as a different tree among its `also` forms.
+    fn readings(language: &PatternLanguage, text: &str) -> Result<Self, String> {
         let alt_in = |context: &'static &'static str| {
             let only = PatternLanguage {
                 contexts: std::slice::from_ref(context),
@@ -259,58 +507,6 @@ impl StructuralPattern {
                 }
             }
         }
-        // `to_svg($A)` also as `$COLAB_PATH::to_svg($A)`: the callee
-        // `svg::to_svg` is a scoped path, which a bare identifier never
-        // matches, so without this a pattern silently misses every
-        // qualified call to the function it names.
-        if let Some(sep) = language.qualified_calls
-            && let Some((qualified, callee)) = qualify_call(text, sep)
-            && let Ok(mut alt) = Self::compile_one(language, &qualified, true)
-        {
-            alt.qualified = Some(Qualified {
-                separator: sep,
-                callee: callee.to_string(),
-            });
-            primary.also.push(alt);
-        }
-        // `fn $F() {}` also as `pub fn $F() {}`, `pub(crate) fn …`: a
-        // visibility is a named child of the item, which a pattern without
-        // one never matches, so `fn f` would silently miss `pub fn f`. A
-        // pattern that spells a visibility stays exact; one that is not an
-        // item does not compile with the prefix and gets no forms.
-        let trimmed = text.trim_start();
-        if !spells_visibility(trimmed) {
-            for &visibility in language.visibilities {
-                if let Ok(mut alt) =
-                    Self::compile_one(language, &format!("{visibility} {trimmed}"), true)
-                    && alt.tree != primary.tree
-                {
-                    alt.visible = Some(Visible {
-                        visibility,
-                        keyword: first_word(trimmed).to_string(),
-                    });
-                    // The form is the pattern plus a visibility, so the
-                    // pattern's literal is in every file it matches: its own
-                    // longest literal may be `crate`, which the pattern's
-                    // other forms do not need.
-                    alt.prefilter.clone_from(&primary.prefilter);
-                    primary.also.push(alt);
-                }
-            }
-        }
-        // A trailing `,` that changes no named node is a separator, not
-        // structure: Rust's `Some($X) => $E,` then also matches the arm
-        // written `Some(x) => { … }` (or last, without one). Where the comma
-        // means something (Python's `x,` is a tuple) the trees differ and
-        // the pattern is left as written.
-        if let Some(stripped) = text.trim_end().strip_suffix(',')
-            && let Ok(loose) = Self::compile_one(language, stripped, true)
-            && loose.tree == primary.tree
-        {
-            primary.pattern = loose.pattern;
-            primary.context = loose.context;
-        }
-        primary.prefilter = shared_prefilter(&primary);
         Ok(primary)
     }
 
@@ -338,6 +534,7 @@ impl StructuralPattern {
             expando: language.expando,
             leading: language.leading,
             macro_contents: language.macro_contents,
+            modifiers: language.modifiers,
         };
         let expanded = expand(text, lang.expando);
 
@@ -373,7 +570,7 @@ impl StructuralPattern {
                     let root = single_root(tree.root_node());
                     let prefilter = longest_literal(root, &expanded, lang.expando);
                     let printed = print_tree(root, &expanded, lang.expando, false);
-                    let shape = Shape::of(root, &expanded, lang.expando);
+                    let shape = Shape::of(root, &expanded, &lang);
                     return Ok(Self::finish(
                         lang, pattern, text, prefilter, None, printed, shape,
                     ));
@@ -426,7 +623,7 @@ impl StructuralPattern {
                 Ok(pattern) => {
                     let prefilter = longest_literal(node, &filled_expanded, lang.expando);
                     let printed = print_tree(node, &filled_expanded, lang.expando, false);
-                    let shape = Shape::of(node, &filled_expanded, lang.expando);
+                    let shape = Shape::of(node, &filled_expanded, &lang);
                     return Ok(Self::finish(
                         lang,
                         pattern,

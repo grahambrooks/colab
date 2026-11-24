@@ -15,7 +15,7 @@ refactor "java-8-to-21" {
     match java::pattern 'new Character($X)' { replace 'Character.valueOf($X)' }
 
     // Diamond, only where the declared type supplies the type arguments:
-    // a typed local (not `var`, which would infer `Object`) or an
+    // a typed local or field (not `var`, which would infer `Object`) or an
     // assignment.
     match java::pattern '$T $V = new $C<$$$A>($$$B);'
         where $$$A count 1.., not $T matches /^var$/

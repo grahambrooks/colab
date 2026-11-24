@@ -47,7 +47,11 @@ pub(crate) fn language() -> PatternLanguage {
             macros: EXPRESSION_MACROS,
             wrapper: "fn _w() {\n_m(@@PATTERN@@);\n}\n",
         }),
-        visibilities: &["pub", "pub(crate)", "pub(super)", "pub(self)"],
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            sentinel: "pub(in colab_mods)",
+            kinds: &["visibility_modifier"],
+            several: false,
+        }),
     }
 }
 
