@@ -478,6 +478,27 @@ impl colab_mcp::ToolProvider for BinaryTools {
             roots: roots.to_vec(),
         })]
     }
+
+    /// `[patterns] macros` of the `colab.toml` at or above `cwd` (or the
+    /// server's working directory), as `colab refactor` reads them. One
+    /// that does not parse is ignored here, with a warning.
+    fn macros(&self, cwd: Option<&Path>) -> Vec<String> {
+        let dir = match cwd {
+            Some(dir) => dir.to_path_buf(),
+            None => match std::env::current_dir() {
+                Ok(dir) => dir,
+                Err(_) => return Vec::new(),
+            },
+        };
+        match crate::config::find_from(&dir).map(|p| crate::config::load(&p)) {
+            Some(Ok(config)) => config.macros,
+            Some(Err(e)) => {
+                log::warn!("ignoring colab.toml's [patterns]: {e}");
+                Vec::new()
+            }
+            None => Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]

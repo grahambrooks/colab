@@ -14,6 +14,12 @@ impl StructuralPattern {
     /// it (`() => f(x)`, `return f(x)`) is left in place: removing it would
     /// leave the code around it incomplete. Rewrite those with `replace`.
     pub fn delete(&self, source: &str) -> String {
+        self.delete_in(source, None)
+    }
+
+    /// [`delete`](Self::delete), judged in `frame` when `source` is a
+    /// macro's contents.
+    pub(super) fn delete_in(&self, source: &str, frame: Option<&Frame<'_>>) -> String {
         let mut tree = None;
         let mut parsed = || {
             tree.get_or_insert_with(|| crate::parse_cache::parse(&self.lang.grammar, source))
@@ -21,7 +27,7 @@ impl StructuralPattern {
         };
         let leading = self.lang.leading;
         let mut spans: Vec<(usize, usize)> = Vec::new();
-        for found in self.find_file(source) {
+        for found in self.find_file(source, frame) {
             // An item's doc comments and attributes go with it.
             let start = if leading.kinds.is_empty() && leading.doc_comments.is_empty() {
                 found.start
@@ -63,12 +69,16 @@ impl StructuralPattern {
             kept.push(span);
         }
         let mut out = source.to_string();
-        for (start, end) in kept.into_iter().rev() {
+        for &(start, end) in kept.iter().rev() {
             out.replace_range(start..end, "");
         }
         // Then inside macro calls, where the wrapper's tree says which
-        // comma goes with an argument.
-        self.edit_macros(&out, |wrapped| self.delete(wrapped))
+        // comma goes with an argument, judged where the text now is.
+        let next =
+            frame.map(|f| f.after(kept.iter().map(|&(s, e)| (s, e, 0)).collect(), out.len()));
+        self.edit_macros(&out, next.as_ref(), |wrapped, inner| {
+            self.delete_in(wrapped, Some(inner))
+        })
     }
 
     /// `true` when `source` parses without a syntax error.

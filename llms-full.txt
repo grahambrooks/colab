@@ -340,11 +340,17 @@ How it matches:
   Contents that do not parse as arguments (`vec![x; n]`, `info!(target:
   "a", …)`) are left alone, and so is every other macro: `matches!`'s
   argument is a pattern, `html!` and `sqlx::query!` are their own
-  languages. A rule with a `where` test of a match's surroundings
-  (`inside`, `follows`, `precedes`, `nth`, `field`) or a semantic one
-  (`type`, `resolves`, …) does not read macro contents, since there the
-  surroundings would be the parser's wrapper, not your file; `has`,
-  `matches`, `is`, `count` and `in` do.
+  languages. A project adds its own expression macros in `colab.toml`
+  (`[patterns] macros = ["my_assert", "check"]`, names without `!`),
+  read by `refactor`, `find`, `fix` and the MCP tools (from the
+  `colab.toml` at or above `cwd`).
+  `where` tests judge a match in a macro as one in your file: `inside`
+  sees the contents' own nodes, then the macro call and the code around
+  it (`where inside 'fn t($$$A) { $$$B }'`, `where directly inside
+  'assert!($$$A)'`), never the parser's wrapper; `follows`, `precedes`
+  and `nth` count the macro's other arguments (which are in no `field`);
+  and a semantic test (`type`, `resolves`, …) asks the language server
+  about your file at the argument's position.
 - **A skipped rewrite names its site.** When the rewritten file would not
   parse, the rule changes nothing in it, and its explanation names the
   first match whose rewrite alone breaks the parse (line and column): in a
@@ -1600,6 +1606,9 @@ tidy = true                           # organize imports and format the changed 
 [formatters]                          # per extension; --tidy uses these instead of a server
 go = "gofmt"                          # reads the file on stdin, writes it on stdout
 ts = "prettier --stdin-filepath {path}"
+
+[patterns]                            # read by refactor, find, fix and the MCP tools too
+macros = ["my_assert", "check"]       # Rust expression macros whose contents patterns read, as assert!'s
 
 [[packs]]
 pack = "go/1.18-modern"               # built in: `colab pack list`

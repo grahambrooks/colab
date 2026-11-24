@@ -354,6 +354,10 @@ pub(crate) fn compile_packs(
     config: &crate::config::Config,
     backends: &BackendRegistry,
 ) -> Result<Vec<codemod::Refactoring>> {
+    // The packs read inside the project's own expression macros too.
+    if let Some(run) = colab_core::run::Run::current() {
+        run.set_macros(config.macros.clone());
+    }
     let mut parts = Vec::new();
     for pack in &config.packs {
         parts.push(match pack {
@@ -481,7 +485,23 @@ impl ScriptArgs {
 
     fn compile(&self, backends: &BackendRegistry) -> Result<codemod::Refactoring> {
         let (text, base) = self.load()?;
+        use_project_macros();
         codemod::compile_at_source(&text, &base, backends)
+    }
+}
+
+/// The nearest `colab.toml`'s `[patterns] macros`, set on the current run
+/// so patterns read inside the project's own expression macros. A
+/// `colab.toml` that does not parse is `colab fix`'s to report; here it is
+/// only a warning, so it never stops a script from running.
+fn use_project_macros() {
+    let Some(run) = colab_core::run::Run::current() else {
+        return;
+    };
+    match crate::config::find() {
+        Ok(Some(config)) => run.set_macros(config.macros),
+        Ok(None) => {}
+        Err(e) => log::warn!("ignoring colab.toml's [patterns]: {e}"),
     }
 }
 

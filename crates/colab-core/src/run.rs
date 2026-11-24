@@ -32,6 +32,10 @@ pub struct Run {
     /// The directory a rule's `in "<glob>"` is relative to, when it is not
     /// the process's working directory (an MCP call's `cwd`).
     base: RwLock<Option<PathBuf>>,
+    /// Expression macros whose contents patterns read beyond the
+    /// language's own list: the project's (`colab.toml` `[patterns]
+    /// macros`).
+    macros: RwLock<Vec<String>>,
 }
 
 thread_local! {
@@ -79,6 +83,23 @@ impl Run {
     /// one ([`set_base`](Self::set_base)).
     pub fn base(&self) -> Option<PathBuf> {
         self.base
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Read the contents of these macros too, as the language's own
+    /// expression macros are (`assert!`, `vec!`, …): a project's own
+    /// `my_assert!`, listed in `colab.toml` `[patterns] macros`. Names
+    /// only, without the `!`; a path's last segment is compared.
+    pub fn set_macros(&self, macros: Vec<String>) {
+        *self.macros.write().unwrap_or_else(PoisonError::into_inner) = macros;
+    }
+
+    /// The macros this run reads beyond the language's own
+    /// ([`set_macros`](Self::set_macros)).
+    pub fn macros(&self) -> Vec<String> {
+        self.macros
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()

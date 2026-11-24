@@ -4365,6 +4365,43 @@ fn edit_finds_a_declaration_by_name_path_and_previews_like_any_run() {
 }
 
 #[test]
+fn colab_toml_lists_the_projects_expression_macros() {
+    let root = workspace_temp("project-macros");
+    write(
+        &root.join("lib.rs"),
+        "fn t(p: &Path) {\n    my_assert!(is_relevant(p));\n}\n",
+    );
+    let run = || {
+        colab()
+            .current_dir(&root)
+            .args([
+                "refactor",
+                "-e",
+                "match rust::pattern 'is_relevant($P)' { replace 'LANG.is_source($P)' }",
+                "--format",
+                "diff",
+                ".",
+            ])
+            .output()
+            .unwrap()
+    };
+    // Unlisted, `my_assert!`'s contents are a token tree no pattern reads.
+    assert!(!String::from_utf8_lossy(&run().stdout).contains("LANG.is_source"));
+    write(
+        &root.join("colab.toml"),
+        "[patterns]\nmacros = [\"my_assert\"]\n",
+    );
+    let out = run();
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("+    my_assert!(LANG.is_source(p));"),
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn a_script_file_of_bare_rules_runs_named_after_the_file() {
     let root = workspace_temp("bare-script");
     write(

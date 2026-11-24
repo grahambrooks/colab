@@ -383,24 +383,149 @@ mod tests {
         assert!(some.locate(src).unwrap().is_empty());
     }
 
-    #[test]
-    fn a_rule_that_reads_a_matchs_surroundings_skips_macro_contents() {
-        // In the wrapper, `inside` would see the wrapper, not the file.
-        let op = crate::LANG
+    fn when(negated: bool, test: colab_core::Test) -> colab_core::Constraint {
+        colab_core::Constraint { negated, test }
+    }
+
+    fn renamed(constraints: &[colab_core::Constraint], src: &str) -> String {
+        crate::LANG
             .compile_pattern(
                 "is_relevant($P)",
                 PatternAction::Replace("LANG.is_source($P)".into()),
-                &[colab_core::Constraint {
-                    negated: false,
-                    test: colab_core::Test::Inside("fn t($$$A) { $$$B }".into()),
-                }],
+                constraints,
             )
-            .unwrap();
-        let src =
-            "fn t(p: &Path) {\n    assert!(is_relevant(p));\n    let r = is_relevant(p);\n}\n";
+            .unwrap()
+            .apply(src)
+    }
+
+    #[test]
+    fn a_match_in_a_macro_is_judged_by_where_the_macro_is() {
+        use colab_core::{Relation, Stop, Test};
+        let src = "fn t(p: &Path) {\n    assert!(is_relevant(p));\n    let r = is_relevant(p);\n}\nfn u(p: &Path) {\n    assert!(is_relevant(p));\n}\n";
+        // `inside` reads the file around the macro, never the wrapper.
+        let inside_t = renamed(
+            &[when(false, Test::Inside("fn t($$$A) { $$$B }".into()))],
+            src,
+        );
         assert_eq!(
-            op.apply(src),
-            "fn t(p: &Path) {\n    assert!(is_relevant(p));\n    let r = LANG.is_source(p);\n}\n"
+            inside_t,
+            "fn t(p: &Path) {\n    assert!(LANG.is_source(p));\n    let r = LANG.is_source(p);\n}\nfn u(p: &Path) {\n    assert!(is_relevant(p));\n}\n"
+        );
+        assert_eq!(
+            renamed(
+                &[when(false, Test::Inside("fn t($$$A) { $$$B }".into()))],
+                &inside_t
+            ),
+            inside_t,
+            "idempotent"
+        );
+        // `not inside` too: the wrapper's `fn _w()` is no function of the file's.
+        let not_t = renamed(
+            &[when(true, Test::Inside("fn t($$$A) { $$$B }".into()))],
+            src,
+        );
+        assert!(
+            not_t.contains("fn u(p: &Path) {\n    assert!(LANG.is_source(p));")
+                && not_t.contains("    assert!(is_relevant(p));\n    let r = is_relevant(p);"),
+            "{not_t}"
+        );
+        assert!(
+            !renamed(&[when(false, Test::Inside("fn _w() { $$$B }".into()))], src).contains("LANG"),
+            "the wrapper is not an ancestor"
+        );
+        // The macro call itself encloses its arguments, directly.
+        let directly = |pattern: &str| {
+            renamed(
+                &[when(
+                    false,
+                    Test::Related {
+                        relation: Relation::Inside,
+                        pattern: pattern.into(),
+                        stop: Stop::Directly,
+                    },
+                )],
+                "fn f(p: &Path) {\n    assert!(is_relevant(p));\n    debug_assert!(ok(is_relevant(p)));\n}\n",
+            )
+        };
+        assert_eq!(
+            directly("assert!($$$A)"),
+            "fn f(p: &Path) {\n    assert!(LANG.is_source(p));\n    debug_assert!(ok(is_relevant(p)));\n}\n"
+        );
+        // Neighbours and positions are the contents' own.
+        let v = "fn f() {\n    let v = vec![a, is_relevant(p), is_relevant(q)];\n}\n";
+        let follows_a = renamed(
+            &[when(
+                false,
+                Test::Related {
+                    relation: Relation::Follows,
+                    pattern: "a".into(),
+                    stop: Stop::Directly,
+                },
+            )],
+            v,
+        );
+        assert_eq!(
+            follows_a,
+            "fn f() {\n    let v = vec![a, LANG.is_source(p), is_relevant(q)];\n}\n"
+        );
+        assert_eq!(
+            renamed(&[when(false, Test::Nth(-1))], v),
+            "fn f() {\n    let v = vec![a, is_relevant(p), LANG.is_source(q)];\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_semantic_question_about_a_macro_argument_is_asked_of_the_file() {
+        use std::sync::Arc;
+        /// Answers `true` only about the file's own text at `good`.
+        struct OnlyTheFile;
+        impl colab_core::semantic::Oracle for OnlyTheFile {
+            fn ask(
+                &self,
+                _path: &std::path::Path,
+                source: &str,
+                span: std::ops::Range<usize>,
+                _query: &colab_core::semantic::Query,
+            ) -> Result<bool, String> {
+                Ok(source.starts_with("fn t(") && &source[span] == "good")
+            }
+        }
+        let typed = [when(
+            false,
+            colab_core::Test::Semantic {
+                var: colab_core::Var {
+                    name: "P".into(),
+                    multi: false,
+                },
+                query: colab_core::semantic::Query::Type("Path".into()),
+            },
+        )];
+        let src = "fn t() {\n    assert!(is_relevant(good));\n    assert!(is_relevant(bad));\n    let r = is_relevant(good);\n}\n";
+        let run = colab_core::run::Run::new();
+        let out = run.enter(|| {
+            colab_core::semantic::at_path(std::path::Path::new("t.rs"), || {
+                colab_core::semantic::install(Arc::new(OnlyTheFile));
+                let out = renamed(&typed, src);
+                colab_core::semantic::uninstall();
+                out
+            })
+        });
+        assert_eq!(
+            out,
+            "fn t() {\n    assert!(LANG.is_source(good));\n    assert!(is_relevant(bad));\n    let r = LANG.is_source(good);\n}\n"
+        );
+        assert!(run.take_failure().is_none());
+    }
+
+    #[test]
+    fn a_project_lists_its_own_expression_macros() {
+        let src = "fn t() {\n    my_assert!(is_relevant(p));\n}\n";
+        assert_eq!(renamed(&[], src), src, "an unknown macro is not read");
+        let run = colab_core::run::Run::new();
+        run.set_macros(vec!["my_assert".into()]);
+        assert_eq!(
+            run.enter(|| renamed(&[], src)),
+            "fn t() {\n    my_assert!(LANG.is_source(p));\n}\n"
         );
     }
 

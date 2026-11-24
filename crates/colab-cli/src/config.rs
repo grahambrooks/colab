@@ -12,6 +12,9 @@
 //! rs = "rustfmt --edition 2024"       # reads the file on stdin, writes it on stdout
 //! ts = "prettier --stdin-filepath {path}"
 //!
+//! [patterns]
+//! macros = ["my_assert", "check"]     # expression macros whose contents patterns read, as assert!'s
+//!
 //! [[packs]]
 //! pack = "go/1.18-modern"             # a pack built into colab (`colab pack list`)
 //!
@@ -62,6 +65,9 @@ pub struct Config {
     /// Formatter command by file extension.
     pub formatters: BTreeMap<String, String>,
     pub packs: Vec<PackRef>,
+    /// `[patterns] macros`: the project's expression macros, whose
+    /// contents patterns read as they read `assert!`'s.
+    pub macros: Vec<String>,
 }
 
 /// The nearest `colab.toml` at or above `from`, up to the repository root.
@@ -237,11 +243,43 @@ pub fn parse(path: &Path, text: &str) -> Result<Config> {
                     });
                 }
             }
+            "patterns" => {
+                let table = item
+                    .as_table()
+                    .ok_or_else(|| bad(path, "`[patterns]` is a table"))?;
+                for (key, item) in table.iter() {
+                    match key {
+                        "macros" => {
+                            config.macros = strings(path, "patterns.macros", item)?;
+                            if let Some(name) = config.macros.iter().find(|m| {
+                                m.is_empty() || !m.chars().all(|c| c.is_alphanumeric() || c == '_')
+                            }) {
+                                return Err(bad(
+                                    path,
+                                    format!(
+                                        "`patterns.macros` names macros as they are called, without `!` or a path: `{}`, not `{name}`",
+                                        name.trim_end_matches('!')
+                                            .rsplit("::")
+                                            .next()
+                                            .unwrap_or(name)
+                                    ),
+                                ));
+                            }
+                        }
+                        other => {
+                            return Err(bad(
+                                path,
+                                format!("unknown key `patterns.{other}`; [patterns] takes macros"),
+                            ));
+                        }
+                    }
+                }
+            }
             other => {
                 return Err(bad(
                     path,
                     format!(
-                        "unknown section `{other}`; colab.toml has [run], [formatters] and [[packs]]"
+                        "unknown section `{other}`; colab.toml has [run], [formatters], [patterns] and [[packs]]"
                     ),
                 ));
             }
@@ -299,6 +337,18 @@ mod tests {
                 PackRef::Path(".colab/packs/x.colab".into())
             ]
         );
+    }
+
+    #[test]
+    fn patterns_list_the_projects_macros() {
+        let p = Path::new("colab.toml");
+        let c = parse(p, "[patterns]\nmacros = [\"my_assert\", \"check\"]\n").unwrap();
+        assert_eq!(c.macros, ["my_assert", "check"]);
+        let e = |text: &str| parse(p, text).unwrap_err().to_string();
+        assert!(
+            e("[patterns]\nmacros = [\"my_assert!\"]\n").contains("`my_assert`, not `my_assert!`")
+        );
+        assert!(e("[patterns]\nmacro = []\n").contains("[patterns] takes macros"));
     }
 
     #[test]

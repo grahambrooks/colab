@@ -155,6 +155,14 @@ pub trait ToolProvider {
     fn checks(&self, _roots: &[PathBuf]) -> Vec<Box<dyn colab_dsl::pipeline::Check>> {
         Vec::new()
     }
+
+    /// The project's own expression macros for a tool call run in `cwd`,
+    /// whose contents patterns read as they read `assert!`'s: the binary
+    /// reads them from the `colab.toml` at or above `cwd` (`[patterns]
+    /// macros`). None by default.
+    fn macros(&self, _cwd: Option<&Path>) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// No extra tools.
@@ -329,7 +337,8 @@ fn handle_call(
     let mut span = colab_core::telemetry::root(format!("colab mcp {tool}"));
     span.set("colab.mcp.tool", tool);
     let arguments = params.and_then(|p| p.get("arguments"));
-    let response = call_run(arguments).enter(|| handle_call_in_run(id, params, backends, extra));
+    let response =
+        call_run(arguments, extra).enter(|| handle_call_in_run(id, params, backends, extra));
     trace_outcome(&mut span, &response);
     response
 }
@@ -338,14 +347,18 @@ fn handle_call(
 /// so the walk yields absolute paths; the call's `cwd` is the run's base,
 /// so a rule's `in "<glob>"` reads relative to it, as it does from the
 /// CLI's working directory.
-fn call_run(arguments: Option<&Value>) -> std::sync::Arc<colab_core::run::Run> {
+/// The project's own expression macros (`extra.macros`) are the run's too.
+fn call_run(
+    arguments: Option<&Value>,
+    extra: &dyn ToolProvider,
+) -> std::sync::Arc<colab_core::run::Run> {
     let run = colab_core::run::Run::new();
-    run.set_base(
-        arguments
-            .and_then(|a| a.get("cwd"))
-            .and_then(Value::as_str)
-            .map(PathBuf::from),
-    );
+    let cwd = arguments
+        .and_then(|a| a.get("cwd"))
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+    run.set_macros(extra.macros(cwd.as_deref()));
+    run.set_base(cwd);
     run
 }
 
@@ -539,7 +552,7 @@ fn handle_call_with_progress<W: Write>(
     let mut span = colab_core::telemetry::root(format!("colab mcp {name}"));
     span.set("colab.mcp.tool", name);
     span.set("colab.mcp.streaming", true);
-    let outcome = call_run(Some(&arguments))
+    let outcome = call_run(Some(&arguments), extra)
         .enter(|| run_script(&arguments, backends, extra, mode, &mut sink));
     let response = tool_response(id, outcome);
     trace_outcome(&mut span, &response);
@@ -825,6 +838,45 @@ mod tests {
         fn checks(&self, _roots: &[PathBuf]) -> Vec<Box<dyn colab_dsl::pipeline::Check>> {
             vec![Box::new(ObjectToAll)]
         }
+    }
+
+    /// A host whose project lists `my_assert` as an expression macro.
+    struct ListsMacros;
+
+    impl ToolProvider for ListsMacros {
+        fn tools(&self) -> Vec<Value> {
+            Vec::new()
+        }
+
+        fn call(&self, _name: &str, _args: &Value) -> Option<colab_core::Result<Value>> {
+            None
+        }
+
+        fn macros(&self, _cwd: Option<&Path>) -> Vec<String> {
+            vec!["my_assert".into()]
+        }
+    }
+
+    #[test]
+    fn a_tool_call_reads_the_hosts_expression_macros() {
+        let dir = std::env::temp_dir().join(format!("colab-mcp-macros-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("lib.rs"), "fn t() {\n    my_assert!(old(1));\n}\n").unwrap();
+        let req = json!({
+            "jsonrpc":"2.0","id":7,"method":"tools/call",
+            "params":{"name": "colab.find", "arguments": {
+                "script": "match rust::pattern 'old($X)' { delete }",
+                "paths": ["."], "cwd": dir.to_string_lossy()
+            }}
+        });
+        let found = |extra: &dyn ToolProvider| {
+            let resp = handle_with(&req, &registry(), extra).unwrap();
+            let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+            serde_json::from_str::<Value>(text).unwrap()["summary"]["matches"].clone()
+        };
+        assert_eq!(found(&NoTools), 0);
+        assert_eq!(found(&ListsMacros), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

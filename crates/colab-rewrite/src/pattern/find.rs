@@ -5,11 +5,13 @@
 use super::*;
 
 impl StructuralPattern {
-    /// Every match in the tree that satisfies the constraints.
+    /// Every match in the tree that satisfies the constraints, judged in
+    /// `frame` when `source` is a macro's contents.
     pub(super) fn matches<'t>(
         &self,
         grep: &'t ast_grep_core::AstGrep<StrDoc<TsLang>>,
         source: &str,
+        frame: Option<&Frame<'_>>,
     ) -> Vec<NodeMatch<'t, StrDoc<TsLang>>> {
         // Semantic checks are sorted last. Each one asks the server about
         // every match still standing in one batch, so a file's questions
@@ -20,11 +22,11 @@ impl StructuralPattern {
         let mut found: Vec<_> = candidates(grep, source, &self.pattern)
             .into_iter()
             .filter(|m| self.shape.fits(m.get_node()))
-            .filter(|m| cheap.iter().all(|c| c.holds(m, source)))
+            .filter(|m| cheap.iter().all(|c| c.holds(m, source, frame)))
             .collect();
         for check in asked {
-            check.prefetch(&found, source);
-            found.retain(|m| check.holds(m, source));
+            check.prefetch(&found, source, frame);
+            found.retain(|m| check.holds(m, source, frame));
         }
         found
     }
@@ -32,10 +34,16 @@ impl StructuralPattern {
     /// Every match in `source` in source order, an outer match before the
     /// matches nested inside it.
     pub fn find(&self, source: &str) -> Vec<Found> {
-        let mut found = self.find_file(source);
+        self.find_in(source, None)
+    }
+
+    /// [`find`](Self::find), judged in `frame` when `source` is a macro's
+    /// contents.
+    pub(super) fn find_in(&self, source: &str, frame: Option<&Frame<'_>>) -> Vec<Found> {
+        let mut found = self.find_file(source, frame);
         // Matches inside macro calls' contents, mapped back into `source`.
         let mut lines = Lines::new(source);
-        for region in self.macro_regions(source) {
+        for (region, ()) in self.macro_regions(source, frame, |_, _| ()) {
             for mut hit in region.found {
                 hit.start = hit.start - region.offset + region.inner.start;
                 hit.end = hit.end - region.offset + region.inner.start;
@@ -49,10 +57,10 @@ impl StructuralPattern {
     }
 
     /// Matches in the file's own tree, every form's, none inside a macro.
-    pub(super) fn find_file(&self, source: &str) -> Vec<Found> {
-        let mut found = self.find_own(source);
+    pub(super) fn find_file(&self, source: &str, frame: Option<&Frame<'_>>) -> Vec<Found> {
+        let mut found = self.find_own(source, frame);
         for alt in &self.also {
-            found.extend(alt.find_own(source));
+            found.extend(alt.find_own(source, frame));
         }
         found.sort_by_key(|f| (f.start, f.end));
         found.dedup_by_key(|f| (f.start, f.end));
@@ -60,10 +68,10 @@ impl StructuralPattern {
     }
 
     /// Matches of this compilation only, not its `also` ones.
-    fn find_own(&self, source: &str) -> Vec<Found> {
+    fn find_own(&self, source: &str, frame: Option<&Frame<'_>>) -> Vec<Found> {
         let grep = parsed(&self.lang, source);
         let mut lines = Lines::new(source);
-        self.matches(&grep, source)
+        self.matches(&grep, source, frame)
             .into_iter()
             .map(|m| {
                 let mut range = m.range();

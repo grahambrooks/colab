@@ -152,7 +152,7 @@ pub(super) enum StopAt {
 pub(super) struct Forms(Vec<Pattern>);
 
 impl Forms {
-    fn match_node(&self, node: &TsNode<'_>) -> bool {
+    pub(super) fn match_node(&self, node: &TsNode<'_>) -> bool {
         self.0.iter().any(|p| node.matches(p))
     }
 }
@@ -185,6 +185,33 @@ pub(super) fn same_span<'t>(node: &TsNode<'t>) -> Vec<TsNode<'t>> {
     out
 }
 
+/// `node`'s ancestors, nearest first, each with whether it is larger than
+/// `node` (`directly` stops at the first that is). In a macro's contents
+/// (`frame`), only the ancestors inside the contents count, and then the
+/// macro call and its ancestors in the file take the wrapper's place.
+pub(super) fn ancestors<'n, 'a: 'n>(
+    node: &TsNode<'a>,
+    frame: Option<&'n Frame<'n>>,
+) -> Vec<(Enclosing<'n>, bool)> {
+    let range = node.range();
+    let mut out: Vec<(Enclosing<'n>, bool)> = node
+        .ancestors()
+        .filter(|a| frame.is_none_or(|f| f.holds(a)))
+        .map(|a| -> (Enclosing<'n>, bool) {
+            let larger = a.range() != range;
+            (Box::new(move |forms| forms.match_node(&a)), larger)
+        })
+        .collect();
+    if let Some(frame) = frame {
+        out.extend(
+            frame.outside.iter().map(|outer| -> (Enclosing<'n>, bool) {
+                (Box::new(move |forms| outer(forms)), true)
+            }),
+        );
+    }
+    out
+}
+
 /// Whether some node related to `node` matches `pattern`, searched
 /// nearest first and no further than `stop`.
 pub(super) fn related(
@@ -192,6 +219,7 @@ pub(super) fn related(
     relation: Relation,
     pattern: &Forms,
     stop: &StopAt,
+    frame: Option<&Frame<'_>>,
 ) -> bool {
     // Candidates nearest first, and whether each is the last `directly`
     // allows.
@@ -211,13 +239,26 @@ pub(super) fn related(
         }
         false
     };
-    let real = |n: &TsNode<'_>| n.is_named() && !n.is_extra();
+    // A sibling outside a macro's contents is the wrapper's, not the file's.
+    let real = |n: &TsNode<'_>| n.is_named() && !n.is_extra() && frame.is_none_or(|f| f.holds(n));
     match relation {
         // `directly`: up to the first enclosing node that is larger than
         // the match (wrappers over the same text do not count).
-        Relation::Inside => search(&mut node.ancestors(), &|a: &TsNode<'_>| {
-            a.range() != node.range()
-        }),
+        Relation::Inside => {
+            for (candidate, larger) in ancestors(node, frame) {
+                if candidate(pattern) {
+                    return true;
+                }
+                match stop {
+                    StopAt::Anywhere => {}
+                    StopAt::Directly if larger => return false,
+                    StopAt::Directly => {}
+                    StopAt::Until(until) if candidate(until) => return false,
+                    StopAt::Until(_) => {}
+                }
+            }
+            false
+        }
         Relation::Has => match stop {
             StopAt::Directly => node.children().any(|c| pattern.match_node(&c)),
             StopAt::Anywhere => node.dfs().skip(1).any(|n| pattern.match_node(&n)),
@@ -278,28 +319,6 @@ pub(super) fn in_field(node: &TsNode<'_>, name: &str) -> bool {
 }
 
 impl Check {
-    /// Whether the check reads what surrounds a match (an enclosing or
-    /// neighbouring node, its position among its siblings) or asks the
-    /// language server about it. Inside a macro's re-parsed contents both
-    /// would see the wrapper, not the file, so such a rule reads no macro
-    /// contents (see [`MacroContents`](super::MacroContents)).
-    pub(super) fn reads_context(&self) -> bool {
-        match &self.kind {
-            CheckKind::Matches { .. }
-            | CheckKind::Is { .. }
-            | CheckKind::Count { .. }
-            | CheckKind::In { .. }
-            // What a match holds is the same in the wrapper as in the file.
-            | CheckKind::Has(_) => false,
-            CheckKind::Inside(_)
-            | CheckKind::Related { .. }
-            | CheckKind::Nth(_)
-            | CheckKind::Field(_)
-            | CheckKind::Semantic { .. } => true,
-            CheckKind::Any(all) | CheckKind::All(all) => all.iter().any(Check::reads_context),
-        }
-    }
-
     pub(super) fn compile(
         language: &PatternLanguage,
         bound: &[Var],
@@ -435,15 +454,34 @@ impl Check {
 
     /// Ask a semantic check's question about every match in `found` at
     /// once ([`colab_core::semantic::prefetch`]); a no-op for any other.
-    pub(super) fn prefetch(&self, found: &[NodeMatch<'_, StrDoc<TsLang>>], source: &str) {
+    /// In a macro's contents (`frame`) it is asked of the file, at the
+    /// position the contents came from.
+    pub(super) fn prefetch(
+        &self,
+        found: &[NodeMatch<'_, StrDoc<TsLang>>],
+        source: &str,
+        frame: Option<&Frame<'_>>,
+    ) {
         if let CheckKind::Semantic { var, query } = &self.kind {
-            let spans: Vec<_> = found.iter().filter_map(|m| semantic_span(var, m)).collect();
-            colab_core::semantic::prefetch(source, &spans, query);
+            let spans: Vec<_> = found
+                .iter()
+                .filter_map(|m| semantic_span(var, m))
+                .map(|span| frame.map_or(span.clone(), |f| f.to_file(span)))
+                .collect();
+            let file = frame.map_or(source, |f| f.file);
+            colab_core::semantic::prefetch(file, &spans, query);
         }
     }
 
-    /// Whether match `m` in `source` satisfies this constraint.
-    pub(super) fn holds(&self, m: &NodeMatch<'_, StrDoc<TsLang>>, source: &str) -> bool {
+    /// Whether match `m` in `source` satisfies this constraint. In a
+    /// macro's contents (`frame`), what surrounds the match is read from
+    /// the contents and then the file, never the wrapper (see [`Frame`]).
+    pub(super) fn holds(
+        &self,
+        m: &NodeMatch<'_, StrDoc<TsLang>>,
+        source: &str,
+        frame: Option<&Frame<'_>>,
+    ) -> bool {
         let env = m.get_env();
         let result = match &self.kind {
             CheckKind::Matches { var, regex } => {
@@ -472,15 +510,20 @@ impl Check {
                     .count();
                 n >= *min && max.is_none_or(|max| n <= max)
             }
-            CheckKind::Inside(forms) => m.get_node().ancestors().any(|a| forms.match_node(&a)),
+            CheckKind::Inside(forms) => {
+                ancestors(m.get_node(), frame).iter().any(|(a, _)| a(forms))
+            }
             CheckKind::Has(forms) => m.get_node().dfs().skip(1).any(|n| forms.match_node(&n)),
             CheckKind::Related {
                 relation,
                 pattern,
                 stop,
-            } => related(m.get_node(), *relation, pattern, stop),
-            CheckKind::Any(checks) => checks.iter().any(|c| c.holds(m, source)),
-            CheckKind::All(checks) => checks.iter().all(|c| c.holds(m, source)),
+            } => related(m.get_node(), *relation, pattern, stop, frame),
+            CheckKind::Any(checks) => checks.iter().any(|c| c.holds(m, source, frame)),
+            CheckKind::All(checks) => checks.iter().all(|c| c.holds(m, source, frame)),
+            // Among the contents' own nodes: a macro's top-level arguments
+            // are the wrapper call's, so `nth` counts them and they are in
+            // no `field`, as the contents of a token tree are.
             CheckKind::Nth(n) => is_nth(m.get_node(), *n),
             CheckKind::Field(name) => in_field(m.get_node(), name),
             CheckKind::In { var, set, field } => {
@@ -499,9 +542,12 @@ impl Check {
                 colab_core::facts::contains(set, field, &text)
             }
             CheckKind::Semantic { var, query } => {
-                // An empty sequence has no code to ask about.
-                semantic_span(var, m)
-                    .is_some_and(|span| colab_core::semantic::ask(source, span, query))
+                // An empty sequence has no code to ask about. In a macro's
+                // contents the server is asked about the file it can see.
+                semantic_span(var, m).is_some_and(|span| match frame {
+                    Some(f) => colab_core::semantic::ask(f.file, f.to_file(span), query),
+                    None => colab_core::semantic::ask(source, span, query),
+                })
             }
         };
         result != self.negated

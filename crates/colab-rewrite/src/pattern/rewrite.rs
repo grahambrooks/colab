@@ -637,23 +637,49 @@ impl StructuralPattern {
     /// rewritten; text the template introduces is never re-matched, so a
     /// wrap-style template (`f($A)` → `f(g($A))`) cannot run away.
     pub fn rewrite(&self, source: &str, template: &str) -> String {
-        // Each compilation matches different nodes, so they rewrite in turn.
-        let out = self
-            .also
-            .iter()
-            .fold(self.rewrite_own(source, template), |out, alt| {
-                alt.rewrite_own(&out, template)
-            });
-        // Then inside macro calls, which the file's tree cannot see into.
-        self.edit_macros(&out, |wrapped| self.rewrite(wrapped, template))
+        self.rewrite_in(source, template, None)
     }
 
-    fn rewrite_own(&self, source: &str, template: &str) -> String {
-        let edits = self.rewrite_edits(source, template);
+    /// [`rewrite`](Self::rewrite), judged in `frame` when `source` is a
+    /// macro's contents.
+    pub(super) fn rewrite_in(
+        &self,
+        source: &str,
+        template: &str,
+        frame: Option<&Frame<'_>>,
+    ) -> String {
+        let forms: Vec<&StructuralPattern> = std::iter::once(self).chain(&self.also).collect();
+        self.rewrite_forms(&forms, source.to_string(), template, frame)
+    }
+
+    /// Each compilation in `forms` rewrites the text in turn (they match
+    /// different nodes), then the macro calls in it are rewritten, which
+    /// the text's tree cannot see into. In a macro's contents each stage
+    /// is judged in the frame of the text as the stages before left it.
+    fn rewrite_forms(
+        &self,
+        forms: &[&StructuralPattern],
+        text: String,
+        template: &str,
+        frame: Option<&Frame<'_>>,
+    ) -> String {
+        let Some((form, rest)) = forms.split_first() else {
+            return self.edit_macros(&text, frame, |wrapped, inner| {
+                self.rewrite_in(wrapped, template, Some(inner))
+            });
+        };
+        let edits = form.rewrite_edits(&text, template, frame);
         if edits.is_empty() {
-            return source.to_string();
+            return self.rewrite_forms(rest, text, template, frame);
         }
-        apply_edits(source, edits)
+        let mut spans: Vec<(usize, usize, usize)> = edits
+            .iter()
+            .map(|e| (e.start, e.end, e.text.len()))
+            .collect();
+        spans.sort_unstable();
+        let applied = apply_edits(&text, edits);
+        let next = frame.map(|f| f.after(spans, applied.len()));
+        self.rewrite_forms(rest, applied, template, next.as_ref())
     }
 
     /// Where the first match whose rewrite alone leaves `source` (which
@@ -663,7 +689,7 @@ impl StructuralPattern {
     pub fn first_breaking_rewrite(&self, source: &str, template: &str) -> Option<(usize, usize)> {
         std::iter::once(self).chain(&self.also).find_map(|form| {
             let edit = form
-                .rewrite_edits(source, template)
+                .rewrite_edits(source, template, None)
                 .into_iter()
                 .find(|edit| {
                     let one = apply_edits(source, vec![edit.clone()]);
@@ -674,9 +700,14 @@ impl StructuralPattern {
     }
 
     /// The edits one compilation makes to `source`, outermost matches only.
-    fn rewrite_edits(&self, source: &str, template: &str) -> Vec<crate::Edit> {
+    fn rewrite_edits(
+        &self,
+        source: &str,
+        template: &str,
+        frame: Option<&Frame<'_>>,
+    ) -> Vec<crate::Edit> {
         let grep = parsed(&self.lang, source);
-        let matches = self.matches(&grep, source);
+        let matches = self.matches(&grep, source, frame);
         if matches.is_empty() {
             return Vec::new();
         }
@@ -703,7 +734,7 @@ impl StructuralPattern {
                         let (template, names) = transformable_template(template);
                         std::iter::once(sub).chain(&sub.also).map(move |form| {
                             let fix = TemplateFix::with_transform(&template, &form.lang, &names);
-                            (form, fix, form.matches(grep, source))
+                            (form, fix, form.matches(grep, source, frame))
                         })
                     })
                     .collect()

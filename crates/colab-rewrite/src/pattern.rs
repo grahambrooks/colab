@@ -44,6 +44,7 @@ mod compile;
 use compile::*;
 mod find;
 mod macros;
+use macros::*;
 mod delete;
 mod rewrite;
 use rewrite::*;
@@ -105,11 +106,17 @@ pub struct PatternLanguage {
 /// they matched, rewritten and deleted in, and the edits mapped back; a
 /// macro whose contents are not expressions (a `matches!` pattern, a DSL)
 /// is never listed, so it is never guessed at. Nested macros are read
-/// the same way, from the parsed contents. A rule with a relational,
-/// position or semantic constraint (`inside`, `follows`, `precedes`,
-/// `nth`, `field`, `type`, …) does not read macro contents: in the
-/// wrapper, what surrounds a match is the wrapper, not the file. (`has`
-/// looks only inside the match, so it does not count.)
+/// the same way, from the parsed contents. A project adds its own
+/// expression macros through the run ([`colab_core::run::Run::set_macros`],
+/// `colab.toml` `[patterns] macros`).
+///
+/// Constraints judge a match there as one in the file: its ancestors are
+/// the contents' own nodes, then the macro call and the file's nodes
+/// around it (`inside`, `directly inside 'assert!($$$A)'`), never the
+/// wrapper; its neighbours and position are among the contents' own
+/// (`follows`, `nth`: a macro's arguments are the wrapper call's, in no
+/// `field`); and a language server is asked about the file, at the
+/// position the contents came from (`type`, `resolves`, …).
 #[derive(Clone, Copy, Debug)]
 pub struct MacroContents {
     /// The macro-call node kind: Rust's `macro_invocation`.
