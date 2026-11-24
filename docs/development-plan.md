@@ -152,13 +152,12 @@ whichever milestone touches the same code.
 | Linux release binaries that run on older glibc: they need 2.39, so Ubuntu 22.04 and Debian 12 cannot run them. A static `x86_64-unknown-linux-musl` build (release-kit's `EXTRA_TARGETS`) is one way; it built cleanly in M21 | M21 |
 | Constraints on a nested pattern: `inside` / `has` / … take a pattern, not a rule, so a scope cannot say "a `mod` that follows `#[cfg(test)]`" (a Rust attribute is the item's sibling). ast-grep's relational rules take a whole rule | M30 |
 | Packs that name the dependency range they apply to, so `colab fix` after a Renovate bump runs only the packs for what changed (each ecosystem's lockfile read for the version) | M31 |
-| A clean `fix --check` warns that a finding rule matched no files, and so does a `--baseline` run whose findings were all the ref's: for a check, matching nothing is the state wanted, so the warning could be worded by what the run means, or dropped for rules with a `message` | M31 |
+| A `--baseline` run whose findings were all the ref's warns that its finding rules matched no files: like a clean `--check` (quiet since 2026-11-24, `RunReport::set_checking`), it could say the findings were all old, or set the same flag | M31 |
+| A pattern without visibility or attributes does not match an item that has them: `fn run_find($$$A) -> $R { $$$B }` misses `pub(super) fn run_find(…)`, because a match accounts for every named child. Agents write the bare form first. Let a pattern item without a visibility (or attribute) match one with it, as ast-grep's `relaxed` strictness does for some nodes, keeping an explicit `pub` exact | dogfood 2026-11-24 |
 | Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match `type` (a file's questions are batched now, and answers kept for the run) | M32 |
 | `create "<path>" '<template>'`: a new file from a match, made as a `FileOp::Create` so undo and `--verify` reverse it, a file that exists a conflict. Needs file operations in the `refactor` write path, which writes text edits only | M35 |
 | Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
 | `rust::use "tree_sitter::Parser" { delete }` does not remove one member of a brace list (`use tree_sitter::{Parser, Tree};`); a `rust::pattern` rule did | M10.6 |
-| Patterns inside macros, the rest: evaluate `inside` / `follows` / `nth` / `field` from the macro node outward in the file's tree, and map a semantic question's position back to the file, so rules with those constraints read macro contents too; user-listed expression macros (a `colab.toml` key) beside the built-in list | 2026-11-24 |
-| Verbatim captures in a template with a `let`: its derived values have no source span, so such a match keeps the token-level layout (`render_verbatim` steps aside). A derived value could be laid out against its base capture's span | 2026-11-24 |
 
 ### Patterns inside macros
 
