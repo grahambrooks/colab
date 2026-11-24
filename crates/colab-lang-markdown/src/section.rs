@@ -179,6 +179,17 @@ impl SectionEdit {
             out.push('\n');
             out.push_str(body);
         }
+        // Sections split by a thematic break (`---`) before the sibling:
+        // the new one gets a break of its own, so the document keeps one
+        // between every pair whichever side it thought the break was on.
+        if self.before.is_some()
+            && let Some(rule) = before.trim_end().lines().next_back().map(str::trim)
+            && is_thematic_break(rule)
+        {
+            out.push('\n');
+            out.push_str(rule);
+            out.push('\n');
+        }
         if after.trim().is_empty() {
             out.push_str(after.trim_start_matches(['\n', '\r']));
             if !out.ends_with('\n') {
@@ -190,6 +201,13 @@ impl SectionEdit {
         }
         Ok(Some(out))
     }
+}
+
+/// A CommonMark thematic break: three or more of one of `-`, `*`, `_`,
+/// spaces between allowed (`---`, `* * *`).
+fn is_thematic_break(line: &str) -> bool {
+    let marks: Vec<char> = line.chars().filter(|c| !c.is_whitespace()).collect();
+    marks.len() >= 3 && matches!(marks[0], '-' | '*' | '_') && marks.iter().all(|c| *c == marks[0])
 }
 
 /// Body text as whole lines with no surrounding blank lines, ending in a
@@ -209,8 +227,29 @@ fn normalise(body: &str) -> String {
 /// follows. `None` when the body is already that, ignoring trailing
 /// spaces and surrounding blank lines.
 fn set_body(source: &str, section: &Heading, body: &str) -> Option<String> {
-    let current = &source[section.heading_end..section.end];
-    if normalise(current) == *body {
+    let current = normalise(&source[section.heading_end..section.end]);
+    // A thematic break ending the section separates it from the next one;
+    // it is kept unless the new body ends in one of its own.
+    let kept;
+    let body = match current.trim_end().lines().next_back().map(str::trim) {
+        Some(rule)
+            if is_thematic_break(rule)
+                && !body
+                    .trim_end()
+                    .lines()
+                    .next_back()
+                    .is_some_and(is_thematic_break) =>
+        {
+            kept = if body.is_empty() {
+                format!("{rule}\n")
+            } else {
+                format!("{body}\n{rule}\n")
+            };
+            kept.as_str()
+        }
+        _ => body,
+    };
+    if current == *body {
         return None;
     }
     let mut out = String::with_capacity(source.len() + body.len());
@@ -350,6 +389,34 @@ mod tests {
         );
         assert_eq!(op.apply(&out), out);
         assert!(SectionEdit::delete("A < B").is_err());
+    }
+
+    #[test]
+    fn thematic_breaks_between_sections_are_kept() {
+        let doc = "# D\n\n## A\n\na\n\n---\n\n## B\n\nb\n";
+        // A new section before B gets a break of its own, once.
+        let insert = SectionEdit::set("D > New < B", "new").unwrap();
+        let out = insert.apply(doc);
+        assert_eq!(
+            out,
+            "# D\n\n## A\n\na\n\n---\n\n## New\n\nnew\n\n---\n\n## B\n\nb\n"
+        );
+        assert_eq!(insert.apply(&out), out);
+        // A `set` on a section ending in a break keeps it; a body that
+        // ends in one of its own is used as written.
+        let set = SectionEdit::set("D > A", "changed").unwrap();
+        assert_eq!(
+            set.apply(doc),
+            "# D\n\n## A\n\nchanged\n\n---\n\n## B\n\nb\n"
+        );
+        let own = SectionEdit::set("D > A", "changed\n\n***").unwrap();
+        assert_eq!(
+            own.apply(doc),
+            "# D\n\n## A\n\nchanged\n\n***\n\n## B\n\nb\n"
+        );
+        assert!(
+            is_thematic_break("* * *") && !is_thematic_break("--") && !is_thematic_break("-+-")
+        );
     }
 
     #[test]
