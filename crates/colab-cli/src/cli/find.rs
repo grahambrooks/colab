@@ -3,6 +3,106 @@
 
 use super::*;
 
+#[derive(Parser, Debug)]
+pub(super) struct FindArgs {
+    #[command(flatten)]
+    pub(super) select: SelectArgs,
+
+    /// The language server that answers `type` / `resolves` constraints,
+    /// instead of each language's usual one (`gopls`, `rust-analyzer`, …).
+    #[arg(long = "lsp", value_name = "COMMAND")]
+    pub(super) lsp: Option<String>,
+
+    /// Seconds to wait for that server to start and index.
+    #[arg(long = "lsp-timeout", value_name = "SECS", default_value_t = 120)]
+    pub(super) lsp_timeout: u64,
+
+    #[command(flatten)]
+    pub(super) script: ScriptArgs,
+
+    /// Change to this working directory before resolving paths.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    pub(super) change_dir: PathBuf,
+
+    /// `human`: `path:line:col: text` lines. `json`: one document.
+    #[arg(long, value_enum, default_value_t = FindFormat::Human)]
+    pub(super) format: FindFormat,
+
+    /// `concise`: the first line of each match. `detailed`: adds
+    /// metavariable captures and the full (capped) match text.
+    #[arg(long, value_enum, default_value_t = FindDetailArg::Concise)]
+    pub(super) detail: FindDetailArg,
+
+    /// List at most this many matches; the rest are counted. Default 50,
+    /// or every match with `--table`.
+    #[arg(long = "max-results", value_name = "N")]
+    pub(super) max_results: Option<usize>,
+
+    /// Every match as a row: `path,line,column,rule,id`, a column per
+    /// metavariable (`$X`), and the match `text`. `csv` or `ndjson`.
+    #[arg(long, value_enum, value_name = "FORMAT")]
+    pub(super) table: Option<crate::table::TableFormat>,
+
+    /// With `--table`: one row per distinct value of these columns
+    /// (`$X`, `rule`, `id`, `path`), with a `count`, most common first.
+    /// Repeatable.
+    #[arg(long = "group-by", value_name = "COLUMN", requires = "table")]
+    pub(super) group_by: Vec<String>,
+
+    /// Whitelist files via gitignore-syntax glob. Repeatable.
+    #[arg(long = "include", value_name = "GLOB")]
+    pub(super) include: Vec<String>,
+
+    /// Blacklist files via gitignore-syntax glob. Repeatable.
+    #[arg(long = "exclude", value_name = "GLOB")]
+    pub(super) exclude: Vec<String>,
+
+    /// Don't honour `.gitignore` or hidden-file rules.
+    #[arg(long = "no-ignore")]
+    pub(super) no_ignore: bool,
+
+    /// Worker thread count. Defaults to the available parallelism. Falls back to
+    /// the `COLAB_JOBS` env var when unset. Set to 1 to search one file at a
+    /// time. The results are the same, in the same order, for any count.
+    #[arg(long, value_name = "N")]
+    pub(super) jobs: Option<usize>,
+
+    /// Files or directories to search. Defaults to `.`.
+    pub(super) paths: Vec<PathBuf>,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FindFormat {
+    Human,
+    Json,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FindDetailArg {
+    Concise,
+    Detailed,
+}
+
+#[derive(Parser, Debug)]
+pub(super) struct AstArgs {
+    /// Language backend whose grammar to use, e.g. `go`.
+    #[arg(long)]
+    pub(super) lang: String,
+
+    /// Show how this pattern parses (metavariables included), instead
+    /// of a snippet.
+    #[arg(long, conflicts_with = "stdin")]
+    pub(super) pattern: Option<String>,
+
+    /// Read the snippet to parse from stdin.
+    #[arg(long)]
+    pub(super) stdin: bool,
+
+    /// `human`: the tree as indented text. `json`: one document.
+    #[arg(long, value_enum, default_value_t = FindFormat::Human)]
+    pub(super) format: FindFormat,
+}
+
 pub(super) fn run_find(args: FindArgs) -> Result<u8> {
     use colab_core::find::{FindDetail, FindReport, Selector};
 

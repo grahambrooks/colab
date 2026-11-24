@@ -4,6 +4,92 @@
 
 use super::*;
 
+#[derive(Parser, Debug)]
+#[command(group(clap::ArgGroup::new("target").required(true).args(["at", "symbol"])))]
+pub(super) struct RenameArgs {
+    /// The symbol's position: `FILE:LINE:COLUMN`, 1-based, column in
+    /// characters. Exact; prefer it when you know where the definition is.
+    #[arg(long, value_name = "FILE:LINE:COL", conflicts_with_all = ["symbol", "in_file"])]
+    pub(super) at: Option<String>,
+
+    /// The symbol's current name. Its first whole-word occurrence in
+    /// `--in` is renamed — with every reference the server resolves to it.
+    #[arg(long, value_name = "NAME", requires = "in_file")]
+    pub(super) symbol: Option<String>,
+
+    /// The file `--symbol` is looked up in.
+    #[arg(long = "in", value_name = "FILE", id = "in_file")]
+    pub(super) in_file: Option<PathBuf>,
+
+    /// The new name.
+    #[arg(long, value_name = "NAME")]
+    pub(super) to: String,
+
+    /// Language-server command, e.g. `"typescript-language-server --stdio"`.
+    /// Defaults by file extension (rust-analyzer, gopls, clangd, …).
+    #[arg(long, value_name = "CMD")]
+    pub(super) lsp: Option<String>,
+
+    /// Project root to start the server in. Defaults to the nearest
+    /// ancestor of the file holding a project marker (`.git`,
+    /// `Cargo.toml`, `go.mod`, `package.json`, …).
+    #[arg(long, value_name = "DIR")]
+    pub(super) root: Option<PathBuf>,
+
+    /// Change to this working directory first.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    pub(super) change_dir: PathBuf,
+
+    /// Seconds to allow for start-up, indexing, and the rename.
+    #[arg(long, value_name = "SECS", default_value_t = 120)]
+    pub(super) timeout: u64,
+
+    /// Also change the old name where the server does not: whole-word
+    /// matches in comments and string literals of source files, and in
+    /// config and docs files (TOML, JSON, YAML, Markdown, text) under the
+    /// root. Reported as its own rule. Without it they are only counted.
+    #[arg(long = "include-text")]
+    pub(super) include_text: bool,
+
+    #[command(flatten)]
+    pub(super) apply: ApplyFlags,
+}
+
+/// `colab mv FROM TO`.
+#[derive(Parser, Debug)]
+pub(super) struct MvArgs {
+    /// The file or directory to move.
+    pub(super) from: PathBuf,
+
+    /// Where it goes. An existing directory means "into it", as for `mv`.
+    pub(super) to: PathBuf,
+
+    /// Language-server command that updates what refers to the moved file
+    /// (`workspace/willRenameFiles`). Defaults by the file's extension.
+    #[arg(long, value_name = "CMD", conflicts_with = "no_lsp")]
+    pub(super) lsp: Option<String>,
+
+    /// Move with git only; update no references.
+    #[arg(long = "no-lsp")]
+    pub(super) no_lsp: bool,
+
+    /// Project root to start the server in (default: nearest project
+    /// marker above FROM).
+    #[arg(long, value_name = "DIR")]
+    pub(super) root: Option<PathBuf>,
+
+    /// Change to this working directory first.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    pub(super) change_dir: PathBuf,
+
+    /// Seconds to allow for start-up, indexing, and the server's answer.
+    #[arg(long, value_name = "SECS", default_value_t = 120)]
+    pub(super) timeout: u64,
+
+    #[command(flatten)]
+    pub(super) apply: ApplyFlags,
+}
+
 /// Markers that identify a project root for a language server.
 pub(super) const PROJECT_MARKERS: &[&str] = &[
     ".git",

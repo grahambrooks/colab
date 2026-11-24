@@ -3,6 +3,57 @@
 
 use super::*;
 
+/// `colab mv-section`.
+#[derive(Parser, Debug)]
+pub(super) struct MvSectionArgs {
+    /// The Markdown file the section is in.
+    pub(super) file: PathBuf,
+
+    /// The section: a heading path (`"Plan > Old item"`) or `#anchor`.
+    pub(super) section: String,
+
+    /// The file it moves to.
+    #[arg(long, value_name = "FILE")]
+    pub(super) to: PathBuf,
+
+    /// Make it the last child of this section of the target.
+    #[arg(long, value_name = "SECTION", conflicts_with = "before")]
+    pub(super) under: Option<String>,
+
+    /// Put it just before this section of the target, at its level.
+    /// Without `--under` or `--before` it goes at the end, top level.
+    #[arg(long, value_name = "SECTION")]
+    pub(super) before: Option<String>,
+
+    /// Print the generated script and stop.
+    #[arg(long = "show-script")]
+    pub(super) show_script: bool,
+
+    /// Apply the move. Default for `--format human` on a TTY.
+    #[arg(long, conflicts_with_all = ["dry_run", "check"])]
+    pub(super) write: bool,
+
+    /// Report what would change without writing.
+    #[arg(long = "dry-run", conflicts_with = "check")]
+    pub(super) dry_run: bool,
+
+    /// Exit 10 if the move would change anything; write nothing.
+    #[arg(long)]
+    pub(super) check: bool,
+
+    /// Output format, as for `refactor`.
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    pub(super) format: Format,
+
+    /// Write even when the move would break a link elsewhere.
+    #[arg(long = "allow-conflicts")]
+    pub(super) allow_conflicts: bool,
+
+    /// Change to this directory first.
+    #[arg(short = 'C', long = "change-dir", default_value = ".")]
+    pub(super) change_dir: PathBuf,
+}
+
 /// Whether any Markdown file under `root` other than `skip` contains
 /// `needle` (hidden directories and `target/` skipped), so a rule that
 /// would match nothing is not generated.
