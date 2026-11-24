@@ -18,13 +18,13 @@
 //! 4. **Prepare** (writing runs only): every file is re-read and merged with
 //!    disk changes made since the walk ([`prepare`]).
 //! 5. **Refuse or write**: any conflict stops every write unless conflicts
-//!    are allowed ([`refuse`]); otherwise [`write`] writes, offering each
+//!    are allowed ([`refuse`]); otherwise [`write`](fn@write) writes, offering each
 //!    file's disk text to [`Hooks::before_write`] first (`--backup`).
 //! 6. **Probe** dead rules for near misses, and time the run.
 //!
 //! Runs that apply rules one at a time (`--verify`, `--commit-per-rule`,
 //! `--split-pr`, the bisect search) cannot be one pass, so they compose the
-//! stage functions ([`RuleRun`], [`prepare`], [`refuse`], [`write`])
+//! stage functions ([`RuleRun`], [`prepare`], [`refuse`], [`write`](fn@write))
 //! themselves instead of re-implementing them.
 //!
 //! Checks that need crates this one must not depend on (language servers,

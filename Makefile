@@ -9,10 +9,20 @@ CARGO ?= cargo
 help: ## List targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-check: fmt-check lint test licenses-check ## The pre-push gate: the same commands as the CI check job
+check: fmt-check lint test doc self-check licenses-check ## The pre-push gate: the same commands as the CI check job
 
-# CI sets RUSTFLAGS=-D warnings for the whole workflow.
-check lint test: export RUSTFLAGS = -D warnings
+# CI sets RUSTFLAGS=-D warnings for the whole workflow, and RUSTDOCFLAGS for
+# `cargo doc`.
+check lint test doc self-check: export RUSTFLAGS = -D warnings
+check doc: export RUSTDOCFLAGS = -D warnings
+
+doc: ## Build the docs, warnings (broken intra-doc links) as errors
+	$(CARGO) doc --workspace --no-deps --all-features --locked
+
+self-check: ## colab on itself, as CI runs it: pack cases, colab.toml's packs, Markdown links
+	$(CARGO) run -q -p colab-cli --locked -- test
+	$(CARGO) run -q -p colab-cli --locked -- fix --check
+	$(CARGO) run -q -p colab-cli --locked -- links docs
 
 fmt: ## Format in place
 	$(CARGO) fmt --all
