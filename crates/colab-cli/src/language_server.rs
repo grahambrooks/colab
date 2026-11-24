@@ -1154,6 +1154,38 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn a_workspace_edit_reads_the_projects_own_macros() {
+        let root = std::env::temp_dir().join(format!("colab-lsp-macros-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("colab.toml"),
+            "[patterns]\nmacros = [\"my_assert\"]\n",
+        )
+        .unwrap();
+        let file = root.join("lib.rs");
+        std::fs::write(&file, "fn f() {\n    my_assert!(old(1));\n}\n").unwrap();
+        let (service, _) = LspService::new(|client| Backend::new(client, registry()));
+        let backend = service.inner();
+        *backend.roots.lock().await = vec![root.clone()];
+        let uri = Uri::from_file_path(root.join("fix.colab")).unwrap();
+        let edit = backend
+            .workspace_edit(
+                &uri,
+                "match rust::pattern 'old($X)' { replace 'new($X)' }",
+                None,
+            )
+            .await
+            .unwrap();
+        let file_uri = Uri::from_file_path(&file).unwrap();
+        let edits = &edit.changes.as_ref().unwrap()[&file_uri];
+        assert!(
+            edits.iter().any(|e| e.new_text.contains("new(1)")),
+            "{edits:?}"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn a_workspace_edit_with_a_conflict_is_refused() {
         let root = std::env::temp_dir().join(format!("colab-lsp-conflict-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();

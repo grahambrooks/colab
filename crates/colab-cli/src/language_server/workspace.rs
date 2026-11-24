@@ -232,6 +232,17 @@ impl Backend {
         // run has: scan phases, the semantic gate, and conflicts checked
         // before the client is handed an edit.
         let run = colab_core::run::Run::new();
+        // The project's own expression macros (`[patterns] macros`), from the
+        // `colab.toml` at or above the script, as `colab refactor` reads them.
+        match base
+            .parent()
+            .and_then(crate::config::find_from)
+            .map(|p| crate::config::load(&p))
+        {
+            Some(Ok(config)) => run.set_macros(config.macros),
+            Some(Err(e)) => log::warn!("ignoring colab.toml's [patterns]: {e}"),
+            None => {}
+        }
         let labels: Vec<String> = refactoring.rules.iter().map(ToString::to_string).collect();
         let changes = tokio::task::block_in_place(|| {
             run.enter(|| {

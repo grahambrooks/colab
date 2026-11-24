@@ -390,7 +390,7 @@ tidy = true                           # organize imports and format the changed 
 go = "gofmt"                          # reads the file on stdin, writes it on stdout
 ts = "prettier --stdin-filepath {path}"
 
-[patterns]                            # read by refactor, find, fix and the MCP tools too
+[patterns]                            # read by refactor, find, fix, the MCP tools and colab server too
 macros = ["my_assert", "check"]       # Rust expression macros whose contents patterns read, as assert!'s
 
 [[packs]]
