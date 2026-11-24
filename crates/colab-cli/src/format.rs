@@ -127,15 +127,19 @@ impl Reporter for Traced {
     }
     fn finish(&mut self, report: &RunReport) -> io::Result<()> {
         use colab_core::telemetry::annotate;
-        annotate("colab.files.visited", report.files_visited);
-        annotate("colab.files.scanned", report.files_scanned);
-        annotate("colab.files.changed", report.files_changed);
-        annotate("colab.rules", report.rules.len());
+        annotate("colab.files.visited", report.files_visited());
+        annotate("colab.files.scanned", report.files_scanned());
+        annotate("colab.files.changed", report.files_changed());
+        annotate("colab.rules", report.rules().len());
         annotate(
             "colab.rules.unmatched",
-            report.rules.iter().filter(|r| r.files_matched == 0).count(),
+            report
+                .rules()
+                .iter()
+                .filter(|r| r.files_matched == 0)
+                .count(),
         );
-        annotate("colab.conflicts", report.conflicts.len());
+        annotate("colab.conflicts", report.conflicts().len());
         self.0.finish(report)
     }
 }
@@ -210,22 +214,22 @@ impl Reporter for HumanReporter {
         writeln!(
             self.out,
             "{} file(s) scanned, {} changed, {} → {} bytes in {} ms",
-            report.files_scanned,
-            report.files_changed,
-            report.bytes_before,
-            report.bytes_after,
-            report.elapsed.as_millis()
+            report.files_scanned(),
+            report.files_changed(),
+            report.bytes_before(),
+            report.bytes_after(),
+            report.elapsed().as_millis()
         )?;
-        if !report.file_ops.is_empty() {
+        if !report.file_ops().is_empty() {
             writeln!(
                 self.out,
                 "{} file operation(s) made through git",
-                report.file_ops.len()
+                report.file_ops().len()
             )?;
         }
 
         if self.options.detail != Detail::Summary {
-            for rule in &report.rules {
+            for rule in report.rules() {
                 writeln!(
                     self.out,
                     "  rule {}: {} file(s) — {}{}",
@@ -237,10 +241,10 @@ impl Reporter for HumanReporter {
             }
         }
 
-        for op in &report.file_ops {
+        for op in report.file_ops() {
             writeln!(self.out, "  {op}")?;
         }
-        for branch in &report.branches {
+        for branch in report.branches() {
             writeln!(
                 self.out,
                 "  branch {} ({}): rule {}, {} file(s)",
@@ -250,7 +254,7 @@ impl Reporter for HumanReporter {
                 branch.files
             )?;
         }
-        for skipped in &report.skipped {
+        for skipped in report.skipped() {
             writeln!(
                 self.out,
                 "  skipped {}: {}",
@@ -499,10 +503,8 @@ mod tests {
 
     fn report() -> RunReport {
         let mut report = RunReport::with_rules(["go::import \"a\" -> \"b\"", "go::symbol dead"]);
-        report.files_visited = 10;
-        report.files_scanned = 4;
-        report.files_changed = 1;
-        report.rules[0].files_matched = 1;
+        report.set_counts(10, 4, 1);
+        report.rules_mut()[0].files_matched = 1;
         report
     }
 
@@ -516,8 +518,8 @@ mod tests {
     #[test]
     fn a_run_that_changed_nothing_explains_itself() {
         let mut report = report();
-        report.files_changed = 0;
-        report.rules[0].files_matched = 0;
+        report.set_counts(10, 4, 0);
+        report.rules_mut()[0].files_matched = 0;
         let advisories = render::advisories(&report);
         assert!(advisories.iter().any(|a| a.contains("no rule matched")));
     }

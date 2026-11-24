@@ -361,7 +361,7 @@ impl<'a> Pipeline<'a> {
             }
             _ => colab_core::near_miss::probe_disk(&refactoring.rules, &mut report),
         }
-        report.elapsed = started.elapsed();
+        report.set_elapsed(started.elapsed());
         Ok(Outcome {
             report,
             changes: pending,
@@ -413,20 +413,20 @@ pub fn prepare(changes: &[FileChange], report: &mut RunReport) -> Result<Prepare
     )?;
     span.set("colab.files.merged", prepared.merged.len());
     span.set("colab.conflicts", prepared.conflicts.len());
-    report.warnings.extend(prepared.merge_warning());
-    report.conflicts.extend(prepared.conflicts.iter().cloned());
+    report.warn_all(prepared.merge_warning());
+    report.add_conflicts(prepared.conflicts.iter().cloned());
     Ok(prepared)
 }
 
 /// `true` (and a warning on the report ending with `hint`) when the run
 /// found conflicts and they are not allowed, so nothing may be written.
 pub fn refuse(report: &mut RunReport, allow_conflicts: bool, hint: &str) -> bool {
-    if report.conflicts.is_empty() || allow_conflicts {
+    if report.conflicts().is_empty() || allow_conflicts {
         return false;
     }
-    report.warnings.push(format!(
+    report.warn(format!(
         "wrote nothing: {} conflict(s) found; {hint}",
-        report.conflicts.len()
+        report.conflicts().len()
     ));
     true
 }
@@ -492,7 +492,7 @@ mod tests {
             report: &mut RunReport,
         ) -> Result<()> {
             for change in changes {
-                report.conflicts.push(colab_core::report::Conflict {
+                report.add_conflict(colab_core::report::Conflict {
                     path: change.path.clone(),
                     rule: None,
                     message: "objects".into(),
@@ -508,7 +508,7 @@ mod tests {
         let (change, report) =
             run_text(&refactoring, PathBuf::from("nowhere/main.go"), GO.into()).unwrap();
         assert!(change.after.contains("new/pkg"));
-        assert_eq!((report.files_visited, report.files_changed), (1, 1));
+        assert_eq!((report.files_visited(), report.files_changed()), (1, 1));
         // Unchanged, the text comes back as it went in.
         let (same, _) =
             run_text(&refactoring, PathBuf::from("a.go"), "package a\n".into()).unwrap();
@@ -557,11 +557,11 @@ mod tests {
         assert!(
             refused
                 .report
-                .warnings
+                .warnings()
                 .iter()
                 .any(|w| w == "wrote nothing: 1 conflict(s) found; say so"),
             "{:?}",
-            refused.report.warnings
+            refused.report.warnings()
         );
         assert_eq!(std::fs::read_to_string(dir.join("main.go")).unwrap(), GO);
         let allowed = run(true);
@@ -580,7 +580,7 @@ mod tests {
             .unwrap();
         // The conflict is reported, but a run that writes nothing is not blocked.
         assert!(!outcome.blocked && outcome.written.is_empty());
-        assert_eq!(outcome.report.conflicts.len(), 1);
+        assert_eq!(outcome.report.conflicts().len(), 1);
         assert_eq!(outcome.changes.len(), 1);
         assert_eq!(std::fs::read_to_string(dir.join("main.go")).unwrap(), GO);
         std::fs::remove_dir_all(&dir).unwrap();

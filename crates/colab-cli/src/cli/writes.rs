@@ -126,7 +126,7 @@ impl Hooks for CliHooks<'_> {
         if let Some((baseline, _)) = &self.baseline
             && baseline.dropped > 0
         {
-            report.warnings.push(format!(
+            report.warn(format!(
                 "{} finding(s) left out: they are already at {} (--baseline)",
                 baseline.dropped, baseline.reference
             ));

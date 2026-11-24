@@ -51,7 +51,9 @@ pub(super) fn run_split(
     let mut scanned = BTreeSet::new();
     let mut changed_paths = BTreeSet::new();
     let mut per_rule: Vec<Vec<FileChange>> = Vec::new();
-    // Bytes the branches add (or remove) between them.
+    // Each file once, as the rules found it, and the bytes the branches add
+    // (or remove) between them.
+    let mut bytes_before: u64 = 0;
     let mut delta: i64 = 0;
     // Stacked: each file as the rules so far left it. A rule reads this,
     // not the disk, for a file an earlier rule changed.
@@ -78,8 +80,7 @@ pub(super) fn run_split(
                 conflict.rule = index;
             }
             if scanned.insert(change.path.clone()) {
-                report.files_scanned += 1;
-                report.bytes_before += change.before.len() as u64;
+                bytes_before += change.before.len() as u64;
             }
             if change.changed() {
                 changed_paths.insert(change.path.clone());
@@ -115,20 +116,24 @@ pub(super) fn run_split(
                 state.insert(change.path.clone(), change.after.clone());
             }
         }
-        report.rules[index].files_matched = changes.len() as u64;
+        report.rules_mut()[index].files_matched = changes.len() as u64;
         for change in &changes {
-            report.conflicts.extend(change.conflicts.iter().map(|c| {
-                colab_core::report::Conflict {
-                    path: change.path.clone(),
-                    rule: Some(index),
-                    message: c.message.clone(),
-                }
-            }));
+            report.add_conflicts(
+                change
+                    .conflicts
+                    .iter()
+                    .map(|c| colab_core::report::Conflict {
+                        path: change.path.clone(),
+                        rule: Some(index),
+                        message: c.message.clone(),
+                    }),
+            );
         }
         per_rule.push(changes);
     }
-    report.bytes_after = (report.bytes_before as i64 + delta).max(0) as u64;
-    report.files_changed = changed_paths.len() as u64;
+    let visited = report.files_visited();
+    report.set_counts(visited, scanned.len() as u64, changed_paths.len() as u64);
+    report.set_bytes(bytes_before, (bytes_before as i64 + delta).max(0) as u64);
 
     // The checks, before any branch exists.
     let mut problems = Vec::new();
@@ -169,11 +174,11 @@ pub(super) fn run_split(
             ));
         }
     }
-    let blocked = !report.conflicts.is_empty() && !args.allow_conflicts;
+    let blocked = !report.conflicts().is_empty() && !args.allow_conflicts;
     if blocked {
-        report.warnings.push(format!(
+        report.warn(format!(
             "made no branches: {} conflict(s) found; fix the rules or rerun with --allow-conflicts",
-            report.conflicts.len()
+            report.conflicts().len()
         ));
     }
     if !problems.is_empty() {
@@ -221,7 +226,7 @@ pub(super) fn run_split(
                 parent = commit.clone();
                 previous = Some(i);
             }
-            report.branches.push(colab_core::report::Branch {
+            report.add_branch(colab_core::report::Branch {
                 rule: i,
                 name: names[i].clone(),
                 commit,
@@ -240,7 +245,7 @@ pub(super) fn run_split(
         }
     }
     colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
-    report.elapsed = started.elapsed();
+    report.set_elapsed(started.elapsed());
     reporter.finish(&report).map_err(io_to_error)?;
     Ok(if blocked { CONFLICT_EXIT } else { 0 })
 }
@@ -265,6 +270,6 @@ pub(super) fn attribute_lines(
     };
     if wanted {
         colab_core::report::attribute(&refactoring.rules, changes, report);
-        reporter.attribution(&report.spans);
+        reporter.attribution(report.spans());
     }
 }

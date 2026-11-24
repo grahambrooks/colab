@@ -80,7 +80,7 @@ impl Refactoring {
         for (rule, note) in self.rules.iter().zip(&self.notes) {
             for advice in &note.advice {
                 if seen.insert(advice.clone()) {
-                    report.warnings.push(format!("{advice} — {rule}"));
+                    report.warn(format!("{advice} — {rule}"));
                 }
             }
         }
@@ -128,7 +128,7 @@ impl Refactoring {
 
     /// Copy each rule's note onto an already seeded report.
     pub fn annotate(&self, report: &mut colab_core::RunReport) {
-        for (stat, note) in report.rules.iter_mut().zip(&self.notes) {
+        for (stat, note) in report.rules_mut().iter_mut().zip(&self.notes) {
             stat.message = note.message.clone();
             stat.severity = note.severity;
             stat.id = note.id.clone();

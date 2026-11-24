@@ -137,7 +137,7 @@ pub fn check(file: &Path, backends: &BackendRegistry) -> Result<Option<String>> 
         rel.display()
     );
     for f in &findings {
-        let rule = f.rules.first().and_then(|&i| report.rules.get(i));
+        let rule = f.rules.first().and_then(|&i| report.rules().get(i));
         let what = rule.map_or_default(|r| match (&r.message, &r.id) {
             (Some(m), Some(id)) => format!("{m} [{id}]"),
             (Some(m), None) => m.clone(),

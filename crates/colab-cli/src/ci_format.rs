@@ -38,7 +38,7 @@ fn message(report: &RunReport, finding: &Finding, mode: ExecMode) -> String {
     let stats: Vec<_> = finding
         .rules
         .iter()
-        .filter_map(|&i| report.rules.get(i))
+        .filter_map(|&i| report.rules().get(i))
         .collect();
     if let Some(text) = stats.iter().find_map(|r| r.message.as_deref()) {
         return text.to_string();
@@ -82,7 +82,7 @@ fn lead(report: &RunReport, finding: &Finding) -> Option<usize> {
         .copied()
         .filter(|&i| {
             report
-                .rules
+                .rules()
                 .get(i)
                 .is_some_and(|r| r.severity == finding.severity)
         })
@@ -133,7 +133,7 @@ fn sarif_level(severity: Severity) -> &'static str {
 
 /// A rule's SARIF id: its own `id`, or its number.
 fn rule_id(report: &RunReport, index: usize) -> String {
-    match report.rules.get(index).and_then(|r| r.id.as_deref()) {
+    match report.rules().get(index).and_then(|r| r.id.as_deref()) {
         Some(id) => format!("colab/{id}"),
         None => format!("colab/rule-{}", index + 1),
     }
@@ -152,7 +152,7 @@ fn region(finding: &Finding) -> Value {
 impl SarifReporter {
     fn document(&self, report: &RunReport) -> Value {
         let rules: Vec<Value> = report
-            .rules
+            .rules()
             .iter()
             .map(|r| {
                 let mut rule = json!({
@@ -205,7 +205,7 @@ impl SarifReporter {
                 }));
             }
         }
-        for conflict in &report.conflicts {
+        for conflict in report.conflicts() {
             let mut result = json!({
                 "ruleId": conflict.rule.map_or_else(|| "colab/conflict".into(), |i| rule_id(report, i)),
                 "level": "error",
@@ -302,7 +302,7 @@ impl GithubReporter {
             let file = escape_property(&uri(&change.path));
             for finding in render::findings(change, report) {
                 let end = finding.end_line.max(finding.start_line);
-                let lead_rule = lead(report, &finding).and_then(|i| report.rules.get(i));
+                let lead_rule = lead(report, &finding).and_then(|i| report.rules().get(i));
                 let title = lead_rule.map_or_else(
                     || "colab".into(),
                     |r| format!("colab: {}", r.id.as_deref().unwrap_or(&r.rule)),
@@ -323,7 +323,7 @@ impl GithubReporter {
                 ));
             }
         }
-        for conflict in &report.conflicts {
+        for conflict in report.conflicts() {
             out.push(format!(
                 "::error file={},title=colab conflict::{}",
                 escape_property(&uri(&conflict.path)),
@@ -339,7 +339,8 @@ impl GithubReporter {
         };
         out.push(format!(
             "colab: {} file(s) scanned, {} {verb}",
-            report.files_scanned, report.files_changed
+            report.files_scanned(),
+            report.files_changed()
         ));
         out
     }
@@ -370,11 +371,10 @@ mod tests {
     fn run() -> (RunReport, FileChange) {
         let mut report =
             RunReport::with_rules(["go::import \"a\" -> \"b\"", "go::pattern 'x' -> 'y'"]);
-        report.rules[0].files_matched = 1;
-        report.rules[0].message = Some("a is gone, use b".into());
-        report.rules[0].severity = Severity::Warning;
-        report.files_scanned = 1;
-        report.files_changed = 1;
+        report.rules_mut()[0].files_matched = 1;
+        report.rules_mut()[0].message = Some("a is gone, use b".into());
+        report.rules_mut()[0].severity = Severity::Warning;
+        report.set_counts(0, 1, 1);
         let change = FileChange {
             path: "./pkg/main.go".into(),
             before: "package p\n\nimport \"a\"\n".into(),
@@ -388,8 +388,8 @@ mod tests {
     #[test]
     fn a_rule_id_and_url_name_the_finding_in_both_formats() {
         let (mut report, change) = run();
-        report.rules[0].id = Some("no-a".into());
-        report.rules[0].url = Some("https://example.test/no-a".into());
+        report.rules_mut()[0].id = Some("no-a".into());
+        report.rules_mut()[0].url = Some("https://example.test/no-a".into());
         let mut github = GithubReporter::new(ExecMode::Check);
         github.report(&change).unwrap();
         let line = &github.lines(&report)[0];

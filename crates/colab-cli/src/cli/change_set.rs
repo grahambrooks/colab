@@ -190,10 +190,10 @@ pub(crate) fn run_change_set(
     let mut report = RunReport::with_rules(labels);
     // Report paths relative to where the user is, like `refactor`.
     let relative = |p: &Path| p.strip_prefix(cwd).unwrap_or(p).to_path_buf();
-    report.files_visited = set.edits.len() as u64;
-    report.file_ops = set.ops.iter().map(|op| op.map_paths(relative)).collect();
-    report.warnings = warnings;
-    for op in &report.file_ops {
+    report.set_counts(set.edits.len() as u64, 0, 0);
+    report.set_file_ops(set.ops.iter().map(|op| op.map_paths(relative)).collect());
+    report.warn_all(warnings);
+    for op in report.file_ops() {
         reporter.file_op(op).map_err(io_to_error)?;
     }
 
@@ -213,17 +213,17 @@ pub(crate) fn run_change_set(
                 .map(|(e, origin)| (origin.as_path(), e.before.as_str(), e.after.as_str())),
         )?;
         if !fresh.conflicts.is_empty() {
-            report.conflicts = fresh.conflicts;
-            report.warnings.push(format!(
+            report.set_conflicts(fresh.conflicts);
+            report.warn(format!(
                 "wrote nothing: {} file(s) changed on disk in ways that overlap this change; rerun it",
-                report.conflicts.len()
+                report.conflicts().len()
             ));
             reporter.refused();
-            report.elapsed = started.elapsed();
+            report.set_elapsed(started.elapsed());
             reporter.finish(&report).map_err(io_to_error)?;
             return Ok(CONFLICT_EXIT);
         }
-        report.warnings.extend(fresh.merge_warning());
+        report.warn_all(fresh.merge_warning());
         for write in fresh.writes {
             if let Some(i) = origins.iter().position(|o| *o == write.path) {
                 set.edits[i].before = write.on_disk;
@@ -253,9 +253,9 @@ pub(crate) fn run_change_set(
             .report(&change)
             .map_err(|e| Error::io_at(&change.path, e))?;
     }
-    if report.rules[0].files_matched == 0 && !set.ops.is_empty() {
+    if report.rules()[0].files_matched == 0 && !set.ops.is_empty() {
         // A pure move did something although it edited no file.
-        report.rules[0].files_matched = set.ops.len() as u64;
+        report.rules_mut()[0].files_matched = set.ops.len() as u64;
     }
 
     if let (Some(cmd), Some(applied)) = (&flags.verify, &applied) {
@@ -270,9 +270,9 @@ pub(crate) fn run_change_set(
         }
     }
 
-    report.elapsed = started.elapsed();
+    report.set_elapsed(started.elapsed());
     reporter.finish(&report).map_err(io_to_error)?;
-    let pending = report.files_changed > 0 || !report.file_ops.is_empty();
+    let pending = report.files_changed() > 0 || !report.file_ops().is_empty();
     Ok(if matches!(exec_mode, ExecMode::Check) && pending {
         10
     } else {

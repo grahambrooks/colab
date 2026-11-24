@@ -607,7 +607,8 @@ fn call_tool(
                 "rule_count": refactoring.len(),
                 "rules": rules,
             });
-            let warnings = refactoring.report().warnings;
+            let report = refactoring.report();
+            let warnings = report.warnings();
             if !warnings.is_empty() {
                 doc["warnings"] = json!(warnings);
             }
@@ -1253,7 +1254,7 @@ mod tests {
             report: &mut RunReport,
         ) -> colab_core::Result<()> {
             for change in changes {
-                report.conflicts.push(colab_core::report::Conflict {
+                report.add_conflict(colab_core::report::Conflict {
                     path: change.path.clone(),
                     rule: None,
                     message: "the host objects".into(),

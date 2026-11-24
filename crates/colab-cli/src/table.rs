@@ -65,7 +65,7 @@ pub fn hits(report: &FindReport) -> Table {
                 (hit.rule + 1).to_string(),
                 report
                     .run
-                    .rules
+                    .rules()
                     .get(hit.rule)
                     .and_then(|r| r.id.clone())
                     .unwrap_or_default(),

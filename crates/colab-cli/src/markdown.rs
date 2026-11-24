@@ -364,7 +364,7 @@ pub fn check_links(
             },
         )
         .collect();
-    report.conflicts.extend(per_file.into_iter().flatten());
+    report.add_conflicts(per_file.into_iter().flatten());
     Ok(())
 }
 

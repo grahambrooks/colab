@@ -158,7 +158,7 @@ fn keys(change: &FileChange, report: &RunReport) -> Vec<Key> {
             let mut rules: Vec<String> = block
                 .rules
                 .iter()
-                .filter_map(|&i| report.rules.get(i).map(|r| r.rule.clone()))
+                .filter_map(|&i| report.rules().get(i).map(|r| r.rule.clone()))
                 .collect();
             rules.sort();
             (

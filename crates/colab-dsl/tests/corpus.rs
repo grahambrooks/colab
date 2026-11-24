@@ -279,7 +279,7 @@ fn check_matches_compile(script_path: &Path, refactoring: &Refactoring) -> Resul
 /// Then one line per conflict a rule reported.
 fn render_rules(report: &RunReport) -> String {
     let mut out = String::new();
-    for stat in &report.rules {
+    for stat in report.rules() {
         let _ = writeln!(out, "{} {}", stat.files_matched, stat.rule);
         for near in &stat.near_misses {
             let _ = writeln!(out, "    near {} ({} file(s))", near.value, near.files);
@@ -292,7 +292,7 @@ fn render_rules(report: &RunReport) -> String {
             );
         }
     }
-    for conflict in &report.conflicts {
+    for conflict in report.conflicts() {
         let _ = writeln!(
             out,
             "conflict {} {}: {}",

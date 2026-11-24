@@ -122,42 +122,42 @@ pub struct SkippedFile {
 #[derive(Debug, Default, Clone)]
 pub struct RunReport {
     /// Files the walker yielded before the relevance check.
-    pub files_visited: u64,
+    pub(crate) files_visited: u64,
     /// Files that passed [`CodeTransformer::is_file_relevant`] and were read.
     ///
     /// [`CodeTransformer::is_file_relevant`]: crate::CodeTransformer::is_file_relevant
-    pub files_scanned: u64,
+    pub(crate) files_scanned: u64,
     /// Files whose contents actually changed.
-    pub files_changed: u64,
-    pub bytes_before: u64,
-    pub bytes_after: u64,
-    pub elapsed: Duration,
+    pub(crate) files_changed: u64,
+    pub(crate) bytes_before: u64,
+    pub(crate) bytes_after: u64,
+    pub(crate) elapsed: Duration,
     /// One entry per rule in the compiled script, in source order.
-    pub rules: Vec<RuleStat>,
-    pub skipped: Vec<SkippedFile>,
+    pub(crate) rules: Vec<RuleStat>,
+    pub(crate) skipped: Vec<SkippedFile>,
     /// The first [`SCANNED_SAMPLE_LIMIT`] scanned paths, kept so a rule
     /// that matched nothing can be explained afterwards without a second
     /// walk (see [`crate::near_miss::probe`]).
-    pub scanned_sample: Vec<PathBuf>,
+    pub(crate) scanned_sample: Vec<PathBuf>,
     /// File operations the run made (or would make), in order — moves,
     /// creates, deletes. Empty for ordinary codemods.
-    pub file_ops: Vec<crate::fileops::FileOp>,
+    pub(crate) file_ops: Vec<crate::fileops::FileOp>,
     /// Run-specific warnings beyond the generic advisories, e.g. a moved
     /// file whose history git may not follow.
-    pub warnings: Vec<String>,
+    pub(crate) warnings: Vec<String>,
     /// Conflicts the rules found in their own changes, in file order.
-    pub conflicts: Vec<Conflict>,
+    pub(crate) conflicts: Vec<Conflict>,
     /// Which lines of each changed file each rule touched, when a CI
     /// format asked for it (see [`attribute`]). Empty otherwise, and
     /// [`crate::render::findings`] then credits every rule that changed
     /// the file.
-    pub spans: std::collections::BTreeMap<PathBuf, Vec<RuleSpan>>,
+    pub(crate) spans: std::collections::BTreeMap<PathBuf, Vec<RuleSpan>>,
     /// The branches `refactor --split-pr` made, one per rule that changed
     /// something on its own.
-    pub branches: Vec<Branch>,
+    pub(crate) branches: Vec<Branch>,
     /// Which rules changed each file, for the files in `scanned_sample`:
     /// the probe for skipped matches leaves a rule's own files out.
-    pub fired: std::collections::BTreeMap<PathBuf, Vec<usize>>,
+    pub(crate) fired: std::collections::BTreeMap<PathBuf, Vec<usize>>,
 }
 
 /// One branch made by `refactor --split-pr`: the base commit plus one
@@ -207,6 +207,82 @@ pub fn attribute(
             }
         }
         report.spans.insert(change.path.clone(), spans);
+    }
+}
+
+/// Reading a report: an accessor per field. The fields are `colab-core`'s,
+/// so the walk, the pipeline and the renderers decide a report's shape,
+/// and other crates add to it only through the methods below.
+impl RunReport {
+    /// Files the walker yielded before the relevance check.
+    pub fn files_visited(&self) -> u64 {
+        self.files_visited
+    }
+
+    /// Files that passed the relevance check and were read.
+    pub fn files_scanned(&self) -> u64 {
+        self.files_scanned
+    }
+
+    /// Files whose contents changed.
+    pub fn files_changed(&self) -> u64 {
+        self.files_changed
+    }
+
+    pub fn bytes_before(&self) -> u64 {
+        self.bytes_before
+    }
+
+    pub fn bytes_after(&self) -> u64 {
+        self.bytes_after
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        self.elapsed
+    }
+
+    /// One entry per rule, in source order.
+    pub fn rules(&self) -> &[RuleStat] {
+        &self.rules
+    }
+
+    pub fn skipped(&self) -> &[SkippedFile] {
+        &self.skipped
+    }
+
+    /// The first [`SCANNED_SAMPLE_LIMIT`] scanned paths.
+    pub fn scanned_sample(&self) -> &[PathBuf] {
+        &self.scanned_sample
+    }
+
+    /// File operations the run made (or would make), in order.
+    pub fn file_ops(&self) -> &[crate::fileops::FileOp] {
+        &self.file_ops
+    }
+
+    /// Run-specific warnings beyond the generic advisories.
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
+    }
+
+    /// Conflicts found in the run's changes, in file order.
+    pub fn conflicts(&self) -> &[Conflict] {
+        &self.conflicts
+    }
+
+    /// Which lines of each changed file each rule touched (see [`attribute`]).
+    pub fn spans(&self) -> &std::collections::BTreeMap<PathBuf, Vec<RuleSpan>> {
+        &self.spans
+    }
+
+    /// The branches `refactor --split-pr` made.
+    pub fn branches(&self) -> &[Branch] {
+        &self.branches
+    }
+
+    /// Which rules changed each sampled file.
+    pub fn fired(&self) -> &std::collections::BTreeMap<PathBuf, Vec<usize>> {
+        &self.fired
     }
 }
 
@@ -270,6 +346,80 @@ impl RunReport {
                 rule: Some(c.rule),
                 message: c.message.clone(),
             }));
+    }
+
+    /// Add a warning.
+    pub fn warn(&mut self, warning: impl Into<String>) {
+        self.warnings.push(warning.into());
+    }
+
+    /// Add warnings, in order.
+    pub fn warn_all(&mut self, warnings: impl IntoIterator<Item = String>) {
+        self.warnings.extend(warnings);
+    }
+
+    /// Add a conflict.
+    pub fn add_conflict(&mut self, conflict: Conflict) {
+        self.conflicts.push(conflict);
+    }
+
+    /// Add conflicts, in order.
+    pub fn add_conflicts(&mut self, conflicts: impl IntoIterator<Item = Conflict>) {
+        self.conflicts.extend(conflicts);
+    }
+
+    /// Replace the conflicts: a check that re-judged the whole run (a
+    /// change set's merge with the disk) found these instead.
+    pub fn set_conflicts(&mut self, conflicts: Vec<Conflict>) {
+        self.conflicts = conflicts;
+    }
+
+    /// Add a rule of the surface's own after the script's (a `--tidy`
+    /// formatter). Returns its index.
+    pub fn add_rule(&mut self, rule: RuleStat) -> usize {
+        self.rules.push(rule);
+        self.rules.len() - 1
+    }
+
+    /// The rules, to annotate (message, severity) or count by hand. The
+    /// list itself is fixed; rules are added with [`add_rule`](Self::add_rule).
+    pub fn rules_mut(&mut self) -> &mut [RuleStat] {
+        &mut self.rules
+    }
+
+    /// Record a branch `--split-pr` made.
+    pub fn add_branch(&mut self, branch: Branch) {
+        self.branches.push(branch);
+    }
+
+    /// The file operations a change set makes.
+    pub fn set_file_ops(&mut self, ops: Vec<crate::fileops::FileOp>) {
+        self.file_ops = ops;
+    }
+
+    /// Record files that could not be read.
+    pub fn skip_all(&mut self, skipped: impl IntoIterator<Item = SkippedFile>) {
+        self.skipped.extend(skipped);
+    }
+
+    /// The file counters of a report no walk built: a language server's
+    /// change set, a run that counts its own passes, a test fixture.
+    pub fn set_counts(&mut self, visited: u64, scanned: u64, changed: u64) {
+        self.files_visited = visited;
+        self.files_scanned = scanned;
+        self.files_changed = changed;
+    }
+
+    /// The byte counters of a report that reads files its own way
+    /// (`--split-pr`, which applies each rule alone).
+    pub fn set_bytes(&mut self, before: u64, after: u64) {
+        self.bytes_before = before;
+        self.bytes_after = after;
+    }
+
+    /// How long the run took.
+    pub fn set_elapsed(&mut self, elapsed: Duration) {
+        self.elapsed = elapsed;
     }
 
     /// Fold a completed walk's outcome into the report.

@@ -272,8 +272,8 @@ pub fn tidy_pending(
             .and_then(|e| formatters.get(e));
         if let Some(formatter) = formatter {
             let rule = *formatter_rules.entry(formatter.clone()).or_insert_with(|| {
-                let index = report.rules.len();
-                report.rules.push(tidy_rule(index, formatter));
+                let index = report.rules().len();
+                report.add_rule(tidy_rule(index, formatter));
                 index
             });
             match run_formatter(formatter, &change.path, &change.after) {
@@ -284,7 +284,7 @@ pub fn tidy_pending(
                     }
                 }
                 Ok(_) => {}
-                Err(why) => report.warnings.push(format!(
+                Err(why) => report.warn(format!(
                     "--tidy: `{formatter}` failed on {}, so it is left as the rules made it: {why}",
                     change.path.display()
                 )),
@@ -296,7 +296,7 @@ pub fn tidy_pending(
             None => ServerCommand::default_for(&change.path),
         };
         let Some(server) = chosen else {
-            report.warnings.push(format!(
+            report.warn(format!(
                 "--tidy: no default language server for {}; left as the rules made it",
                 change.path.display()
             ));
@@ -305,7 +305,7 @@ pub fn tidy_pending(
         // A default the machine lacks is skipped, not fatal: one missing
         // server should not stop the other languages being tidied.
         if command.is_none() && !on_path(&server.program) {
-            report.warnings.push(format!(
+            report.warn(format!(
                 "--tidy: `{}` is not on PATH, so {} is left as the rules made it \
                  (install it, or name a formatter for it in colab.toml's [formatters])",
                 server.program,
@@ -324,8 +324,8 @@ pub fn tidy_pending(
     let mut rules: BTreeMap<String, usize> = BTreeMap::new();
     for ((name, root), (server, indices)) in groups {
         let rule = *rules.entry(name.clone()).or_insert_with(|| {
-            let index = report.rules.len();
-            report.rules.push(tidy_rule(index, &server.program));
+            let index = report.rules().len();
+            report.add_rule(tidy_rule(index, &server.program));
             index
         });
         let mut set = ChangeSet {
@@ -344,9 +344,7 @@ pub fn tidy_pending(
             root: &root,
             timeout: 120,
         };
-        report
-            .warnings
-            .extend(tidy_change_set(&tidy, &mut set, rule)?);
+        report.warn_all(tidy_change_set(&tidy, &mut set, rule)?);
         for (&i, edit) in indices.iter().zip(set.edits) {
             changes[i].after = edit.after;
             changes[i].rules_fired = edit.rules_fired;
@@ -1591,17 +1589,17 @@ fn change_set_json(
     });
     let mut report = colab_core::RunReport::with_rules(labels);
     let rel = |p: &Path| relative(p, cwd).to_path_buf();
-    report.files_visited = set.edits.len() as u64;
-    report.file_ops = set.ops.iter().map(|op| op.map_paths(rel)).collect();
-    report.warnings = warnings;
+    report.set_counts(set.edits.len() as u64, 0, 0);
+    report.set_file_ops(set.ops.iter().map(|op| op.map_paths(rel)).collect());
+    report.warn_all(warnings);
     for edit in &set.edits {
         let mut change = edit.clone();
         change.path = rel(&change.path);
         report.record(&change);
         collector.push(&change);
     }
-    if report.rules[0].files_matched == 0 && !set.ops.is_empty() {
-        report.rules[0].files_matched = set.ops.len() as u64;
+    if report.rules()[0].files_matched == 0 && !set.ops.is_empty() {
+        report.rules_mut()[0].files_matched = set.ops.len() as u64;
     }
     let mut value = collector.to_json(&report);
     let advisories = render::advisories(&report);
@@ -1638,11 +1636,11 @@ fn blame(
     report: &mut colab_core::RunReport,
     line: usize,
 ) -> Option<usize> {
-    if !report.spans.contains_key(&change.path) {
+    if !report.spans().contains_key(&change.path) {
         colab_core::report::attribute(rules, std::slice::from_ref(change), report);
     }
     let at = line.checked_sub(1)?;
-    let spans = report.spans.get(&change.path).map(Vec::as_slice);
+    let spans = report.spans().get(&change.path).map(Vec::as_slice);
     let holding: Vec<usize> = colab_core::render::blocks(change, spans)
         .into_iter()
         .find(|b| b.new.contains(&at) || (b.new.is_empty() && b.new.start == at))
@@ -1680,7 +1678,7 @@ pub fn verify_lsp(
             None => match ServerCommand::default_for(&change.path) {
                 Some(server) => server,
                 None => {
-                    report.warnings.push(format!(
+                    report.warn(format!(
                         "--verify-lsp: no default language server for {}; not checked (pass --verify-lsp='<command>')",
                         change.path.display()
                     ));
@@ -1715,7 +1713,7 @@ pub fn verify_lsp(
                     let line = error_line(&error)?;
                     blame(change, rules, report, line)
                 });
-                report.conflicts.push(colab_core::Conflict {
+                report.add_conflict(colab_core::Conflict {
                     path: path.clone(),
                     rule,
                     message: format!("`{name}` reports a new error at {error}"),

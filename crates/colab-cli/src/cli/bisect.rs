@@ -18,9 +18,6 @@ pub(super) fn run_refactor_per_rule(
     let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
     let mut report = refactoring.report();
-    // Each rule gets its own walk, so every file is visited once per
-    // rule. Count the tree only once, from the first rule's pass.
-    let mut files_visited = 0u64;
 
     for (idx, rule) in refactoring.rules.iter().enumerate() {
         let single = codemod::SingleRule::new(rule.as_ref()).in_script(refactoring.script_of(idx));
@@ -59,10 +56,15 @@ pub(super) fn run_refactor_per_rule(
         };
 
         let outcome = run_transformer(&single, args, targets, &mut visit)?;
+        // Each rule re-walks the same tree, so only the first pass's visits
+        // and unreadable files count; the rest would multiply them.
+        if idx == 0 {
+            report.record_walk(outcome);
+        }
         let prepared = codemod::pipeline::prepare(&pending, &mut report)?;
         if codemod::pipeline::refuse(&mut report, args.allow_conflicts, REFUSAL_HINT) {
             if idx > 0 {
-                report.warnings.push(format!(
+                report.warn(format!(
                     "rules 1–{idx} passed and were written before rule {} conflicted; \
                  `colab undo` needs --backup",
                     idx + 1
@@ -70,8 +72,7 @@ pub(super) fn run_refactor_per_rule(
             }
             reporter.refused();
             report_all(reporter.as_mut(), &pending)?;
-            report.files_visited = files_visited.max(outcome.files_visited);
-            report.elapsed = started.elapsed();
+            report.set_elapsed(started.elapsed());
             reporter.finish(&report).map_err(io_to_error)?;
             return Ok(CONFLICT_EXIT);
         }
@@ -85,13 +86,6 @@ pub(super) fn run_refactor_per_rule(
             &mut CliHooks::new(reporter.as_mut(), args.backup.as_deref()),
         )?;
         report_all(reporter.as_mut(), &pending)?;
-        // Each rule re-walks the same tree, so only the first pass's
-        // visit count is meaningful; the rest would multiply it by the
-        // rule count.
-        if idx == 0 {
-            files_visited = outcome.files_visited;
-        }
-        report.skipped.extend(outcome.skipped);
 
         if let Some(cmd) = &args.verify {
             info!("Verifying rule {} with `{}`", idx + 1, cmd);
@@ -122,8 +116,7 @@ pub(super) fn run_refactor_per_rule(
         }
     }
 
-    report.files_visited = files_visited;
-    report.elapsed = started.elapsed();
+    report.set_elapsed(started.elapsed());
     reporter.finish(&report).map_err(io_to_error)?;
     Ok(0)
 }
@@ -253,7 +246,7 @@ pub(super) fn run_refactor_bisect(
     // Phase 2: full-set verify.
     info!("Verifying with `{verify_cmd}`");
     if run_verify(verify_cmd)? {
-        report.elapsed = started.elapsed();
+        report.set_elapsed(started.elapsed());
         reporter.finish(&report).map_err(io_to_error)?;
         return Ok(0);
     }
@@ -271,7 +264,7 @@ pub(super) fn run_refactor_bisect(
         fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
     }
 
-    report.elapsed = started.elapsed();
+    report.set_elapsed(started.elapsed());
     reporter.finish(&report).map_err(io_to_error)?;
 
     Err(Error::Config(format!(

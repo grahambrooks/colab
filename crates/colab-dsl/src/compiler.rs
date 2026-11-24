@@ -1357,9 +1357,9 @@ import (
         )
         .unwrap();
         let report = r.report();
-        assert_eq!(report.rules[0].message.as_deref(), Some("a is gone"));
-        assert_eq!(report.rules[0].severity, colab_core::Severity::Warning);
-        assert_eq!(report.rules[1].severity, colab_core::Severity::Error);
+        assert_eq!(report.rules()[0].message.as_deref(), Some("a is gone"));
+        assert_eq!(report.rules()[0].severity, colab_core::Severity::Warning);
+        assert_eq!(report.rules()[1].severity, colab_core::Severity::Error);
         for bad in [
             r#"refactor "r" { match go::import "a" { delete severity loud } }"#,
             r#"refactor "r" { match go::import "a" { delete message "x" message "y" } }"#,
@@ -1406,7 +1406,8 @@ import (
             &backends,
         )
         .unwrap();
-        let warnings = r.report().warnings;
+        let report = r.report();
+        let warnings = report.warnings();
         // Two rules from `and fences`, one warning; the rename needs none.
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].contains("still calls `f`"), "{warnings:?}");

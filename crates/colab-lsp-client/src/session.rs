@@ -139,7 +139,16 @@ impl Session {
                         "experimental": {"serverStatusNotification": true}
                     }
                 }),
-            )?
+            )
+            // A server that dies before it answers (most often a rustup
+            // proxy whose toolchain lacks the component) says why only on
+            // its stderr, which a session discards; ask it once more.
+            .map_err(|e| match e {
+                Error::Server(message) if message.contains("exited while") => {
+                    Error::Server(format!("{message}{}", why_it_exited(program, root)))
+                }
+                other => other,
+            })?
             .map_err(|e| session.server_error("initialize", &e))?;
         session.encoding = Encoding::parse(
             result
@@ -567,10 +576,69 @@ impl Session {
     }
 }
 
+/// Why a server that exited during `initialize` would not start: the first
+/// line it writes to stderr when run as `<program> --version` in `root`
+/// (the directory a rustup proxy picks the toolchain from), as `: <line>`,
+/// or nothing when that succeeds or says nothing.
+fn why_it_exited(program: &str, root: &Path) -> String {
+    let Ok(output) = std::process::Command::new(program)
+        .arg("--version")
+        .current_dir(root)
+        .stdin(std::process::Stdio::null())
+        .output()
+    else {
+        return String::new();
+    };
+    if output.status.success() {
+        return String::new();
+    }
+    let text = String::from_utf8_lossy(&output.stderr);
+    match text.lines().map(str::trim).find(|l| !l.is_empty()) {
+        Some(line) => {
+            let line: String = line.chars().take(300).collect();
+            format!(": `{} --version` says: {line}", server_name(program))
+        }
+        None => String::new(),
+    }
+}
+
 /// A server's program name for a span: the file name, never the path it
 /// was started from.
 fn server_name(program: &str) -> String {
     Path::new(program)
         .file_name()
         .map_or_else(|| program.to_string(), |n| n.to_string_lossy().into_owned())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn script(dir: &Path, name: &str, body: &str) -> String {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path.display().to_string()
+    }
+
+    #[test]
+    fn a_server_that_will_not_start_says_why() {
+        let dir = std::env::temp_dir().join(format!("colab-why-exited-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let broken = script(
+            &dir,
+            "broken-ls",
+            "echo >&2; echo \"error: Unknown binary 'broken-ls' in toolchain\" >&2; exit 1",
+        );
+        assert_eq!(
+            why_it_exited(&broken, &dir),
+            ": `broken-ls --version` says: error: Unknown binary 'broken-ls' in toolchain"
+        );
+        // A server whose `--version` works, or that is missing, adds nothing.
+        let fine = script(&dir, "fine-ls", "echo 1.0");
+        assert_eq!(why_it_exited(&fine, &dir), "");
+        assert_eq!(why_it_exited("/nonexistent/ls-server", &dir), "");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
