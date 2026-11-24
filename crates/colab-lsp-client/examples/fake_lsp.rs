@@ -269,6 +269,9 @@ fn publish(uri: &str, text: &str) -> Value {
 
 fn main() {
     let mode = std::env::var("FAKE_LSP_MODE").unwrap_or_default();
+    // A server that cannot start: it says why on stderr, then exits, as a
+    // rustup proxy without the component does.
+    let crash = std::env::args().any(|a| a == "--crash-on-initialize");
     let stdin = std::io::stdin();
     let mut input = BufReader::new(stdin.lock());
     let mut out = std::io::stdout().lock();
@@ -286,6 +289,11 @@ fn main() {
         let params = message.get("params").cloned().unwrap_or(Value::Null);
         match (method.as_str(), id) {
             ("initialize", Some(id)) => {
+                if crash {
+                    eprintln!("fake_lsp: indexing...");
+                    eprintln!("error: no toolchain for this project");
+                    std::process::exit(3);
+                }
                 if let Some(uri) = params.get("rootUri").and_then(Value::as_str) {
                     root = uri_path(uri);
                 }

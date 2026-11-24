@@ -491,7 +491,20 @@ impl Server {
                     }
                     Err(Closed::TimedOut) => break,
                     Err(Closed::Exited) => {
-                        return Err(io::Error::other("the language server exited"));
+                        // The client is waiting on these; tell it why they
+                        // will never be answered, in what the server said.
+                        let why = match self.transport.stderr_tail() {
+                            Some(tail) => format!("the language server exited: it said: {tail}"),
+                            None => "the language server exited".to_string(),
+                        };
+                        for (_, client_id) in pending.drain() {
+                            let _ = write_frame(
+                                &mut writer,
+                                &json!({"jsonrpc": "2.0", "id": client_id,
+                                        "error": {"code": -32603, "message": why}}),
+                            );
+                        }
+                        return Err(io::Error::other(why));
                     }
                 }
             }

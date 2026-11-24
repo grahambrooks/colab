@@ -2,9 +2,11 @@
 //! stdio, or over a Unix socket to a `colab lsp-daemon` holding one, with
 //! a reader thread so every wait can time out.
 
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -16,6 +18,30 @@ pub struct Transport {
     child: Option<Child>,
     writer: Box<dyn Write + Send>,
     incoming: Receiver<Value>,
+    /// The last lines the server wrote to stderr, when this transport
+    /// started it: what explains a server that exits.
+    stderr: Arc<Mutex<VecDeque<String>>>,
+}
+
+/// How many of a server's last stderr lines a transport keeps.
+const STDERR_LINES: usize = 20;
+
+/// Drain `stderr` on a thread, keeping its last [`STDERR_LINES`] lines.
+/// Draining also keeps a server that logs a lot from blocking on a full pipe.
+fn stderr_thread<R: Read + Send + 'static>(stderr: R) -> Arc<Mutex<VecDeque<String>>> {
+    let lines = Arc::new(Mutex::new(VecDeque::new()));
+    let kept = Arc::clone(&lines);
+    thread::spawn(move || {
+        for line in BufReader::new(stderr).lines() {
+            let Ok(line) = line else { break };
+            let mut kept = kept.lock().unwrap_or_else(PoisonError::into_inner);
+            if kept.len() == STDERR_LINES {
+                kept.pop_front();
+            }
+            kept.push_back(line);
+        }
+    });
+    lines
 }
 
 /// Read frames from `reader` on a thread, into a channel.
@@ -33,22 +59,26 @@ fn reader_thread<R: Read + Send + 'static>(reader: R) -> Receiver<Value> {
 }
 
 impl Transport {
-    /// Spawn `program args…` in `cwd`. Its stderr is discarded: servers
-    /// log copiously there and nothing in it is protocol.
+    /// Spawn `program args…` in `cwd`. Its stderr is drained and only its
+    /// last lines kept ([`stderr_tail`](Self::stderr_tail)): servers log
+    /// copiously there and nothing in it is protocol, but it is what says
+    /// why a server exited.
     pub fn spawn(program: &str, args: &[String], cwd: &std::path::Path) -> std::io::Result<Self> {
         let mut child = Command::new(program)
             .args(args)
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
         let stdin = child.stdin.take().expect("stdin was piped");
         let stdout = child.stdout.take().expect("stdout was piped");
+        let stderr = child.stderr.take().expect("stderr was piped");
         Ok(Self {
             child: Some(child),
             writer: Box::new(stdin),
             incoming: reader_thread(stdout),
+            stderr: stderr_thread(stderr),
         })
     }
 
@@ -60,7 +90,25 @@ impl Transport {
             child: None,
             writer: Box::new(stream),
             incoming: reader_thread(reader),
+            stderr: Arc::default(),
         })
+    }
+
+    /// The last non-empty lines the server wrote to stderr, joined by
+    /// `; `, or `None` (a daemon connection, or a server that said nothing).
+    /// Waits a moment first, so a server that just exited has been read.
+    pub fn stderr_tail(&self) -> Option<String> {
+        if self.child.is_some() {
+            thread::sleep(Duration::from_millis(50));
+        }
+        let lines = self.stderr.lock().unwrap_or_else(PoisonError::into_inner);
+        let kept: Vec<&str> = lines
+            .iter()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect();
+        let tail = kept[kept.len().saturating_sub(3)..].join("; ");
+        (!tail.is_empty()).then(|| tail.chars().take(500).collect())
     }
 
     pub fn send(&mut self, message: &Value) -> std::io::Result<()> {

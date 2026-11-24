@@ -97,5 +97,33 @@ fn a_kept_server_serves_commands_in_a_row_from_disk() {
     colab_lsp_client::daemon::stop(&socket).unwrap();
     daemon.join().unwrap().unwrap();
     assert!(!socket.exists(), "the socket goes with the daemon");
+
+    // A kept server that dies: the daemon answers the client's waiting
+    // request with what the server last wrote to stderr.
+    let mut crashing = fake_server();
+    crashing.args.push("--crash-on-initialize".into());
+    let socket = colab_lsp_client::daemon::socket_for(&crashing.program, &crashing.args, &root);
+    let _ = std::fs::remove_file(&socket);
+    let (program, args, root2, socket2) = (
+        crashing.program.clone(),
+        crashing.args.clone(),
+        root.clone(),
+        socket.clone(),
+    );
+    let daemon = std::thread::spawn(move || {
+        colab_lsp_client::daemon::serve(&program, &args, &root2, &socket2, Duration::from_secs(60))
+    });
+    while !socket.exists() {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let err = rename(&crashing, &request(&root, 3, "x"))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("it said: fake_lsp: indexing...; error: no toolchain for this project"),
+        "{err}"
+    );
+    let _ = daemon.join();
+    let _ = std::fs::remove_file(&socket);
     let _ = std::fs::remove_dir_all(&root);
 }

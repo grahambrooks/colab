@@ -144,7 +144,9 @@ impl Session {
             // proxy whose toolchain lacks the component) says why only on
             // its stderr, which a session discards; ask it once more.
             .map_err(|e| match e {
-                Error::Server(message) if message.contains("exited while") => {
+                Error::Server(message)
+                    if message.contains("exited while") && !message.contains("it said:") =>
+                {
                     Error::Server(format!("{message}{}", why_it_exited(program, root)))
                 }
                 other => other,
@@ -564,11 +566,20 @@ impl Session {
         ))
     }
 
+    /// The server stopped answering. What it last wrote to stderr says why,
+    /// when this session started it; a kept server's daemon sends the same
+    /// as the error of the requests it could not answer.
     fn exited(&self, during: &str) -> Error {
-        Error::Server(format!(
-            "language server `{}` exited while {during}",
-            self.name
-        ))
+        match self.transport.stderr_tail() {
+            Some(tail) => Error::Server(format!(
+                "language server `{}` exited while {during}: it said: {tail}",
+                self.name
+            )),
+            None => Error::Server(format!(
+                "language server `{}` exited while {during}",
+                self.name
+            )),
+        }
     }
 
     fn io_error(&self, e: std::io::Error) -> Error {

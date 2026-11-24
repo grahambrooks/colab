@@ -107,6 +107,22 @@ fn nothing_renameable_at_the_position_is_an_error() {
 }
 
 #[test]
+fn a_server_that_dies_says_what_it_last_wrote() {
+    let root = workspace("crash", &[("a.rs", "fn old() {}\n")]);
+    let mut server = fake_server();
+    server.args.push("--crash-on-initialize".into());
+    let err = rename(&server, &request(&root, "a.rs", 4, "x"))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("exited while")
+            && err.contains("it said: fake_lsp: indexing...; error: no toolchain for this project"),
+        "{err}"
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn a_server_without_rename_is_refused() {
     let root = workspace("norename", &[("a.rs", "fn old() {}\n")]);
     let err = rename(
