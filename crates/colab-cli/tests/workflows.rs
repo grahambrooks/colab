@@ -1782,6 +1782,37 @@ $$$B' }"#;
 }
 
 #[test]
+fn colab_ignore_holds_a_match_back_from_create() {
+    let root = workspace_temp("create-ignore");
+    write(
+        &root.join("lib.rs"),
+        "// colab:ignore\nmod a {\n    fn x() {}\n}\nmod b {\n    fn y() {}\n}\n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "refactor",
+            "-e",
+            r#"match rust::pattern 'mod $M { $$$B }' { create "$M.rs" '$$$B' }"#,
+            "--write",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!root.join("a.rs").exists());
+    assert_eq!(
+        fs::read_to_string(root.join("b.rs")).unwrap(),
+        "fn y() {}\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn two_matches_creating_one_path_with_different_text_conflict() {
     let root = workspace_temp("create-clash");
     write(

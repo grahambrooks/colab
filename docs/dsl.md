@@ -204,8 +204,8 @@ match rust::pattern 'mod $M { $$$B }' { replace 'mod $M;' }
   it, so `colab undo` removes it, and `--verify` / `--bisect` remove it
   when they revert.
 - The path must be relative, and must use only the pattern's bindings.
-  A `let` derives values for `replace` only, so `create` takes none, and
-  `colab:ignore` does not yet hold a match back from `create`.
+  A `let` derives values for `replace` only, so `create` takes none. A
+  match on a line `colab:ignore` covers creates nothing.
 
 > **Idempotency caveat.** `replace_call` is idempotent only if the
 > template *renames the function*. Templates that keep the function

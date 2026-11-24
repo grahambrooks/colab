@@ -42,7 +42,11 @@ const DECLARATION_WORDS: &[&str] = &[
 ];
 
 fn is_declaration_kind(kind: &str) -> bool {
+    // A use is not a declaration: Java's `method_invocation` and
+    // `method_reference` have a `name` field too.
     !kind.contains("call")
+        && !kind.contains("invocation")
+        && !kind.contains("reference")
         && !kind.contains("expression")
         && !kind.contains("type_identifier")
         && !kind.ends_with("_type")

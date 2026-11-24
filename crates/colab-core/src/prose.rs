@@ -96,7 +96,7 @@ impl Operation for ProseRename {
         self.inner.conflicts(before, after)
     }
 
-    fn creates(&self, path: &std::path::Path, source: &str) -> Vec<(std::path::PathBuf, String)> {
+    fn creates(&self, path: &std::path::Path, source: &str) -> Vec<crate::Creation> {
         self.inner.creates(path, source)
     }
 }

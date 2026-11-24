@@ -89,7 +89,7 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
     /// resolved against `path`'s directory. Only `create` actions make
     /// any; such a rule leaves `source` itself unchanged. Its prefilter
     /// (a match needs its literal) stays sound: no match, nothing made.
-    fn creates(&self, _path: &Path, _source: &str) -> Vec<(PathBuf, String)> {
+    fn creates(&self, _path: &Path, _source: &str) -> Vec<Creation> {
         Vec::new()
     }
 
@@ -182,6 +182,18 @@ impl RuleSpec {
             | RuleSpec::Create { target, .. } => target,
         }
     }
+}
+
+/// A file an [`Operation::creates`] would make from one match.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Creation {
+    /// Where, resolved against the directory of the file the rule read.
+    pub path: PathBuf,
+    /// The whole new file.
+    pub text: String,
+    /// The 0-based line of the match, so a `colab:ignore` there holds it
+    /// back.
+    pub line: usize,
 }
 
 /// One module-level capability advertised by a [`LanguageBackend`].

@@ -47,6 +47,23 @@ mod tests {
     use colab_rewrite::pattern::PatternAction;
 
     #[test]
+    fn calls_are_not_declarations_and_new_ones_are_not_recursion() {
+        let src = "class A {\n    int total() { return Integer.valueOf(1) + list.stream().map(A::size).count(); }\n}\n";
+        let decls = crate::LANG.declarations(src);
+        let names: Vec<&str> = decls[0].children.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["total"], "{decls:?}");
+        let op = crate::LANG
+            .compile_pattern(
+                "new Integer($X)",
+                PatternAction::Replace("Integer.valueOf($X)".into()),
+                &[],
+            )
+            .unwrap();
+        let before = "class A {\n    Integer f() { return new Integer(1); }\n}\n";
+        assert!(op.conflicts(before, &op.apply(before)).is_empty());
+    }
+
+    #[test]
     fn a_method_pattern_without_modifiers_matches_any_and_keeps_them() {
         let src = "class A {\n    void a() {}\n    @Override\n    public static void b() {}\n    private final void c() {}\n    int d() { return 1; }\n}\n";
         let any = crate::LANG

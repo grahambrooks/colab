@@ -189,6 +189,58 @@ impl SourceLanguage {
         }
     }
 
+    /// A conflict for each function the change from `before` to `after`
+    /// made call itself more often than it did: a rewrite to a new helper
+    /// that also rewrote the call inside that helper (`unified_diff(…)` →
+    /// `change_diff(…)` inside `fn change_diff`) recurses for ever. Judged
+    /// by name, functions and methods only, so it is silent when unsure.
+    pub fn new_self_calls(&self, before: &str, after: &str) -> Vec<String> {
+        let was = self.self_calls(before);
+        self.self_calls(after)
+            .into_iter()
+            .filter(|(name, n)| *n > was.get(name).copied().unwrap_or(0))
+            .map(|(name, _)| {
+                format!(
+                    "the rewrite makes `{name}` call itself, which it did not before: a match \
+                     inside `{name}` became a call to it. Narrow the rule with `where not inside` \
+                     that function, or allow the conflict if the recursion is meant"
+                )
+            })
+            .collect()
+    }
+
+    /// How many calls each function or method in `source` makes to its own
+    /// name (the callee's last path segment), by name.
+    fn self_calls(&self, source: &str) -> std::collections::BTreeMap<String, usize> {
+        fn walk(
+            lang: &SourceLanguage,
+            source: &str,
+            decls: &[colab_core::symbols::Declaration],
+            out: &mut std::collections::BTreeMap<String, usize>,
+        ) {
+            for decl in decls {
+                if decl.kind.contains("function") || decl.kind.contains("method") {
+                    let body = &source[decl.range.clone()];
+                    let own = lang
+                        .callees(body)
+                        .iter()
+                        .filter(|callee| {
+                            callee
+                                .rsplit([':', '.', '>'])
+                                .next()
+                                .is_some_and(|last| last.trim() == decl.name)
+                        })
+                        .count();
+                    *out.entry(decl.name.clone()).or_default() += own;
+                }
+                walk(lang, source, &decl.children, out);
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        walk(self, source, &self.declarations(source), &mut out);
+        out
+    }
+
     /// For `LanguageBackend::prose_ranges`.
     pub fn prose_ranges(&self, source: &str) -> Option<Vec<Range<usize>>> {
         self.parse(source)
@@ -421,6 +473,10 @@ impl Operation for CallReplace {
     fn observed_targets(&self, source: &str) -> Vec<String> {
         self.lang.callees(source)
     }
+
+    fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
+        self.lang.new_self_calls(before, after)
+    }
 }
 
 /// `<lang>::pattern`: a [`PatternRule`] on the language's files.
@@ -467,15 +523,21 @@ impl Operation for PatternOp {
     }
 
     fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
-        self.rule.conflicts(before, after)
+        let mut found = self.rule.conflicts(before, after);
+        found.extend(self.lang.new_self_calls(before, after));
+        found
     }
 
-    fn creates(&self, path: &Path, source: &str) -> Vec<(std::path::PathBuf, String)> {
+    fn creates(&self, path: &Path, source: &str) -> Vec<colab_core::Creation> {
         let dir = path.parent().unwrap_or(Path::new(""));
         self.rule
             .creates(source)
             .into_iter()
-            .map(|(relative, text)| (normalize(&dir.join(relative)), text))
+            .map(|(relative, text, line)| colab_core::Creation {
+                path: normalize(&dir.join(relative)),
+                text,
+                line,
+            })
             .collect()
     }
 

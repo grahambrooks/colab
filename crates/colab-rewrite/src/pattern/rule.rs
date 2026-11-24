@@ -248,7 +248,7 @@ impl PatternRule {
     /// the template with the match's bindings, dedented to its least
     /// indented line and ending in one newline. Matches inside another
     /// match are left out, as a rewrite leaves them.
-    pub fn creates(&self, source: &str) -> Vec<(String, String)> {
+    pub fn creates(&self, source: &str) -> Vec<(String, String, usize)> {
         let PatternAction::Create { path, template } = &self.action else {
             return Vec::new();
         };
@@ -270,6 +270,7 @@ impl PatternRule {
                 (
                     path,
                     format!("{}\n", text.trim_matches(['\n', '\r']).trim_end()),
+                    f.line - 1,
                 )
             })
             .collect()

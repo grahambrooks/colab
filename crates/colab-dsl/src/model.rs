@@ -441,7 +441,13 @@ impl Refactoring {
             {
                 continue;
             }
-            created.extend(created_by(rule.as_ref(), index, path, &current));
+            created.extend(created_by(
+                rule.as_ref(),
+                index,
+                self.script_of(index),
+                path,
+                &current,
+            ));
             let next = rule.apply(&current);
             let next = keep_ignored(self.script_of(index), rule.as_ref(), &current, next);
             if next != current {
@@ -498,17 +504,32 @@ struct Ran {
 
 /// The files `rule` (number `index`) would create from `source`, the text
 /// of `path` as the rule finds it.
+/// A match on a line a `colab:ignore` covers (for this rule's script or
+/// namespace) creates nothing, as it would change nothing.
 fn created_by(
     rule: &dyn Operation,
     index: usize,
+    script: &str,
     path: &Path,
     source: &str,
 ) -> Vec<colab_core::Created> {
-    rule.creates(path, source)
-        .into_iter()
-        .map(|(path, text)| colab_core::Created {
-            path,
-            text,
+    let made = rule.creates(path, source);
+    if made.is_empty() {
+        return Vec::new();
+    }
+    let label = rule.to_string();
+    let ignored = colab_core::ignore::ignored_lines(
+        source,
+        colab_core::ignore::RuleNames {
+            script,
+            namespace: label.split_whitespace().next().unwrap_or(""),
+        },
+    );
+    made.into_iter()
+        .filter(|c| !ignored.contains(&c.line))
+        .map(|c| colab_core::Created {
+            path: c.path,
+            text: c.text,
             rule: index,
         })
         .collect()
@@ -595,7 +616,7 @@ impl CodeTransformer for SingleRule<'_> {
             output,
             rules_fired,
             conflicts,
-            created: created_by(self.op, 0, path, source_code),
+            created: created_by(self.op, 0, self.script, path, source_code),
         }
     }
 }

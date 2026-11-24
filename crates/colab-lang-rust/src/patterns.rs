@@ -153,6 +153,23 @@ mod tests {
     }
 
     #[test]
+    fn a_rewrite_that_makes_a_function_call_itself_is_a_conflict() {
+        let op = crate::LANG
+            .compile_pattern("old($X)", PatternAction::Replace("new($X)".into()), &[])
+            .unwrap();
+        let before = "fn new(x: u8) -> u8 {\n    old(x)\n}\nfn f() -> u8 { old(1) }\n";
+        let after = op.apply(before);
+        let found = op.conflicts(before, &after);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].contains("makes `new` call itself"));
+        // Recursion that was already there, and methods called through a
+        // path, are judged by the count: no new self-call, no conflict.
+        let recursive = "fn new(n: u8) -> u8 {\n    if n == 0 { old(0) } else { new(n - 1) }\n}\n";
+        let renamed = "fn new(n: u8) -> u8 {\n    if n == 0 { new2(0) } else { new(n - 1) }\n}\n";
+        assert!(crate::LANG.new_self_calls(recursive, renamed).is_empty());
+    }
+
+    #[test]
     fn a_type_alone_is_a_pattern() {
         let op = crate::LANG
             .compile_pattern(
