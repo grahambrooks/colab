@@ -1,0 +1,12 @@
+main.rs:1:1: [0] mod helpers {\n    /// One.\n    pub fn one() -> u8 {\n        1\n    }\n\n    pub fn two() {}\n}
+    $B = /// One.\n    pub fn one() -> u8 {\n        1\n    }\n\n    pub fn two() {}
+    $M = helpers
+main.rs:1:1: [1] mod helpers {\n    /// One.\n    pub fn one() -> u8 {\n        1\n    }\n\n    pub fn two() {}\n}
+    $B = /// One.\n    pub fn one() -> u8 {\n        1\n    }\n\n    pub fn two() {}
+    $M = helpers
+net/mod.rs:1:1: [0] pub mod wire {\n    pub struct Frame;\n}
+    $B = pub struct Frame;
+    $M = wire
+net/mod.rs:1:1: [1] pub mod wire {\n    pub struct Frame;\n}
+    $B = pub struct Frame;
+    $M = wire

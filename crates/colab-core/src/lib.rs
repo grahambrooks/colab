@@ -43,5 +43,5 @@ pub use render::{ChangeCollector, Detail, RenderOptions, write_unified_diff};
 pub use report::{Conflict, RuleStat, RunReport, Severity, SkippedFile};
 pub use scoped::ScopedOperation;
 pub use template::render_call_template;
-pub use transformer::{ApplyOutcome, CodeTransformer, RuleConflict};
+pub use transformer::{ApplyOutcome, CodeTransformer, Created, RuleConflict};
 pub use walker::{FileChange, WalkOptions, WalkOutcome};

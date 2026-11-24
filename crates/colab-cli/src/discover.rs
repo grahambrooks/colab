@@ -101,6 +101,8 @@ fn explain_items(items: &[ast::Item]) -> Vec<Value> {
                     ast::Action::ReplaceCall(t) => ("replace_call", Some(t)),
                     ast::Action::Set(v) => ("set", Some(v)),
                     ast::Action::Insert(v) => ("insert", Some(v)),
+                    // The path is the value; the file's text is `template`.
+                    ast::Action::Create { path, .. } => ("create", Some(path)),
                 };
                 let mut out = json!({
                     "kind": "match",
@@ -110,6 +112,9 @@ fn explain_items(items: &[ast::Item]) -> Vec<Value> {
                     "action": action,
                     "value": value,
                 });
+                if let ast::Action::Create { template, .. } = &m.action {
+                    out["template"] = json!(template);
+                }
                 // Present only when written, so scripts without them keep
                 // the shape they always had.
                 if !m.constraints.is_empty() {

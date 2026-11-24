@@ -33,6 +33,8 @@ struct PhasedFile {
     text: String,
     fired: Vec<usize>,
     inputs: Vec<(usize, String)>,
+    /// Files its rules would create (`create`).
+    created: Vec<colab_core::Created>,
 }
 
 /// One stage of a phased run.
@@ -361,6 +363,7 @@ impl Refactoring {
                 text,
                 fired: Vec::new(),
                 inputs: Vec::new(),
+                created: Vec::new(),
             })
             .collect();
         // Compile-time advice may have asked an `in` check before any facts
@@ -395,39 +398,39 @@ impl Refactoring {
             colab_core::facts::install(facts.clone());
             for file in &mut state {
                 colab_core::semantic::at_path(&file.path, || {
-                    let (next, f, i) = self.apply_range(&file.path, &file.text, start..end);
-                    file.text = next;
-                    file.fired.extend(f);
-                    file.inputs.extend(i);
+                    let ran = self.apply_range(&file.path, &file.text, start..end);
+                    file.text = ran.text;
+                    file.fired.extend(ran.fired);
+                    file.inputs.extend(ran.inputs);
+                    file.created.extend(ran.created);
                 });
             }
         }
         state
             .into_iter()
-            .map(|file| {
+            .flat_map(|file| {
                 let conflicts = self.conflicts_of(&file.inputs, &file.text);
-                colab_core::walker::FileChange {
-                    path: file.path,
-                    before: file.before,
-                    after: file.text,
-                    rules_fired: file.fired,
-                    conflicts,
-                }
+                colab_core::walker::FileChange::all_from_outcome(
+                    file.path,
+                    file.before,
+                    ApplyOutcome {
+                        output: file.text,
+                        rules_fired: file.fired,
+                        conflicts,
+                        created: file.created,
+                    },
+                )
             })
             .collect()
     }
 
     /// The rules in `range` over `source`: the result, the rules that
-    /// changed it, and each one's input.
-    fn apply_range(
-        &self,
-        path: &Path,
-        source: &str,
-        range: std::ops::Range<usize>,
-    ) -> (String, Vec<usize>, Vec<(usize, String)>) {
+    /// changed it, each one's input, and the files they would create.
+    fn apply_range(&self, path: &Path, source: &str, range: std::ops::Range<usize>) -> Ran {
         let mut current = source.to_string();
         let mut rules_fired = Vec::new();
         let mut inputs: Vec<(usize, String)> = Vec::new();
+        let mut created = Vec::new();
         for index in range {
             let rule = &self.rules[index];
             if !rule.is_file_relevant(path) {
@@ -438,6 +441,7 @@ impl Refactoring {
             {
                 continue;
             }
+            created.extend(created_by(rule.as_ref(), index, path, &current));
             let next = rule.apply(&current);
             let next = keep_ignored(self.script_of(index), rule.as_ref(), &current, next);
             if next != current {
@@ -445,7 +449,12 @@ impl Refactoring {
                 inputs.push((index, std::mem::replace(&mut current, next)));
             }
         }
-        (current, rules_fired, inputs)
+        Ran {
+            text: current,
+            fired: rules_fired,
+            inputs,
+            created,
+        }
     }
 
     /// Each fired rule's conflicts, judged against `after`, the file as the
@@ -468,15 +477,41 @@ impl Refactoring {
     /// [`CodeTransformer::apply_at`]'s body, with semantic queries asked
     /// about `path`.
     fn apply_rules_at(&self, path: &Path, source_code: &str) -> ApplyOutcome {
-        let (current, rules_fired, inputs) =
-            self.apply_range(path, source_code, 0..self.rules.len());
-        let conflicts = self.conflicts_of(&inputs, &current);
+        let ran = self.apply_range(path, source_code, 0..self.rules.len());
+        let conflicts = self.conflicts_of(&ran.inputs, &ran.text);
         ApplyOutcome {
-            output: current,
-            rules_fired,
+            output: ran.text,
+            rules_fired: ran.fired,
             conflicts,
+            created: ran.created,
         }
     }
+}
+
+/// What [`Refactoring::apply_range`] made of one text.
+struct Ran {
+    text: String,
+    fired: Vec<usize>,
+    inputs: Vec<(usize, String)>,
+    created: Vec<colab_core::Created>,
+}
+
+/// The files `rule` (number `index`) would create from `source`, the text
+/// of `path` as the rule finds it.
+fn created_by(
+    rule: &dyn Operation,
+    index: usize,
+    path: &Path,
+    source: &str,
+) -> Vec<colab_core::Created> {
+    rule.creates(path, source)
+        .into_iter()
+        .map(|(path, text)| colab_core::Created {
+            path,
+            text,
+            rule: index,
+        })
+        .collect()
 }
 
 /// A single-rule view over one [`Operation`], implementing
@@ -560,6 +595,7 @@ impl CodeTransformer for SingleRule<'_> {
             output,
             rules_fired,
             conflicts,
+            created: created_by(self.op, 0, path, source_code),
         }
     }
 }

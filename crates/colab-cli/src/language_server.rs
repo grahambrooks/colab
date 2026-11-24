@@ -89,6 +89,7 @@ const STATIC_ACTIONS: &[(&str, &str)] = &[
     ("replace_call", "replace_call \"$0\""),
     ("set", "set '$0'"),
     ("insert", "insert '$0'"),
+    ("create", "create \"$1\" '$0'"),
 ];
 
 /// Tower-LSP backend. Holds the open-document store and a backend

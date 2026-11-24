@@ -93,6 +93,11 @@ fn sentinel_rules(
                         target: target.clone(),
                         value: value.clone(),
                     },
+                    "create" => RuleSpec::Create {
+                        target: target.clone(),
+                        path: "zq_colab_created.txt".to_string(),
+                        template: "Zq_colab_replacement".to_string(),
+                    },
                     other => panic!("unhandled action `{other}` — add it to this test"),
                 };
                 let op = backend

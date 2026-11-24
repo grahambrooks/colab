@@ -95,6 +95,10 @@ impl Operation for ProseRename {
     fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
         self.inner.conflicts(before, after)
     }
+
+    fn creates(&self, path: &std::path::Path, source: &str) -> Vec<(std::path::PathBuf, String)> {
+        self.inner.creates(path, source)
+    }
 }
 
 #[cfg(test)]

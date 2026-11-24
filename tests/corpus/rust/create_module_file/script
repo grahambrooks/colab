@@ -1,0 +1,10 @@
+// Move each inline module to a file of its own: the first rule makes
+// `<name>.rs` beside the file the module is in, from its body (dedented);
+// the second leaves `mod <name>;` where the body was. The rules see the
+// same text, since `create` changes nothing in the file it reads.
+match rust::pattern 'mod $M { $$$B }' where not inside 'mod tests { $$$T }' {
+    create "$M.rs" '$$$B'
+}
+match rust::pattern 'mod $M { $$$B }' where not inside 'mod tests { $$$T }' {
+    replace 'mod $M;'
+}

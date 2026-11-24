@@ -220,6 +220,7 @@ pub Action: Action = {
     "replace_call" <string: StringLiteral> => Action::ReplaceCall(string),
     "set" <string: StringLiteral> => Action::Set(string),
     "insert" <string: StringLiteral> => Action::Insert(string),
+    "create" <path: StringLiteral> <template: StringLiteral> => Action::Create { path, template },
 };
 
 // Namespace segments may be spelled like DSL keywords: a backend's
@@ -237,6 +238,7 @@ pub Identifier: String = {
     "in" => "in".to_string(),
     "set" => "set".to_string(),
     "insert" => "insert".to_string(),
+    "create" => "create".to_string(),
     "where" => "where".to_string(),
     "not" => "not".to_string(),
     "matches" => "matches".to_string(),

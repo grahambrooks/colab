@@ -18,6 +18,20 @@ pub struct ApplyOutcome {
     /// What the rules that fired found suspicious about their own change,
     /// from [`Operation::conflicts`](crate::Operation::conflicts).
     pub conflicts: Vec<RuleConflict>,
+    /// Files the rules that ran would create, from
+    /// [`Operation::creates`](crate::Operation::creates), in rule order.
+    pub created: Vec<Created>,
+}
+
+/// A file a rule would create: `create "<path>" '<template>'`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Created {
+    /// Where, resolved against the directory of the file the rule read.
+    pub path: std::path::PathBuf,
+    /// The whole new file.
+    pub text: String,
+    /// Zero-based index of the rule, as in [`ApplyOutcome::rules_fired`].
+    pub rule: usize,
 }
 
 /// One rule's warning about the change it made to one file.
@@ -36,6 +50,7 @@ impl ApplyOutcome {
             output,
             rules_fired: Vec::new(),
             conflicts: Vec::new(),
+            created: Vec::new(),
         }
     }
 }

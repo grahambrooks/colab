@@ -110,7 +110,9 @@ impl Source {
                         }
                     };
                     let applied = transformer.apply_at(path, &before);
-                    visit(FileChange::from_outcome(path.clone(), before, applied))?;
+                    for change in FileChange::all_from_outcome(path.clone(), before, applied) {
+                        visit(change)?;
+                    }
                 }
                 Ok(outcome)
             }
@@ -118,11 +120,9 @@ impl Source {
                 // Always applied and visited, relevant or not: the one text
                 // is the run's whole output. `apply_at` gates each rule.
                 let applied = transformer.apply_at(path, text);
-                visit(FileChange::from_outcome(
-                    path.clone(),
-                    text.clone(),
-                    applied,
-                ))?;
+                for change in FileChange::all_from_outcome(path.clone(), text.clone(), applied) {
+                    visit(change)?;
+                }
                 Ok(WalkOutcome {
                     files_visited: 1,
                     ..WalkOutcome::default()
@@ -240,6 +240,12 @@ pub trait Hooks {
 
     /// About to write `path`, which holds `on_disk` now (`--backup` saves it).
     fn before_write(&mut self, _path: &Path, _on_disk: &str) -> Result<()> {
+        Ok(())
+    }
+
+    /// About to create `path`, where nothing is now (`--backup` records it,
+    /// so `colab undo` removes it).
+    fn before_create(&mut self, _path: &Path) -> Result<()> {
         Ok(())
     }
 }
@@ -515,17 +521,61 @@ pub fn run_text(
 /// writes.
 pub fn prepare(changes: &[FileChange], report: &mut RunReport) -> Result<Prepared> {
     let mut span = colab_core::telemetry::span("prepare writes");
-    let prepared = colab_core::merge::prepare_writes(
+    let mut prepared = colab_core::merge::prepare_writes(
         changes
             .iter()
-            .filter(|c| c.changed())
+            .filter(|c| c.changed() && !c.created)
             .map(|c| (c.path.as_path(), c.before.as_str(), c.after.as_str())),
     )?;
+    prepare_creations(changes, &mut prepared);
     span.set("colab.files.merged", prepared.merged.len());
     span.set("colab.conflicts", prepared.conflicts.len());
     report.warn_all(prepared.merge_warning());
     report.add_conflicts(prepared.conflicts.iter().cloned());
     Ok(prepared)
+}
+
+/// The files the run creates, cleared to write or refused. Two rules (or
+/// two matches) creating one path agree only when they make the same text;
+/// a path where a file appeared since the walk is a conflict too.
+fn prepare_creations(changes: &[FileChange], prepared: &mut colab_core::merge::Prepared) {
+    let mut by_path: std::collections::BTreeMap<&Path, Vec<&FileChange>> = Default::default();
+    for change in changes.iter().filter(|c| c.created && c.changed()) {
+        by_path
+            .entry(change.path.as_path())
+            .or_default()
+            .push(change);
+    }
+    for (path, makers) in by_path {
+        let first = makers[0];
+        let conflict = |message: String| colab_core::Conflict {
+            path: path.to_path_buf(),
+            rule: first.rules_fired.first().copied(),
+            message,
+        };
+        if makers.iter().any(|m| m.after != first.after) {
+            prepared.conflicts.push(conflict(format!(
+                "{} matches would create {} with different text; narrow the rule, or put the \
+                 match in the path (`create \"$NAME.rs\" …`)",
+                makers.len(),
+                path.display()
+            )));
+        } else if first.before.is_empty() && path.exists() {
+            prepared.conflicts.push(conflict(format!(
+                "{} appeared after colab read the tree; rerun to see it",
+                path.display()
+            )));
+        } else if first.before.is_empty() {
+            prepared.writes.push(colab_core::merge::Write {
+                path: path.to_path_buf(),
+                text: first.after.clone(),
+                on_disk: String::new(),
+                created: true,
+            });
+        }
+        // A file already there with other text was a rule conflict at the
+        // walk (`FileChange::creation`), and is never written.
+    }
 }
 
 /// `true` (and a warning on the report ending with `hint`) when the run
@@ -548,7 +598,14 @@ pub fn write(prepared: &Prepared, hooks: &mut dyn Hooks) -> Result<()> {
     let mut span = colab_core::telemetry::span("write");
     span.set("colab.files.written", prepared.writes.len());
     for write in &prepared.writes {
-        hooks.before_write(&write.path, &write.on_disk)?;
+        if write.created {
+            hooks.before_create(&write.path)?;
+            if let Some(parent) = write.path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent).map_err(|e| Error::io_at(parent, e))?;
+            }
+        } else {
+            hooks.before_write(&write.path, &write.on_disk)?;
+        }
         std::fs::write(&write.path, &write.text).map_err(|e| Error::io_at(&write.path, e))?;
     }
     Ok(())

@@ -326,8 +326,12 @@ impl RunReport {
 
     /// Fold one processed file into the report.
     pub fn record(&mut self, change: &FileChange) {
-        self.files_scanned += 1;
-        if self.scanned_sample.len() < SCANNED_SAMPLE_LIMIT {
+        // A file the run creates was not read: it is changed, not scanned,
+        // and not a sample for probes that read files back.
+        if !change.created {
+            self.files_scanned += 1;
+        }
+        if !change.created && self.scanned_sample.len() < SCANNED_SAMPLE_LIMIT {
             self.scanned_sample.push(change.path.clone());
             if !change.rules_fired.is_empty() {
                 self.fired
@@ -505,6 +509,7 @@ mod tests {
             after: after.to_string(),
             rules_fired: fired,
             conflicts: Vec::new(),
+            created: false,
         }
     }
 

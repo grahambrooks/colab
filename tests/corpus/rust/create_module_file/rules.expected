@@ -1,0 +1,2 @@
+2 rust::pattern 'mod $M { $$$B }' where not inside 'mod tests { $$$T }' -> create "$M.rs"
+2 rust::pattern 'mod $M { $$$B }' where not inside 'mod tests { $$$T }' -> 'mod $M;'

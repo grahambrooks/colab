@@ -106,6 +106,11 @@ pub(crate) fn lower_match_ops(
             target: match_string,
             value,
         },
+        Action::Create { path, template } => RuleSpec::Create {
+            target: match_string,
+            path,
+            template,
+        },
     };
     // A call template that keeps the function's name (`f(ctx, $args)` for
     // `f`) matches its own output, so every run wraps the call again.

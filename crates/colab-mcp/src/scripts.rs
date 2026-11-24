@@ -152,7 +152,11 @@ pub(crate) fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Valu
     if change.changed() {
         out.insert(
             "diff".into(),
-            json!(render::unified_diff(&path, &change.before, &change.after)),
+            json!(if change.created {
+                render::change_diff(&change)
+            } else {
+                render::unified_diff(&path, &change.before, &change.after)
+            }),
         );
     }
     if let Some(expected) = expected {

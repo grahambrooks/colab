@@ -77,6 +77,7 @@ pub(crate) fn text_occurrences(
                 after,
                 rules_fired: vec![1],
                 conflicts: Vec::new(),
+                created: false,
             });
         }
         Ok(())

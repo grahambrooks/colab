@@ -79,6 +79,10 @@ pub struct FileChange {
     pub rules_fired: Vec<usize>,
     /// What the rules that fired found suspicious about this change.
     pub conflicts: Vec<crate::RuleConflict>,
+    /// A file the run creates (`create "<path>" '…'`): `before` is what is
+    /// on disk there, empty when nothing is, and writing it makes the
+    /// file and its directories.
+    pub created: bool,
 }
 
 impl FileChange {
@@ -94,6 +98,58 @@ impl FileChange {
             after: outcome.output,
             rules_fired: outcome.rules_fired,
             conflicts: outcome.conflicts,
+            created: false,
+        }
+    }
+
+    /// The change to the file one [`CodeTransformer::apply_at`] call read,
+    /// then one change per file its rules would create (see
+    /// [`FileChange::creation`]). Every visitor of a walk gets these.
+    pub fn all_from_outcome(
+        path: impl Into<PathBuf>,
+        before: String,
+        mut outcome: crate::ApplyOutcome,
+    ) -> Vec<Self> {
+        let created = std::mem::take(&mut outcome.created);
+        let mut all = vec![Self::from_outcome(path, before, outcome)];
+        all.extend(created.into_iter().map(Self::creation));
+        all
+    }
+
+    /// The change that makes `created`: from what is on disk at its path
+    /// (nothing, usually). A file already there with other text is a
+    /// conflict, never overwritten; one with the same text is unchanged,
+    /// so a second run is a no-op.
+    pub fn creation(created: crate::Created) -> Self {
+        let before = std::fs::read_to_string(&created.path).unwrap_or_default();
+        let exists = created.path.exists();
+        let conflicts = if exists && before != created.text {
+            vec![crate::RuleConflict {
+                rule: created.rule,
+                message: format!(
+                    "{} already exists, and `create` never overwrites a file",
+                    created.path.display()
+                ),
+            }]
+        } else {
+            Vec::new()
+        };
+        let unchanged = exists && before == created.text;
+        Self {
+            path: created.path,
+            after: if unchanged {
+                before.clone()
+            } else {
+                created.text
+            },
+            before,
+            rules_fired: if unchanged {
+                Vec::new()
+            } else {
+                vec![created.rule]
+            },
+            conflicts,
+            created: true,
         }
     }
 
@@ -106,6 +162,7 @@ impl FileChange {
             after,
             rules_fired: Vec::new(),
             conflicts: Vec::new(),
+            created: false,
         }
     }
 
@@ -336,7 +393,7 @@ where
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Condvar, Mutex, PoisonError, mpsc};
 
-    type Computed = std::result::Result<FileChange, SkippedFile>;
+    type Computed = std::result::Result<Vec<FileChange>, SkippedFile>;
     let mut skipped = Vec::new();
     // Workers are the pool's threads, not the caller's: each enters the
     // caller's run, so its rules see that run's oracle and facts.
@@ -392,14 +449,19 @@ where
             while let Some(computed) = pending.remove(&want) {
                 want += 1;
                 match computed {
-                    Ok(change) => {
-                        if change.before == change.after {
-                            debug!("No changes for {}", change.path.display());
+                    Ok(changes) => {
+                        for change in changes {
+                            if change.before == change.after {
+                                debug!("No changes for {}", change.path.display());
+                            }
+                            debug!("Processing {}", change.path.display());
+                            if let Err(e) = visit(change) {
+                                outcome = Err(e);
+                                stop.store(true, Ordering::SeqCst);
+                                break;
+                            }
                         }
-                        debug!("Processing {}", change.path.display());
-                        if let Err(e) = visit(change) {
-                            outcome = Err(e);
-                            stop.store(true, Ordering::SeqCst);
+                        if outcome.is_err() {
                             break;
                         }
                     }
@@ -427,13 +489,13 @@ where
 fn compute_change<T: CodeTransformer>(
     transformer: &T,
     path: &Path,
-) -> std::result::Result<FileChange, SkippedFile> {
+) -> std::result::Result<Vec<FileChange>, SkippedFile> {
     let before = fs::read_to_string(path).map_err(|e| SkippedFile {
         path: path.to_path_buf(),
         reason: e.to_string(),
     })?;
     let outcome = transformer.apply_at(path, &before);
-    Ok(FileChange::from_outcome(
+    Ok(FileChange::all_from_outcome(
         path.to_path_buf(),
         before,
         outcome,
@@ -507,11 +569,9 @@ where
     if before == outcome.output {
         debug!("No changes for {}", path.display());
     }
-    visit(FileChange::from_outcome(
-        path.to_path_buf(),
-        before,
-        outcome,
-    ))
+    FileChange::all_from_outcome(path.to_path_buf(), before, outcome)
+        .into_iter()
+        .try_for_each(visit)
 }
 
 /// Convenience: rewrite every relevant file in place.

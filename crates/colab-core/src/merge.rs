@@ -165,6 +165,9 @@ pub struct Write {
     /// The file as it is on disk now, which a backup must keep (it is
     /// what `colab undo` restores), not the text the run read.
     pub on_disk: String,
+    /// A new file (`create`): nothing was on disk, and writing it makes
+    /// its directories too.
+    pub created: bool,
 }
 
 /// What [`prepare_writes`] decided for a run's changes.
@@ -220,6 +223,7 @@ pub fn prepare_writes<'a>(
                 path: path.to_path_buf(),
                 text: after.to_string(),
                 on_disk: disk,
+                created: false,
             });
             continue;
         }
@@ -233,6 +237,7 @@ pub fn prepare_writes<'a>(
                     path: path.to_path_buf(),
                     text,
                     on_disk: disk,
+                    created: false,
                 });
             }
             Merge::Conflicted(hunks) => {

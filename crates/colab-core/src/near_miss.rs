@@ -260,6 +260,7 @@ mod tests {
             after: String::new(),
             rules_fired: Vec::new(),
             conflicts: Vec::new(),
+            created: false,
         });
     }
 

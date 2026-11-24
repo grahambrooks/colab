@@ -381,6 +381,7 @@ mod tests {
             after: "package p\n\nimport \"b\"\n".into(),
             rules_fired: vec![0],
             conflicts: Vec::new(),
+            created: false,
         };
         (report, change)
     }

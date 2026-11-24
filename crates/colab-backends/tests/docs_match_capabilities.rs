@@ -14,13 +14,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Actions the matrix has a column for, in column order.
-const COLUMNS: [&str; 6] = [
+const COLUMNS: [&str; 7] = [
     "replace",
     "delete",
     "ensure",
     "replace_call",
     "set",
     "insert",
+    "create",
 ];
 
 fn features_md() -> PathBuf {

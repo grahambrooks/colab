@@ -84,6 +84,10 @@ impl Operation for WithFollowups {
         self.inner.conflicts(before, after)
     }
 
+    fn creates(&self, path: &std::path::Path, source: &str) -> Vec<(std::path::PathBuf, String)> {
+        self.inner.creates(path, source)
+    }
+
     fn why_unchanged(&self, source: &str) -> Option<String> {
         self.inner.why_unchanged(source)
     }

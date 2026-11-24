@@ -3,6 +3,37 @@
 
 use super::*;
 
+/// A file as it was before a run wrote it: its text, or `None` for one
+/// the run created, which restoring removes.
+type Snapshot = Option<String>;
+
+/// The snapshot of what `write` replaced.
+fn snapshot_of(write: &colab_core::merge::Write) -> Snapshot {
+    (!write.created).then(|| write.on_disk.clone())
+}
+
+/// Put `path` back as `before` had it.
+fn restore(path: &Path, before: &Snapshot) -> Result<()> {
+    match before {
+        Some(text) => fs::write(path, text).map_err(|e| Error::io_at(path, e)),
+        None => match fs::remove_file(path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(Error::io_at(path, e)),
+            _ => Ok(()),
+        },
+    }
+}
+
+/// Write one rule's change during a bisect step, making a created file's
+/// directories.
+fn write_change(change: &FileChange) -> Result<()> {
+    if change.created
+        && let Some(parent) = change.path.parent().filter(|p| !p.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|e| Error::io_at(parent, e))?;
+    }
+    fs::write(&change.path, &change.after).map_err(|e| Error::io_at(&change.path, e))
+}
+
 /// Apply each rule individually, with optional `--verify`
 /// auto-revert and `--commit-per-rule` git history.
 ///
@@ -37,7 +68,7 @@ pub(super) fn run_refactor_per_rule(
         // by a later rule, *that* rule's backup captures the
         // post-this-rule state, which is what we want for an
         // independent revert.
-        let mut backups: std::collections::HashMap<PathBuf, String> =
+        let mut backups: std::collections::HashMap<PathBuf, Snapshot> =
             std::collections::HashMap::new();
         let mut pending: Vec<FileChange> = Vec::new();
         let mut visit = |change: FileChange| -> Result<()> {
@@ -76,7 +107,7 @@ pub(super) fn run_refactor_per_rule(
         for write in &prepared.writes {
             backups
                 .entry(write.path.clone())
-                .or_insert_with(|| write.on_disk.clone());
+                .or_insert_with(|| snapshot_of(write));
         }
         codemod::pipeline::write(
             &prepared,
@@ -89,7 +120,7 @@ pub(super) fn run_refactor_per_rule(
             if !run_verify(cmd)? {
                 // Restore this rule's backups and bail.
                 for (path, before) in &backups {
-                    fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
+                    restore(path, before)?;
                 }
                 // Rule 1 failing alone is the signature of rules that only
                 // build together, which `--verify` cannot check.
@@ -236,9 +267,9 @@ pub(super) fn run_refactor_bisect(
         return Ok(CONFLICT_EXIT);
     }
     report_all(reporter.as_mut(), &changes)?;
-    let snapshots: std::collections::HashMap<PathBuf, String> = written
+    let snapshots: std::collections::HashMap<PathBuf, Snapshot> = written
         .into_iter()
-        .map(|write| (write.path, write.on_disk))
+        .map(|write| (write.path.clone(), snapshot_of(&write)))
         .collect();
 
     // Phase 2: full-set verify.
@@ -259,7 +290,7 @@ pub(super) fn run_refactor_bisect(
 
     // Phase 4: revert.
     for (path, before) in &snapshots {
-        fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
+        restore(path, before)?;
     }
 
     report.set_elapsed(started.elapsed());
@@ -280,7 +311,7 @@ pub(super) fn run_refactor_bisect(
 /// `rules[lo]` once `hi - lo == 1`.
 pub(super) fn bisect_rules(
     refactoring: &codemod::Refactoring,
-    snapshots: &std::collections::HashMap<PathBuf, String>,
+    snapshots: &std::collections::HashMap<PathBuf, Snapshot>,
     args: &RefactorArgs,
     targets: &[PathBuf],
     verify_cmd: &str,
@@ -293,7 +324,7 @@ pub(super) fn bisect_rules(
         let mid = lo + (hi - lo) / 2;
         // Restore the pre-run state for every snapshotted file.
         for (path, before) in snapshots {
-            fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
+            restore(path, before)?;
         }
         // Apply rules[..mid] sequentially.
         for index in 0..mid {
@@ -301,8 +332,7 @@ pub(super) fn bisect_rules(
                 &source,
                 &mut |change: FileChange| -> Result<()> {
                     if change.changed() {
-                        fs::write(&change.path, &change.after)
-                            .map_err(|e| Error::io_at(&change.path, e))?;
+                        write_change(&change)?;
                     }
                     Ok(())
                 },

@@ -103,6 +103,10 @@ pub const PATTERN_ACTIONS: &[ActionCapability] = &[
         name: "delete",
         description: "Remove each match; a match alone on its line takes the line with it.",
     },
+    ActionCapability {
+        name: "create",
+        description: "`create \"<path>\" '<template>'`: a new file from each match, at the path (relative to the matched file's directory) with the template's text, both filled from the bindings. The matched file is left as it is; a file already at the path with other text is a conflict.",
+    },
 ];
 
 /// The `pattern` row of a backend's capabilities; `description` names
@@ -286,6 +290,18 @@ impl SourceLanguage {
                 PatternAction::Delete,
                 &[],
             )?)),
+            (
+                "pattern",
+                RuleSpec::Create {
+                    target,
+                    path,
+                    template,
+                },
+            ) => Ok(Box::new(self.compile_pattern(
+                &target,
+                PatternAction::Create { path, template },
+                &[],
+            )?)),
             (other, spec) => Err(backend.unsupported(other, &spec)),
         }
     }
@@ -454,6 +470,15 @@ impl Operation for PatternOp {
         self.rule.conflicts(before, after)
     }
 
+    fn creates(&self, path: &Path, source: &str) -> Vec<(std::path::PathBuf, String)> {
+        let dir = path.parent().unwrap_or(Path::new(""));
+        self.rule
+            .creates(source)
+            .into_iter()
+            .map(|(relative, text)| (normalize(&dir.join(relative)), text))
+            .collect()
+    }
+
     fn why_unchanged(&self, source: &str) -> Option<String> {
         self.rule.why_unchanged(source)
     }
@@ -461,4 +486,23 @@ impl Operation for PatternOp {
     fn advice(&self) -> Vec<String> {
         self.rule.advice()
     }
+}
+
+/// `path` with `.` dropped and each `..` taking the segment before it
+/// back, so `./src/../lib/x.rs` reads `lib/x.rs`; a leading `..` stays.
+fn normalize(path: &Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut out = std::path::PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) =>
+            {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }

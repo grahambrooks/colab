@@ -365,14 +365,7 @@ impl Reporter for NdjsonReporter {
         if self.options.detail == Detail::Diff
             && let Some(obj) = value.as_object_mut()
         {
-            obj.insert(
-                "diff".to_string(),
-                json!(render::unified_diff(
-                    &change.path,
-                    &change.before,
-                    &change.after
-                )),
-            );
+            obj.insert("diff".to_string(), json!(render::change_diff(change)));
             // Lines per rule, when the run attributed them: what lets
             // `colab review` count a file several rules changed.
             if let Some(spans) = self.spans.get(&change.path) {
@@ -477,6 +470,16 @@ impl Reporter for DiffReporter {
                 &change.before,
                 &change.after,
             ),
+            // A new file's old side is `/dev/null`, so `git apply` makes it.
+            None if change.created && change.before.is_empty() => {
+                render::write_unified_diff_between(
+                    &mut self.out,
+                    None,
+                    &change.path,
+                    "",
+                    &change.after,
+                )
+            }
             None => render::write_unified_diff(
                 &mut self.out,
                 &change.path,

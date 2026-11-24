@@ -288,6 +288,7 @@ impl FindReport {
             after: String::new(),
             rules_fired: fired,
             conflicts: Vec::new(),
+            created: false,
         });
         if found.is_empty() {
             return;

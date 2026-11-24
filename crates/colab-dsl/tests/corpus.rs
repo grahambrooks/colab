@@ -130,13 +130,17 @@ fn run_case(case: &Case) -> Result<(), String> {
     let inputs = collect_files(&input_dir).map_err(|e| format!("walk input/: {e}"))?;
     let expected = collect_files(&expected_dir).map_err(|e| format!("walk expected/: {e}"))?;
 
-    if inputs.keys().collect::<Vec<_>>() != expected.keys().collect::<Vec<_>>() {
+    // expected/ may hold more files than input/: those the script creates
+    // (`create`), checked against what it made once the run is over.
+    if let Some(missing) = inputs.keys().find(|p| !expected.contains_key(*p)) {
         return Err(format!(
-            "input and expected file sets differ\n  input: {:?}\n  expected: {:?}",
+            "missing expected file {}\n  input: {:?}\n  expected: {:?}",
+            missing.display(),
             inputs.keys().collect::<Vec<_>>(),
             expected.keys().collect::<Vec<_>>()
         ));
     }
+    let mut created: BTreeMap<PathBuf, String> = BTreeMap::new();
 
     check_matches_compile(&script_path, &refactoring)?;
 
@@ -150,10 +154,19 @@ fn run_case(case: &Case) -> Result<(), String> {
         let first = refactoring.run_phased(files);
         let again: Vec<(PathBuf, String)> = first
             .iter()
+            .filter(|c| !c.created)
             .map(|c| (c.path.clone(), c.after.clone()))
             .collect();
         let second = refactoring.run_phased(again);
-        for (change, rerun) in first.iter().zip(&second) {
+        for change in first.iter().filter(|c| c.created) {
+            created.insert(change.path.clone(), change.after.clone());
+        }
+        check_created(&inputs, &expected, &created)?;
+        for (change, rerun) in first
+            .iter()
+            .filter(|c| !c.created)
+            .zip(second.iter().filter(|c| !c.created))
+        {
             let want = &expected[&change.path];
             if &change.after != want {
                 return Err(format!(
@@ -193,6 +206,22 @@ fn run_case(case: &Case) -> Result<(), String> {
         // per-rule path gating, the literal prefilter, and rule
         // attribution — not just the path-blind fallback.
         let outcome = refactoring.apply_at(rel, source);
+        for made in &outcome.created {
+            if created
+                .insert(made.path.clone(), made.text.clone())
+                .is_some()
+            {
+                return Err(format!("{} is created twice", made.path.display()));
+            }
+            report.record(&FileChange {
+                path: made.path.clone(),
+                before: String::new(),
+                after: made.text.clone(),
+                rules_fired: vec![made.rule],
+                conflicts: Vec::new(),
+                created: true,
+            });
+        }
         if refactoring.is_file_relevant(rel) {
             report.record(&FileChange {
                 path: rel.clone(),
@@ -200,6 +229,7 @@ fn run_case(case: &Case) -> Result<(), String> {
                 after: outcome.output.clone(),
                 rules_fired: outcome.rules_fired,
                 conflicts: outcome.conflicts,
+                created: false,
             });
         }
         let first = outcome.output;
@@ -217,14 +247,26 @@ fn run_case(case: &Case) -> Result<(), String> {
         // This is also the guard against an over-narrow prefilter — a
         // rule that skipped work on pass one but not pass two shows up
         // here.
-        let second = refactoring.apply_at(rel, &first).output;
-        if second != first {
+        let second = refactoring.apply_at(rel, &first);
+        if second.output != first {
             return Err(format!(
                 "{}: transform is not idempotent on its own output",
                 rel.display()
             ));
         }
+        // A file created again must have the same text, which on disk is
+        // a no-op (`FileChange::creation`).
+        for again in &second.created {
+            if created.get(&again.path) != Some(&again.text) {
+                return Err(format!(
+                    "{}: a second pass would create {} with other text",
+                    rel.display(),
+                    again.path.display()
+                ));
+            }
+        }
     }
+    check_created(&inputs, &expected, &created)?;
 
     near_miss::probe(&refactoring.rules, &mut report, |path| {
         inputs.get(path).cloned()
@@ -344,6 +386,39 @@ fn expect_file(path: &Path, actual: &str) -> Result<(), String> {
         return Err(format!(
             "{name} differs (re-run with COLAB_BLESS=1 to accept)\n--- expected\n{want}--- got\n{actual}"
         ));
+    }
+    Ok(())
+}
+
+/// The files `expected/` has beyond `input/` are exactly those the script
+/// created, with the same text.
+fn check_created(
+    inputs: &BTreeMap<PathBuf, String>,
+    expected: &BTreeMap<PathBuf, String>,
+    created: &BTreeMap<PathBuf, String>,
+) -> Result<(), String> {
+    let extra: BTreeMap<&PathBuf, &String> = expected
+        .iter()
+        .filter(|(p, _)| !inputs.contains_key(*p))
+        .collect();
+    let made: BTreeMap<&PathBuf, &String> = created.iter().collect();
+    if extra.keys().collect::<Vec<_>>() != made.keys().collect::<Vec<_>>() {
+        return Err(format!(
+            "expected/ files not in input/ must be the files the script creates\n  \
+             expected extra: {:?}\n  created: {:?}",
+            extra.keys().collect::<Vec<_>>(),
+            made.keys().collect::<Vec<_>>()
+        ));
+    }
+    for (path, text) in made {
+        if extra[path] != text {
+            return Err(format!(
+                "{}: created != expected\n--- expected\n{}\n--- got\n{}",
+                path.display(),
+                extra[path],
+                text
+            ));
+        }
     }
     Ok(())
 }

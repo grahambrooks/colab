@@ -137,7 +137,7 @@ impl ChangeCollector {
             return;
         }
 
-        let full = unified_diff(&change.path, &change.before, &change.after);
+        let full = change_diff(change);
         let (text, dropped) = truncate_utf8(full, self.options.max_diff_bytes);
         self.bytes_omitted += dropped as u64;
         self.diffs.push((change.path.clone(), text));
@@ -500,6 +500,18 @@ pub fn explain_no_changes(report: &RunReport) -> Option<String> {
     ))
 }
 
+/// The unified diff of one change: a file the run creates has
+/// `/dev/null` as its old side, as `git diff` shows a new file.
+pub fn change_diff(change: &FileChange) -> String {
+    if !(change.created && change.before.is_empty()) {
+        return unified_diff(&change.path, &change.before, &change.after);
+    }
+    let mut out = Vec::new();
+    write_unified_diff_between(&mut out, None, &change.path, "", &change.after)
+        .expect("writing a diff to a Vec cannot fail");
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Render a unified diff for one file pair as a string.
 pub fn unified_diff(path: &Path, before: &str, after: &str) -> String {
     let mut out = Vec::new();
@@ -853,6 +865,7 @@ mod tests {
             after: after.to_string(),
             rules_fired: if before == after { vec![] } else { vec![0] },
             conflicts: Vec::new(),
+            created: false,
         }
     }
 
@@ -950,6 +963,7 @@ mod tests {
             after: "A\nb\nC1\nC2\nd\n".into(),
             rules_fired: vec![0, 1],
             conflicts: Vec::new(),
+            created: false,
         };
         let spans = [
             crate::report::RuleSpan {
@@ -976,6 +990,7 @@ mod tests {
             after: "one\nTWO\nthree\nfour\nfive\n".into(),
             rules_fired: vec![1],
             conflicts: Vec::new(),
+            created: false,
         };
         let found = findings(&change, &report);
         assert_eq!(found.len(), 2, "{found:?}");
@@ -1007,6 +1022,20 @@ mod tests {
 
         report.files_changed = 1;
         assert!(explain_no_changes(&report).is_none());
+    }
+
+    #[test]
+    fn a_created_file_diffs_from_dev_null() {
+        let mut change = FileChange::untraced("src/a.rs", "x\n".into(), "y\n".into());
+        assert!(change_diff(&change).starts_with("--- a/src/a.rs\n+++ b/src/a.rs\n"));
+        change.created = true;
+        change.before = String::new();
+        let diff = change_diff(&change);
+        assert!(
+            diff.starts_with("--- /dev/null\n+++ b/src/a.rs\n"),
+            "{diff}"
+        );
+        assert!(diff.contains("+y"));
     }
 
     #[test]

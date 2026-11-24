@@ -144,6 +144,13 @@ impl Hooks for CliHooks<'_> {
             None => Ok(()),
         }
     }
+
+    fn before_create(&mut self, path: &Path) -> Result<()> {
+        match self.backup {
+            Some(dir) => record_backup_creation(dir, path),
+            None => Ok(()),
+        }
+    }
 }
 
 /// Report changes held back until the conflict check.

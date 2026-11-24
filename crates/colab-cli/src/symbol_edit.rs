@@ -201,6 +201,7 @@ pub fn plan(
             after,
             rules_fired: vec![0],
             conflicts: Vec::new(),
+            created: false,
         },
         label,
     ))

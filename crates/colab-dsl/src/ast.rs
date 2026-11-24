@@ -283,6 +283,9 @@ pub enum Action {
     /// Add the matched key or element with this value only when it is
     /// absent; an existing value is left alone.
     Insert(String),
+    /// `create "<path>" '<template>'`: a new file from each match, the
+    /// path relative to the matched file's directory. Patterns only.
+    Create { path: String, template: String },
 }
 
 impl Action {
@@ -295,6 +298,7 @@ impl Action {
             Action::ReplaceCall(_) => "replace_call",
             Action::Set(_) => "set",
             Action::Insert(_) => "insert",
+            Action::Create { .. } => "create",
         }
     }
 }

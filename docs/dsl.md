@@ -176,6 +176,37 @@ rule would add it to every file of that type. Scope it with `in "<glob>"`
 or run it on named files. The address syntax of each backend is in
 [features.md](./features.md#config-file-backends-colab-lang-json-colab-lang-markdown-colab-lang-toml).
 
+### `create "<path>" '<template>'`
+
+A `<lang>::pattern` rule can make a new file from each match instead of
+changing the one it read. The path is relative to the matched file's
+directory, and both it and the template are filled from the match's
+bindings (`$NAME`, `$$$NAME`; `$$` is a `$`). A capture spanning several
+lines is moved to the left margin first, so a body taken from inside a
+block is not left indented. The new file ends in one newline.
+
+```
+// Move each inline module to its own file: the first rule makes the
+// file, the second (which sees the same text) leaves `mod name;`.
+match rust::pattern 'mod $M { $$$B }' { create "$M.rs" '$$$B' }
+match rust::pattern 'mod $M { $$$B }' { replace 'mod $M;' }
+```
+
+- The matched file is left as it is, so `create` pairs with a `replace`
+  or `delete` of the same pattern when the code should move.
+- A file already at the path with the same text is left alone, so a
+  second run is a no-op; one with other text is a conflict, never
+  overwritten. Two matches that would create one path with different
+  text conflict too: put a binding in the path.
+- The diff shows the file as new (`--- /dev/null`), `--check` counts it
+  as a pending change, and writing makes its directories. The file is
+  written untracked, as edits are written unstaged. `--backup` records
+  it, so `colab undo` removes it, and `--verify` / `--bisect` remove it
+  when they revert.
+- The path must be relative, and must use only the pattern's bindings.
+  A `let` derives values for `replace` only, so `create` takes none, and
+  `colab:ignore` does not yet hold a match back from `create`.
+
 > **Idempotency caveat.** `replace_call` is idempotent only if the
 > template *renames the function*. Templates that keep the function
 > name and add args (e.g. `f → f(ctx, $args)`) loop on subsequent

@@ -666,6 +666,10 @@ where
     let action = match &spec {
         RuleSpec::Replace { replacement, .. } => PatternAction::Replace(replacement.clone()),
         RuleSpec::Delete { .. } => PatternAction::Delete,
+        RuleSpec::Create { path, template, .. } => PatternAction::Create {
+            path: path.clone(),
+            template: template.clone(),
+        },
         _ => return Err(backend.unsupported(module, &spec)),
     };
     compile(spec.target(), action, constraints)

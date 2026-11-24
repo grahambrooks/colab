@@ -10,7 +10,7 @@
 //! knowledge of which backends exist.
 
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 
@@ -84,6 +84,15 @@ pub trait Operation: fmt::Debug + fmt::Display + Send + Sync {
         Vec::new()
     }
 
+    /// The files this rule would create from `source`, the text of `path`
+    /// as the rule finds it: `(where, the whole new file)`, `where`
+    /// resolved against `path`'s directory. Only `create` actions make
+    /// any; such a rule leaves `source` itself unchanged. Its prefilter
+    /// (a match needs its literal) stays sound: no match, nothing made.
+    fn creates(&self, _path: &Path, _source: &str) -> Vec<(PathBuf, String)> {
+        Vec::new()
+    }
+
     /// What this rule compiles to but probably should not, known before it
     /// runs: a rewrite whose output matches it again, so a second run
     /// changes the code once more. Shown as a warning on every run, and by
@@ -135,6 +144,14 @@ pub enum RuleSpec {
     Set { target: String, value: String },
     /// `insert` action: add `target` with `value` only when it is absent.
     Insert { target: String, value: String },
+    /// `create` action: for each match of `target`, a new file at `path`
+    /// (relative to the matched file's directory) holding `template`,
+    /// both filled from the match. The matched file is left as it is.
+    Create {
+        target: String,
+        path: String,
+        template: String,
+    },
 }
 
 impl RuleSpec {
@@ -149,6 +166,7 @@ impl RuleSpec {
             RuleSpec::ReplaceCall { .. } => "replace_call",
             RuleSpec::Set { .. } => "set",
             RuleSpec::Insert { .. } => "insert",
+            RuleSpec::Create { .. } => "create",
         }
     }
 
@@ -160,7 +178,8 @@ impl RuleSpec {
             | RuleSpec::Ensure { target }
             | RuleSpec::ReplaceCall { target, .. }
             | RuleSpec::Set { target, .. }
-            | RuleSpec::Insert { target, .. } => target,
+            | RuleSpec::Insert { target, .. }
+            | RuleSpec::Create { target, .. } => target,
         }
     }
 }

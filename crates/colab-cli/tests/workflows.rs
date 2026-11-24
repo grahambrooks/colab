@@ -1713,3 +1713,122 @@ fn a_scan_reads_every_file_before_a_rule_edits_one() {
     assert!(String::from_utf8_lossy(&piped.stdout).contains("api.Exported(nil)"));
     fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn create_makes_a_file_from_each_match_and_undo_removes_it() {
+    let root = workspace_temp("create");
+    write(
+        &root.join("src/lib.rs"),
+        "mod util {\n    pub fn f() {}\n}\n",
+    );
+    let make = r#"match rust::pattern 'mod $M { $$$B }' { create "gen/$M.rs" '// generated
+$$$B' }"#;
+    let run = |extra: &[&str]| {
+        let mut args = vec!["refactor", "-e", make];
+        args.extend_from_slice(extra);
+        args.push(".");
+        colab().current_dir(&root).args(&args).output().unwrap()
+    };
+    // A check reports the new file as pending, and its diff is a new file's.
+    let check = run(&["--check", "--format", "diff"]);
+    assert_eq!(check.status.code(), Some(10));
+    let diff = String::from_utf8_lossy(&check.stdout);
+    assert!(
+        diff.contains("--- /dev/null\n+++ b/src/gen/util.rs"),
+        "{diff}"
+    );
+    assert!(!root.join("src/gen").exists());
+    // Written with its directory; the matched file is left alone.
+    let backup = root.join(".bk");
+    let wrote = run(&["--write", "--backup", backup.to_str().unwrap()]);
+    assert!(
+        wrote.status.success(),
+        "{}",
+        String::from_utf8_lossy(&wrote.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("src/gen/util.rs")).unwrap(),
+        "// generated\npub fn f() {}\n"
+    );
+    assert!(
+        fs::read_to_string(root.join("src/lib.rs"))
+            .unwrap()
+            .contains("mod util {")
+    );
+    // Again: the file is there with the same text, so nothing is pending.
+    assert_eq!(run(&["--check"]).status.code(), Some(0));
+    // Undo removes it.
+    let undo = colab()
+        .current_dir(&root)
+        .args(["undo", "--from", backup.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        undo.status.success(),
+        "{}",
+        String::from_utf8_lossy(&undo.stderr)
+    );
+    assert!(!root.join("src/gen/util.rs").exists());
+    // A file already there with other text is never overwritten.
+    write(&root.join("src/gen/util.rs"), "// mine\n");
+    let refused = run(&["--write", "--format", "json"]);
+    assert_eq!(refused.status.code(), Some(11));
+    assert!(String::from_utf8_lossy(&refused.stdout).contains("never overwrites"));
+    assert_eq!(
+        fs::read_to_string(root.join("src/gen/util.rs")).unwrap(),
+        "// mine\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn two_matches_creating_one_path_with_different_text_conflict() {
+    let root = workspace_temp("create-clash");
+    write(
+        &root.join("lib.rs"),
+        "mod a {\n    fn x() {}\n}\nmod b {\n    fn y() {}\n}\n",
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "refactor",
+            "-e",
+            r#"match rust::pattern 'mod $M { $$$B }' { create "all.rs" '$$$B' }"#,
+            "--write",
+            "--format",
+            "json",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(11));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("put the match in the path"));
+    assert!(!root.join("all.rs").exists());
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn create_refuses_an_absolute_path_and_an_unbound_name() {
+    for (rule, says) in [
+        (
+            r#"match rust::pattern 'mod $M { $$$B }' { create "/tmp/$M.rs" '$$$B' }"#,
+            "never absolute",
+        ),
+        (
+            r#"match rust::pattern 'mod $M { $$$B }' { create "$X.rs" '$$$B' }"#,
+            "$X",
+        ),
+    ] {
+        // Refused when the script compiles, before any file is read.
+        let empty = workspace_temp("create-refused");
+        let out = colab()
+            .current_dir(&empty)
+            .args(["refactor", "-e", rule, "."])
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{rule}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains(says), "{rule}: {err}");
+        fs::remove_dir_all(&empty).ok();
+    }
+}

@@ -124,6 +124,7 @@ pub fn check(file: &Path, backends: &BackendRegistry) -> Result<Option<String>> 
         after: outcome.output,
         rules_fired: outcome.rules_fired,
         conflicts: outcome.conflicts,
+        created: false,
     };
     let findings: Vec<_> = colab_core::render::findings(&change, &report)
         .into_iter()

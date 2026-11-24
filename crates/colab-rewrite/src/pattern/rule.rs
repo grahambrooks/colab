@@ -11,6 +11,10 @@ pub enum PatternAction {
     Replace(String),
     /// Remove the match (with its line, when it stands alone).
     Delete,
+    /// Leave the match, and make a new file from it: `path` (relative to
+    /// the matched file's directory) and `template` (the whole file), each
+    /// with `$NAME` / `$$$NAME` filled in.
+    Create { path: String, template: String },
 }
 
 /// A compiled pattern plus its action: everything a backend's
@@ -69,15 +73,22 @@ impl PatternRule {
         action: PatternAction,
         constraints: &[Constraint],
     ) -> Result<Self, String> {
-        if matches!(action, PatternAction::Delete)
+        if !matches!(action, PatternAction::Replace(_))
             && let Some(c) = constraints.iter().find(|c| c.is_let())
         {
             return Err(format!(
-                "`{c}`: a `let` derives a value for the `replace` template, and `delete` has none"
+                "`{c}`: a `let` derives a value for the `replace` template, and `{}` has none",
+                action.keyword()
             ));
         }
-        if let PatternAction::Replace(template) = &action {
-            unbound_in_template(text, template, constraints)?;
+        match &action {
+            PatternAction::Replace(template) => unbound_in_template(text, template, constraints)?,
+            PatternAction::Create { path, template } => {
+                check_create_path(path)?;
+                unbound_in_template(text, path, constraints)?;
+                unbound_in_template(text, template, constraints)?;
+            }
+            PatternAction::Delete => {}
         }
         Ok(Self {
             pattern: StructuralPattern::compile(language, text)?
@@ -211,6 +222,8 @@ impl PatternRule {
         let out = match &self.action {
             PatternAction::Replace(template) => self.pattern.rewrite(source, template),
             PatternAction::Delete => self.pattern.delete(source),
+            // The matched file is left as it is; see `creates`.
+            PatternAction::Create { .. } => return source.to_string(),
         };
         if out != source
             && !self.pattern.parses_cleanly(&out)
@@ -229,6 +242,128 @@ impl PatternRule {
     pub fn find(&self, source: &str) -> Vec<Found> {
         self.pattern.find(source)
     }
+
+    /// For a `create` rule, the file each match in `source` makes:
+    /// `(path relative to the matched file's directory, text)`. The text is
+    /// the template with the match's bindings, dedented to its least
+    /// indented line and ending in one newline. Matches inside another
+    /// match are left out, as a rewrite leaves them.
+    pub fn creates(&self, source: &str) -> Vec<(String, String)> {
+        let PatternAction::Create { path, template } = &self.action else {
+            return Vec::new();
+        };
+        let found = self.pattern.find(source);
+        let outermost = found.iter().filter(|f| {
+            !found.iter().any(|o| {
+                o.start <= f.start && f.end <= o.end && (o.start, o.end) != (f.start, f.end)
+            })
+        });
+        outermost
+            .map(|f| {
+                let path = fill(path, &f.captures).trim().to_string();
+                let captures: Vec<(String, String)> = f
+                    .captures
+                    .iter()
+                    .map(|(name, text)| (name.clone(), dedent(text)))
+                    .collect();
+                let text = fill(template, &captures);
+                (
+                    path,
+                    format!("{}\n", text.trim_matches(['\n', '\r']).trim_end()),
+                )
+            })
+            .collect()
+    }
+}
+
+impl PatternAction {
+    /// The DSL keyword this action is written with.
+    pub fn keyword(&self) -> &'static str {
+        match self {
+            PatternAction::Replace(_) => "replace",
+            PatternAction::Delete => "delete",
+            PatternAction::Create { .. } => "create",
+        }
+    }
+}
+
+/// A `create` path must stay relative, so a script cannot write anywhere.
+fn check_create_path(path: &str) -> Result<(), String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("`create` needs a path for the new file".into());
+    }
+    if std::path::Path::new(path).is_absolute() || path.starts_with('~') {
+        return Err(format!(
+            "`create \"{path}\"`: the path is relative to the matched file's directory, never absolute"
+        ));
+    }
+    Ok(())
+}
+
+/// `template` with each `$NAME` / `$$$NAME` replaced by its binding's
+/// text; `$$` is a literal `$`, and an unbound name is left as written
+/// (compilation already refused those).
+fn fill(template: &str, captures: &[(String, String)]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(at) = rest.find('$') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at..];
+        let sigils = after.len() - after.trim_start_matches('$').len();
+        let name: String = after[sigils..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        let bound = (sigils == 1 || sigils == 3)
+            .then(|| captures.iter().find(|(n, _)| *n == name))
+            .flatten();
+        match bound {
+            Some((_, text)) if !name.is_empty() => {
+                out.push_str(text);
+                rest = &after[sigils + name.len()..];
+            }
+            _ if sigils == 2 && name.is_empty() => {
+                out.push('$');
+                rest = &after[2..];
+            }
+            _ => {
+                out.push('$');
+                rest = &after[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A capture's text moved to the left margin: the indentation its later
+/// non-blank lines share is removed (a `$$$B` body comes from inside a
+/// block). The first line is not counted, since a capture starts at its
+/// node, mid-line.
+fn dedent(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let common = lines
+        .iter()
+        .skip(1)
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.len() - l.trim_start().len())
+        .min()
+        .unwrap_or(0);
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            if i == 0 {
+                l.trim_start()
+            } else if l.len() >= common {
+                &l[common..]
+            } else {
+                l.trim_start()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 impl std::fmt::Display for PatternRule {
@@ -245,6 +380,7 @@ impl std::fmt::Display for PatternRule {
         match &self.action {
             PatternAction::Replace(template) => write!(f, " -> '{template}'"),
             PatternAction::Delete => write!(f, " -> delete"),
+            PatternAction::Create { path, .. } => write!(f, " -> create \"{path}\""),
         }
     }
 }

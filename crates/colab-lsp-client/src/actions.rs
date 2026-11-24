@@ -635,6 +635,7 @@ pub fn safe_delete(server: &ServerCommand, target: &Target) -> Result<SafeDelete
             after,
             rules_fired: vec![0],
             conflicts: Vec::new(),
+            created: false,
         }]),
     })
 }

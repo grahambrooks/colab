@@ -9,75 +9,75 @@ just the readable form.
 
 ## At a glance
 
-| Namespace | `replace` | `delete` | `ensure` | `replace_call` | `set` | `insert` | Applies to |
-| --------- | :-------: | :------: | :------: | :------------: | :---: | :------: | ---------- |
-| `c::include`        | ✅ | ✅ | ✅ |    |    |    | `.c`, `.h` |
-| `c::symbol`         | ✅ |    |    |    |    |    | `.c`, `.h` |
-| `c::call`           |    |    |    | ✅ |    |    | `.c`, `.h` |
-| `c::pattern`        | ✅ | ✅ |    |    |    |    | `.c`, `.h` |
-| `cpp::include`      | ✅ | ✅ | ✅ |    |    |    | `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.h` |
-| `cpp::namespace`    | ✅ |    |    |    |    |    | as `cpp::include` |
-| `cpp::symbol`       | ✅ |    |    |    |    |    | as `cpp::include` |
-| `cpp::call`         |    |    |    | ✅ |    |    | as `cpp::include` |
-| `cpp::pattern`      | ✅ | ✅ |    |    |    |    | as `cpp::include` |
-| `csharp::using`     | ✅ | ✅ | ✅ |    |    |    | `.cs`, `.csx` |
-| `csharp::namespace` | ✅ |    |    |    |    |    | `.cs`, `.csx` |
-| `csharp::symbol`    | ✅ |    |    |    |    |    | `.cs`, `.csx` |
-| `csharp::call`      |    |    |    | ✅ |    |    | `.cs`, `.csx` |
-| `csharp::pattern`   | ✅ | ✅ |    |    |    |    | `.cs`, `.csx` |
-| `go::import`        | ✅ | ✅ | ✅ |    |    |    | `.go` |
-| `go::package`       | ✅ |    |    |    |    |    | `.go` |
-| `go::symbol`        | ✅ |    |    |    |    |    | `.go` |
-| `go::struct_tag`    | ✅ |    |    |    |    |    | `.go` |
-| `go::call`          |    |    |    | ✅ |    |    | `.go` |
-| `go::pattern`       | ✅ | ✅ |    |    |    |    | `.go` |
-| `java::import`      | ✅ | ✅ | ✅ |    |    |    | `.java` |
-| `java::package`     | ✅ |    |    |    |    |    | `.java` |
-| `java::symbol`      | ✅ |    |    |    |    |    | `.java` |
-| `java::call`        |    |    |    | ✅ |    |    | `.java` |
-| `java::pattern`     | ✅ | ✅ |    |    |    |    | `.java` |
-| `js::import`        | ✅ | ✅ | ✅ |    |    |    | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` |
-| `js::symbol`        | ✅ |    |    |    |    |    | as `js::import` |
-| `js::call`          |    |    |    | ✅ |    |    | as `js::import` |
-| `js::pattern`       | ✅ | ✅ |    |    |    |    | as `js::import` |
-| `kotlin::import`    | ✅ | ✅ | ✅ |    |    |    | `.kt`, `.kts` |
-| `kotlin::package`   | ✅ |    |    |    |    |    | `.kt`, `.kts` |
-| `kotlin::symbol`    | ✅ |    |    |    |    |    | `.kt`, `.kts` |
-| `kotlin::call`      |    |    |    | ✅ |    |    | `.kt`, `.kts` |
-| `kotlin::pattern`   | ✅ | ✅ |    |    |    |    | `.kt`, `.kts` |
-| `php::use`          | ✅ | ✅ | ✅ |    |    |    | `.php`, `.phtml` |
-| `php::namespace`    | ✅ |    |    |    |    |    | `.php`, `.phtml` |
-| `php::symbol`       | ✅ |    |    |    |    |    | `.php`, `.phtml` |
-| `php::call`         |    |    |    | ✅ |    |    | `.php`, `.phtml` |
-| `php::pattern`      | ✅ | ✅ |    |    |    |    | `.php`, `.phtml` |
-| `python::import`    | ✅ | ✅ | ✅ |    |    |    | `.py` |
-| `python::symbol`    | ✅ |    |    |    |    |    | `.py` |
-| `python::call`      |    |    |    | ✅ |    |    | `.py` |
-| `python::pattern`   | ✅ | ✅ |    |    |    |    | `.py` |
-| `ruby::require`     | ✅ | ✅ | ✅ |    |    |    | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile`, `Guardfile`, `Capfile` |
-| `ruby::symbol`      | ✅ |    |    |    |    |    | as `ruby::require` |
-| `ruby::call`        |    |    |    | ✅ |    |    | as `ruby::require` |
-| `ruby::pattern`     | ✅ | ✅ |    |    |    |    | as `ruby::require` |
-| `rust::use`         | ✅ | ✅ | ✅ |    |    |    | `.rs` |
-| `rust::symbol`      | ✅ |    |    |    |    |    | `.rs` |
-| `rust::crate`       | ✅ | ✅ |    |    |    |    | `Cargo.toml` |
-| `rust::call`        |    |    |    | ✅ |    |    | `.rs` |
-| `rust::pattern`     | ✅ | ✅ |    |    |    |    | `.rs` |
-| `swift::import`     | ✅ | ✅ | ✅ |    |    |    | `.swift` |
-| `swift::symbol`     | ✅ |    |    |    |    |    | `.swift` |
-| `swift::call`       |    |    |    | ✅ |    |    | `.swift` |
-| `swift::pattern`    | ✅ | ✅ |    |    |    |    | `.swift` |
-| `json::key`         |    | ✅ |    |    | ✅ | ✅ | `.json` |
-| `markdown::section` | ✅ | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
-| `markdown::frontmatter` |  | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
-| `markdown::text` | ✅ | ✅ |  |  |  |  | `.md`, `.markdown` |
-| `markdown::block`   |    | ✅ |    |    | ✅ | ✅ | `.md`, `.markdown` |
-| `toml::key`         |    | ✅ |    |    | ✅ | ✅ | `.toml` |
-| `text::literal` | ✅ | ✅ |  |  |  |  | any text file |
-| `text::word` | ✅ | ✅ |  |  |  |  | any text file |
-| `markdown::row` |  | ✅ |  |  | ✅ | ✅ | `.md`, `.markdown` |
-| `markdown::item` | ✅ | ✅ | ✅ |  |  |  | `.md`, `.markdown` |
-| `markdown::link` | ✅ | ✅ |  |  |  |  | `.md`, `.markdown` |
+| Namespace | `replace` | `delete` | `ensure` | `replace_call` | `set` | `insert` | `create` | Applies to |
+| --------- | :-------: | :------: | :------: | :------------: | :---: | :------: | :------: | ---------- |
+| `c::include`        | ✅ | ✅ | ✅ |    |    |    |    | `.c`, `.h` |
+| `c::symbol`         | ✅ |    |    |    |    |    |    | `.c`, `.h` |
+| `c::call`           |    |    |    | ✅ |    |    |    | `.c`, `.h` |
+| `c::pattern`        | ✅ | ✅ |    |    |    |    | ✅ | `.c`, `.h` |
+| `cpp::include`      | ✅ | ✅ | ✅ |    |    |    |    | `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.h` |
+| `cpp::namespace`    | ✅ |    |    |    |    |    |    | as `cpp::include` |
+| `cpp::symbol`       | ✅ |    |    |    |    |    |    | as `cpp::include` |
+| `cpp::call`         |    |    |    | ✅ |    |    |    | as `cpp::include` |
+| `cpp::pattern`      | ✅ | ✅ |    |    |    |    | ✅ | as `cpp::include` |
+| `csharp::using`     | ✅ | ✅ | ✅ |    |    |    |    | `.cs`, `.csx` |
+| `csharp::namespace` | ✅ |    |    |    |    |    |    | `.cs`, `.csx` |
+| `csharp::symbol`    | ✅ |    |    |    |    |    |    | `.cs`, `.csx` |
+| `csharp::call`      |    |    |    | ✅ |    |    |    | `.cs`, `.csx` |
+| `csharp::pattern`   | ✅ | ✅ |    |    |    |    | ✅ | `.cs`, `.csx` |
+| `go::import`        | ✅ | ✅ | ✅ |    |    |    |    | `.go` |
+| `go::package`       | ✅ |    |    |    |    |    |    | `.go` |
+| `go::symbol`        | ✅ |    |    |    |    |    |    | `.go` |
+| `go::struct_tag`    | ✅ |    |    |    |    |    |    | `.go` |
+| `go::call`          |    |    |    | ✅ |    |    |    | `.go` |
+| `go::pattern`       | ✅ | ✅ |    |    |    |    | ✅ | `.go` |
+| `java::import`      | ✅ | ✅ | ✅ |    |    |    |    | `.java` |
+| `java::package`     | ✅ |    |    |    |    |    |    | `.java` |
+| `java::symbol`      | ✅ |    |    |    |    |    |    | `.java` |
+| `java::call`        |    |    |    | ✅ |    |    |    | `.java` |
+| `java::pattern`     | ✅ | ✅ |    |    |    |    | ✅ | `.java` |
+| `js::import`        | ✅ | ✅ | ✅ |    |    |    |    | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` |
+| `js::symbol`        | ✅ |    |    |    |    |    |    | as `js::import` |
+| `js::call`          |    |    |    | ✅ |    |    |    | as `js::import` |
+| `js::pattern`       | ✅ | ✅ |    |    |    |    | ✅ | as `js::import` |
+| `kotlin::import`    | ✅ | ✅ | ✅ |    |    |    |    | `.kt`, `.kts` |
+| `kotlin::package`   | ✅ |    |    |    |    |    |    | `.kt`, `.kts` |
+| `kotlin::symbol`    | ✅ |    |    |    |    |    |    | `.kt`, `.kts` |
+| `kotlin::call`      |    |    |    | ✅ |    |    |    | `.kt`, `.kts` |
+| `kotlin::pattern`   | ✅ | ✅ |    |    |    |    | ✅ | `.kt`, `.kts` |
+| `php::use`          | ✅ | ✅ | ✅ |    |    |    |    | `.php`, `.phtml` |
+| `php::namespace`    | ✅ |    |    |    |    |    |    | `.php`, `.phtml` |
+| `php::symbol`       | ✅ |    |    |    |    |    |    | `.php`, `.phtml` |
+| `php::call`         |    |    |    | ✅ |    |    |    | `.php`, `.phtml` |
+| `php::pattern`      | ✅ | ✅ |    |    |    |    | ✅ | `.php`, `.phtml` |
+| `python::import`    | ✅ | ✅ | ✅ |    |    |    |    | `.py` |
+| `python::symbol`    | ✅ |    |    |    |    |    |    | `.py` |
+| `python::call`      |    |    |    | ✅ |    |    |    | `.py` |
+| `python::pattern`   | ✅ | ✅ |    |    |    |    | ✅ | `.py` |
+| `ruby::require`     | ✅ | ✅ | ✅ |    |    |    |    | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile`, `Guardfile`, `Capfile` |
+| `ruby::symbol`      | ✅ |    |    |    |    |    |    | as `ruby::require` |
+| `ruby::call`        |    |    |    | ✅ |    |    |    | as `ruby::require` |
+| `ruby::pattern`     | ✅ | ✅ |    |    |    |    | ✅ | as `ruby::require` |
+| `rust::use`         | ✅ | ✅ | ✅ |    |    |    |    | `.rs` |
+| `rust::symbol`      | ✅ |    |    |    |    |    |    | `.rs` |
+| `rust::crate`       | ✅ | ✅ |    |    |    |    |    | `Cargo.toml` |
+| `rust::call`        |    |    |    | ✅ |    |    |    | `.rs` |
+| `rust::pattern`     | ✅ | ✅ |    |    |    |    | ✅ | `.rs` |
+| `swift::import`     | ✅ | ✅ | ✅ |    |    |    |    | `.swift` |
+| `swift::symbol`     | ✅ |    |    |    |    |    |    | `.swift` |
+| `swift::call`       |    |    |    | ✅ |    |    |    | `.swift` |
+| `swift::pattern`    | ✅ | ✅ |    |    |    |    | ✅ | `.swift` |
+| `json::key`         |    | ✅ |    |    | ✅ | ✅ |    | `.json` |
+| `markdown::section` | ✅ | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
+| `markdown::frontmatter` |  | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
+| `markdown::text` | ✅ | ✅ |  |  |  |  |    | `.md`, `.markdown` |
+| `markdown::block`   |    | ✅ |    |    | ✅ | ✅ |    | `.md`, `.markdown` |
+| `toml::key`         |    | ✅ |    |    | ✅ | ✅ |    | `.toml` |
+| `text::literal` | ✅ | ✅ |  |  |  |  |    | any text file |
+| `text::word` | ✅ | ✅ |  |  |  |  |    | any text file |
+| `markdown::row` |  | ✅ |  |  | ✅ | ✅ |    | `.md`, `.markdown` |
+| `markdown::item` | ✅ | ✅ | ✅ |  |  |  |    | `.md`, `.markdown` |
+| `markdown::link` | ✅ | ✅ |  |  |  |  |    | `.md`, `.markdown` |
 
 **Config-file backends.** `json`, `markdown` and `toml` edit data files
 rather than source, so they do not share the source floor below. Their
