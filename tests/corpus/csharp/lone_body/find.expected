@@ -1,0 +1,6 @@
+Worker.cs:3:5: [0] void Start() { Open(); Run(); }
+    $B = Open(); Run();
+    $F = Start
+Worker.cs:5:5: [0] public static void Stop() { Close(); }
+    $B = Close();
+    $F = Stop

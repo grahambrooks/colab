@@ -1,0 +1,1 @@
+1 csharp::pattern 'void $F() { $$$B }' where not has 'Trace.Enter($N)' -> 'void $F() { Trace.Enter(nameof($F)); $$$B }'

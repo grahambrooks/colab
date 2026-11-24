@@ -465,13 +465,23 @@ impl StructuralPattern {
             Self::compile_one(&only, text, false)
         };
         // Text that is code only in an `also` context (a Python keyword
-        // argument, a dict entry) compiles there.
-        let mut primary = match Self::compile_one(language, text, true) {
-            Ok(primary) => primary,
+        // argument, a dict entry) compiles there. `tolerant`: nothing read
+        // it cleanly, and it compiled with a placeholder-only error (a lone
+        // `$$$B` body, which C# and Java keep in an `ERROR` node).
+        let compiled = Self::compile_with(language, text, true, false)
+            .map(|p| (p, false))
+            .or_else(|strict| {
+                Self::compile_with(language, text, true, true)
+                    .map(|p| (p, true))
+                    .map_err(|_| strict)
+            });
+        let (mut primary, tolerant) = match compiled {
+            Ok(compiled) => compiled,
             Err(e) => language
                 .also
                 .iter()
                 .find_map(|context| alt_in(context).ok())
+                .map(|p| (p, false))
                 .ok_or(e)?,
         };
         for context in language.also {
@@ -488,6 +498,9 @@ impl StructuralPattern {
         // each that reads it as a different tree is matched as well.
         // A pattern that compiled bare (C#'s top-level statements take
         // `void $F() {}` as a local function) is tried in every context.
+        // One that only compiled tolerantly is tried tolerantly in them too
+        // (no context reads it cleanly), or `void $F() { $$$B }` would be a
+        // local function only and never match a method.
         let after = match primary.context.as_deref() {
             None => Some(0),
             Some(c) => language
@@ -503,7 +516,7 @@ impl StructuralPattern {
                     also: &[],
                     ..language.clone()
                 };
-                if let Ok(alt) = Self::compile_with(&only, text, false, false)
+                if let Ok(alt) = Self::compile_with(&only, text, false, tolerant)
                     && alt.tree != primary.tree
                     && primary.also.iter().all(|a| a.tree != alt.tree)
                 {

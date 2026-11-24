@@ -87,6 +87,34 @@ mod tests {
     }
 
     #[test]
+    fn a_lone_sequence_body_matches_a_method_and_keeps_it() {
+        // `{ $$$B }` parses only with the placeholder in an ERROR node; it
+        // must still be read as a method, not only as a local function.
+        let src = "class A {\n    void Q() { x(); y(); }\n    public void R() { z(); }\n    int S() { return 1; }\n}\n";
+        let op = crate::LANG
+            .compile_pattern(
+                "void $F() { $$$B }",
+                PatternAction::Replace("void $F() { Log(); $$$B }".into()),
+                &[],
+            )
+            .unwrap();
+        let found: Vec<String> = op
+            .locate(src)
+            .unwrap()
+            .into_iter()
+            .map(|f| f.text)
+            .collect();
+        assert_eq!(
+            found,
+            ["void Q() { x(); y(); }", "public void R() { z(); }"]
+        );
+        assert_eq!(
+            op.apply(src),
+            "class A {\n    void Q() { Log(); x(); y(); }\n    public void R() { Log(); z(); }\n    int S() { return 1; }\n}\n"
+        );
+    }
+
+    #[test]
     fn a_deleted_method_takes_its_xml_docs() {
         let op = crate::LANG
             .compile_pattern("class $C {}", PatternAction::Delete, &[])

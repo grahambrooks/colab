@@ -1,0 +1,6 @@
+// A method body bound as a whole sequence: `{ $$$B }` parses only with the
+// placeholder kept in an ERROR node, and must still read as a method (and
+// keep its modifiers), not only as a top-level local function.
+match csharp::pattern 'void $F() { $$$B }' where not has 'Trace.Enter($N)' {
+    replace 'void $F() { Trace.Enter(nameof($F)); $$$B }'
+}

@@ -52,6 +52,34 @@ mod tests {
     use colab_rewrite::pattern::PatternAction;
 
     #[test]
+    fn a_lone_sequence_body_matches_functions_and_methods_and_keeps_it() {
+        // `{ $$$B }` parses only with the placeholder in an ERROR node; it
+        // must still be read as a method too, not only as a function.
+        let src = "<?php\nfunction q() { x(); }\nclass A {\n    function m() { y(); z(); }\n    function n($a) {}\n}\n";
+        let op = crate::LANG
+            .compile_pattern(
+                "function $F() { $$$B }",
+                PatternAction::Replace("function $F() { log(); $$$B }".into()),
+                &[],
+            )
+            .unwrap();
+        let found: Vec<String> = op
+            .locate(src)
+            .unwrap()
+            .into_iter()
+            .map(|f| f.text)
+            .collect();
+        assert_eq!(
+            found,
+            ["function q() { x(); }", "function m() { y(); z(); }"]
+        );
+        assert_eq!(
+            op.apply(src),
+            "<?php\nfunction q() { log(); x(); }\nclass A {\n    function m() { log(); y(); z(); }\n    function n($a) {}\n}\n"
+        );
+    }
+
+    #[test]
     fn a_method_pattern_without_modifiers_matches_any_and_keeps_them() {
         let src = "<?php\nclass A {\n    function a() {}\n    public static function b() {}\n    #[Pure]\n    final protected function c() {}\n    function d() { return 1; }\n}\n";
         let any = crate::LANG
