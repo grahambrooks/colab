@@ -73,6 +73,13 @@ fn raw_string_hint(source: &str, detail: &ParseDetail) -> Option<String> {
 /// only after the offset is resolved against the source. Doing that here
 /// is what lets the LSP place a diagnostic on the right line and lets an
 /// agent fix a script without a second round trip.
+fn in_file(error: Error, path: Option<&Path>) -> Error {
+    match (error, path) {
+        (Error::Parse(detail), Some(path)) => Error::Parse(detail.in_file(path)),
+        (other, _) => other,
+    }
+}
+
 fn parse_detail<T: fmt::Display, E: fmt::Display>(
     source: &str,
     error: ParseError<usize, T, E>,
@@ -162,7 +169,7 @@ fn compile_traced(
     backends: &BackendRegistry,
     base_path: Option<&Path>,
 ) -> Result<Refactoring> {
-    let mut command = parse(text)?;
+    let mut command = parse(text).map_err(|e| in_file(e, base_path))?;
     // A file of bare rules is named after the file, as reports and
     // `--split-pr` branches show it; `<inline>`, `<stdin>` and MCP's
     // `<script>` are not files, so their rules keep `inline`.
@@ -384,7 +391,7 @@ fn expand_includes(
                     )));
                 }
                 let text = fs::read_to_string(&resolved).map_err(|e| Error::io_at(&resolved, e))?;
-                let inner = parse(&text)?;
+                let inner = parse(&text).map_err(|e| in_file(e, Some(&resolved)))?;
                 let nested = expand_includes(inner.items, Some(&resolved), seen, defs)?;
                 out.extend(nested);
             }
@@ -1247,6 +1254,38 @@ import (
             matches!(&err, Error::Config(msg) if msg.contains("compile_at_path")),
             "got: {err}"
         );
+    }
+
+    #[test]
+    fn a_parse_error_names_the_file_it_is_in() {
+        let dir = std::env::temp_dir().join(format!("colab-parse-path-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let main = dir.join("main.colab");
+        let shared = dir.join("shared.colab");
+        std::fs::write(&main, "include \"shared.colab\"\n").unwrap();
+        std::fs::write(&shared, "match go::import \"a\" { nope }\n").unwrap();
+        let backends = colab_backends::registry();
+        let Err(Error::Parse(detail)) = compile_at_path(&main, &backends) else {
+            panic!("a parse error");
+        };
+        assert_eq!(detail.path.as_deref(), Some(shared.as_path()));
+        assert_eq!((detail.line, detail.column), (1, 24));
+        let message = Error::Parse(detail).to_string();
+        assert!(message.starts_with("parse error in "), "{message}");
+        assert!(
+            message.contains("shared.colab at line 1, column 24"),
+            "{message}"
+        );
+        // Text that is not a file (`-e`, stdin, MCP) names none.
+        let Err(Error::Parse(inline)) = compile_at_source(
+            "match go::import \"a\" { nope }",
+            &dir.join("<inline>"),
+            &backends,
+        ) else {
+            panic!("a parse error");
+        };
+        assert_eq!(inline.path, None);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -98,11 +98,13 @@ give those rules an `in "<glob>"`.
 have been valid there:
 
 ```
-parse error at line 2, column 28: unexpected token `replac`; expected one of: "delete", "ensure", "insert", "replace", "replace_call", "set"
+parse error in migrate.colab at line 2, column 28: unexpected token `replac`; expected one of: "delete", "ensure", "insert", "replace", "replace_call", "set"
 ```
 
-Over MCP the same information is structured (`line`, `column`,
-`expected`, `snippet`) on an `isError: true` response.
+A script read from a file (or an `include`d one) names the file; `-e`
+rules, stdin and MCP text do not. Over MCP the same information is
+structured (`line`, `column`, `expected`, `snippet`, and `path` for an
+error inside an `include`) on an `isError: true` response.
 
 **Exit 3, unsupported operation.** Two distinct cases, and the message
 says which:

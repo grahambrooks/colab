@@ -444,6 +444,10 @@ impl ToolError {
             if let Some(snippet) = &detail.snippet {
                 payload.insert("snippet".into(), json!(snippet));
             }
+            // An error in an `include`d file is in that file, not the script sent.
+            if let Some(path) = &detail.path {
+                payload.insert("path".into(), json!(path.display().to_string()));
+            }
         }
         ToolError::Tool(Value::Object(payload))
     }

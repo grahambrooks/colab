@@ -29,6 +29,9 @@ pub struct ParseDetail {
     pub expected: Vec<String>,
     /// The offending source line with a caret beneath the column.
     pub snippet: Option<String>,
+    /// The script file the error is in, when the text came from one (a
+    /// `--script` file, an `include`); `None` for `-e`, stdin and MCP text.
+    pub path: Option<PathBuf>,
 }
 
 impl ParseDetail {
@@ -59,7 +62,22 @@ impl ParseDetail {
             offset,
             expected,
             snippet,
+            path: None,
         }
+    }
+
+    /// The same error, as one in the script file `path`. A path that is
+    /// not a file (`<inline>`, `<stdin>`, MCP's `<script>`) is ignored, and
+    /// a path already set is kept: the innermost include names the file.
+    pub fn in_file(mut self, path: &Path) -> Self {
+        let real = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| !n.starts_with('<'));
+        if self.path.is_none() && real {
+            self.path = Some(path.to_path_buf());
+        }
+        self
     }
 }
 
@@ -149,7 +167,10 @@ impl fmt::Display for Error {
                 source,
             } => write!(f, "I/O error at {}: {}", p.display(), source),
             Error::Io { path: None, source } => write!(f, "I/O error: {source}"),
-            Error::Parse(detail) => write!(f, "parse error at {detail}"),
+            Error::Parse(detail) => match &detail.path {
+                Some(path) => write!(f, "parse error in {} at {detail}", path.display()),
+                None => write!(f, "parse error at {detail}"),
+            },
             Error::UnsupportedOperation(msg) => write!(f, "unsupported operation: {msg}"),
             Error::Config(msg) => write!(f, "configuration error: {msg}"),
             Error::Server(msg) => write!(f, "language server error: {msg}"),

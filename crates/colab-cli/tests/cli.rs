@@ -4375,7 +4375,8 @@ fn a_script_file_of_bare_rules_runs_named_after_the_file() {
         .unwrap();
     assert_eq!(bad.status.code(), Some(2));
     assert!(
-        String::from_utf8_lossy(&bad.stderr).contains("parse error at line 2, column 24"),
+        String::from_utf8_lossy(&bad.stderr)
+            .contains("parse error in bad.colab at line 2, column 24"),
         "{}",
         String::from_utf8_lossy(&bad.stderr)
     );
