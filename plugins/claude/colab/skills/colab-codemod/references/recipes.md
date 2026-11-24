@@ -46,7 +46,7 @@ The three config backends address data rather than syntax. `json` and
 | --------- | ------ | ------- | ------- |
 | `json`     | `key`   | JSON Pointer — `/a/b`, `~1` for `/`, `~0` for `~` | `set` `insert` `delete` |
 | `toml`     | `key`   | dotted path; `name[field=value]` selects an array element | `set` `insert` `delete` |
-| `markdown` | `section` | heading path `"Parent > Child"` or `"#anchor"`; `"New < Sibling"` places a new one | `set` `insert` `delete` `replace` |
+| `markdown` | `section` | heading path `"Parent > Child"` or `"#anchor"`; `"New < Sibling"` / `"New after Sibling"` places a new one | `set` `insert` `delete` `replace` |
 | `markdown` | `row` | `"Section[Col=value]"`; `^` adds at the top, `@2` picks the second table | `set` `insert` `delete` |
 | `markdown` | `item` | `"Section[item text]"`, the start of the item as a reader sees it | `ensure` `replace` `delete` |
 | `markdown` | `text` | `"Section[phrase]"` | `replace` `delete` |

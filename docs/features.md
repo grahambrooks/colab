@@ -780,7 +780,7 @@ match markdown::section "Unscheduled" { delete }
 - An address that matches two headings changes nothing, and the report's
   `unchanged` reason lists them with their lines. A dead rule's near misses
   are the file's heading paths.
-- `set` replaces everything under the heading and keeps one blank line after it; it is a no-op when the body is already that text, ignoring trailing spaces and surrounding blank lines. On a missing section, `set` and `insert` add it at the end of its parent (the path minus its last segment), one level below, or, given `"New < Sibling"`, just before that sibling at its level; a single-segment path is added at the end of the file, under a lone `#` title if there is one.
+- `set` replaces everything under the heading and keeps one blank line after it; it is a no-op when the body is already that text, ignoring trailing spaces and surrounding blank lines. On a missing section, `set` and `insert` add it at the end of its parent (the path minus its last segment), one level below, or, given `"New < Sibling"` / `"New before Sibling"`, just before that sibling at its level, or, given `"New after Sibling"`, just after it (its subsections included) at its level. The words are a placement only when a section has the sibling's name; otherwise they are part of the heading (`"Clean up after release"`); a single-segment path is added at the end of the file, under a lone `#` title if there is one.
 - `replace` renames the heading in place, keeping its level. Links in the
   same file to the old anchor become [conflicts](./cli.md#conflicts), so
   `--write` stops until they are fixed.

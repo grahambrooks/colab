@@ -30,10 +30,39 @@ pub struct SectionEdit {
     /// The address in the form near misses compare (`outline::near_target`).
     near: String,
     address: String,
-    /// `"New < Sibling"`: an insert goes just before `Sibling`, at its
-    /// level, instead of at the end of the parent.
-    before: Option<String>,
+    /// `"New < Sibling"` / `"New before Sibling"` / `"New after Sibling"`:
+    /// a new section goes just before or after `Sibling` (its subsections
+    /// included), at its level, instead of at the end of the parent.
+    place: Option<(Side, String)>,
+    /// The whole address when the placement came from a word (`before`,
+    /// `after`), which a heading may hold: when no section has the
+    /// sibling's name, the whole text is the heading instead.
+    worded: Option<String>,
     mode: Mode,
+}
+
+/// Which side of its sibling a new section goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Side {
+    Before,
+    After,
+}
+
+/// `"New after Prev"` → `("New", After, "Prev")`, at the last ` after ` or
+/// ` before `.
+fn worded_place(address: &str) -> Option<(&str, Side, &str)> {
+    let after = address
+        .rfind(" after ")
+        .map(|i| (i, Side::After, " after ".len()));
+    let before = address
+        .rfind(" before ")
+        .map(|i| (i, Side::Before, " before ".len()));
+    let (at, side, len) = [after, before]
+        .into_iter()
+        .flatten()
+        .max_by_key(|(i, ..)| *i)?;
+    let (new, sibling) = (address[..at].trim(), address[at + len..].trim());
+    (!new.is_empty() && !sibling.is_empty()).then_some((new, side, sibling))
 }
 
 impl SectionEdit {
@@ -65,11 +94,24 @@ impl SectionEdit {
     }
 
     fn build(address: &str, mode: Mode) -> Result<Self> {
-        let (address, before) = match address.rsplit_once(" < ") {
-            Some((new, sibling)) => (new.trim().to_string(), Some(sibling.trim().to_string())),
-            None => (address.trim().to_string(), None),
+        let places = matches!(mode, Mode::Set(_) | Mode::Insert(_));
+        let trimmed = address.trim();
+        let (address, place, worded) = if let Some((new, sibling)) = trimmed.rsplit_once(" < ") {
+            (
+                new.trim().to_string(),
+                Some((Side::Before, sibling.trim().to_string())),
+                None,
+            )
+        } else if let Some((new, side, sibling)) = worded_place(trimmed).filter(|_| places) {
+            (
+                new.to_string(),
+                Some((side, sibling.to_string())),
+                Some(trimmed.to_string()),
+            )
+        } else {
+            (trimmed.to_string(), None, None)
         };
-        if before.is_some() && !matches!(mode, Mode::Set(_) | Mode::Insert(_)) {
+        if place.is_some() && !places {
             return Err(Error::Config(format!(
                 "markdown::section \"{address} < …\": `< Sibling` places a new section, so it goes with `set` or `insert` only"
             )));
@@ -88,30 +130,43 @@ impl SectionEdit {
         Ok(Self {
             near: outline::near_target(&address),
             address,
-            before,
+            place,
+            worded,
             mode,
         })
+    }
+
+    /// The address and placement in this file: a placement written with a
+    /// word whose sibling no section is named is part of the heading.
+    fn effective(&self, headings: &[Heading]) -> (String, Option<(Side, String)>) {
+        match (&self.worded, &self.place) {
+            (Some(whole), Some((_, sibling))) if outline::resolve(headings, sibling).is_err() => {
+                (whole.clone(), None)
+            }
+            _ => (self.address.clone(), self.place.clone()),
+        }
     }
 
     /// The rewritten source, or why this file is left alone.
     fn edit(&self, source: &str) -> std::result::Result<Option<String>, String> {
         let headings = outline::headings(source);
+        let (address, place) = self.effective(&headings);
         if let Mode::Insert(body) = &self.mode {
-            return self.insert_into(source, &headings, body);
+            return self.insert_into(source, &headings, body, &address, place.as_ref());
         }
-        let found = outline::find(&headings, &self.address);
+        let found = outline::find(&headings, &address);
         let section = match found.as_slice() {
             // `set` creates what is missing, as it does for every backend.
             [] => {
                 return match &self.mode {
-                    Mode::Set(body) if !self.address.starts_with('#') => {
-                        self.insert_into(source, &headings, body)
+                    Mode::Set(body) if !address.starts_with('#') => {
+                        self.insert_into(source, &headings, body, &address, place.as_ref())
                     }
                     _ => Ok(None),
                 };
             }
             [one] => *one,
-            _ => return Err(outline::resolve(&headings, &self.address).unwrap_err()),
+            _ => return Err(outline::resolve(&headings, &address).unwrap_err()),
         };
         Ok(match &self.mode {
             Mode::Set(body) => set_body(source, section, body),
@@ -132,24 +187,38 @@ impl SectionEdit {
         source: &str,
         headings: &[Heading],
         body: &str,
+        address: &str,
+        place: Option<&(Side, String)>,
     ) -> std::result::Result<Option<String>, String> {
-        if !outline::find(headings, &self.address).is_empty() {
+        if !outline::find(headings, address).is_empty() {
             return Ok(None);
         }
-        let mut segments = outline::segments(&self.address);
-        segments.pop().expect("validated at build");
+        let mut segments = outline::segments(address);
+        if segments.pop().is_none() {
+            return Err("the address names no heading".into());
+        }
         // Written as given, markup included; matched as a reader sees it.
-        let title = self
-            .address
+        let title = address
             .rsplit(" > ")
             .next()
-            .unwrap_or(&self.address)
+            .unwrap_or(address)
             .trim()
             .to_string();
-        let (at, level) = if let Some(sibling) = &self.before {
+        let (at, level) = if let Some((side, sibling)) = place {
+            let word = if *side == Side::After {
+                "after"
+            } else {
+                "before"
+            };
             let sibling = outline::resolve(headings, sibling)
-                .map_err(|e| format!("cannot insert `{}` before it: {e}", self.address))?;
-            (sibling.start, sibling.level)
+                .map_err(|e| format!("cannot insert `{address}` {word} it: {e}"))?;
+            // After a sibling means after its subsections too.
+            let at = if *side == Side::After {
+                sibling.end
+            } else {
+                sibling.start
+            };
+            (at, sibling.level)
         } else if segments.is_empty() {
             // Top level: under a lone leading `#` title, else at the level
             // of the file's first heading.
@@ -161,7 +230,7 @@ impl SectionEdit {
             (source.len(), level)
         } else {
             let parent = outline::resolve(headings, &segments.join(" > "))
-                .map_err(|e| format!("cannot insert `{}`: {e}", self.address))?;
+                .map_err(|e| format!("cannot insert `{address}`: {e}"))?;
             (parent.end, (parent.level + 1).min(6))
         };
         let before = &source[..at];
@@ -179,10 +248,10 @@ impl SectionEdit {
             out.push('\n');
             out.push_str(body);
         }
-        // Sections split by a thematic break (`---`) before the sibling:
+        // Sections split by a thematic break (`---`) where it lands:
         // the new one gets a break of its own, so the document keeps one
         // between every pair whichever side it thought the break was on.
-        if self.before.is_some()
+        if place.is_some()
             && let Some(rule) = before.trim_end().lines().next_back().map(str::trim)
             && is_thematic_break(rule)
         {
@@ -389,6 +458,31 @@ mod tests {
         );
         assert_eq!(op.apply(&out), out);
         assert!(SectionEdit::delete("A < B").is_err());
+    }
+
+    #[test]
+    fn a_section_goes_after_or_before_a_sibling_by_word() {
+        let doc = "# D\n\n## A\n\na\n\n### A1\n\nx\n\n## B\n\nb\n";
+        let after = SectionEdit::set("D > New after A", "n").unwrap();
+        let out = after.apply(doc);
+        // After A's subsections too, at A's level.
+        assert_eq!(
+            out,
+            "# D\n\n## A\n\na\n\n### A1\n\nx\n\n## New\n\nn\n\n## B\n\nb\n"
+        );
+        assert_eq!(after.apply(&out), out);
+        let before = SectionEdit::insert("D > New before B", "n").unwrap();
+        assert_eq!(before.apply(doc), out);
+        // No section named `release`: the words are the heading's own.
+        let worded = SectionEdit::set("D > Clean up after release", "n").unwrap();
+        assert!(
+            worded
+                .apply(doc)
+                .ends_with("## Clean up after release\n\nn\n")
+        );
+        // Other actions never read the words as a placement.
+        let delete = SectionEdit::delete("D > Clean up after release").unwrap();
+        assert_eq!(delete.apply(doc), doc);
     }
 
     #[test]
