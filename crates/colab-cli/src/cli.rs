@@ -546,6 +546,13 @@ pub fn run() -> Result<u8> {
         .collect();
     let mut span = crate::telemetry::command_span(&argv, &subcommands);
     let outcome = colab_core::run::Run::new().enter(dispatch);
+    // A reader that stopped reading (`colab … | head`) closed the pipe: the
+    // output it wanted was written, so this is no failure of colab's. Exit
+    // quietly, as `rg` and `cat` do, and do not count it as an error.
+    let outcome = match outcome {
+        Err(Error::Io { source, .. }) if source.kind() == io::ErrorKind::BrokenPipe => Ok(0),
+        other => other,
+    };
     crate::telemetry::finish(&mut span, &outcome);
     outcome
 }

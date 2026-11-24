@@ -1504,7 +1504,7 @@ The same table is in `colab --help`:
 | 1 | Generic / configuration error. |
 | 2 | Script parse error. |
 | 3 | Unsupported namespace or operation. |
-| 4 | I/O error (with the offending path in the log line). |
+| 4 | I/O error (with the offending path in the log line). A reader that closes the pipe early (`colab … \| head`) is not one: colab exits 0 quietly, as `cat` does. |
 | 10 | `--check` found changes a rule above `severity info` would make. |
 | 11 | `--write` found [conflicts](#conflicts) and wrote nothing (`--allow-conflicts` overrides). |
 | 12 | `colab test`: a case of a pack failed (its output, a second run, or a conflict). |

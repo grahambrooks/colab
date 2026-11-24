@@ -376,6 +376,47 @@ fn format_diff_emits_unified_diff() {
 }
 
 #[test]
+fn a_reader_that_stops_reading_is_not_an_error() {
+    // `colab refactor --stdin … | head -1`: the reader closes the pipe
+    // after one line. That is a quiet exit 0, as for `cat`, not "I/O error:
+    // Broken pipe" (exit 4), which telemetry counted as a failure.
+    use std::io::Read as _;
+    let source = format!("{GO_INPUT}{}", "func f() {}\n".repeat(50_000));
+    let mut child = colab()
+        .args(["refactor", "--stdin", "--path", "main.go"])
+        .args([
+            "-e",
+            r#"match go::import "some.module" { replace "new.module" }"#,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(source.as_bytes());
+    });
+    let mut first = [0u8; 16];
+    child
+        .stdout
+        .as_mut()
+        .unwrap()
+        .read_exact(&mut first)
+        .unwrap();
+    drop(child.stdout.take());
+    writer.join().unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("Broken pipe"));
+}
+
+#[test]
 fn stdin_emits_transformed_source_to_stdout() {
     let root = workspace_temp("stdin");
     let script = root.join("rename.colab");
