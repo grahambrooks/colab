@@ -28,6 +28,9 @@ pub struct Baseline {
     keys: HashMap<Key, usize>,
     /// Findings left out of the run because the ref had them.
     pub dropped: usize,
+    /// The rules (by index) that made a finding left out: they matched,
+    /// so a rule left with none is not reported as matching nothing.
+    pub excused: std::collections::BTreeSet<usize>,
 }
 
 /// Removes the baseline worktree however the run ends.
@@ -107,11 +110,12 @@ impl Baseline {
         }
         let blocks = render::blocks(&change, None);
         let mut kept = Vec::with_capacity(blocks.len());
-        for key in keys(&change, report) {
+        for (key, block) in keys(&change, report).into_iter().zip(&blocks) {
             match self.keys.get_mut(&key) {
                 Some(n) if *n > 0 => {
                     *n -= 1;
                     self.dropped += 1;
+                    self.excused.extend(block.rules.iter().copied());
                     kept.push(false);
                 }
                 _ => kept.push(true),

@@ -481,7 +481,8 @@ pub(super) fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorAr
         blocked,
         ..
     } = outcome;
-    report.set_checking(matches!(exec_mode, ExecMode::Check));
+    // A baseline run never writes: it reports findings, as a check does.
+    report.set_checking(matches!(exec_mode, ExecMode::Check) || args.baseline.is_some());
     attribute_lines(args, refactoring, &changes, &mut report, reporter.as_mut());
     if blocked {
         reporter.refused();

@@ -161,6 +161,9 @@ pub struct RunReport {
     /// The run is a check (`--check`, `fix --check`): finding nothing is
     /// the state it wants, so its advisories do not call that a problem.
     pub(crate) checking: bool,
+    /// Rules (by index) whose every finding was excused, by `--baseline`
+    /// because the ref had it: they matched, so they are not dead.
+    pub(crate) excused: std::collections::BTreeSet<usize>,
 }
 
 /// One branch made by `refactor --split-pr`: the base commit plus one
@@ -432,6 +435,19 @@ impl RunReport {
         self.checking = checking;
     }
 
+    /// Rule `rule` matched, but its findings were left out (`--baseline`:
+    /// all already at the ref), so it is not reported as matching nothing.
+    pub fn excuse(&mut self, rule: usize) {
+        self.excused.insert(rule);
+    }
+
+    /// Whether a rule that matched no file passed rather than missed: a
+    /// finding rule in a check, or one whose findings were all excused.
+    pub fn passed(&self, rule: usize) -> bool {
+        self.excused.contains(&rule)
+            || (self.checking && self.rules.get(rule).is_some_and(|r| r.message.is_some()))
+    }
+
     /// Fold a completed walk's outcome into the report.
     ///
     /// Every caller previously assigned `files_visited` and `skipped`
@@ -465,6 +481,12 @@ impl RunReport {
         self.rules
             .iter()
             .filter(|r| r.files_matched == 0 && !r.rule.starts_with(TIDY_RULE))
+    }
+
+    /// The dead rules that did not pass (see [`RunReport::passed`]): the
+    /// ones worth a "matched no files" warning.
+    pub fn missed_rules(&self) -> impl Iterator<Item = &RuleStat> {
+        self.dead_rules().filter(|r| !self.passed(r.index))
     }
 }
 

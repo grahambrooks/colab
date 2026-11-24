@@ -1565,6 +1565,8 @@ colab refactor --script no-log.colab --check --baseline v2.0 src
 - Each file keeps only its new findings, and its new text is rebuilt from
   them, so the diff, JSON, SARIF and GitHub output show only those, and
   `--check` exits 10 only for them. How many were left out is a warning.
+  A rule whose findings were all the ref's matched, so it is not reported
+  as matching nothing, and a run is quiet in the way a clean `--check` is.
 - `--changed-since` narrows which files run; `--baseline` narrows the
   findings in them. They combine.
 - With `--write` it is an error: writing a file that kept only its new

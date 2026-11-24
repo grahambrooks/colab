@@ -982,7 +982,8 @@ fn baseline_reports_only_findings_new_since_the_ref() {
             .output()
             .unwrap()
     };
-    // Both calls were there at HEAD: nothing is new.
+    // Both calls were there at HEAD: nothing is new, and the rule, which
+    // matched them, is not reported as matching nothing.
     let clean = check(&root);
     assert_eq!(
         clean.status.code(),
@@ -990,6 +991,11 @@ fn baseline_reports_only_findings_new_since_the_ref() {
         "{}",
         String::from_utf8_lossy(&clean.stderr)
     );
+    let doc: serde_json::Value = serde_json::from_slice(&clean.stdout).unwrap();
+    let warnings = doc["warnings"].to_string();
+    assert!(warnings.contains("already at HEAD"), "{doc}");
+    assert!(!warnings.contains("matched no files"), "{doc}");
+    assert!(!warnings.contains("no rule matched"), "{doc}");
     // A new call, and the old ones moved down a line.
     write(
         &root.join("b.go"),

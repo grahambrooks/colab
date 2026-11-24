@@ -123,6 +123,11 @@ impl Hooks for CliHooks<'_> {
     }
 
     fn walked(&mut self, report: &mut RunReport) {
+        if let Some((baseline, _)) = &self.baseline {
+            for &rule in &baseline.excused {
+                report.excuse(rule);
+            }
+        }
         if let Some((baseline, _)) = &self.baseline
             && baseline.dropped > 0
         {

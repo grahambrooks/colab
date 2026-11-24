@@ -429,8 +429,7 @@ pub fn rules_json(report: &RunReport) -> Value {
 pub fn advisories(report: &RunReport) -> Vec<String> {
     let mut out: Vec<String> = report.warnings.clone();
     // In a check, a finding rule that found nothing passed.
-    let passed = |r: &&crate::report::RuleStat| report.checking && r.message.is_some();
-    out.extend(report.dead_rules().filter(|r| !passed(r)).map(|r| {
+    out.extend(report.missed_rules().map(|r| {
         let mut line = format!("matched no files: {}", r.rule);
         if !r.near_misses.is_empty() {
             let seen: Vec<String> = r
