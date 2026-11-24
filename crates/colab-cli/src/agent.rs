@@ -7,6 +7,7 @@
 //! | ---- | ---- | ----- |
 //! | Claude Code | MCP server `colab` | `.mcp.json`, key `mcpServers.colab` |
 //! | Claude Code | post-edit hook | `.claude/settings.json`, the `PostToolUse` hook running `colab hook post-edit` |
+//! | Claude Code | pre-bash hook | `.claude/settings.json`, the `PreToolUse` hook on `Bash` running `colab hook pre-bash` |
 //! | Claude Code | the skill | `.claude/skills/colab-codemod/` |
 //! | Cursor | MCP server `colab` | `.cursor/mcp.json`, key `mcpServers.colab` |
 //! | Cursor | the skill, as a rule | `.cursor/rules/colab.mdc` |
@@ -16,7 +17,8 @@
 //! With `--user`, the same for every project of the user's instead of
 //! one: Claude Code's MCP server through `claude mcp add --scope user`
 //! (Claude Code owns `~/.claude.json`, so colab only reads it), the skill
-//! in `~/.claude/skills/`, no hook; Cursor's MCP server in
+//! in `~/.claude/skills/`, and only the pre-bash hook, in
+//! `~/.claude/settings.json` (it needs no `colab.toml`); Cursor's MCP server in
 //! `~/.cursor/mcp.json`; Codex's in `~/.codex/config.toml`, with the
 //! block in `~/.codex/AGENTS.md`.
 //!
@@ -60,14 +62,14 @@ struct Targets {
     /// Codex (`~/.codex/config.toml`, `AGENTS.md`).
     #[arg(long)]
     codex: bool,
-    /// Without the Claude Code post-edit hook.
+    /// Without the Claude Code hooks (post-edit and pre-bash).
     #[arg(long = "no-hook")]
     no_hook: bool,
     /// The project to install into (default: the working directory).
     #[arg(short = 'C', long = "change-dir", default_value = ".")]
     project: PathBuf,
     /// For every project of the user's, not one: user-level MCP servers,
-    /// the skill in `~/.claude/skills/`, and no post-edit hook. Rerun it
+    /// the skill in `~/.claude/skills/`, and only the pre-bash hook. Rerun it
     /// after upgrading colab to refresh the skill.
     #[arg(long, conflicts_with = "project")]
     user: bool,
@@ -211,9 +213,44 @@ fn run_step(step: &CommandStep) -> Result<()> {
     Ok(())
 }
 
-/// The post-edit hook's command; uninstall finds the hook by it.
-const HOOK_COMMAND: &str = "colab hook post-edit 2>/dev/null || true";
-const HOOK_MARK: &str = "colab hook post-edit";
+/// A Claude Code hook colab installs; uninstall finds it by `mark`.
+struct Hook {
+    event: &'static str,
+    matcher: &'static str,
+    command: &'static str,
+    mark: &'static str,
+    timeout: u64,
+}
+
+impl Hook {
+    fn entry(&self) -> Value {
+        json!({
+            "matcher": self.matcher,
+            "hooks": [{"type": "command", "command": self.command, "timeout": self.timeout}]
+        })
+    }
+}
+
+/// The repository's packs on each file Claude writes.
+const POST_EDIT: Hook = Hook {
+    event: "PostToolUse",
+    matcher: "Edit|Write|MultiEdit",
+    command: "colab hook post-edit 2>/dev/null || true",
+    mark: "colab hook post-edit",
+    timeout: 30,
+};
+
+/// A shell command that edits tracked files, refused. Unlike the packs it
+/// needs no `colab.toml`, so it is the one hook installed user-wide.
+const PRE_BASH: Hook = Hook {
+    event: "PreToolUse",
+    matcher: "Bash",
+    command: "colab hook pre-bash 2>/dev/null || true",
+    mark: "colab hook pre-bash",
+    timeout: 10,
+};
+
+const HOOKS: &[&Hook] = &[&POST_EDIT, &PRE_BASH];
 
 const AGENTS_BLOCK: &str = "## colab
 
@@ -226,13 +263,6 @@ repository's own conventions are in `colab.toml`: `colab fix --check`.";
 
 fn mcp_entry() -> Value {
     json!({"command": "colab", "args": ["mcp"]})
-}
-
-fn hook_entry() -> Value {
-    json!({
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [{"type": "command", "command": HOOK_COMMAND, "timeout": 30}]
-    })
 }
 
 fn read(path: &Path) -> Result<Option<String>> {
@@ -306,48 +336,53 @@ fn mcp_json(tool: Tool, path: PathBuf, install: bool) -> Result<FileEdit> {
     })
 }
 
-/// `.claude/settings.json`: the post-edit hook added once, or removed.
-fn claude_settings(path: PathBuf, install: bool) -> Result<FileEdit> {
+/// `.claude/settings.json`: each of `wanted` added once; uninstall
+/// (`install` false) removes every hook of colab's, whichever it is.
+fn claude_settings(path: PathBuf, install: bool, wanted: &[&Hook]) -> Result<FileEdit> {
     let before = read(&path)?;
     let old = parse_json(&path, before.as_deref())?;
     let mut new = old.clone();
-    let ours = |hook: &Value| {
-        hook["command"]
-            .as_str()
-            .is_some_and(|c| c.contains(HOOK_MARK))
-    };
     let root = new.as_object_mut().expect("parse_json gives an object");
     if install {
-        let hooks = root.entry("hooks").or_insert_with(|| json!({}));
-        let post = hooks
-            .as_object_mut()
-            .ok_or_else(|| Error::Config(format!("{}: `hooks` is not an object", path.display())))?
-            .entry("PostToolUse")
-            .or_insert_with(|| json!([]));
-        let list = post.as_array_mut().ok_or_else(|| {
-            Error::Config(format!(
-                "{}: `hooks.PostToolUse` is not a list",
-                path.display()
-            ))
-        })?;
-        let present = list.iter().any(|entry| {
-            entry["hooks"]
-                .as_array()
-                .is_some_and(|hs| hs.iter().any(ours))
-        });
-        if !present {
-            list.push(hook_entry());
+        for hook in wanted {
+            let ours = |h: &Value| h["command"].as_str().is_some_and(|c| c.contains(hook.mark));
+            let hooks = root.entry("hooks").or_insert_with(|| json!({}));
+            let event = hooks
+                .as_object_mut()
+                .ok_or_else(|| {
+                    Error::Config(format!("{}: `hooks` is not an object", path.display()))
+                })?
+                .entry(hook.event)
+                .or_insert_with(|| json!([]));
+            let list = event.as_array_mut().ok_or_else(|| {
+                Error::Config(format!(
+                    "{}: `hooks.{}` is not a list",
+                    path.display(),
+                    hook.event
+                ))
+            })?;
+            let present = list.iter().any(|entry| {
+                entry["hooks"]
+                    .as_array()
+                    .is_some_and(|hs| hs.iter().any(ours))
+            });
+            if !present {
+                list.push(hook.entry());
+            }
         }
     } else if let Some(hooks) = root.get_mut("hooks").and_then(Value::as_object_mut) {
-        if let Some(list) = hooks.get_mut("PostToolUse").and_then(Value::as_array_mut) {
-            for entry in list.iter_mut() {
-                if let Some(hs) = entry.get_mut("hooks").and_then(Value::as_array_mut) {
-                    hs.retain(|h| !ours(h));
+        for hook in HOOKS {
+            let ours = |h: &Value| h["command"].as_str().is_some_and(|c| c.contains(hook.mark));
+            if let Some(list) = hooks.get_mut(hook.event).and_then(Value::as_array_mut) {
+                for entry in list.iter_mut() {
+                    if let Some(hs) = entry.get_mut("hooks").and_then(Value::as_array_mut) {
+                        hs.retain(|h| !ours(h));
+                    }
                 }
-            }
-            list.retain(|entry| entry["hooks"].as_array().is_none_or(|hs| !hs.is_empty()));
-            if list.is_empty() {
-                hooks.remove("PostToolUse");
+                list.retain(|entry| entry["hooks"].as_array().is_none_or(|hs| !hs.is_empty()));
+                if list.is_empty() {
+                    hooks.remove(hook.event);
+                }
             }
         }
         if hooks.is_empty() {
@@ -526,7 +561,7 @@ fn plan(
     install: bool,
 ) -> Result<(Vec<FileEdit>, Vec<CommandStep>)> {
     if t.user {
-        return plan_user(tools, base, install);
+        return plan_user(tools, base, install, !t.no_hook || !install);
     }
     let project = base;
     let mut edits = Vec::new();
@@ -538,6 +573,7 @@ fn plan(
                     edits.push(claude_settings(
                         project.join(".claude/settings.json"),
                         install,
+                        HOOKS,
                     )?);
                 }
                 for (rel, content) in SKILL {
@@ -576,6 +612,7 @@ fn plan_user(
     tools: &[Tool],
     home: &Path,
     install: bool,
+    hook: bool,
 ) -> Result<(Vec<FileEdit>, Vec<CommandStep>)> {
     let mut edits = Vec::new();
     let mut commands = Vec::new();
@@ -583,6 +620,13 @@ fn plan_user(
         match tool {
             Tool::Claude => {
                 commands.push(claude_user_mcp(&claude_user_config(home), install)?);
+                if hook {
+                    edits.push(claude_settings(
+                        claude_user_dir(home).join("settings.json"),
+                        install,
+                        &[&PRE_BASH],
+                    )?);
+                }
                 for (rel, content) in SKILL {
                     let path = claude_user_dir(home).join("skills/colab-codemod").join(rel);
                     edits.push(owned(tool, path, content, install)?);
@@ -742,9 +786,9 @@ mod tests {
         let settings = dir.join("settings.json");
         let theirs = "{\n  \"hooks\": {\n    \"PostToolUse\": [\n      {\"matcher\": \"Bash\", \"hooks\": [{\"type\": \"command\", \"command\": \"mine\"}]}\n    ]\n  },\n  \"model\": \"x\"\n}\n";
         std::fs::write(&settings, theirs).unwrap();
-        let first = claude_settings(settings.clone(), true).unwrap();
+        let first = claude_settings(settings.clone(), true, HOOKS).unwrap();
         apply(std::slice::from_ref(&first)).unwrap();
-        let again = claude_settings(settings.clone(), true).unwrap();
+        let again = claude_settings(settings.clone(), true, HOOKS).unwrap();
         assert_eq!(status(&again), "unchanged");
         let installed: Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
@@ -752,7 +796,11 @@ mod tests {
             installed["hooks"]["PostToolUse"].as_array().unwrap().len(),
             2
         );
-        let removed = claude_settings(settings.clone(), false).unwrap();
+        assert_eq!(
+            installed["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+            PRE_BASH.command
+        );
+        let removed = claude_settings(settings.clone(), false, HOOKS).unwrap();
         apply(std::slice::from_ref(&removed)).unwrap();
         let back: Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
@@ -770,7 +818,7 @@ mod tests {
         // A broken file is not overwritten.
         std::fs::write(&settings, "{ nope").unwrap();
         assert!(
-            claude_settings(settings, true)
+            claude_settings(settings, true, HOOKS)
                 .unwrap_err()
                 .to_string()
                 .contains("not valid JSON")

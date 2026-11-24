@@ -176,7 +176,8 @@ enum Commands {
     /// post-edit hook), or take it out again: `install` / `uninstall`.
     Agent(crate::agent::AgentArgs),
     /// Agent hooks: `colab hook post-edit` runs the repository's packs on
-    /// the file an agent just wrote (exit 2 with findings on stderr).
+    /// the file an agent just wrote; `colab hook pre-bash` refuses a shell
+    /// command that edits tracked files.
     Hook(crate::hook::HookArgs),
     /// Manage discoverable codemod packs.
     Pack(PackArgs),

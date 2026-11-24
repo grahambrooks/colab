@@ -25,6 +25,7 @@ mod markdown;
 mod pack_test;
 mod packs;
 mod review;
+mod shell_edit;
 mod symbol_edit;
 mod table;
 mod telemetry;

@@ -1,6 +1,18 @@
 {
-  "description": "After an edit, run the repository's colab packs (colab.toml) on the file; findings come back to Claude. Silent where there is no colab.toml, and with a colab too old to have the command.",
+  "description": "After an edit, run the repository's colab packs (colab.toml) on the file; findings come back to Claude. Before a shell command, refuse one that edits tracked files (sed -i, perl -pi, >, tee, a script that writes), pointing at Edit and colab. Both are silent with a colab too old to have the command.",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "colab hook pre-bash 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",

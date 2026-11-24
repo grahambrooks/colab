@@ -108,10 +108,11 @@ fn agent_install_is_idempotent_and_uninstall_takes_back_only_its_own() {
 
 /// `--user`: Claude Code's MCP server through its own `claude mcp`
 /// (faked here, keeping `~/.claude.json` as the real one does), the skill
-/// in `~/.claude/skills/`, no hook; Cursor and Codex in their home files.
+/// in `~/.claude/skills/`, only the pre-bash hook; Cursor and Codex in
+/// their home files.
 #[cfg(unix)]
 #[test]
-fn agent_install_user_scope_goes_through_claude_mcp_and_writes_no_hook() {
+fn agent_install_user_scope_goes_through_claude_mcp_and_writes_only_the_pre_bash_hook() {
     use std::os::unix::fs::PermissionsExt;
     let home = workspace_temp("agent-user-home");
     let bin = workspace_temp("agent-user-bin");
@@ -164,10 +165,18 @@ fn agent_install_user_scope_goes_through_claude_mcp_and_writes_no_hook() {
         "{paths:?}"
     );
     assert!(home.join(".claude/skills/colab-codemod/SKILL.md").is_file());
+    let settings = |home: &std::path::Path| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(home.join(".claude/settings.json")).unwrap())
+            .unwrap()
+    };
+    let installed = settings(&home);
+    assert_eq!(installed["model"], "opus");
     assert_eq!(
-        fs::read_to_string(home.join(".claude/settings.json")).unwrap(),
-        "{\"model\": \"opus\"}\n",
-        "no hook in user scope"
+        installed["hooks"],
+        serde_json::json!({"PreToolUse": [{"matcher": "Bash", "hooks": [
+            {"type": "command", "command": "colab hook pre-bash 2>/dev/null || true", "timeout": 10}
+        ]}]}),
+        "the pre-bash hook, and no post-edit hook, in user scope"
     );
 
     // A second install runs nothing and writes nothing.
@@ -193,7 +202,7 @@ fn agent_install_user_scope_goes_through_claude_mcp_and_writes_no_hook() {
     );
     assert!(!home.join(".claude/skills").exists());
     assert!(!home.join(".cursor").exists() && !home.join(".codex").exists());
-    assert!(home.join(".claude/settings.json").is_file());
+    assert_eq!(settings(&home), serde_json::json!({"model": "opus"}));
     for dir in [&home, &bin] {
         fs::remove_dir_all(dir).ok();
     }
@@ -256,6 +265,57 @@ fn the_post_edit_hook_reports_a_broken_convention_to_the_model() {
     for dir in [&root, &outside] {
         fs::remove_dir_all(dir).ok();
     }
+}
+
+#[test]
+fn the_pre_bash_hook_denies_a_shell_edit_of_a_tracked_file() {
+    let root = workspace_temp("pre-bash");
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    write(&root.join("src/lib.rs"), "fn old() {}\n");
+    git(&["add", "src/lib.rs"]);
+    let hook = |command: &str| {
+        let mut child = colab()
+            .args(["hook", "pre-bash"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let call = serde_json::json!({
+            "tool_name": "Bash",
+            "cwd": root,
+            "tool_input": {"command": command},
+        });
+        std::io::Write::write_all(child.stdin.as_mut().unwrap(), call.to_string().as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success());
+        out.stdout
+    };
+    let out = hook("sed -i '' 's/old/new/' src/lib.rs");
+    let decision: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let specific = &decision["hookSpecificOutput"];
+    assert_eq!(specific["hookEventName"], "PreToolUse");
+    assert_eq!(specific["permissionDecision"], "deny");
+    let reason = specific["permissionDecisionReason"].as_str().unwrap();
+    assert!(reason.contains("`sed -i` on src/lib.rs"), "{reason}");
+    // Reading, writing an untracked file, and the escape comment: nothing.
+    assert!(hook("sed -n 1p src/lib.rs").is_empty());
+    assert!(hook("echo x > notes.txt").is_empty());
+    assert!(hook("sed -i '' 's/old/new/' src/lib.rs # colab:allow-shell-edit").is_empty());
+    fs::remove_dir_all(&root).ok();
 }
 
 /// A collector on a free loopback port: answers every OTLP/HTTP POST with

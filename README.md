@@ -238,9 +238,11 @@ one parse of a file ([`docs/operations.md`](docs/operations.md#performance)).
 - `colab test` — a repository's packs checked against the cases beside
   them; `colab fleet` — one migration across many repositories, a branch
   and pull request each.
-- `colab agent install` / `uninstall` and `colab hook post-edit` — colab
-  in front of Claude Code, Cursor or Codex, and the repository's
-  conventions checked on every file an agent writes.
+- `colab agent install` / `uninstall`, `colab hook post-edit` and
+  `colab hook pre-bash` — colab in front of Claude Code, Cursor or Codex,
+  the repository's conventions checked on every file an agent writes,
+  and shell edits of tracked files (`sed -i`, heredoc rewrites) turned
+  back towards Edit and colab.
 - `colab undo --from <dir>` — restore a run made with `--backup <dir>`.
 
 ## Output formats

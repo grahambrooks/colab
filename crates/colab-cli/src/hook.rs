@@ -14,6 +14,10 @@
 //! say, no `colab.toml`, a file outside its `[run] paths`, or packs with
 //! scan phases (they need the whole tree): no output. With `--file` the
 //! report is plain text and the exit code 10, as for `--check`.
+//!
+//! `colab hook pre-bash` is the `PreToolUse` hook on `Bash`: a command
+//! that edits tracked files through the shell is answered with a `deny`
+//! naming them (see [`crate::shell_edit`]).
 use std::fmt::Write as _;
 
 use std::io::{self, Read};
@@ -40,10 +44,24 @@ enum HookEvent {
         #[arg(long, value_name = "FILE")]
         file: Option<PathBuf>,
     },
+    /// Before an agent runs a shell command: refuse one that edits
+    /// tracked files (`sed -i`, `perl -pi`, `>`, `tee`, a Python script
+    /// that writes), pointing at Edit and colab instead. Reads the hook's
+    /// JSON on stdin (`tool_input.command`, `cwd`) and answers with a
+    /// `PreToolUse` `deny`.
+    PreBash {
+        /// Judge this command instead, run from the working directory,
+        /// reporting as text (exit 10 when it would be refused).
+        #[arg(long, value_name = "COMMAND")]
+        command: Option<String>,
+    },
 }
 
 pub fn run(args: HookArgs, backends: &BackendRegistry) -> Result<u8> {
-    let HookEvent::PostEdit { file } = args.event;
+    let file = match args.event {
+        HookEvent::PostEdit { file } => file,
+        HookEvent::PreBash { command } => return pre_bash(command),
+    };
     if let Some(file) = file {
         return match check(&file, backends)? {
             Some(report) => {
@@ -67,6 +85,58 @@ pub fn run(args: HookArgs, backends: &BackendRegistry) -> Result<u8> {
         );
     }
     Ok(0)
+}
+
+/// `colab hook pre-bash`: a `deny` for a command that edits tracked files
+/// through the shell, and nothing for any other (or input it cannot read).
+fn pre_bash(command: Option<String>) -> Result<u8> {
+    if let Some(command) = command {
+        let cwd = std::env::current_dir().map_err(crate::cli::io_to_error)?;
+        return Ok(match crate::shell_edit::verdict(&command, &cwd) {
+            Some(reason) => {
+                println!("{reason}");
+                10
+            }
+            None => 0,
+        });
+    }
+    let mut input = String::new();
+    io::stdin()
+        .read_to_string(&mut input)
+        .map_err(crate::cli::io_to_error)?;
+    let Some((command, cwd)) = bash_call(&input) else {
+        return Ok(0);
+    };
+    if let Some(reason) = crate::shell_edit::verdict(&command, &cwd) {
+        println!(
+            "{}",
+            serde_json::json!({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }})
+        );
+    }
+    Ok(0)
+}
+
+/// The command a Bash tool call runs, and its directory, from the hook's
+/// JSON. `None` for another tool.
+fn bash_call(input: &str) -> Option<(String, PathBuf)> {
+    let call: Value = serde_json::from_str(input).ok()?;
+    if call
+        .get("tool_name")
+        .and_then(Value::as_str)
+        .is_some_and(|t| t != "Bash")
+    {
+        return None;
+    }
+    let command = call.pointer("/tool_input/command")?.as_str()?.to_string();
+    let cwd = match call.get("cwd").and_then(Value::as_str) {
+        Some(cwd) => PathBuf::from(cwd),
+        None => std::env::current_dir().ok()?,
+    };
+    Some((command, cwd))
 }
 
 /// The file a tool call wrote, from the hook's JSON: `tool_input.file_path`

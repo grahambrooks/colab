@@ -536,7 +536,7 @@ Put colab in front of an agent, and take it out again:
 
 ```sh
 colab agent install                       # every agent found: claude, cursor, codex
-colab agent install --claude --no-hook    # one, without the post-edit hook
+colab agent install --claude --no-hook    # one, without the hooks
 colab agent install --dry-run             # the diffs, nothing written
 colab agent uninstall                     # what install wrote, and nothing else
 colab agent install --user                # for every project of yours, not this one
@@ -546,6 +546,7 @@ colab agent install --user                # for every project of yours, not this
 | ----- | ---- | ----- |
 | Claude Code | MCP server `colab` | `.mcp.json`, key `mcpServers.colab` |
 | Claude Code | post-edit hook | `.claude/settings.json`, the `PostToolUse` hook running `colab hook post-edit` |
+| Claude Code | pre-bash hook | `.claude/settings.json`, the `PreToolUse` hook on `Bash` running `colab hook pre-bash` |
 | Claude Code | the skill | `.claude/skills/colab-codemod/` |
 | Cursor | MCP server `colab` | `.cursor/mcp.json`, key `mcpServers.colab` |
 | Cursor | the skill, as a rule | `.cursor/rules/colab.mdc` |
@@ -574,6 +575,7 @@ the user's instead:
 | ----- | ---- | ----- |
 | Claude Code | MCP server `colab`, user scope | `claude mcp add --scope user colab -- colab mcp` (uninstall: `claude mcp remove --scope user colab`) |
 | Claude Code | the skill | `~/.claude/skills/colab-codemod/` (`$CLAUDE_CONFIG_DIR/skills/` when set) |
+| Claude Code | pre-bash hook | `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json`), the `PreToolUse` hook on `Bash`; `--no-hook` leaves it out |
 | Cursor | MCP server `colab` | `~/.cursor/mcp.json`, key `mcpServers.colab` |
 | Codex | MCP server `colab` | `~/.codex/config.toml`, table `[mcp_servers.colab]` |
 | Codex | how to use colab | `~/.codex/AGENTS.md`, the managed block `colab` |
@@ -585,6 +587,8 @@ the user's instead:
   command it would run.
 - **No post-edit hook.** A user-wide hook would run on every edit in
   every project; add it per project with `colab agent install --claude`.
+  The pre-bash hook needs no `colab.toml`, so it is the one hook
+  installed user-wide.
 - **No Cursor rule.** Cursor keeps user rules in its settings, not in
   files.
 - **Rerun it after upgrading colab**: the skill is a copy of the
@@ -605,6 +609,33 @@ replacement. No `colab.toml`, a file outside its `[run] paths` or in its
 command can be `colab hook post-edit 2>/dev/null || true` and an older
 colab stays silent. `colab hook post-edit --file <path>` prints the same
 report as text and exits 10 when there is one.
+
+### `colab hook pre-bash`
+
+The pre-bash hook (the plugin's, or `colab agent install`'s, in project
+or user scope) is a `PreToolUse` hook on `Bash`. It reads the tool call
+on stdin and refuses a command that edits a file git tracks through the
+shell, since such an edit skips the post-edit hook and Claude Code's
+record of what changed. The refusal is a `permissionDecision: "deny"`
+whose reason names each file and points at Edit / Write and colab.
+
+| Write | Recognised as |
+| ----- | ------------- |
+| `sed -i` / `--in-place` (also `-Ei`, `-i.bak`, BSD `-i ''`), `perl -i` (`-pi`, `-0777 -pi`) | every word of the command that names a tracked file |
+| `>` / `>>` / `&>` redirects, `tee [-a]` | the target |
+| `python … -c '…'`, `python3 - <<EOF`, `… \| python3`, `node -e` | a script with a writing call (`open(…, 'w')`, `.write_text(`, `writeFileSync(`, …): the path literals on its writing lines, or every path literal when it writes through a variable |
+| `xargs sed -i`, `find … -exec sed -i` (or `perl -i`) | any file, when the command runs in a git work tree |
+
+`cd dir && …` moves the rest of the command, and `env`, `sudo` and
+`VAR=value` prefixes are skipped. A write to an untracked or ignored
+file, to anything outside a work tree (a scratch directory), or that the
+hook cannot place (a path in a variable) runs. So does any command
+carrying the comment `# colab:allow-shell-edit`, for the generated file or
+binary where the shell is the right tool. It always exits 0, so its
+command can be `colab hook pre-bash 2>/dev/null || true`.
+`colab hook pre-bash --command '<cmd>'` judges a command run from the
+working directory, prints the reason and exits 10 when it would be
+refused.
 
 ### colab test
 
