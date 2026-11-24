@@ -15,7 +15,7 @@ otherwise look identical.
 | Counters | What it means | Fix |
 | -------- | ------------- | --- |
 | `visited: 0` | The walker never yielded a file. | Wrong path, or `--include`/`--exclude` excluded everything, or `.gitignore` covers the tree. Try `--no-ignore`, and check you are pointing at the right directory. |
-| `visited: N, scanned: 0` | Files exist; none belong to a language the script targets. | Wrong namespace for this codebase, or the files have an extension the backend does not claim. `js::*` covers `.js .mjs .cjs .jsx .ts .tsx`; `rust::crate` only ever matches `Cargo.toml`. |
+| `visited: N, scanned: 0` | Files exist; none belong to a language the script targets, or fall inside the rules' `in` scopes. | Wrong namespace for this codebase, or the files have an extension the backend does not claim. `js::*` covers `.js .mjs .cjs .jsx .ts .tsx`; `rust::crate` only ever matches `Cargo.toml`. Or an `in "<glob>"` names the wrong directory: it is relative to the working directory (MCP: the call's `cwd`). |
 | `scanned: N, changed: 0` | Files were parsed; no rule matched. | The match string is wrong. Go to the per-rule counts. |
 
 colab also prints a `warnings` array saying which of these it was, so

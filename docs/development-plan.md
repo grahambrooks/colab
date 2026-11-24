@@ -107,7 +107,6 @@ whichever milestone touches the same code.
 | Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match `type` (a file's questions are batched now, and answers kept for the run) | M32 |
 | `create "<path>" '<template>'`: a new file from a match, made as a `FileOp::Create` so undo and `--verify` reverse it, a file that exists a conflict. Needs file operations in the `refactor` write path, which writes text edits only | M35 |
 | Phased runs (scans) under `--bisect`, `--verify`, `--split-pr`, `--stdin`, `--changed-since` and MCP `colab.find` / `colab.test_rule`, which refuse them today (MCP `colab.preview` / `colab.apply` run them since the shared `colab_dsl::pipeline`) | M35 |
-| MCP `in "<glob>"` scopes never match: the tools resolve `paths` against `cwd` into absolute paths, and `ScopedOperation` matches the glob against the path as walked, so `in "api/**"` misses `/abs/cwd/api/x.go`. Match MCP paths relative to `cwd` | M35 |
 | Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
 | `--include` / `--exclude` match paths relative to the walked target (`colab-lang-json/**` for target `crates`), while a rule's `in "<glob>"` matches paths relative to the working directory; one of them should accept the other's form | M10.6 |
 | `rust::use "tree_sitter::Parser" { delete }` does not remove one member of a brace list (`use tree_sitter::{Parser, Tree};`); a `rust::pattern` rule did | M10.6 |

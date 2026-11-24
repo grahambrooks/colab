@@ -484,7 +484,8 @@ pub fn explain_no_changes(report: &RunReport) -> Option<String> {
     }
     if report.files_scanned == 0 {
         return Some(format!(
-            "Visited {} file(s) but none belong to a language this script targets.",
+            "Visited {} file(s) but none belong to a language this script targets, \
+             or fall inside its rules' `in \"<glob>\"` scopes.",
             report.files_visited
         ));
     }
@@ -657,7 +658,8 @@ pub fn find_warnings(report: &crate::find::FindReport) -> Vec<String> {
             );
         } else if report.run.files_scanned == 0 {
             out.push(format!(
-                "Visited {} file(s) but none belong to a language this script targets.",
+                "Visited {} file(s) but none belong to a language this script targets, \
+                 or fall inside its rules' `in \"<glob>\"` scopes.",
                 report.run.files_visited
             ));
         }

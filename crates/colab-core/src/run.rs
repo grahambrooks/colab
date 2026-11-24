@@ -12,6 +12,7 @@
 //! is process-wide.
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use crate::facts::Facts;
@@ -28,6 +29,9 @@ pub struct Run {
     /// The oracle's answers so far, so a question asked again (another
     /// rule, `find`, the near-miss probe) costs nothing.
     answers: Mutex<std::collections::HashMap<crate::semantic::AnswerKey, bool>>,
+    /// The directory a rule's `in "<glob>"` is relative to, when it is not
+    /// the process's working directory (an MCP call's `cwd`).
+    base: RwLock<Option<PathBuf>>,
 }
 
 thread_local! {
@@ -62,6 +66,22 @@ impl Run {
     /// The current run, or this thread's detached one.
     pub(crate) fn here() -> Arc<Self> {
         Self::current().unwrap_or_else(|| DETACHED.with(Arc::clone))
+    }
+
+    /// Make `in "<glob>"` scopes relative to `base` for this run, instead of
+    /// the process's working directory: a server whose caller names the
+    /// directory it means (MCP `cwd`) and walks absolute paths under it.
+    pub fn set_base(&self, base: Option<PathBuf>) {
+        *self.base.write().unwrap_or_else(PoisonError::into_inner) = base;
+    }
+
+    /// The directory `in "<glob>"` scopes are relative to, if this run set
+    /// one ([`set_base`](Self::set_base)).
+    pub fn base(&self) -> Option<PathBuf> {
+        self.base
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     pub(crate) fn oracle(&self) -> Option<Arc<dyn Oracle>> {

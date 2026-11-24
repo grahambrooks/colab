@@ -320,10 +320,25 @@ fn handle_call(
     // A trace per call: the server itself runs for as long as the client.
     let mut span = colab_core::telemetry::root(format!("colab mcp {tool}"));
     span.set("colab.mcp.tool", tool);
-    let response =
-        colab_core::run::Run::new().enter(|| handle_call_in_run(id, params, backends, extra));
+    let arguments = params.and_then(|p| p.get("arguments"));
+    let response = call_run(arguments).enter(|| handle_call_in_run(id, params, backends, extra));
     trace_outcome(&mut span, &response);
     response
+}
+
+/// A run for one tool call. The tools join relative `paths` onto `cwd`,
+/// so the walk yields absolute paths; the call's `cwd` is the run's base,
+/// so a rule's `in "<glob>"` reads relative to it, as it does from the
+/// CLI's working directory.
+fn call_run(arguments: Option<&Value>) -> std::sync::Arc<colab_core::run::Run> {
+    let run = colab_core::run::Run::new();
+    run.set_base(
+        arguments
+            .and_then(|a| a.get("cwd"))
+            .and_then(Value::as_str)
+            .map(PathBuf::from),
+    );
+    run
 }
 
 /// Mark a tool call's span failed when the response says it failed.
@@ -512,7 +527,7 @@ fn handle_call_with_progress<W: Write>(
     let mut span = colab_core::telemetry::root(format!("colab mcp {name}"));
     span.set("colab.mcp.tool", name);
     span.set("colab.mcp.streaming", true);
-    let outcome = colab_core::run::Run::new()
+    let outcome = call_run(Some(&arguments))
         .enter(|| run_script(&arguments, backends, extra, mode, &mut sink));
     let response = tool_response(id, outcome);
     trace_outcome(&mut span, &response);
@@ -2068,6 +2083,40 @@ mod tests {
         assert_eq!(resp["result"]["isError"], false, "{resp}");
         let text = resp["result"]["content"][0]["text"].as_str().unwrap();
         serde_json::from_str(text).unwrap()
+    }
+
+    #[test]
+    fn an_in_glob_is_relative_to_the_calls_cwd() {
+        let dir = std::env::temp_dir().join(format!("colab-mcp-in-glob-{}", std::process::id()));
+        for sub in ["api", "app"] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+            std::fs::write(
+                dir.join(sub).join("x.go"),
+                "package x\n\nimport \"old/pkg\"\n",
+            )
+            .unwrap();
+        }
+        let script = r#"match go::import "old/pkg" in "api/**" { replace "new/pkg" }"#;
+        let call = |tool: &str| {
+            let req = json!({
+                "jsonrpc":"2.0","id":41,"method":"tools/call",
+                "params":{"name": tool, "arguments": {
+                    "script": script, "paths": ["."], "cwd": dir.to_string_lossy()
+                }}
+            });
+            let resp = handle(&req, &registry()).unwrap();
+            assert_eq!(resp["result"]["isError"], false, "{resp}");
+            let text = resp["result"]["content"][0]["text"].as_str().unwrap();
+            serde_json::from_str::<Value>(text).unwrap()
+        };
+        let found = call("colab.find");
+        assert_eq!(found["summary"]["matches"], 1, "{found}");
+        assert!(found.to_string().contains("api/x.go"), "{found}");
+        let preview = call("colab.preview");
+        assert_eq!(preview["summary"]["changed"], 1, "{preview}");
+        assert!(preview.to_string().contains("api/x.go"), "{preview}");
+        assert!(!preview.to_string().contains("app/x.go"), "{preview}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     const TEST_RULE_SCRIPT: &str = "refactor \"x\" { match go::import \"a\" { replace \"b\" } }";

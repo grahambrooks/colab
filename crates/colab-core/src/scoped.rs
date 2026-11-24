@@ -54,6 +54,29 @@ impl ScopedOperation {
     }
 }
 
+/// `path` as an `in "<glob>"` scope sees it: relative to the run's base
+/// ([`Run::set_base`](crate::run::Run::set_base), MCP's `cwd`) or else to
+/// the working directory.
+///
+/// Walking `.` yields `./core/lib.rs`, and the glob `core/**` means the
+/// same file, so leading `./` components are not part of the match. An
+/// absolute path under the base loses the base; one outside it is matched
+/// whole, so a relative glob does not match it.
+fn scope_relative(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        let base = crate::run::Run::current()
+            .and_then(|run| run.base())
+            .or_else(|| std::env::current_dir().ok());
+        if let Some(rest) = base.as_deref().and_then(|b| path.strip_prefix(b).ok()) {
+            return rest.to_path_buf();
+        }
+        return path.to_path_buf();
+    }
+    path.components()
+        .skip_while(|part| matches!(part, Component::CurDir))
+        .collect()
+}
+
 impl fmt::Debug for ScopedOperation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ScopedOperation")
@@ -71,13 +94,10 @@ impl fmt::Display for ScopedOperation {
 
 impl Operation for ScopedOperation {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        // Walking `.` yields `./core/lib.rs`; the glob `core/**` means the
-        // same file, so leading `./` components are not part of the match.
-        let relative: PathBuf = path
-            .components()
-            .skip_while(|part| matches!(part, Component::CurDir))
-            .collect();
-        self.inner.is_file_relevant(path) && self.matcher.is_match(&relative)
+        // The path as walked still counts, so an absolute glob over absolute
+        // paths matches as it always did.
+        self.inner.is_file_relevant(path)
+            && (self.matcher.is_match(scope_relative(path)) || self.matcher.is_match(path))
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -182,6 +202,26 @@ mod tests {
             scoped("src/**").to_string(),
             "rust::symbol \"A\" -> \"B\" in \"src/**\""
         );
+    }
+
+    #[test]
+    fn an_absolute_path_is_matched_relative_to_the_runs_base() {
+        let op = scoped("core/**");
+        let base = std::env::temp_dir().join("colab-scope-base");
+        let inside = base.join("core/lib.rs");
+        let run = crate::run::Run::new();
+        run.set_base(Some(base.clone()));
+        run.enter(|| {
+            assert!(op.is_file_relevant(&inside));
+            assert!(!op.is_file_relevant(&base.join("other/lib.rs")));
+        });
+        // Without a base, the working directory is the base.
+        let cwd = std::env::current_dir().unwrap();
+        assert!(op.is_file_relevant(&cwd.join("core/lib.rs")));
+        assert!(!op.is_file_relevant(&inside));
+        // An absolute glob still matches the path as walked.
+        let absolute = scoped(&format!("{}/**", base.display()));
+        assert!(absolute.is_file_relevant(&inside));
     }
 
     #[test]

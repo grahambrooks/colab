@@ -871,13 +871,15 @@ To narrow a rename within a file — one function, one `impl` — add a
 | `src/*.rs` | Rust files directly in `src/`, not in subdirectories |
 | `**/*_test.go` | test files anywhere |
 
-`*` stops at a path separator; `**` crosses directories. Globs are matched
-against the path as the walker yields it, so the directory you invoke
-`colab` from (and any `-C`) affects what a glob sees. A leading `./` is
-ignored, so `colab refactor -C repo --script s .` and a glob of `core/**`
-agree; an absolute path argument yields absolute paths, which a relative
-glob does not match. An invalid glob is
-rejected when the script compiles rather than silently matching nothing.
+`*` stops at a path separator; `**` crosses directories. Globs are relative
+to the directory you invoke `colab` from (after any `-C`), or to the
+`cwd` of an MCP tool call. A leading `./` is ignored, so
+`colab refactor -C repo --script s .` and a glob of `core/**` agree, and an
+absolute path under that directory loses it first, so
+`colab refactor --script s "$PWD"` agrees too. An absolute path outside it
+is matched whole, which a relative glob does not match (an absolute glob
+does). An invalid glob is rejected when the script compiles rather than
+silently matching nothing.
 
 `in` scopes a single rule; [`--include` / `--exclude`](./cli.md) filter the
 whole run. Reach for `--include` to narrow what colab looks at, and `in`
