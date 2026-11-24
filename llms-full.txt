@@ -1378,7 +1378,10 @@ format. They are counted in the summary and nothing more.
   output) is credited to every rule that changed the file. Run warnings
   have no location: `github` prints them as `::warning title=colab::…`
   (`matched no files: …`). With `--check` the exit code is still 10 for
-  pending changes.
+  pending changes. A check that finds nothing is clean, so it says nothing
+  of it: a rule with a `message` (a finding) that matched no file passed,
+  and "no rule matched" is left out. A rule without one is still reported
+  when it matched nothing, and a check that read no file still says why.
 
 #### Reading the result
 
@@ -1906,17 +1909,25 @@ To review and merge a run rule by rule, split it into branches with
 Read-only search: where does each rule match? Nothing is written.
 
 ```
-colab find (--script <path|-> | -e <rule>...) [--format human|json]
-           [--detail concise|detailed] [--max-results <N>]
+colab find (--script <path|-> | -e <rule>... | [--pattern] <code> [--lang <lang>])
+           [--format human|json] [--detail concise|detailed] [--max-results <N>]
            [-C <dir>] [--include <glob>]... [--exclude <glob>]... [--no-ignore]
            [--jobs <N>] [paths...]
 ```
+
+A bare pattern is enough, as grep takes a regex: `colab find 'errors.Wrap($E,
+$M)' .` runs `match <lang>::pattern '…'`. The first argument that is not a
+path on disk is the pattern (or give it with `--pattern`). The language is
+`--lang`, or the one most of the files searched are in. When the pattern
+is not code in that language (a function signature without its body), the
+error says so and names `colab ast` to see how it parses.
 
 ```sh
 $ colab find -e "match go::pattern 'errors.Wrap(\$E, \$M)' { delete }" .
 internal/load.go:14:15: errors.Wrap(err, "read config")
 cmd/main.go:22:15: errors.Wrap(err, "startup")
 2 match(es) in 2 file(s); 38 scanned
+$ colab find 'errors.Wrap($E, $M)' .          # the same, the language from the files
 ```
 
 - Output is grep-shaped `path:line:col: text` (first line of the match);

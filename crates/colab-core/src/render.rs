@@ -428,7 +428,9 @@ pub fn rules_json(report: &RunReport) -> Value {
 /// number at all.
 pub fn advisories(report: &RunReport) -> Vec<String> {
     let mut out: Vec<String> = report.warnings.clone();
-    out.extend(report.dead_rules().map(|r| {
+    // In a check, a finding rule that found nothing passed.
+    let passed = |r: &&crate::report::RuleStat| report.checking && r.message.is_some();
+    out.extend(report.dead_rules().filter(|r| !passed(r)).map(|r| {
         let mut line = format!("matched no files: {}", r.rule);
         if !r.near_misses.is_empty() {
             let seen: Vec<String> = r
@@ -460,7 +462,11 @@ pub fn advisories(report: &RunReport) -> Vec<String> {
                 ))
             }),
     );
-    if let Some(reason) = explain_no_changes(report) {
+    // A check that read files and changed none is clean; one that read none
+    // still says why (wrong paths, or no file in the script's languages).
+    if let Some(reason) = explain_no_changes(report)
+        && !(report.checking && report.files_scanned > 0)
+    {
         out.push(reason);
     }
     out
@@ -1002,6 +1008,42 @@ mod tests {
 
         report.files_changed = 1;
         assert!(explain_no_changes(&report).is_none());
+    }
+
+    #[test]
+    fn a_clean_check_is_not_called_a_problem() {
+        let mut report = RunReport::with_rules(["finding", "migration"]);
+        report.rules[0].message = Some("no dbg! in library code".into());
+        report.files_visited = 40;
+        report.files_scanned = 38;
+        let before = advisories(&report);
+        assert!(
+            before
+                .iter()
+                .any(|w| w.contains("matched no files: finding"))
+        );
+        assert!(before.iter().any(|w| w.contains("no rule matched")));
+        report.set_checking(true);
+        let after = advisories(&report);
+        // The finding rule passed, and changing nothing is the clean state;
+        // a rule without a message that matched nothing is still worth a word.
+        assert!(!after.iter().any(|w| w.contains("finding")), "{after:?}");
+        assert!(
+            !after.iter().any(|w| w.contains("no rule matched")),
+            "{after:?}"
+        );
+        assert!(
+            after
+                .iter()
+                .any(|w| w.contains("matched no files: migration"))
+        );
+        // A check that read no file still says why.
+        report.files_scanned = 0;
+        assert!(
+            advisories(&report)
+                .iter()
+                .any(|w| w.contains("none belong"))
+        );
     }
 
     #[test]

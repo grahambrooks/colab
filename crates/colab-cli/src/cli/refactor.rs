@@ -481,6 +481,7 @@ pub(super) fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorAr
         blocked,
         ..
     } = outcome;
+    report.set_checking(matches!(exec_mode, ExecMode::Check));
     attribute_lines(args, refactoring, &changes, &mut report, reporter.as_mut());
     if blocked {
         reporter.refused();

@@ -158,6 +158,9 @@ pub struct RunReport {
     /// Which rules changed each file, for the files in `scanned_sample`:
     /// the probe for skipped matches leaves a rule's own files out.
     pub(crate) fired: std::collections::BTreeMap<PathBuf, Vec<usize>>,
+    /// The run is a check (`--check`, `fix --check`): finding nothing is
+    /// the state it wants, so its advisories do not call that a problem.
+    pub(crate) checking: bool,
 }
 
 /// One branch made by `refactor --split-pr`: the base commit plus one
@@ -420,6 +423,13 @@ impl RunReport {
     /// How long the run took.
     pub fn set_elapsed(&mut self, elapsed: Duration) {
         self.elapsed = elapsed;
+    }
+
+    /// Mark the run as a check: a finding rule (one with a `message`) that
+    /// found nothing passed, and a run that changed nothing is clean, so
+    /// the advisories leave both out.
+    pub fn set_checking(&mut self, checking: bool) {
+        self.checking = checking;
     }
 
     /// Fold a completed walk's outcome into the report.
