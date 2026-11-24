@@ -62,13 +62,12 @@
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
+use colab_core::BackendRegistry;
 use colab_core::render::{self, ChangeCollector, Detail, RenderOptions};
 use colab_core::report::RunReport;
 use colab_core::suggest;
-use colab_core::walker::{self, FileChange};
-use colab_core::{BackendRegistry, CodeTransformer};
+use colab_core::walker;
 use colab_dsl::compile;
 use serde_json::{Map, Value, json};
 
@@ -140,6 +139,14 @@ pub trait ToolProvider {
 
     /// Run `name`, or `None` if it is not one of this provider's tools.
     fn call(&self, name: &str, args: &Value) -> Option<colab_core::Result<Value>>;
+
+    /// The checks `colab.preview` / `colab.apply` make over a run's changes
+    /// before anything is written, for a run over `roots` — the binary's
+    /// Markdown link check, which needs a grammar this crate must not
+    /// depend on. None by default.
+    fn checks(&self, _roots: &[PathBuf]) -> Vec<Box<dyn colab_dsl::pipeline::Check>> {
+        Vec::new()
+    }
 }
 
 /// No extra tools.
@@ -353,7 +360,7 @@ fn handle_call_in_run(
     if let Some(outcome) = extra.call(name, &arguments) {
         return tool_response(id, outcome.map_err(ToolError::from_error));
     }
-    tool_response(id, call_tool(name, &arguments, backends))
+    tool_response(id, call_tool(name, &arguments, backends, extra))
 }
 
 /// Turn a tool outcome into a `tools/call` response.
@@ -505,8 +512,8 @@ fn handle_call_with_progress<W: Write>(
     let mut span = colab_core::telemetry::root(format!("colab mcp {name}"));
     span.set("colab.mcp.tool", name);
     span.set("colab.mcp.streaming", true);
-    let outcome =
-        colab_core::run::Run::new().enter(|| run_script(&arguments, backends, mode, &mut sink));
+    let outcome = colab_core::run::Run::new()
+        .enter(|| run_script(&arguments, backends, extra, mode, &mut sink));
     let response = tool_response(id, outcome);
     trace_outcome(&mut span, &response);
     Ok(response)
@@ -537,7 +544,12 @@ fn emit_progress<W: Write>(
     write_message(writer, &notification)
 }
 
-fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
+fn call_tool(
+    name: &str,
+    args: &Value,
+    backends: &BackendRegistry,
+    extra: &dyn ToolProvider,
+) -> Result<Value, ToolError> {
     match name {
         "colab.list_languages" => Ok(json!({ "languages": backends.languages() })),
         "colab.list_rules" => {
@@ -589,19 +601,19 @@ fn call_tool(name: &str, args: &Value, backends: &BackendRegistry) -> Result<Val
         "colab.test_rule" => test_rule(args, backends),
         "colab.find" => find(args, backends),
         "colab.ast" => ast(args, backends),
-        "colab.preview" => run_script(args, backends, RunMode::Preview, &mut NoProgress),
-        "colab.apply" => run_script(args, backends, RunMode::Apply, &mut NoProgress),
+        "colab.preview" => run_script(args, backends, extra, RunMode::Preview, &mut NoProgress),
+        "colab.apply" => run_script(args, backends, extra, RunMode::Apply, &mut NoProgress),
         "colab.move_import" => {
             let script = workflows::move_import_script(args, backends)?;
-            run_generated(script, args, backends)
+            run_generated(script, args, backends, extra)
         }
         "colab.set_config_key" => {
             let script = workflows::config_key_script(args)?;
-            run_generated(script, args, backends)
+            run_generated(script, args, backends, extra)
         }
         "colab.edit_markdown" => {
             let script = workflows::markdown_script(args)?;
-            run_generated(script, args, backends)
+            run_generated(script, args, backends, extra)
         }
         other => Err(ToolError::protocol(format!(
             "unknown tool `{}`; {}",
@@ -617,6 +629,7 @@ fn run_generated(
     script: String,
     args: &Value,
     backends: &BackendRegistry,
+    extra: &dyn ToolProvider,
 ) -> Result<Value, ToolError> {
     let mut run_args = args.clone();
     run_args["script"] = json!(script);
@@ -625,7 +638,7 @@ fn run_generated(
     } else {
         RunMode::Preview
     };
-    let mut value = run_script(&run_args, backends, mode, &mut NoProgress)?;
+    let mut value = run_script(&run_args, backends, extra, mode, &mut NoProgress)?;
     value["script"] = json!(script);
     Ok(value)
 }
@@ -676,15 +689,6 @@ fn compile_script(
         Some(_) => colab_dsl::inline::relocate(script, e),
         None => e,
     })?;
-    // A phased run reads every file before it edits one; the MCP tools
-    // run file by file.
-    if refactoring.has_scans() {
-        return Err(colab_core::Error::UnsupportedOperation(
-            "a script with `scan` phases reads every file before it edits one, which the MCP \
-             tools do not do yet; run it with the colab CLI (`colab refactor` / `colab find`)"
-                .into(),
-        ));
-    }
     // The MCP server starts no language server, so it cannot answer them.
     if refactoring.needs_oracle() {
         return Err(colab_core::Error::UnsupportedOperation(
@@ -694,6 +698,21 @@ fn compile_script(
         ));
     }
     Ok(refactoring)
+}
+
+/// A phased run reads every file before it edits one. `colab.preview` and
+/// `colab.apply` make one (through `colab_dsl::pipeline`); `tool` reads one
+/// snippet, or locates matches file by file, so it refuses the script.
+fn refuse_scans(refactoring: &colab_dsl::Refactoring, tool: &str) -> Result<(), ToolError> {
+    if !refactoring.has_scans() {
+        return Ok(());
+    }
+    Err(ToolError::from_error(
+        colab_core::Error::UnsupportedOperation(format!(
+            "a script with `scan` phases reads every file before it edits one, which {tool} \
+             does not do yet; run it with colab.preview, or the colab CLI (`colab find`)"
+        )),
+    ))
 }
 
 /// Where per-file progress goes while a script runs.
@@ -751,76 +770,56 @@ impl<W: Write> ProgressSink for Notifications<'_, W> {
 fn run_script<P: ProgressSink>(
     args: &Value,
     backends: &BackendRegistry,
+    extra: &dyn ToolProvider,
     mode: RunMode,
     sink: &mut P,
 ) -> Result<Value, ToolError> {
+    use colab_dsl::pipeline::{Hooks, Pipeline, Source};
+
+    /// Progress ticks per file the walk produces.
+    struct Progress<'s, P>(&'s mut P, u64);
+    impl<P: ProgressSink> Hooks for Progress<'_, P> {
+        fn progress(&mut self, files: u64) {
+            self.1 = files;
+            self.0.tick(files);
+        }
+    }
+
     let script = arg_str(args, "script")?;
     let cwd = arg_opt_path(args, "cwd")?;
     let paths = arg_paths(args, "paths", cwd.as_deref())?;
     let options = arg_render_options(args)?;
+    let allow_conflicts = arg_bool(args, "allow_conflicts")?;
+    let checks = if arg_bool(args, "no_link_check")? {
+        Vec::new()
+    } else {
+        extra.checks(&paths)
+    };
 
     let refactoring =
         compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
 
-    let started = Instant::now();
-    let mut report = refactoring.report();
-    let mut collector = ChangeCollector::new(options);
-    let mut files_processed: u64 = 0;
-
-    let allow_conflicts = arg_bool(args, "allow_conflicts")?;
-    // Writes wait for the whole walk, so a conflict anywhere stops them all.
-    let mut pending: Vec<(PathBuf, String, String)> = Vec::new();
-    for target in &paths {
-        let outcome = walker::walk(&refactoring, target, &mut |change| {
-            report.record(&change);
-            if change.changed() && matches!(mode, RunMode::Apply) {
-                pending.push((
-                    change.path.clone(),
-                    change.before.clone(),
-                    change.after.clone(),
-                ));
-            }
-            collector.push(&change);
-            files_processed += 1;
-            sink.tick(files_processed);
-            Ok(())
-        })
+    let mut progress = Progress(sink, 0);
+    let outcome = Pipeline::new(&refactoring, Source::walk(paths))
+        .write(matches!(mode, RunMode::Apply))
+        .allow_conflicts(allow_conflicts)
+        .refusal_hint("fix the rules, or call again with allow_conflicts: true")
+        .checks(checks)
+        .execute(&mut progress)
         .map_err(ToolError::from_error)?;
-        report.record_walk(outcome);
-    }
-    // A file changed on disk since the walk read it is merged, or is a
-    // conflict that stops the writes like any other.
-    let prepared = if matches!(mode, RunMode::Apply) {
-        let prepared = colab_core::merge::prepare_writes(
-            pending
-                .iter()
-                .map(|(path, before, after)| (path.as_path(), before.as_str(), after.as_str())),
-        )
-        .map_err(ToolError::from_error)?;
-        report.warnings.extend(prepared.merge_warning());
-        report.conflicts.extend(prepared.conflicts.iter().cloned());
-        prepared
-    } else {
-        colab_core::merge::Prepared::default()
-    };
-    let mut mode = mode;
-    if matches!(mode, RunMode::Apply) && !report.conflicts.is_empty() && !allow_conflicts {
-        report.warnings.push(format!(
-            "wrote nothing: {} conflict(s) found; fix the rules, or call again with allow_conflicts: true",
-            report.conflicts.len()
-        ));
-        mode = RunMode::Preview;
-    } else {
-        for write in &prepared.writes {
-            std::fs::write(&write.path, &write.text)
-                .map_err(|e| ToolError::from_error(colab_core::Error::io_at(&write.path, e)))?;
-        }
-    }
-    colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
-    report.elapsed = started.elapsed();
+    let files_processed = progress.1;
     sink.finish(files_processed);
 
-    Ok(finish_report(&collector, &report, mode))
+    let mut collector = ChangeCollector::new(options);
+    for change in &outcome.changes {
+        collector.push(change);
+    }
+    let mode = if outcome.blocked {
+        RunMode::Preview
+    } else {
+        mode
+    };
+    Ok(finish_report(&collector, &outcome.report, mode))
 }
 
 /// `colab.test_rule`: run a script over one in-memory snippet.
@@ -843,15 +842,9 @@ fn test_rule(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolErro
 
     let refactoring =
         compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
-    let applied = refactoring.apply_at(&path, &source);
-    let change = FileChange::from_outcome(path.clone(), source, applied);
-
-    let mut report = refactoring.report();
-    report.files_visited = 1;
-    report.record(&change);
-    colab_core::near_miss::probe(&refactoring.rules, &mut report, |_| {
-        Some(change.before.clone())
-    });
+    refuse_scans(&refactoring, "colab.test_rule")?;
+    let (change, report) = colab_dsl::pipeline::run_text(&refactoring, path.clone(), source)
+        .map_err(ToolError::from_error)?;
 
     let mut out = Map::new();
     out.insert("changed".into(), json!(change.changed()));
@@ -910,6 +903,7 @@ fn find(args: &Value, backends: &BackendRegistry) -> Result<Value, ToolError> {
 
     let refactoring =
         compile_script(&script, cwd.as_deref(), backends).map_err(ToolError::from_error)?;
+    refuse_scans(&refactoring, "colab.find")?;
     let rules = &refactoring.rules;
     let mut report = FindReport::new(rules, max_results, detail);
     refactoring.annotate(&mut report.run);
@@ -1156,7 +1150,8 @@ mod tests {
             path: &file,
             text: theirs,
         };
-        let value = run_script(&arguments, &registry(), RunMode::Apply, &mut sink).unwrap();
+        let value =
+            run_script(&arguments, &registry(), &NoTools, RunMode::Apply, &mut sink).unwrap();
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             "package main\n\nimport \"new/pkg\"\n\nfunc main() { run() }\n"
@@ -1170,7 +1165,8 @@ mod tests {
             path: &file,
             text: theirs,
         };
-        let value = run_script(&arguments, &registry(), RunMode::Apply, &mut sink).unwrap();
+        let value =
+            run_script(&arguments, &registry(), &NoTools, RunMode::Apply, &mut sink).unwrap();
         assert_eq!(std::fs::read_to_string(&file).unwrap(), theirs);
         assert!(
             value
@@ -1182,6 +1178,132 @@ mod tests {
 
     fn registry() -> BackendRegistry {
         colab_backends::registry()
+    }
+
+    #[test]
+    fn preview_and_apply_run_a_script_with_scans() {
+        let dir = std::env::temp_dir().join(format!("colab-mcp-scan-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("api")).unwrap();
+        std::fs::create_dir_all(dir.join("app")).unwrap();
+        std::fs::write(
+            dir.join("api/api.go"),
+            "package api\n\nfunc Exported() {}\n\nfunc internal() {}\n",
+        )
+        .unwrap();
+        let main = dir.join("app/main.go");
+        std::fs::write(
+            &main,
+            "package main\n\nfunc main() {\n\tapi.Exported()\n\tapi.internal()\n}\n",
+        )
+        .unwrap();
+        let script = r#"refactor "s" {
+    scan go::pattern 'func $F() {}' where $F matches /^[A-Z]/ as exported
+    match go::pattern 'api.$F()' where $F in exported { replace 'api.$F(nil)' }
+}"#;
+        let arguments = json!({"script": script, "paths": ["."], "cwd": dir.to_string_lossy()});
+        let preview = run_script(
+            &arguments,
+            &registry(),
+            &NoTools,
+            RunMode::Preview,
+            &mut NoProgress,
+        )
+        .unwrap();
+        assert_eq!(preview["summary"]["changed"], 1, "{preview}");
+        run_script(
+            &arguments,
+            &registry(),
+            &NoTools,
+            RunMode::Apply,
+            &mut NoProgress,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&main).unwrap(),
+            "package main\n\nfunc main() {\n\tapi.Exported(nil)\n\tapi.internal()\n}\n"
+        );
+        // The tools that read file by file still refuse, naming themselves.
+        let e = find(&arguments, &registry()).unwrap_err();
+        assert!(
+            format!("{e:?}").contains("colab.find does not do yet"),
+            "{e:?}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A host whose one check finds a conflict in every changed file.
+    struct Objects;
+
+    struct ObjectToAll;
+
+    impl colab_dsl::pipeline::Check for ObjectToAll {
+        fn verify(
+            &mut self,
+            _rules: &[Box<dyn colab_core::Operation>],
+            changes: &[colab_core::FileChange],
+            report: &mut RunReport,
+        ) -> colab_core::Result<()> {
+            for change in changes {
+                report.conflicts.push(colab_core::report::Conflict {
+                    path: change.path.clone(),
+                    rule: None,
+                    message: "the host objects".into(),
+                });
+            }
+            Ok(())
+        }
+    }
+
+    impl ToolProvider for Objects {
+        fn tools(&self) -> Vec<Value> {
+            Vec::new()
+        }
+
+        fn call(&self, _name: &str, _args: &Value) -> Option<colab_core::Result<Value>> {
+            None
+        }
+
+        fn checks(&self, _roots: &[PathBuf]) -> Vec<Box<dyn colab_dsl::pipeline::Check>> {
+            vec![Box::new(ObjectToAll)]
+        }
+    }
+
+    #[test]
+    fn apply_runs_the_hosts_checks_before_it_writes() {
+        let dir = std::env::temp_dir().join(format!("colab-mcp-checks-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("main.go");
+        let text = "package main\n\nimport \"old/pkg\"\n\nfunc main() {}\n";
+        std::fs::write(&file, text).unwrap();
+        let script = "match go::import \"old/pkg\" { replace \"new/pkg\" }";
+        let arguments = json!({"script": script, "paths": ["."], "cwd": dir.to_string_lossy()});
+
+        let value = run_script(
+            &arguments,
+            &registry(),
+            &Objects,
+            RunMode::Apply,
+            &mut NoProgress,
+        )
+        .unwrap();
+        assert_eq!(value["applied"], false, "{value}");
+        assert!(value.to_string().contains("the host objects"), "{value}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
+
+        // `no_link_check` turns the host's checks off.
+        let mut skip = arguments.clone();
+        skip["no_link_check"] = json!(true);
+        let value = run_script(
+            &skip,
+            &registry(),
+            &Objects,
+            RunMode::Apply,
+            &mut NoProgress,
+        )
+        .unwrap();
+        assert_eq!(value["applied"], true, "{value}");
+        assert!(std::fs::read_to_string(&file).unwrap().contains("new/pkg"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -1527,8 +1649,14 @@ mod tests {
         });
 
         // Synchronous: no sink.
-        let sync = run_script(&arguments, &registry(), RunMode::Preview, &mut NoProgress)
-            .expect("synchronous run");
+        let sync = run_script(
+            &arguments,
+            &registry(),
+            &NoTools,
+            RunMode::Preview,
+            &mut NoProgress,
+        )
+        .expect("synchronous run");
 
         // Streaming: notifications go to a buffer we then ignore.
         let mut buffer: Vec<u8> = Vec::new();
@@ -1538,8 +1666,14 @@ mod tests {
             token: &token,
             last_emitted: 0,
         };
-        let streamed = run_script(&arguments, &registry(), RunMode::Preview, &mut sink)
-            .expect("streaming run");
+        let streamed = run_script(
+            &arguments,
+            &registry(),
+            &NoTools,
+            RunMode::Preview,
+            &mut sink,
+        )
+        .expect("streaming run");
 
         // `elapsed_ms` is wall-clock and will differ; everything else
         // must match exactly.

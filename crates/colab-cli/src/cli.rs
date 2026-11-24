@@ -17,9 +17,10 @@ use std::time::Instant;
 
 use colab_core::render::{self, Detail, RenderOptions};
 use colab_core::report::RunReport;
-use colab_core::walker::{self, FileChange, WalkOptions, WalkOutcome};
+use colab_core::walker::{FileChange, WalkOptions, WalkOutcome};
 use colab_core::{BackendRegistry, CodeTransformer, Error, Result};
 use colab_dsl as codemod;
+use colab_dsl::pipeline::{Source, semantic_failure};
 
 use crate::discover;
 use crate::format::{self, ExecMode, Format};
@@ -36,6 +37,7 @@ use refactor::*;
 mod split;
 use split::*;
 mod writes;
+pub(crate) use writes::LinkCheck;
 use writes::*;
 mod bisect;
 pub(crate) use bisect::*;

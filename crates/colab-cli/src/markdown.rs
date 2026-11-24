@@ -471,6 +471,13 @@ impl colab_mcp::ToolProvider for BinaryTools {
             .call(name, args)
             .or_else(|| MarkdownTools.call(name, args))
     }
+
+    /// The Markdown link check, as `colab refactor` makes it.
+    fn checks(&self, roots: &[PathBuf]) -> Vec<Box<dyn colab_dsl::pipeline::Check>> {
+        vec![Box::new(crate::cli::LinkCheck {
+            roots: roots.to_vec(),
+        })]
+    }
 }
 
 #[cfg(test)]

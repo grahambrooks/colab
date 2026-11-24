@@ -60,6 +60,11 @@ fn run_properties() -> Value {
             "minimum": 0,
             "default": DEFAULT_MAX_DIFF_BYTES,
             "description": "At `detail: \"diff\"`, the maximum size of any single diff."
+        },
+        "no_link_check": {
+            "type": "boolean",
+            "default": false,
+            "description": "Skip the Markdown link check, which reports each link the change would break as a conflict."
         }
     })
 }

@@ -207,75 +207,41 @@ pub(super) fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorAr
         ));
     }
     let mut reporter = format::make_reporter(args.format, exec_mode, args.render_options());
-    let started = Instant::now();
-    let mut report = refactoring.report();
     let rules_only = refactoring.report();
     let mut baseline = match &args.baseline {
-        Some(reference) => Some(crate::baseline::Baseline::collect(
-            reference,
-            &rules_only,
-            |visit| walk_targets(refactoring, args, &targets, visit).map(|_| ()),
-        )?),
+        Some(reference) => {
+            let walk = Source::Walk {
+                targets: targets.clone(),
+                options: walk_options(args),
+            };
+            Some(crate::baseline::Baseline::collect(
+                reference,
+                &rules_only,
+                |visit| walk.visit(refactoring, visit).map(|_| ()),
+            )?)
+        }
         None => None,
     };
 
-    // Writes wait until the walk is over, so a conflict in any file can
-    // stop all of them.
-    let mut pending: Vec<FileChange> = Vec::new();
-    // Changed files are recorded after `--tidy`, so the report counts what
-    // would be written.
-    let mut visit = |change: FileChange| -> Result<()> {
-        let change = match baseline.as_mut() {
-            Some(baseline) => baseline.filter(change, &rules_only),
-            None => change,
-        };
-        if change.changed() {
-            pending.push(change);
-            return Ok(());
-        }
-        report.record(&change);
-        reporter
-            .report(&change)
-            .map_err(|e| Error::io_at(&change.path, e))?;
-        Ok(())
-    };
-
-    let outcome = if refactoring.has_scans() {
-        phased_walk(refactoring, args, &targets, &mut visit)?
-    } else {
-        run_transformer(refactoring, args, &targets, &mut visit)?
-    };
-    report.record_walk(outcome);
-    if let Some(baseline) = &baseline
-        && baseline.dropped > 0
-    {
-        report.warnings.push(format!(
-            "{} finding(s) left out: they are already at {} (--baseline)",
-            baseline.dropped, baseline.reference
-        ));
-    }
-    if let Some(command) = &args.tidy {
-        let command = Some(command.as_str()).filter(|c| !c.is_empty());
-        crate::lsp_commands::tidy_pending(command, &formatters()?, &mut pending, &mut report)?;
-    }
-    for change in &pending {
-        report.record(change);
-    }
-    lsp_check(args, refactoring, &pending, &mut report)?;
-    attribute_lines(args, refactoring, &pending, &mut report, reporter.as_mut());
-    let prepared = match exec_mode {
-        ExecMode::Write => Some(prepare_writes(&pending, &mut report)?),
-        _ => None,
-    };
-    let blocked = prepared.is_some() && refuse_conflicts(args, &mut report);
+    let mut hooks = CliHooks::new(reporter.as_mut(), args.backup.as_deref());
+    hooks.baseline = baseline.as_mut().map(|b| (b, &rules_only));
+    let outcome = codemod::pipeline::Pipeline::new(refactoring, source(args, &targets)?)
+        .write(matches!(exec_mode, ExecMode::Write))
+        .allow_conflicts(args.allow_conflicts)
+        .refusal_hint(REFUSAL_HINT)
+        .checks(checks(args)?)
+        .execute(&mut hooks)?;
+    let codemod::pipeline::Outcome {
+        mut report,
+        changes,
+        blocked,
+        ..
+    } = outcome;
+    attribute_lines(args, refactoring, &changes, &mut report, reporter.as_mut());
     if blocked {
         reporter.refused();
-    } else if let Some(prepared) = &prepared {
-        write_changes(prepared, args.backup.as_deref())?;
     }
-    report_all(reporter.as_mut(), &pending)?;
-    colab_core::near_miss::probe_disk(&refactoring.rules, &mut report);
-    report.elapsed = started.elapsed();
+    report_all(reporter.as_mut(), &changes)?;
     reporter.finish(&report).map_err(io_to_error)?;
 
     Ok(if blocked {

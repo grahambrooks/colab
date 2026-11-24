@@ -10,6 +10,7 @@ pub mod ast;
 pub mod compiler;
 pub mod inline;
 pub mod model;
+pub mod pipeline;
 
 pub use compiler::{RuleCheck, check, compile, compile_at_path, compile_at_source, parse};
 pub use model::{Refactoring, ScanOp, Selection, SingleRule, Stage};

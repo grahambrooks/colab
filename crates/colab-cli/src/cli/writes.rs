@@ -1,48 +1,143 @@
-//! Conflict checks and the write step every run path ends with.
+//! What the CLI plugs into `colab_dsl::pipeline`: the checks a run's
+//! flags ask for (`--tidy`, the Markdown link check, `--verify-lsp`), and
+//! the hooks that stream files to the reporter, apply `--baseline` and save
+//! `--backup` snapshots.
 
 use super::*;
+
+use codemod::pipeline::{Check, Hooks};
 
 /// Exit code for a `--write` run that found conflicts and wrote nothing.
 pub(super) const CONFLICT_EXIT: u8 = 11;
 
-/// `true` (and a warning on the report) when the run found conflicts and
-/// `--allow-conflicts` was not given, so nothing may be written.
-pub(super) fn refuse_conflicts(args: &RefactorArgs, report: &mut RunReport) -> bool {
-    if report.conflicts.is_empty() || args.allow_conflicts {
-        return false;
-    }
-    report.warnings.push(format!(
-        "wrote nothing: {} conflict(s) found; review them, then fix the rules \
-         or rerun with --allow-conflicts",
-        report.conflicts.len()
-    ));
-    true
+/// How a CLI user overrides a refused write.
+pub(super) const REFUSAL_HINT: &str =
+    "review them, then fix the rules or rerun with --allow-conflicts";
+
+/// `--tidy`: format the changed files before they are recorded.
+pub(super) struct Tidy {
+    command: Option<String>,
+    formatters: std::collections::BTreeMap<String, String>,
 }
 
-/// The checks that run on a whole run's changes before anything is
-/// written: Markdown links, then `--verify-lsp`.
-pub(super) fn lsp_check(
-    args: &RefactorArgs,
-    refactoring: &codemod::Refactoring,
-    pending: &[FileChange],
-    report: &mut RunReport,
-) -> Result<()> {
+impl Check for Tidy {
+    fn rewrite(&mut self, changes: &mut Vec<FileChange>, report: &mut RunReport) -> Result<()> {
+        crate::lsp_commands::tidy_pending(
+            self.command.as_deref(),
+            &self.formatters,
+            changes,
+            report,
+        )
+    }
+}
+
+/// The Markdown link check: a link the run would break is a conflict.
+pub(crate) struct LinkCheck {
+    pub(crate) roots: Vec<PathBuf>,
+}
+
+impl Check for LinkCheck {
+    fn verify(
+        &mut self,
+        _rules: &[Box<dyn colab_core::Operation>],
+        changes: &[FileChange],
+        report: &mut RunReport,
+    ) -> Result<()> {
+        crate::markdown::check_links(changes, &self.roots, report)
+    }
+}
+
+/// `--verify-lsp`: a new error diagnostic is a conflict.
+pub(super) struct VerifyLsp {
+    command: Option<String>,
+}
+
+impl Check for VerifyLsp {
+    fn verify(
+        &mut self,
+        rules: &[Box<dyn colab_core::Operation>],
+        changes: &[FileChange],
+        report: &mut RunReport,
+    ) -> Result<()> {
+        crate::lsp_commands::verify_lsp(self.command.as_deref(), changes, report, Some(rules))
+    }
+}
+
+/// The checks `args` asks for, in the order they run: `--tidy`, then the
+/// Markdown link check (unless `--no-link-check`), then `--verify-lsp`.
+pub(super) fn checks<'a>(args: &RefactorArgs) -> Result<Vec<Box<dyn Check + 'a>>> {
+    let mut checks: Vec<Box<dyn Check + 'a>> = Vec::new();
+    if let Some(command) = &args.tidy {
+        checks.push(Box::new(Tidy {
+            command: Some(command.clone()).filter(|c| !c.is_empty()),
+            formatters: formatters()?,
+        }));
+    }
     if !args.no_link_check {
         let roots = if args.paths.is_empty() {
             vec![PathBuf::from(".")]
         } else {
             args.paths.clone()
         };
-        crate::markdown::check_links(pending, &roots, report)?;
+        checks.push(Box::new(LinkCheck { roots }));
     }
-    match args.verify_lsp.as_deref() {
-        None => Ok(()),
-        Some(command) => crate::lsp_commands::verify_lsp(
-            Some(command).filter(|c| !c.is_empty()),
-            pending,
-            report,
-            Some(&refactoring.rules),
-        ),
+    if let Some(command) = &args.verify_lsp {
+        checks.push(Box::new(VerifyLsp {
+            command: Some(command.clone()).filter(|c| !c.is_empty()),
+        }));
+    }
+    Ok(checks)
+}
+
+/// The CLI's view of a run: unchanged files go to the reporter as the walk
+/// finds them, `--baseline` filters each file, and `--backup` saves each
+/// file before it is written.
+pub(super) struct CliHooks<'a> {
+    pub(super) reporter: &'a mut dyn format::Reporter,
+    pub(super) baseline: Option<(&'a mut crate::baseline::Baseline, &'a RunReport)>,
+    pub(super) backup: Option<&'a Path>,
+}
+
+impl<'a> CliHooks<'a> {
+    pub(super) fn new(reporter: &'a mut dyn format::Reporter, backup: Option<&'a Path>) -> Self {
+        Self {
+            reporter,
+            baseline: None,
+            backup,
+        }
+    }
+}
+
+impl Hooks for CliHooks<'_> {
+    fn filter(&mut self, change: FileChange) -> FileChange {
+        match self.baseline.as_mut() {
+            Some((baseline, rules_only)) => baseline.filter(change, rules_only),
+            None => change,
+        }
+    }
+
+    fn unchanged(&mut self, change: &FileChange) -> Result<()> {
+        self.reporter
+            .report(change)
+            .map_err(|e| Error::io_at(&change.path, e))
+    }
+
+    fn walked(&mut self, report: &mut RunReport) {
+        if let Some((baseline, _)) = &self.baseline
+            && baseline.dropped > 0
+        {
+            report.warnings.push(format!(
+                "{} finding(s) left out: they are already at {} (--baseline)",
+                baseline.dropped, baseline.reference
+            ));
+        }
+    }
+
+    fn before_write(&mut self, path: &Path, on_disk: &str) -> Result<()> {
+        match self.backup {
+            Some(dir) => write_backup_snapshot(dir, path, on_disk),
+            None => Ok(()),
+        }
     }
 }
 
@@ -55,47 +150,6 @@ pub(super) fn report_all(
         reporter
             .report(change)
             .map_err(|e| Error::io_at(&change.path, e))?;
-    }
-    Ok(())
-}
-
-/// Re-read every file the run would write, before any is written
-/// ([`colab_core::merge::prepare_writes`]): a file changed on disk since
-/// the run read it is merged with the run's change when their edits do
-/// not overlap, and is a conflict when they do, so the conflict check
-/// that follows refuses the write.
-pub(super) fn prepare_writes(
-    changes: &[FileChange],
-    report: &mut RunReport,
-) -> Result<colab_core::merge::Prepared> {
-    let mut span = colab_core::telemetry::span("prepare writes");
-    let prepared = colab_core::merge::prepare_writes(
-        changes
-            .iter()
-            .filter(|c| c.changed())
-            .map(|c| (c.path.as_path(), c.before.as_str(), c.after.as_str())),
-    )?;
-    span.set("colab.files.merged", prepared.merged.len());
-    span.set("colab.conflicts", prepared.conflicts.len());
-    report.warnings.extend(prepared.merge_warning());
-    report.conflicts.extend(prepared.conflicts.iter().cloned());
-    Ok(prepared)
-}
-
-/// Write what [`prepare_writes`] cleared, saving each file as it was on
-/// disk under `backup` first. A file whose disk changes conflict with the
-/// run's is never written, even under `--allow-conflicts`.
-pub(super) fn write_changes(
-    prepared: &colab_core::merge::Prepared,
-    backup: Option<&Path>,
-) -> Result<()> {
-    let mut span = colab_core::telemetry::span("write");
-    span.set("colab.files.written", prepared.writes.len());
-    for write in &prepared.writes {
-        if let Some(dir) = backup {
-            write_backup_snapshot(dir, &write.path, &write.on_disk)?;
-        }
-        fs::write(&write.path, &write.text).map_err(|e| Error::io_at(&write.path, e))?;
     }
     Ok(())
 }

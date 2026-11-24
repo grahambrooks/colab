@@ -3,75 +3,34 @@
 
 use super::*;
 
-/// Iterate `paths` directly (used by `--changed-since` and
-/// `--staged`), invoking the visitor for files the transformer
-/// considers relevant. Skips paths that no longer exist on disk
-/// — `git diff` may report files that have been deleted.
-pub(super) fn run_against_paths<T, F>(
-    transformer: &T,
-    paths: &[PathBuf],
-    visit: &mut F,
-) -> Result<WalkOutcome>
-where
-    T: CodeTransformer + Sync,
-    F: FnMut(FileChange) -> Result<()>,
-{
-    let mut outcome = WalkOutcome::default();
-    for path in paths {
-        if !path.is_file() {
-            continue;
-        }
-        outcome.files_visited += 1;
-        if !transformer.is_file_relevant(path) {
-            continue;
-        }
-        let before = match fs::read_to_string(path) {
-            Ok(before) => before,
-            // Match the tree walk: an unreadable file is recorded, not fatal.
-            Err(e) => {
-                outcome.skipped.push(colab_core::SkippedFile {
-                    path: path.clone(),
-                    reason: e.to_string(),
-                });
-                continue;
-            }
-        };
-        let applied = transformer.apply_at(path, &before);
-        visit(FileChange::from_outcome(path.clone(), before, applied))?;
-    }
-    Ok(outcome)
-}
-
-/// Drive a single transformer through the chosen file source
-/// (`--changed-since` / `--staged` / tree walk). Pulled out so
-/// the per-rule loop can reuse the same source-selection logic.
-/// Walk `targets` with `args`' include / exclude / ignore settings.
-pub(super) fn walk_targets<T, F>(
-    transformer: &T,
-    args: &RefactorArgs,
-    targets: &[PathBuf],
-    visit: &mut F,
-) -> Result<WalkOutcome>
-where
-    T: CodeTransformer + Sync,
-    F: FnMut(FileChange) -> Result<()> + ?Sized,
-{
-    let opts = WalkOptions {
+/// The walk options `args`' include / exclude / ignore / jobs flags ask for.
+pub(super) fn walk_options(args: &RefactorArgs) -> WalkOptions {
+    WalkOptions {
         include: args.include.clone(),
         exclude: args.exclude.clone(),
         respect_gitignore: !args.no_ignore,
         follow_symlinks: false,
         jobs: resolve_jobs(args.jobs),
-    };
-    let mut outcome = WalkOutcome::default();
-    for target in targets {
-        let one = walker::walk_with(transformer, target, &opts, &mut |c| visit(c))?;
-        outcome.files_visited += one.files_visited;
-        outcome.skipped.extend(one.skipped);
     }
-    Ok(outcome)
 }
 
+/// Where a run over `targets` reads its files: the files `git` reports
+/// (`--changed-since`, `--staged`), or a walk of the targets.
+pub(super) fn source(args: &RefactorArgs, targets: &[PathBuf]) -> Result<Source> {
+    Ok(if let Some(reference) = args.changed_since.as_deref() {
+        Source::Paths(git_changed_since(reference)?)
+    } else if args.staged {
+        Source::Paths(git_staged()?)
+    } else {
+        Source::Walk {
+            targets: targets.to_vec(),
+            options: walk_options(args),
+        }
+    })
+}
+
+/// One transformer (a single rule, for the runs that apply rules one at a
+/// time) over the run's [`source`], then the semantic gate.
 pub(super) fn run_transformer<T, F>(
     transformer: &T,
     args: &RefactorArgs,
@@ -82,15 +41,7 @@ where
     T: CodeTransformer + Sync,
     F: FnMut(FileChange) -> Result<()>,
 {
-    let outcome = if let Some(ref_) = args.changed_since.as_deref() {
-        let files = git_changed_since(ref_)?;
-        run_against_paths(transformer, &files, visit)
-    } else if args.staged {
-        let files = git_staged()?;
-        run_against_paths(transformer, &files, visit)
-    } else {
-        walk_targets(transformer, args, targets, visit)
-    }?;
+    let outcome = source(args, targets)?.visit(transformer, visit)?;
     semantic_failure()?;
     Ok(outcome)
 }

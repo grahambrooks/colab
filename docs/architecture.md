@@ -139,10 +139,12 @@ text ─▶ │  parse args  →  read script  →  drive run      │
         └───────────────┬────────────────────────────────┘
                         │  folded into colab_core::RunReport
         ┌───────────────▼────────────────────────────────┐
-        │   after the walk (colab_cli::cli / apply.rs)   │
-        │  --tidy, --verify-lsp, Markdown link check →   │
+        │   after the walk (colab_dsl::pipeline)         │
+        │  semantic gate → Check::rewrite (--tidy) →     │
+        │  record → Check::verify (Markdown links,       │
+        │  --verify-lsp) → prepare_writes (merge) →      │
         │  conflicts? refuse to write (exit 11) : write  │
-        │  (git for file ops) → near_miss::probe         │
+        │  → near_miss::probe                            │
         └───────────────┬────────────────────────────────┘
                         │
         ┌───────────────▼────────────────────────────────┐
@@ -409,6 +411,20 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
 - **Conflicts are checked before anything is written.** Every write path
   buffers its changes and writes nothing while a conflict stands (exit 11)
   unless `--allow-conflicts`.
+- **A run goes through `colab_dsl::pipeline`.** `Pipeline::execute` is
+  the one implementation of walk → semantic gate → checks → merge →
+  refuse or write → near-miss probe. `colab refactor`, `colab fix`,
+  `--bisect`'s first pass, `--stdin` (`run_text`), and MCP
+  `colab.preview` / `colab.apply` / `colab.test_rule` call it; the runs
+  that apply one rule at a time (`--verify`, `--commit-per-rule`,
+  `--split-pr`, the bisect search) compose its stage functions
+  (`Source::visit`, `prepare`, `refuse`, `write`) rather than copy them.
+  A surface plugs in through `Hooks` (streaming, `--baseline`, `--backup`,
+  progress) and `Check` (`--tidy`, the Markdown link check,
+  `--verify-lsp`). Checks that need crates `colab-dsl` / `colab-mcp` must
+  not depend on are supplied by the binary, as MCP gets its link check
+  from `ToolProvider::checks`. A new way to run a script should add a
+  `Source`, `Hooks` or `Check`, not another copy of the sequence.
 - **File operations go through git or not at all**, and **semantic edits
   are delegated** to the language's own server; a kept server must answer
   exactly as a fresh one would.
@@ -452,8 +468,8 @@ M35 relaxes "every rule acts on one file" for **reading** only.
   (`colab_dsl::model::Stage`). Without scans the stages are just rule
   order, and `apply_at` runs every rule per file as before.
 - With scans, `Refactoring::run_phased` takes every file the run covers
-  in memory (the CLI walks once with a no-op `Relevant` transformer to
-  collect them), and for each stage runs its scans over all files —
+  in memory (`pipeline::Source::visit_phased` walks once with a no-op
+  `Relevant` transformer to collect them), and for each stage runs its scans over all files —
   `locate` on the pattern, each capture added to `colab_core::facts` —
   installs the facts, then applies the stage's rules to each file. The
   result is one `FileChange` per file, conflicts judged against the file
@@ -466,7 +482,9 @@ M35 relaxes "every rule acts on one file" for **reading** only.
   walk, before writes) rather than answer from an empty set.
 - Paths that cannot make a phased run refuse a script with scans:
   `--stdin`, `--bisect`, `--verify`, `--commit-per-rule`, `--split-pr`,
-  `--changed-since` / `--staged`, and MCP. Facts are plain text; nothing
+  `--changed-since` / `--staged`, and MCP `colab.find` / `colab.test_rule`
+  (MCP `colab.preview` / `colab.apply` run them, through the pipeline).
+  Facts are plain text; nothing
   resolves names across files. Every edit is still one rule's in one
   file, so conflicts, `colab:ignore`, attribution and idempotency hold.
 - Deferred: `create` (a new file from a match), which needs `FileOp`s in

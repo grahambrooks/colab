@@ -11,34 +11,24 @@ pub(super) fn run_find(args: FindArgs) -> Result<u8> {
     let mut refactoring = args.script.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
     let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
-    // Scans first, over every file and every stage, so `in` reads what
-    // `refactor` would; hits are still located in the files as they are.
-    if refactoring.has_scans() {
-        let opts = WalkOptions {
+    let source = Source::Walk {
+        targets: if args.paths.is_empty() {
+            vec![PathBuf::from(".")]
+        } else {
+            args.paths.clone()
+        },
+        options: WalkOptions {
             include: args.include.clone(),
             exclude: args.exclude.clone(),
             respect_gitignore: !args.no_ignore,
             follow_symlinks: false,
             jobs: resolve_jobs(args.jobs),
-        };
-        let targets = if args.paths.is_empty() {
-            vec![PathBuf::from(".")]
-        } else {
-            args.paths.clone()
-        };
-        let mut files = Vec::new();
-        for target in &targets {
-            walker::walk_with(
-                &Relevant(&refactoring),
-                target,
-                &opts,
-                &mut |change: FileChange| {
-                    files.push((change.path, change.before));
-                    Ok(())
-                },
-            )?;
-        }
-        refactoring.run_phased(files);
+        },
+    };
+    // Scans first, over every file and every stage, so `in` reads what
+    // `refactor` would; hits are still located in the files as they are.
+    if refactoring.has_scans() {
+        source.visit_phased(&refactoring, &mut |_| Ok(()))?;
     }
     let rules = &refactoring.rules;
     let detail = match args.detail {
@@ -54,26 +44,12 @@ pub(super) fn run_find(args: FindArgs) -> Result<u8> {
     refactoring.annotate(&mut report.run);
     report.script = refactoring.name.clone();
 
-    let opts = WalkOptions {
-        include: args.include.clone(),
-        exclude: args.exclude.clone(),
-        respect_gitignore: !args.no_ignore,
-        follow_symlinks: false,
-        jobs: resolve_jobs(args.jobs),
-    };
-    let targets = if args.paths.is_empty() {
-        vec![PathBuf::from(".")]
-    } else {
-        args.paths.clone()
-    };
     let selector = Selector::new(rules, &report.script);
-    for target in &targets {
-        let outcome = walker::walk_with(&selector, target, &opts, &mut |change| {
-            report.record_found(&change.path, selector.take(&change.path));
-            Ok(())
-        })?;
-        report.run.record_walk(outcome);
-    }
+    let outcome = source.visit(&selector, &mut |change: FileChange| {
+        report.record_found(&change.path, selector.take(&change.path));
+        Ok(())
+    })?;
+    report.run.record_walk(outcome);
     semantic_failure()?;
     colab_core::near_miss::probe_disk(rules, &mut report.run);
 

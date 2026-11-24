@@ -1,6 +1,7 @@
 //! The pieces a run needs before it walks: the language-server oracle a
-//! script's `type` / `resolves` constraints ask, and phased runs (scripts
-//! with `scan` phases), which read every file before any rule changes one.
+//! script's `type` / `resolves` constraints ask, and the run paths that
+//! refuse phased runs (scripts with `scan` phases, which
+//! `colab_dsl::pipeline` reads whole before any rule changes a file).
 
 use super::*;
 
@@ -41,66 +42,9 @@ impl Drop for OracleGuard {
     }
 }
 
-/// A question a rule's `type` / `resolves` constraint could not have
-/// answered fails the run, before anything is written.
-pub(super) fn semantic_failure() -> Result<()> {
-    match colab_core::semantic::take_failure().or_else(colab_core::facts::take_failure) {
-        Some(why) => Err(Error::Config(why)),
-        None => Ok(()),
-    }
-}
-
-/// Visits every file a phased run needs (one any rule or scan applies
-/// to), changing nothing: what [`phased_walk`] reads into memory.
-pub(super) struct Relevant<'a>(pub(super) &'a codemod::Refactoring);
-
-impl CodeTransformer for Relevant<'_> {
-    fn is_file_relevant(&self, path: &Path) -> bool {
-        self.0.is_file_relevant(path)
-            || self
-                .0
-                .stages
-                .iter()
-                .flat_map(|s| &s.scans)
-                .any(|scan| scan.op.is_file_relevant(path))
-    }
-
-    fn apply(&self, source: &str) -> String {
-        source.to_string()
-    }
-}
-
-/// A script with `scan` phases: every file it needs read into memory, the
-/// stages run over all of them (`Refactoring::run_phased`), and each
-/// file's result visited as an ordinary walk would.
-pub(super) fn phased_walk<F>(
-    refactoring: &codemod::Refactoring,
-    args: &RefactorArgs,
-    targets: &[PathBuf],
-    visit: &mut F,
-) -> Result<WalkOutcome>
-where
-    F: FnMut(FileChange) -> Result<()>,
-{
-    let mut files = Vec::new();
-    let outcome = walk_targets(
-        &Relevant(refactoring),
-        args,
-        targets,
-        &mut |change: FileChange| {
-            files.push((change.path, change.before));
-            Ok(())
-        },
-    )?;
-    for change in refactoring.run_phased(files) {
-        visit(change)?;
-    }
-    semantic_failure()?;
-    Ok(outcome)
-}
-
-/// The run paths a script with scans cannot take yet: each walks the
-/// files once, one rule at a time, or reads one file.
+/// The run paths a script with scans cannot take yet: each applies one
+/// rule at a time, or reads only some of the files (a scan must see them
+/// all), or reads one text.
 pub(super) fn refuse_phased(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Result<()> {
     if !refactoring.has_scans() {
         return Ok(());

@@ -54,17 +54,7 @@ pub(super) fn run_stdin(args: RefactorArgs) -> Result<u8> {
         .read_to_string(&mut source)
         .map_err(io_to_error)?;
 
-    let applied = refactoring.apply_at(&path, &source);
-    semantic_failure()?;
-
-    let change = FileChange::from_outcome(path, source, applied);
-
-    let mut report = refactoring.report();
-    report.files_visited = 1;
-    report.record(&change);
-    colab_core::near_miss::probe(&refactoring.rules, &mut report, |_| {
-        Some(change.before.clone())
-    });
+    let (change, mut report) = codemod::pipeline::run_text(&refactoring, path, source)?;
 
     match args.format {
         Format::Human => {

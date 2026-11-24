@@ -59,8 +59,8 @@ pub(super) fn run_refactor_per_rule(
         };
 
         let outcome = run_transformer(&single, args, targets, &mut visit)?;
-        let prepared = prepare_writes(&pending, &mut report)?;
-        if refuse_conflicts(args, &mut report) {
+        let prepared = codemod::pipeline::prepare(&pending, &mut report)?;
+        if codemod::pipeline::refuse(&mut report, args.allow_conflicts, REFUSAL_HINT) {
             if idx > 0 {
                 report.warnings.push(format!(
                     "rules 1–{idx} passed and were written before rule {} conflicted; \
@@ -80,7 +80,10 @@ pub(super) fn run_refactor_per_rule(
                 .entry(write.path.clone())
                 .or_insert_with(|| write.on_disk.clone());
         }
-        write_changes(&prepared, args.backup.as_deref())?;
+        codemod::pipeline::write(
+            &prepared,
+            &mut CliHooks::new(reporter.as_mut(), args.backup.as_deref()),
+        )?;
         report_all(reporter.as_mut(), &pending)?;
         // Each rule re-walks the same tree, so only the first pass's
         // visit count is meaningful; the rest would multiply it by the
@@ -214,52 +217,38 @@ pub(super) fn run_refactor_bisect(
 
     let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
-    let mut report = refactoring.report();
 
-    // Phase 1: full apply, recording snapshots along the way.
-    let mut snapshots: std::collections::HashMap<PathBuf, String> =
-        std::collections::HashMap::new();
-    {
-        let mut pending: Vec<FileChange> = Vec::new();
-        let mut visit = |change: FileChange| -> Result<()> {
-            if change.changed() {
-                pending.push(change);
-                return Ok(());
-            }
-            report.record(&change);
-            reporter
-                .report(&change)
-                .map_err(|e| Error::io_at(&change.path, e))?;
-            Ok(())
-        };
-        let outcome = run_transformer(refactoring, args, targets, &mut visit)?;
-        report.record_walk(outcome);
-        // Tidied once, as a whole: the check then sees formatted code, and
-        // a subset bisected later is checked untidied, which a build does
-        // not mind.
-        if let Some(command) = &args.tidy {
-            let command = Some(command.as_str()).filter(|c| !c.is_empty());
-            crate::lsp_commands::tidy_pending(command, &formatters()?, &mut pending, &mut report)?;
-        }
-        for change in &pending {
-            report.record(change);
-        }
-        lsp_check(args, refactoring, &pending, &mut report)?;
-        attribute_lines(args, refactoring, &pending, &mut report, reporter.as_mut());
-        let prepared = prepare_writes(&pending, &mut report)?;
-        if refuse_conflicts(args, &mut report) {
-            reporter.refused();
-            report_all(reporter.as_mut(), &pending)?;
-            report.elapsed = started.elapsed();
-            reporter.finish(&report).map_err(io_to_error)?;
-            return Ok(CONFLICT_EXIT);
-        }
-        for write in &prepared.writes {
-            snapshots.insert(write.path.clone(), write.on_disk.clone());
-        }
-        write_changes(&prepared, args.backup.as_deref())?;
-        report_all(reporter.as_mut(), &pending)?;
+    // Phase 1: full apply, as an ordinary `--write` run, keeping each
+    // written file's text from before. Tidied once, as a whole: the check
+    // then sees formatted code, and a subset bisected later is checked
+    // untidied, which a build does not mind.
+    let outcome = codemod::pipeline::Pipeline::new(refactoring, source(args, targets)?)
+        .write(true)
+        .allow_conflicts(args.allow_conflicts)
+        .refusal_hint(REFUSAL_HINT)
+        .checks(checks(args)?)
+        .execute(&mut CliHooks::new(
+            reporter.as_mut(),
+            args.backup.as_deref(),
+        ))?;
+    let codemod::pipeline::Outcome {
+        mut report,
+        changes,
+        written,
+        blocked,
+    } = outcome;
+    attribute_lines(args, refactoring, &changes, &mut report, reporter.as_mut());
+    if blocked {
+        reporter.refused();
+        report_all(reporter.as_mut(), &changes)?;
+        reporter.finish(&report).map_err(io_to_error)?;
+        return Ok(CONFLICT_EXIT);
     }
+    report_all(reporter.as_mut(), &changes)?;
+    let snapshots: std::collections::HashMap<PathBuf, String> = written
+        .into_iter()
+        .map(|write| (write.path, write.on_disk))
+        .collect();
 
     // Phase 2: full-set verify.
     info!("Verifying with `{verify_cmd}`");
