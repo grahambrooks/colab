@@ -4,12 +4,7 @@
 //! supplies C#'s grammar, expando character, and the contexts that
 //! let a fragment that is not a valid C# *file* on its own parse.
 
-use std::fmt;
-use std::path::Path;
-
-use colab_core::find::Located;
-use colab_core::{AstInput, Error, Operation, Result, SyntaxTree};
-use colab_rewrite::pattern::{PatternAction, PatternLanguage, PatternRule};
+use colab_rewrite::pattern::PatternLanguage;
 
 /// `$` starts an interpolated string in C#, so metavariables are parsed
 /// as `µ`.
@@ -33,91 +28,20 @@ pub(crate) fn language() -> PatternLanguage {
     }
 }
 
-/// `colab ast` for csharp: a snippet's tree, or a pattern's as compiled.
-pub(crate) fn syntax_tree(input: AstInput<'_>) -> Result<SyntaxTree> {
-    let (text, is_pattern) = match input {
-        AstInput::Source(text) => (text, false),
-        AstInput::Pattern(text) => (text, true),
-    };
-    let report = colab_rewrite::pattern::describe(&language(), text, is_pattern)
-        .map_err(|e| Error::UnsupportedOperation(format!("csharp::pattern: {e}")))?;
-    Ok(SyntaxTree {
-        tree: report.tree,
-        has_error: report.has_error,
-        context: report.context,
-        prefilter: report.prefilter,
-    })
-}
-
-#[derive(Debug)]
-pub struct PatternOp(pub PatternRule);
-
-impl PatternOp {
-    pub fn compile(
-        pattern: &str,
-        action: PatternAction,
-        constraints: &[colab_core::Constraint],
-    ) -> Result<Self> {
-        PatternRule::compile(&language(), pattern, action, constraints)
-            .map(Self)
-            .map_err(|e| Error::UnsupportedOperation(format!("csharp::pattern: {e}")))
-    }
-}
-
-impl fmt::Display for PatternOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "csharp::{}", self.0)
-    }
-}
-
-impl Operation for PatternOp {
-    fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
-    }
-
-    fn apply(&self, source_code: &str) -> String {
-        self.0.apply(source_code)
-    }
-
-    fn prefilter(&self) -> Option<&str> {
-        self.0.prefilter()
-    }
-
-    fn locate(&self, source: &str) -> Option<Vec<Located>> {
-        Some(
-            self.0
-                .find(source)
-                .into_iter()
-                .map(|f| Located::at(source, f.start, f.end, f.captures))
-                .collect(),
-        )
-    }
-
-    fn conflicts(&self, before: &str, after: &str) -> Vec<String> {
-        self.0.conflicts(before, after)
-    }
-
-    fn why_unchanged(&self, source: &str) -> Option<String> {
-        self.0.why_unchanged(source)
-    }
-
-    fn advice(&self) -> Vec<String> {
-        self.0.advice()
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use colab_core::{Error, Operation};
+    use colab_rewrite::pattern::PatternAction;
 
     #[test]
     fn rewrites_call_with_two_captures() {
-        let op = PatternOp::compile(
-            "Assert.AreEqual($A, $B)",
-            PatternAction::Replace("Assert.That($B, Is.EqualTo($A))".into()),
-            &[],
-        )
-        .unwrap();
+        let op = crate::LANG
+            .compile_pattern(
+                "Assert.AreEqual($A, $B)",
+                PatternAction::Replace("Assert.That($B, Is.EqualTo($A))".into()),
+                &[],
+            )
+            .unwrap();
         let src =
             "class T {\n    void Test() {\n        Assert.AreEqual(4, Add(2, 2));\n    }\n}\n";
         let out = op.apply(src);
@@ -134,12 +58,13 @@ mod tests {
 
     #[test]
     fn multi_capture_spans_all_arguments() {
-        let op = PatternOp::compile(
-            "Console.WriteLine($$$ARGS)",
-            PatternAction::Replace("logger.LogInformation($$$ARGS)".into()),
-            &[],
-        )
-        .unwrap();
+        let op = crate::LANG
+            .compile_pattern(
+                "Console.WriteLine($$$ARGS)",
+                PatternAction::Replace("logger.LogInformation($$$ARGS)".into()),
+                &[],
+            )
+            .unwrap();
         let src = "class P {\n    void Run(int n) {\n        Console.WriteLine(\"n={0}\", n);\n    }\n}\n";
         let out = op.apply(src);
         assert_eq!(
@@ -151,7 +76,9 @@ mod tests {
 
     #[test]
     fn deletes_a_standalone_statement_line() {
-        let op = PatternOp::compile("Debug.WriteLine($X)", PatternAction::Delete, &[]).unwrap();
+        let op = crate::LANG
+            .compile_pattern("Debug.WriteLine($X)", PatternAction::Delete, &[])
+            .unwrap();
         let src = "class P {\n    void Run(int n) {\n        Debug.WriteLine(n);\n        Use(n);\n    }\n}\n";
         let out = op.apply(src);
         assert_eq!(
@@ -166,7 +93,9 @@ mod tests {
         let src =
             "class C {\n    void M() {\n        var y = foo.Bar(1, 2);\n        y = 3;\n    }\n}\n";
         for pattern in ["foo.Bar($A, $B)", "$X = $Y;"] {
-            let op = PatternOp::compile(pattern, PatternAction::Delete, &[]).unwrap();
+            let op = crate::LANG
+                .compile_pattern(pattern, PatternAction::Delete, &[])
+                .unwrap();
             let found = op.locate(src).unwrap();
             assert_eq!(found.len(), 1, "{pattern}");
         }
@@ -176,7 +105,9 @@ mod tests {
     fn a_bare_identifier_compiles() {
         // The selector must be the pattern's own identifier, not the first
         // identifier of whichever context it was parsed in.
-        let op = PatternOp::compile("legacy_name", PatternAction::Delete, &[]).unwrap();
+        let op = crate::LANG
+            .compile_pattern("legacy_name", PatternAction::Delete, &[])
+            .unwrap();
         assert_eq!(op.prefilter(), Some("legacy_name"));
         let src = "class C {\n    void M() {\n        var y = legacy_name.Bar(1, 2);\n        y = 3;\n    }\n}\n";
         let found = op.locate(src).unwrap();
@@ -186,7 +117,9 @@ mod tests {
 
     #[test]
     fn invalid_pattern_is_an_unsupported_operation() {
-        let err = PatternOp::compile("class (", PatternAction::Delete, &[]).unwrap_err();
+        let err = crate::LANG
+            .compile_pattern("class (", PatternAction::Delete, &[])
+            .unwrap_err();
         assert!(matches!(err, Error::UnsupportedOperation(_)), "{err}");
         assert!(err.to_string().contains("csharp::pattern"), "{err}");
     }

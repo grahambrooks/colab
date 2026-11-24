@@ -31,7 +31,7 @@ where
 
 /// Every import path in `source`, for near-miss reporting.
 pub(crate) fn import_paths(source: &str) -> Vec<String> {
-    crate::parse(source).map_or_default(|tree| {
+    crate::LANG.parse(source).map_or_default(|tree| {
         colab_rewrite::field_texts(&tree, source, &["import_spec"], Some("path"), &['"'])
     })
 }
@@ -56,7 +56,7 @@ impl fmt::Display for ImportRename {
 
 impl Operation for ImportRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("go")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -80,7 +80,7 @@ impl Operation for ImportRename {
 ///
 /// Returns `source_code` unchanged if no imports match.
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -122,7 +122,7 @@ impl fmt::Display for ImportDelete {
 
 impl Operation for ImportDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("go")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -157,7 +157,7 @@ impl fmt::Display for ImportDropUnused {
 
 impl Operation for ImportDropUnused {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("go")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -182,7 +182,7 @@ impl Operation for ImportDropUnused {
 /// `package_names`). Any identifier with one of those names outside the
 /// import declarations, a local variable included, keeps the import.
 pub fn is_used(target: &str, source_code: &str) -> bool {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return true;
     };
     let mut names: Vec<String> = Vec::new();
@@ -227,7 +227,7 @@ pub fn is_used(target: &str, source_code: &str) -> bool {
 /// for an unaliased import every conventional name of its package (see
 /// [`package_names`]). Blank and dot imports bind no qualifier.
 pub(crate) fn imported_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return Vec::new();
     };
     let mut names = Vec::new();
@@ -284,7 +284,7 @@ fn package_names(path: &str) -> Vec<String> {
 /// leaves dangling (after `(`, before `)`, or doubled), and a declaration
 /// left with no specs is removed together with one surrounding blank line.
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -540,7 +540,7 @@ impl fmt::Display for ImportEnsure {
 
 impl Operation for ImportEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("go")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -556,7 +556,7 @@ impl Operation for ImportEnsure {
 /// With no imports at all, a standalone `import "<target>"` follows the
 /// `package` clause.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 

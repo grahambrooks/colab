@@ -5,20 +5,28 @@
 //! matching is segment-wise: `target = "x"` matches `x`, `x.y`, and
 //! `from x.y import z` but never `xy` (substring) or `mod.x` (mid-path).
 
-pub mod calls;
+#[cfg(test)]
+mod calls;
 pub mod imports;
-pub mod patterns;
-pub mod symbols;
+mod patterns;
+mod symbols;
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
-use tree_sitter::Tree;
+use colab_rewrite::{CallShape, SourceLanguage};
 
-/// Parse `source` into a Python syntax tree, through the shared parse
-/// cache (`colab_rewrite::parse_cache`): a text the rules before have
-/// already parsed is not parsed again. `None` if tree-sitter cannot parse.
-pub(crate) fn parse(source: &str) -> Option<Tree> {
-    colab_rewrite::parse_cache::parse(&patterns::language().grammar, source)
-}
+/// What the shared `symbol` / `call` / `pattern` floor needs to know
+/// about Python ([`colab_rewrite::language`]).
+pub(crate) static LANG: SourceLanguage = SourceLanguage {
+    namespace: "python",
+    extensions: &["py"],
+    file_names: &[],
+    pattern: patterns::language,
+    rename_kinds: symbols::RENAME_KINDS,
+    prose_kinds: &["comment", "string_content"],
+    // Keyword arguments travel with their names.
+    calls: CallShape::Fields("call"),
+    qualifiers: Some(patterns::QUALIFIERS),
+};
 
 /// Plug-in entry point for the `python` namespace.
 pub struct PythonBackend;
@@ -58,20 +66,9 @@ const CAPABILITIES: &[Capability] = &[
             description: "Replace matched calls with the rendered template. Rename the function to stay idempotent.",
         }],
     },
-    Capability {
-        module: "pattern",
-        description: "Match code by shape: the target is Python code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `self.assertEquals($A, $B)`. An expression, statement, or declaration.",
-        actions: &[
-            ActionCapability {
-                name: "replace",
-                description: "Replace each match with the template, substituting `$NAME` / `$$$NAME` bindings.",
-            },
-            ActionCapability {
-                name: "delete",
-                description: "Remove each match; a match alone on its line takes the line with it.",
-            },
-        ],
-    },
+    colab_rewrite::language::pattern_capability(
+        "Match code by shape: the target is Python code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `self.assertEquals($A, $B)`. An expression, statement, or declaration.",
+    ),
 ];
 
 impl LanguageBackend for PythonBackend {
@@ -88,12 +85,11 @@ impl LanguageBackend for PythonBackend {
     }
 
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
-        let kinds = ["comment", "string_content"];
-        crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
+        LANG.prose_ranges(source)
     }
 
     fn prose_locator(&self) -> Option<colab_core::ProseLocator> {
-        Some(|source| Self.prose_ranges(source))
+        Some(|source| LANG.prose_ranges(source))
     }
 
     fn build_rule_where(
@@ -102,9 +98,7 @@ impl LanguageBackend for PythonBackend {
         spec: RuleSpec,
         constraints: &[colab_core::Constraint],
     ) -> Result<Box<dyn Operation>> {
-        colab_rewrite::pattern::build_rule_where(self, module, spec, constraints, |p, a, c| {
-            Ok(Box::new(patterns::PatternOp::compile(p, a, c)?))
-        })
+        LANG.build_rule_where(self, module, spec, constraints)
     }
 
     fn description(&self) -> &'static str {
@@ -116,14 +110,11 @@ impl LanguageBackend for PythonBackend {
     }
 
     fn syntax_tree(&self, input: colab_core::AstInput<'_>) -> Result<colab_core::SyntaxTree> {
-        patterns::syntax_tree(input)
+        LANG.syntax_tree(input)
     }
 
     fn declarations(&self, source: &str) -> Option<Vec<colab_core::symbols::Declaration>> {
-        Some(colab_rewrite::declarations(
-            &patterns::language().grammar,
-            source,
-        ))
+        Some(LANG.declarations(source))
     }
 
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>> {
@@ -144,39 +135,7 @@ impl LanguageBackend for PythonBackend {
             ("import", RuleSpec::Ensure { target }) => {
                 Ok(Box::new(imports::ImportEnsure { target }))
             }
-            (
-                "symbol",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(symbols::SymbolRename {
-                from: target,
-                to: replacement,
-            })),
-            ("call", RuleSpec::ReplaceCall { target, template }) => {
-                Ok(Box::new(calls::CallReplace {
-                    function: target,
-                    template,
-                }))
-            }
-            (
-                "pattern",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(patterns::PatternOp::compile(
-                &target,
-                colab_rewrite::pattern::PatternAction::Replace(replacement),
-                &[],
-            )?)),
-            ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
-                &target,
-                colab_rewrite::pattern::PatternAction::Delete,
-                &[],
-            )?)),
-            (other, spec) => Err(self.unsupported(other, &spec)),
+            (module, spec) => LANG.build_rule(self, module, spec),
         }
     }
 }

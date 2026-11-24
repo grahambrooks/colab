@@ -9,64 +9,12 @@
 //! all twelve backends share one implementation and differ only in which
 //! node kinds count as an identifier.
 
-use std::fmt;
-use std::path::Path;
-
-use colab_core::Operation;
-
 /// Node kinds this backend treats as renameable identifiers.
-const RENAME_KINDS: &[&str] = &["identifier"];
+pub(crate) const RENAME_KINDS: &[&str] = &["identifier"];
 
-#[derive(Debug)]
-pub struct SymbolRename {
-    pub from: String,
-    pub to: String,
-}
-
-impl fmt::Display for SymbolRename {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "csharp::symbol \"{}\" -> \"{}\"", self.from, self.to)
-    }
-}
-
-impl Operation for SymbolRename {
-    fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
-    }
-
-    fn apply(&self, source_code: &str) -> String {
-        rename(&self.from, &self.to, source_code)
-    }
-
-    fn prefilter(&self) -> Option<&str> {
-        Some(&self.from)
-    }
-
-    fn near_miss_target(&self) -> Option<&str> {
-        Some(&self.from)
-    }
-
-    fn observed_targets(&self, source: &str) -> Vec<String> {
-        crate::parse(source).map_or_default(|tree| {
-            colab_rewrite::field_texts(&tree, source, RENAME_KINDS, None, &[])
-        })
-    }
-
-    fn conflicts(&self, before: &str, _after: &str) -> Vec<String> {
-        crate::parse(before)
-            .and_then(|tree| {
-                colab_rewrite::rename_conflict(&tree, before, RENAME_KINDS, &self.from, &self.to)
-            })
-            .into_iter()
-            .collect()
-    }
-}
-
-pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
-        return source_code.to_string();
-    };
-    colab_rewrite::rename_nodes_by_text(&tree, source_code, RENAME_KINDS, from, to)
+#[cfg(test)]
+fn rename(from: &str, to: &str, source_code: &str) -> String {
+    crate::LANG.rename(from, to, source_code)
 }
 
 #[cfg(test)]

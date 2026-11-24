@@ -13,14 +13,6 @@ use std::path::Path;
 use colab_core::Operation;
 use tree_sitter::{Node, Tree};
 
-const RELEVANT_EXTENSIONS: &[&str] = &["js", "mjs", "cjs", "jsx", "ts", "tsx"];
-
-pub(crate) fn is_relevant(path: &Path) -> bool {
-    path.extension()
-        .and_then(|s| s.to_str())
-        .is_some_and(|ext| RELEVANT_EXTENSIONS.contains(&ext))
-}
-
 /// For each `import_statement` / `export_statement` whose `source`
 /// field is a string literal equal to `target`, invoke the visitor
 /// with the enclosing statement and the inner-string byte range
@@ -59,7 +51,7 @@ where
 /// named bindings (the alias, when there is one), and the names a
 /// `require(…)` call is assigned to, destructured or not.
 pub(crate) fn imported_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return Vec::new();
     };
     let text = |n: Node<'_>| source[n.byte_range()].to_string();
@@ -128,7 +120,7 @@ pub(crate) fn imported_names(source: &str) -> Vec<String> {
 }
 
 pub(crate) fn specifiers(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -185,7 +177,7 @@ impl fmt::Display for SpecifierRename {
 
 impl Operation for SpecifierRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -206,7 +198,7 @@ impl Operation for SpecifierRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -239,7 +231,7 @@ impl fmt::Display for SpecifierDelete {
 
 impl Operation for SpecifierDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -260,7 +252,7 @@ impl Operation for SpecifierDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -381,7 +373,7 @@ impl fmt::Display for SpecifierEnsure {
 
 impl Operation for SpecifierEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -394,7 +386,7 @@ impl Operation for SpecifierEnsure {
 /// Insert `import '<target>';` after the last existing import, or at the
 /// top of the file when there is none.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 

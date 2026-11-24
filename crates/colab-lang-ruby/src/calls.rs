@@ -17,77 +17,13 @@
 //! Idempotency: a template that keeps the callee text matches its own
 //! output and re-applies on every pass. Rename the method to stay
 //! re-runnable.
+use std::borrow::Cow;
 
-use std::fmt;
-use std::path::Path;
-
-use colab_core::{Operation, render_call_template};
 use tree_sitter::Node;
 
-#[derive(Debug)]
-pub struct CallReplace {
-    pub function: String,
-    pub template: String,
-}
-
-impl fmt::Display for CallReplace {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "ruby::call \"{}\" -> replace_call \"{}\"",
-            self.function, self.template
-        )
-    }
-}
-
-impl Operation for CallReplace {
-    fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
-    }
-
-    fn apply(&self, source_code: &str) -> String {
-        rewrite(&self.function, &self.template, source_code)
-    }
-
-    fn prefilter(&self) -> Option<&str> {
-        Some(&self.function)
-    }
-
-    fn near_miss_target(&self) -> Option<&str> {
-        Some(&self.function)
-    }
-
-    fn observed_targets(&self, source: &str) -> Vec<String> {
-        let Some(tree) = crate::parse(source) else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        colab_rewrite::visit_all(&tree, |node| {
-            if let Some((_, callee)) = paren_call(node, source) {
-                out.push(callee);
-            }
-        });
-        out
-    }
-}
-
-pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
-        return source_code.to_string();
-    };
-
-    let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        collect(node, source_code, function, template, &mut edits)
-    });
-
-    colab_rewrite::apply_edits(
-        source_code,
-        edits
-            .into_iter()
-            .map(|(start, end, text)| colab_rewrite::Edit::new(start, end, text))
-            .collect(),
-    )
+#[cfg(test)]
+fn rewrite(function: &str, template: &str, source_code: &str) -> String {
+    crate::LANG.rewrite_calls(function, template, source_code)
 }
 
 /// `receiver.method` when there is a receiver, else `method`.
@@ -109,7 +45,7 @@ fn callee_text(node: Node<'_>, source: &str) -> Option<String> {
 /// parenthesised form starts with `(`. Rewriting the bare form could
 /// change how the surrounding expression parses, so it is skipped (see
 /// module docs).
-fn paren_call<'a>(node: Node<'a>, source: &str) -> Option<(Node<'a>, String)> {
+pub(crate) fn paren_call<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, Cow<'a, str>)> {
     if node.kind() != "call" {
         return None;
     }
@@ -117,34 +53,7 @@ fn paren_call<'a>(node: Node<'a>, source: &str) -> Option<(Node<'a>, String)> {
     if !source[args.start_byte()..].starts_with('(') {
         return None;
     }
-    Some((args, callee_text(node, source)?))
-}
-
-fn collect(
-    node: Node<'_>,
-    source: &str,
-    function: &str,
-    template: &str,
-    edits: &mut Vec<(usize, usize, String)>,
-) {
-    if let Some((args, callee)) = paren_call(node, source)
-        && callee == function
-    {
-        let arg_strs = collect_args(args, source);
-        let arg_refs: Vec<&str> = arg_strs.iter().map(std::string::String::as_str).collect();
-        let rendered = render_call_template(template, function, &arg_refs);
-        edits.push((node.start_byte(), node.end_byte(), rendered));
-    }
-}
-
-fn collect_args<'a>(arg_list: Node<'a>, source: &'a str) -> Vec<String> {
-    let mut out = Vec::new();
-    for child in arg_list.named_children(&mut arg_list.walk()) {
-        if let Ok(text) = child.utf8_text(source.as_bytes()) {
-            out.push(text.to_string());
-        }
-    }
-    out
+    Some((args, callee_text(node, source)?.into()))
 }
 
 #[cfg(test)]

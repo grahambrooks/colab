@@ -10,39 +10,30 @@
 //!   constants; Ruby has no separate namespace declaration to rename.
 //! - `ruby::call` — rewrite parenthesised calls with a template.
 
-pub mod calls;
-pub mod patterns;
+mod calls;
+mod patterns;
 pub mod requires;
-pub mod symbols;
-
-use std::path::Path;
+mod symbols;
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
-use tree_sitter::Tree;
+use colab_rewrite::{CallShape, SourceLanguage};
 
-/// Extensions this backend claims.
-const RELEVANT_EXTENSIONS: &[&str] = &["rb", "rake", "gemspec", "ru"];
-
-/// Extension-less Ruby files that are conventional enough to claim by name.
-const RELEVANT_FILENAMES: &[&str] = &["Rakefile", "Gemfile", "Guardfile", "Capfile"];
-
-pub(crate) fn is_relevant(path: &Path) -> bool {
-    if let Some(ext) = path.extension().and_then(|s| s.to_str())
-        && RELEVANT_EXTENSIONS.contains(&ext)
-    {
-        return true;
-    }
-    path.file_name()
-        .and_then(|s| s.to_str())
-        .is_some_and(|name| RELEVANT_FILENAMES.contains(&name))
-}
-
-/// Parse `source` into a Ruby syntax tree, through the shared parse
-/// cache (`colab_rewrite::parse_cache`): a text the rules before have
-/// already parsed is not parsed again. `None` if tree-sitter cannot parse.
-pub(crate) fn parse(source: &str) -> Option<Tree> {
-    colab_rewrite::parse_cache::parse(&patterns::language().grammar, source)
-}
+/// What the shared `symbol` / `call` / `pattern` floor needs to know
+/// about Ruby ([`colab_rewrite::language`]).
+pub(crate) static LANG: SourceLanguage = SourceLanguage {
+    namespace: "ruby",
+    extensions: &["rb", "rake", "gemspec", "ru"],
+    // Extension-less Ruby files that are conventional enough to claim by name.
+    file_names: &["Rakefile", "Gemfile", "Guardfile", "Capfile"],
+    pattern: patterns::language,
+    rename_kinds: symbols::RENAME_KINDS,
+    prose_kinds: &["comment", "string_content", "heredoc_content"],
+    calls: CallShape::Located {
+        locate: calls::paren_call,
+        through_arguments: false,
+    },
+    qualifiers: None,
+};
 
 /// Plug-in entry point for the `ruby` namespace.
 pub struct RubyBackend;
@@ -82,20 +73,9 @@ const CAPABILITIES: &[Capability] = &[
             description: "Replace matched calls with the rendered template. Rename the method to stay idempotent.",
         }],
     },
-    Capability {
-        module: "pattern",
-        description: "Match code by shape: the target is Ruby code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `$X.should == $Y`. An expression, statement, or declaration.",
-        actions: &[
-            ActionCapability {
-                name: "replace",
-                description: "Replace each match with the template, substituting `$NAME` / `$$$NAME` bindings.",
-            },
-            ActionCapability {
-                name: "delete",
-                description: "Remove each match; a match alone on its line takes the line with it.",
-            },
-        ],
-    },
+    colab_rewrite::language::pattern_capability(
+        "Match code by shape: the target is Ruby code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `$X.should == $Y`. An expression, statement, or declaration.",
+    ),
 ];
 
 impl LanguageBackend for RubyBackend {
@@ -112,12 +92,11 @@ impl LanguageBackend for RubyBackend {
     }
 
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
-        let kinds = ["comment", "string_content", "heredoc_content"];
-        crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
+        LANG.prose_ranges(source)
     }
 
     fn prose_locator(&self) -> Option<colab_core::ProseLocator> {
-        Some(|source| Self.prose_ranges(source))
+        Some(|source| LANG.prose_ranges(source))
     }
 
     fn build_rule_where(
@@ -126,9 +105,7 @@ impl LanguageBackend for RubyBackend {
         spec: RuleSpec,
         constraints: &[colab_core::Constraint],
     ) -> Result<Box<dyn Operation>> {
-        colab_rewrite::pattern::build_rule_where(self, module, spec, constraints, |p, a, c| {
-            Ok(Box::new(patterns::PatternOp::compile(p, a, c)?))
-        })
+        LANG.build_rule_where(self, module, spec, constraints)
     }
 
     fn description(&self) -> &'static str {
@@ -140,14 +117,11 @@ impl LanguageBackend for RubyBackend {
     }
 
     fn syntax_tree(&self, input: colab_core::AstInput<'_>) -> Result<colab_core::SyntaxTree> {
-        patterns::syntax_tree(input)
+        LANG.syntax_tree(input)
     }
 
     fn declarations(&self, source: &str) -> Option<Vec<colab_core::symbols::Declaration>> {
-        Some(colab_rewrite::declarations(
-            &patterns::language().grammar,
-            source,
-        ))
+        Some(LANG.declarations(source))
     }
 
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>> {
@@ -168,39 +142,7 @@ impl LanguageBackend for RubyBackend {
             ("require", RuleSpec::Ensure { target }) => {
                 Ok(Box::new(requires::RequireEnsure { target }))
             }
-            (
-                "symbol",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(symbols::SymbolRename {
-                from: target,
-                to: replacement,
-            })),
-            ("call", RuleSpec::ReplaceCall { target, template }) => {
-                Ok(Box::new(calls::CallReplace {
-                    function: target,
-                    template,
-                }))
-            }
-            (
-                "pattern",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(patterns::PatternOp::compile(
-                &target,
-                colab_rewrite::pattern::PatternAction::Replace(replacement),
-                &[],
-            )?)),
-            ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
-                &target,
-                colab_rewrite::pattern::PatternAction::Delete,
-                &[],
-            )?)),
-            (other, spec) => Err(self.unsupported(other, &spec)),
+            (module, spec) => LANG.build_rule(self, module, spec),
         }
     }
 }
@@ -208,15 +150,16 @@ impl LanguageBackend for RubyBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn claims_ruby_sources_and_conventional_filenames() {
-        assert!(is_relevant(Path::new("a.rb")));
-        assert!(is_relevant(Path::new("tasks.rake")));
-        assert!(is_relevant(Path::new("Rakefile")));
-        assert!(is_relevant(Path::new("some/dir/Gemfile")));
-        assert!(!is_relevant(Path::new("a.rs")));
-        assert!(!is_relevant(Path::new("README")));
+        assert!(LANG.is_source(Path::new("a.rb")));
+        assert!(LANG.is_source(Path::new("tasks.rake")));
+        assert!(LANG.is_source(Path::new("Rakefile")));
+        assert!(LANG.is_source(Path::new("some/dir/Gemfile")));
+        assert!(!LANG.is_source(Path::new("a.rs")));
+        assert!(!LANG.is_source(Path::new("README")));
     }
 
     #[test]

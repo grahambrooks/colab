@@ -68,7 +68,7 @@ where
 
 /// Every name this module matches against in `source`, for near-miss reporting.
 pub(crate) fn require_paths(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -98,7 +98,7 @@ impl fmt::Display for RequireRename {
 
 impl Operation for RequireRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -119,7 +119,7 @@ impl Operation for RequireRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize)> = Vec::new();
@@ -154,7 +154,7 @@ impl fmt::Display for RequireDelete {
 
 impl Operation for RequireDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -175,7 +175,7 @@ impl Operation for RequireDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -203,7 +203,7 @@ impl fmt::Display for RequireEnsure {
 
 impl Operation for RequireEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -216,7 +216,7 @@ impl Operation for RequireEnsure {
 /// Insert `require '<target>'` after the last existing require, else at
 /// the top of the file (below any leading magic comments).
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 

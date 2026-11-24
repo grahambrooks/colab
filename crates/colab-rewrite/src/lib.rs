@@ -11,16 +11,21 @@
 //! bug in the shared logic had to be found and fixed twelve times, and
 //! the "apply edits in reverse byte order" rule was enforced only by
 //! documentation. Here it is enforced by there being one implementation.
+//! The same holds one level up: [`language`] is the whole of
+//! `<lang>::symbol`, `<lang>::call` and `<lang>::pattern`, which each
+//! source backend configures with a [`SourceLanguage`].
 //!
-//! This crate deliberately depends on `tree-sitter` and nothing else —
-//! not even `colab-core`. Keeping the parser dependency out of
-//! `colab-core` is what stops `colab-dsl` and `colab-mcp`, neither of
-//! which parses anything, from inheriting a grammar engine.
+//! This crate depends on `colab-core`, never the reverse. Keeping the
+//! parser dependency out of `colab-core` is what stops `colab-dsl` and
+//! `colab-mcp`, neither of which parses anything, from inheriting a
+//! grammar engine.
 
 pub mod calls;
 pub mod declarations;
 pub use declarations::declarations;
 mod derive;
+pub mod language;
+pub use language::{CallShape, SourceLanguage};
 pub mod parse_cache;
 pub mod pattern;
 pub mod scope;

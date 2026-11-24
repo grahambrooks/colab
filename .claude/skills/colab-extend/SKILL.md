@@ -69,8 +69,19 @@ rather than plumbing a special case through.
 
 Same as above, plus:
 
-- a new `crates/colab-lang-<name>/` crate depending on `colab-core` and
-  its tree-sitter grammar;
+- a new `crates/colab-lang-<name>/` crate depending on `colab-core`,
+  `colab-rewrite` and its tree-sitter grammar;
+- a `pub(crate) static LANG: colab_rewrite::SourceLanguage` in its
+  `lib.rs`. `symbol`, `call` and `pattern` (plus prose ranges,
+  declarations and `colab ast`) are written once in
+  `colab_rewrite::language`; the backend supplies only data — grammar
+  and pattern contexts, extensions, `RENAME_KINDS`, prose kinds, and a
+  `CallShape` (`Fields("<call kind>")`, or `Located` with a callee
+  locator when calls have no `function` / `arguments` fields). Its
+  `build_rule` matches its own modules and ends in
+  `(module, spec) => LANG.build_rule(self, module, spec)`; the other
+  floor methods are one-line delegations to `LANG`. Do not write a
+  `SymbolRename` / `CallReplace` / `PatternOp` of your own;
 - one `registry.register(Box::new(<Backend>))` line in
   `colab-backends/src/lib.rs::registry`, and a bump to `BACKEND_COUNT`
   — **the only** registration site; `colab-cli`, the corpus harness, and
@@ -155,6 +166,10 @@ Use the provided helper in your `build_rule` catch-all:
 ```rust
 (other, spec) => Err(self.unsupported(other, &spec)),
 ```
+
+A source backend's catch-all is `LANG.build_rule(self, module, spec)`
+instead, which builds `symbol` / `call` / `pattern` and ends in that same
+`unsupported` call.
 
 `LanguageBackend::unsupported` distinguishes a misspelled *module* from
 a valid module asked for an unsupported *action*, lists the valid names,

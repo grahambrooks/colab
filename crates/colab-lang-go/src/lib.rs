@@ -3,22 +3,33 @@
 //! Exposes a [`GoBackend`] that the binary registers with the
 //! [`BackendRegistry`](colab_core::BackendRegistry), plus the underlying tree-sitter rewriters.
 
-pub mod calls;
+#[cfg(test)]
+mod calls;
 pub mod imports;
 pub mod packages;
-pub mod patterns;
+mod patterns;
 pub mod struct_tags;
-pub mod symbols;
+mod symbols;
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
-use tree_sitter::Tree;
+use colab_rewrite::{CallShape, SourceLanguage};
 
-/// Parse `source` into a Go syntax tree, through the shared parse
-/// cache (`colab_rewrite::parse_cache`): a text the rules before have
-/// already parsed is not parsed again. `None` if tree-sitter cannot parse.
-pub(crate) fn parse(source: &str) -> Option<Tree> {
-    colab_rewrite::parse_cache::parse(&patterns::language().grammar, source)
-}
+/// What the shared `symbol` / `call` / `pattern` floor needs to know
+/// about Go ([`colab_rewrite::language`]).
+pub(crate) static LANG: SourceLanguage = SourceLanguage {
+    namespace: "go",
+    extensions: &["go"],
+    file_names: &[],
+    pattern: patterns::language,
+    rename_kinds: symbols::RENAME_KINDS,
+    prose_kinds: &[
+        "comment",
+        "interpreted_string_literal_content",
+        "raw_string_literal_content",
+    ],
+    calls: CallShape::Fields("call_expression"),
+    qualifiers: Some(patterns::QUALIFIERS),
+};
 
 /// Plug-in entry point for the `go` namespace. Knows how to lower
 /// `go::<module>` matches into concrete [`Operation`]s.
@@ -67,20 +78,9 @@ const CAPABILITIES: &[Capability] = &[
             description: "Replace the entire call with the rendered template. Idempotency requires the template to rename the function.",
         }],
     },
-    Capability {
-        module: "pattern",
-        description: "Match code by shape: the target is Go code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `errors.Wrap($ERR, $MSG)`. An expression, statement, or declaration.",
-        actions: &[
-            ActionCapability {
-                name: "replace",
-                description: "Replace each match with the template, substituting `$NAME` / `$$$NAME` bindings.",
-            },
-            ActionCapability {
-                name: "delete",
-                description: "Remove each match; a match alone on its line takes the line with it.",
-            },
-        ],
-    },
+    colab_rewrite::language::pattern_capability(
+        "Match code by shape: the target is Go code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `errors.Wrap($ERR, $MSG)`. An expression, statement, or declaration.",
+    ),
     Capability {
         module: "package",
         description: "Rewrite the file's `package` clause. The import path is separate — pair with `go::import` for a package move.",
@@ -105,16 +105,11 @@ impl LanguageBackend for GoBackend {
     }
 
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
-        let kinds = [
-            "comment",
-            "interpreted_string_literal_content",
-            "raw_string_literal_content",
-        ];
-        crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
+        LANG.prose_ranges(source)
     }
 
     fn prose_locator(&self) -> Option<colab_core::ProseLocator> {
-        Some(|source| Self.prose_ranges(source))
+        Some(|source| LANG.prose_ranges(source))
     }
 
     fn drop_unused_import(&self, target: &str) -> Result<Box<dyn Operation>> {
@@ -129,9 +124,7 @@ impl LanguageBackend for GoBackend {
         spec: RuleSpec,
         constraints: &[colab_core::Constraint],
     ) -> Result<Box<dyn Operation>> {
-        colab_rewrite::pattern::build_rule_where(self, module, spec, constraints, |p, a, c| {
-            Ok(Box::new(patterns::PatternOp::compile(p, a, c)?))
-        })
+        LANG.build_rule_where(self, module, spec, constraints)
     }
 
     fn description(&self) -> &'static str {
@@ -143,14 +136,11 @@ impl LanguageBackend for GoBackend {
     }
 
     fn syntax_tree(&self, input: colab_core::AstInput<'_>) -> Result<colab_core::SyntaxTree> {
-        patterns::syntax_tree(input)
+        LANG.syntax_tree(input)
     }
 
     fn declarations(&self, source: &str) -> Option<Vec<colab_core::symbols::Declaration>> {
-        Some(colab_rewrite::declarations(
-            &patterns::language().grammar,
-            source,
-        ))
+        Some(LANG.declarations(source))
     }
 
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>> {
@@ -165,38 +155,12 @@ impl LanguageBackend for GoBackend {
                 from: target,
                 to: replacement,
             })),
-            (
-                "pattern",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(patterns::PatternOp::compile(
-                &target,
-                colab_rewrite::pattern::PatternAction::Replace(replacement),
-                &[],
-            )?)),
-            ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
-                &target,
-                colab_rewrite::pattern::PatternAction::Delete,
-                &[],
-            )?)),
             ("import", RuleSpec::Delete { target }) => {
                 Ok(Box::new(imports::ImportDelete { target }))
             }
             ("import", RuleSpec::Ensure { target }) => {
                 Ok(Box::new(imports::ImportEnsure { target }))
             }
-            (
-                "symbol",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(symbols::SymbolRename {
-                from: target,
-                to: replacement,
-            })),
             (
                 "struct_tag",
                 RuleSpec::Replace {
@@ -207,12 +171,6 @@ impl LanguageBackend for GoBackend {
                 from: target,
                 to: replacement,
             })),
-            ("call", RuleSpec::ReplaceCall { target, template }) => {
-                Ok(Box::new(calls::CallReplace {
-                    function: target,
-                    template,
-                }))
-            }
             (
                 "package",
                 RuleSpec::Replace {
@@ -223,7 +181,7 @@ impl LanguageBackend for GoBackend {
                 from: target,
                 to: replacement,
             })),
-            (other, spec) => Err(self.unsupported(other, &spec)),
+            (module, spec) => LANG.build_rule(self, module, spec),
         }
     }
 }

@@ -73,7 +73,7 @@ where
 /// Every matchable `use` name in `source`, for near-miss reporting.
 /// Grouped clauses are excluded, as they are from matching.
 pub(crate) fn use_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -99,7 +99,7 @@ impl fmt::Display for UseRename {
 
 impl Operation for UseRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -120,7 +120,7 @@ impl Operation for UseRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -153,7 +153,7 @@ impl fmt::Display for UseDelete {
 
 impl Operation for UseDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -174,7 +174,7 @@ impl Operation for UseDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -202,7 +202,7 @@ impl fmt::Display for UseEnsure {
 
 impl Operation for UseEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -215,7 +215,7 @@ impl Operation for UseEnsure {
 /// Insert `use <target>;` after the last existing `use`, else after the
 /// `namespace` declaration, else after the opening PHP tag.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 

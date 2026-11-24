@@ -30,7 +30,7 @@ impl fmt::Display for TagReplace {
 
 impl Operation for TagReplace {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("go")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -60,7 +60,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         return source_code.to_string();
     };
 
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 

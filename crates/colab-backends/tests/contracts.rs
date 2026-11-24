@@ -467,3 +467,89 @@ fn every_source_backend_lists_declarations() {
     }
     assert!(missing.is_empty(), "{}", missing.join("\n"));
 }
+
+/// Every source backend offers the shared floor
+/// (`colab_rewrite::language`) — `symbol`, `call` and `pattern` — under its
+/// own namespace, with the target as both prefilter and near-miss target.
+#[test]
+fn every_source_backend_has_the_common_floor() {
+    let registry = colab_backends::registry();
+    let mut checked = 0;
+    for lang in registry.languages() {
+        let backend = registry.get(lang).unwrap();
+        if backend.import_module().is_none() {
+            continue;
+        }
+        let modules: Vec<&str> = backend.capabilities().iter().map(|c| c.module).collect();
+        for module in ["symbol", "call", "pattern"] {
+            assert!(modules.contains(&module), "{lang} lacks {module}");
+        }
+
+        let symbol = backend
+            .build_rule(
+                "symbol",
+                RuleSpec::Replace {
+                    target: "old_name".into(),
+                    replacement: "new_name".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            symbol.to_string(),
+            format!("{lang}::symbol \"old_name\" -> \"new_name\"")
+        );
+        assert_eq!(symbol.prefilter(), Some("old_name"), "{lang}");
+        assert_eq!(symbol.near_miss_target(), Some("old_name"), "{lang}");
+
+        let call = backend
+            .build_rule(
+                "call",
+                RuleSpec::ReplaceCall {
+                    target: "old_fn".into(),
+                    template: "new_fn($args)".into(),
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            call.to_string(),
+            format!("{lang}::call \"old_fn\" -> replace_call \"new_fn($args)\"")
+        );
+        assert_eq!(call.prefilter(), Some("old_fn"), "{lang}");
+        assert_eq!(call.near_miss_target(), Some("old_fn"), "{lang}");
+
+        let pattern = backend
+            .build_rule(
+                "pattern",
+                RuleSpec::Delete {
+                    target: "old_fn($A)".into(),
+                },
+            )
+            .unwrap();
+        assert!(
+            pattern
+                .to_string()
+                .starts_with(&format!("{lang}::pattern ")),
+            "{lang}: {pattern}"
+        );
+
+        let err = backend
+            .build_rule(
+                "pattern",
+                RuleSpec::Delete {
+                    target: "(((".into(),
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(err, colab_core::Error::UnsupportedOperation(_)),
+            "{lang}: {err}"
+        );
+        assert!(
+            err.to_string()
+                .starts_with(&format!("unsupported operation: {lang}::pattern: ")),
+            "{lang}: {err}"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 12);
+}

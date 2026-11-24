@@ -68,7 +68,7 @@ where
 
 /// Every include path in `source`, without its delimiters, for near-miss reporting.
 pub(crate) fn include_paths(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -98,7 +98,7 @@ impl fmt::Display for IncludeRename {
 
 impl Operation for IncludeRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -121,7 +121,7 @@ impl Operation for IncludeRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let replacement = unquote(to);
@@ -164,7 +164,7 @@ impl fmt::Display for IncludeDelete {
 
 impl Operation for IncludeDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -185,7 +185,7 @@ impl Operation for IncludeDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -213,7 +213,7 @@ impl fmt::Display for IncludeEnsure {
 
 impl Operation for IncludeEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -226,7 +226,7 @@ impl Operation for IncludeEnsure {
 /// Insert `#include <target>` after the last existing include, or at the
 /// top of the file when there is none.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 

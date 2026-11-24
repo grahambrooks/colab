@@ -7,58 +7,9 @@
 //! nodes — those are excluded so a rule targeting `foo` does not
 //! collide with a method named `foo`.
 
-use std::fmt;
-use std::path::Path;
-
-use colab_core::Operation;
-
-#[derive(Debug)]
-pub struct CallReplace {
-    pub function: String,
-    pub template: String,
-}
-
-impl fmt::Display for CallReplace {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "rust::call \"{}\" -> replace_call \"{}\"",
-            self.function, self.template
-        )
-    }
-}
-
-impl Operation for CallReplace {
-    fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("rs")
-    }
-
-    fn apply(&self, source_code: &str) -> String {
-        rewrite(&self.function, &self.template, source_code)
-    }
-
-    fn prefilter(&self) -> Option<&str> {
-        Some(&self.function)
-    }
-
-    fn near_miss_target(&self) -> Option<&str> {
-        Some(&self.function)
-    }
-
-    fn observed_targets(&self, source: &str) -> Vec<String> {
-        crate::parse(source).map_or_default(|tree| {
-            colab_rewrite::field_texts(&tree, source, &["call_expression"], Some("function"), &[])
-        })
-    }
-}
-
-pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
-    match crate::parse(source_code) {
-        Some(tree) => {
-            colab_rewrite::calls::rewrite(&tree, source_code, "call_expression", function, template)
-        }
-        None => source_code.to_string(),
-    }
+#[cfg(test)]
+fn rewrite(function: &str, template: &str, source_code: &str) -> String {
+    crate::LANG.rewrite_calls(function, template, source_code)
 }
 
 #[cfg(test)]

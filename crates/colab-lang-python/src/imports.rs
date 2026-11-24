@@ -59,7 +59,7 @@ where
 /// Every module path in `source`, for near-miss reporting. These are
 /// full dotted names; the matcher accepts any segment prefix of them.
 pub(crate) fn module_paths(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -71,7 +71,7 @@ pub(crate) fn module_paths(source: &str) -> Vec<String> {
 /// alias for `import json as j`, `c` for `from a import c`. A wildcard
 /// import binds names no one can list, so it is reported as `*`.
 pub(crate) fn imported_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return vec!["*".into()];
     };
     let text = |node: Node<'_>| source[node.byte_range()].to_string();
@@ -158,7 +158,7 @@ impl fmt::Display for ImportRename {
 
 impl Operation for ImportRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("py")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -179,7 +179,7 @@ impl Operation for ImportRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -213,7 +213,7 @@ impl fmt::Display for ImportDelete {
 
 impl Operation for ImportDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("py")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -234,7 +234,7 @@ impl Operation for ImportDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -265,7 +265,7 @@ impl fmt::Display for ImportEnsure {
 
 impl Operation for ImportEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("py")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -276,7 +276,7 @@ impl Operation for ImportEnsure {
 }
 
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut already_present = false;

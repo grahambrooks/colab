@@ -12,68 +12,9 @@
 //! again on the next pass. Templates **must rename the function** to be
 //! safe to re-run; the corpus harness fails any rule that loops.
 
-use std::fmt;
-use std::path::Path;
-
-use colab_core::Operation;
-
-#[derive(Debug)]
-pub struct CallReplace {
-    pub function: String,
-    pub template: String,
-}
-
-impl fmt::Display for CallReplace {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "csharp::call \"{}\" -> replace_call \"{}\"",
-            self.function, self.template
-        )
-    }
-}
-
-impl Operation for CallReplace {
-    fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
-    }
-
-    fn apply(&self, source_code: &str) -> String {
-        rewrite(&self.function, &self.template, source_code)
-    }
-
-    fn prefilter(&self) -> Option<&str> {
-        Some(&self.function)
-    }
-
-    fn near_miss_target(&self) -> Option<&str> {
-        Some(&self.function)
-    }
-
-    fn observed_targets(&self, source: &str) -> Vec<String> {
-        crate::parse(source).map_or_default(|tree| {
-            colab_rewrite::field_texts(
-                &tree,
-                source,
-                &["invocation_expression"],
-                Some("function"),
-                &[],
-            )
-        })
-    }
-}
-
-pub fn rewrite(function: &str, template: &str, source_code: &str) -> String {
-    match crate::parse(source_code) {
-        Some(tree) => colab_rewrite::calls::rewrite(
-            &tree,
-            source_code,
-            "invocation_expression",
-            function,
-            template,
-        ),
-        None => source_code.to_string(),
-    }
+#[cfg(test)]
+fn rewrite(function: &str, template: &str, source_code: &str) -> String {
+    crate::LANG.rewrite_calls(function, template, source_code)
 }
 
 #[cfg(test)]

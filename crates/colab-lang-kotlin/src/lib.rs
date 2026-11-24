@@ -7,33 +7,32 @@
 //! - `kotlin::symbol` — rename an identifier and its in-file usages.
 //! - `kotlin::call` — rewrite calls with a template.
 
-pub mod calls;
+mod calls;
 pub mod imports;
 pub mod packages;
-pub mod patterns;
-pub mod symbols;
-
-use std::path::Path;
+mod patterns;
+mod symbols;
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
-use tree_sitter::Tree;
+use colab_rewrite::{CallShape, SourceLanguage};
 
-/// Extensions this backend claims. `.kts` is the Kotlin script form
-/// used by Gradle build files.
-const RELEVANT_EXTENSIONS: &[&str] = &["kt", "kts"];
-
-pub(crate) fn is_relevant(path: &Path) -> bool {
-    path.extension()
-        .and_then(|s| s.to_str())
-        .is_some_and(|ext| RELEVANT_EXTENSIONS.contains(&ext))
-}
-
-/// Parse `source` into a Kotlin syntax tree, through the shared parse
-/// cache (`colab_rewrite::parse_cache`): a text the rules before have
-/// already parsed is not parsed again. `None` if tree-sitter cannot parse.
-pub(crate) fn parse(source: &str) -> Option<Tree> {
-    colab_rewrite::parse_cache::parse(&patterns::language().grammar, source)
-}
+/// What the shared `symbol` / `call` / `pattern` floor needs to know
+/// about Kotlin ([`colab_rewrite::language`]). `.kts` is the Kotlin
+/// script form used by Gradle build files.
+pub(crate) static LANG: SourceLanguage = SourceLanguage {
+    namespace: "kotlin",
+    extensions: &["kt", "kts"],
+    file_names: &[],
+    pattern: patterns::language,
+    rename_kinds: symbols::RENAME_KINDS,
+    prose_kinds: &["line_comment", "block_comment", "string_content"],
+    // A trailing lambda after the parentheses is left in place.
+    calls: CallShape::Located {
+        locate: calls::callee,
+        through_arguments: true,
+    },
+    qualifiers: None,
+};
 
 /// Plug-in entry point for the `kotlin` namespace.
 pub struct KotlinBackend;
@@ -81,20 +80,9 @@ const CAPABILITIES: &[Capability] = &[
             description: "Replace matched calls with the rendered template. Rename the function to stay idempotent.",
         }],
     },
-    Capability {
-        module: "pattern",
-        description: "Match code by shape: the target is Kotlin code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `Log.d($TAG, $MSG)`. An expression, statement, or declaration.",
-        actions: &[
-            ActionCapability {
-                name: "replace",
-                description: "Replace each match with the template, substituting `$NAME` / `$$$NAME` bindings.",
-            },
-            ActionCapability {
-                name: "delete",
-                description: "Remove each match; a match alone on its line takes the line with it.",
-            },
-        ],
-    },
+    colab_rewrite::language::pattern_capability(
+        "Match code by shape: the target is Kotlin code with metavariables — `$NAME` (one node), `$$$NAME` (zero or more), `$_` (wildcard) — e.g. `Log.d($TAG, $MSG)`. An expression, statement, or declaration.",
+    ),
 ];
 
 impl LanguageBackend for KotlinBackend {
@@ -111,12 +99,11 @@ impl LanguageBackend for KotlinBackend {
     }
 
     fn prose_ranges(&self, source: &str) -> Option<Vec<std::ops::Range<usize>>> {
-        let kinds = ["line_comment", "block_comment", "string_content"];
-        crate::parse(source).map(|tree| colab_rewrite::ranges_of_kinds(&tree, &kinds))
+        LANG.prose_ranges(source)
     }
 
     fn prose_locator(&self) -> Option<colab_core::ProseLocator> {
-        Some(|source| Self.prose_ranges(source))
+        Some(|source| LANG.prose_ranges(source))
     }
 
     fn build_rule_where(
@@ -125,9 +112,7 @@ impl LanguageBackend for KotlinBackend {
         spec: RuleSpec,
         constraints: &[colab_core::Constraint],
     ) -> Result<Box<dyn Operation>> {
-        colab_rewrite::pattern::build_rule_where(self, module, spec, constraints, |p, a, c| {
-            Ok(Box::new(patterns::PatternOp::compile(p, a, c)?))
-        })
+        LANG.build_rule_where(self, module, spec, constraints)
     }
 
     fn description(&self) -> &'static str {
@@ -139,14 +124,11 @@ impl LanguageBackend for KotlinBackend {
     }
 
     fn syntax_tree(&self, input: colab_core::AstInput<'_>) -> Result<colab_core::SyntaxTree> {
-        patterns::syntax_tree(input)
+        LANG.syntax_tree(input)
     }
 
     fn declarations(&self, source: &str) -> Option<Vec<colab_core::symbols::Declaration>> {
-        Some(colab_rewrite::declarations(
-            &patterns::language().grammar,
-            source,
-        ))
+        Some(LANG.declarations(source))
     }
 
     fn build_rule(&self, module: &str, spec: RuleSpec) -> Result<Box<dyn Operation>> {
@@ -177,39 +159,7 @@ impl LanguageBackend for KotlinBackend {
                 from: target,
                 to: replacement,
             })),
-            (
-                "symbol",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(symbols::SymbolRename {
-                from: target,
-                to: replacement,
-            })),
-            ("call", RuleSpec::ReplaceCall { target, template }) => {
-                Ok(Box::new(calls::CallReplace {
-                    function: target,
-                    template,
-                }))
-            }
-            (
-                "pattern",
-                RuleSpec::Replace {
-                    target,
-                    replacement,
-                },
-            ) => Ok(Box::new(patterns::PatternOp::compile(
-                &target,
-                colab_rewrite::pattern::PatternAction::Replace(replacement),
-                &[],
-            )?)),
-            ("pattern", RuleSpec::Delete { target }) => Ok(Box::new(patterns::PatternOp::compile(
-                &target,
-                colab_rewrite::pattern::PatternAction::Delete,
-                &[],
-            )?)),
-            (other, spec) => Err(self.unsupported(other, &spec)),
+            (module, spec) => LANG.build_rule(self, module, spec),
         }
     }
 }
@@ -217,12 +167,13 @@ impl LanguageBackend for KotlinBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn claims_kotlin_sources_and_scripts() {
-        assert!(is_relevant(Path::new("a.kt")));
-        assert!(is_relevant(Path::new("build.gradle.kts")));
-        assert!(!is_relevant(Path::new("a.java")));
+        assert!(LANG.is_source(Path::new("a.kt")));
+        assert!(LANG.is_source(Path::new("build.gradle.kts")));
+        assert!(!LANG.is_source(Path::new("a.java")));
     }
 
     #[test]

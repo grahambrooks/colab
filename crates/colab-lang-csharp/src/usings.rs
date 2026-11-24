@@ -53,7 +53,7 @@ where
 
 /// Every name this module matches against in `source`, for near-miss reporting.
 pub(crate) fn using_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::parse(source) else {
+    let Some(tree) = crate::LANG.parse(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -83,7 +83,7 @@ impl fmt::Display for UsingRename {
 
 impl Operation for UsingRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -104,7 +104,7 @@ impl Operation for UsingRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -137,7 +137,7 @@ impl fmt::Display for UsingDelete {
 
 impl Operation for UsingDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -158,7 +158,7 @@ impl Operation for UsingDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -186,7 +186,7 @@ impl fmt::Display for UsingEnsure {
 
 impl Operation for UsingEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -199,7 +199,7 @@ impl Operation for UsingEnsure {
 /// Insert `using <target>;` after the last existing using directive, or
 /// at the top of the file when there is none.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 

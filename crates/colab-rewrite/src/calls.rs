@@ -51,6 +51,57 @@ fn call_edit(
     ))
 }
 
+/// [`rewrite`] for a language whose calls are not one node kind with
+/// `function` / `arguments` fields (Java, Kotlin, PHP, Ruby, Swift):
+/// `locate` reads each call's argument list and callee its own way.
+/// With `through_arguments`, the edit ends at the argument list, so a
+/// trailing lambda or closure after it survives.
+pub fn rewrite_located(
+    tree: &Tree,
+    source: &str,
+    locate: crate::language::CallLocator,
+    through_arguments: bool,
+    function: &str,
+    template: &str,
+) -> String {
+    let mut edits = Vec::new();
+    crate::visit_all(tree, |node| {
+        if let Some((args, callee)) = locate(node, source)
+            && callee == function
+        {
+            let texts = arguments(args, source);
+            let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+            let end = if through_arguments {
+                args.end_byte()
+            } else {
+                node.end_byte()
+            };
+            edits.push(crate::Edit::new(
+                node.start_byte(),
+                end,
+                render_call_template(template, function, &refs),
+            ));
+        }
+    });
+    crate::apply_edits(source, edits)
+}
+
+/// Every callee `locate` finds in `tree`: the near-miss candidates of a
+/// [`rewrite_located`] rule.
+pub fn callees_located(
+    tree: &Tree,
+    source: &str,
+    locate: crate::language::CallLocator,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    crate::visit_all(tree, |node| {
+        if let Some((_, callee)) = locate(node, source) {
+            out.push(callee.into_owned());
+        }
+    });
+    out
+}
+
 /// The argument list's named children, as written. (C# wraps each in an
 /// `argument` node, which may carry `ref` / `out`: its text is what
 /// belongs in `$1` / `$args`.)

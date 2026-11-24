@@ -57,7 +57,7 @@ fn match_path_prefix(text: &str, from: &str) -> Option<usize> {
 /// near-miss reporting. The matcher segment-prefix-matches the target
 /// against this same text.
 pub(crate) fn use_paths(source: &str) -> Vec<String> {
-    crate::parse(source).map_or_default(|tree| {
+    crate::LANG.parse(source).map_or_default(|tree| {
         colab_rewrite::field_texts(&tree, source, &["use_declaration"], Some("argument"), &[])
     })
 }
@@ -81,7 +81,7 @@ impl fmt::Display for UseRename {
 
 impl Operation for UseRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("rs")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -104,7 +104,7 @@ impl Operation for UseRename {
 /// Rewrite the source: replace any `use` whose path starts with
 /// segments equal to `from` so the prefix becomes `to`.
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -142,7 +142,7 @@ impl fmt::Display for UseDelete {
 
 impl Operation for UseDelete {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("rs")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -165,7 +165,7 @@ impl Operation for UseDelete {
 /// Remove every `use` declaration whose leading path equals `target`.
 /// Erases the whole `use ...;` line including its trailing newline.
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 
@@ -197,7 +197,7 @@ impl fmt::Display for UseEnsure {
 
 impl Operation for UseEnsure {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("rs")
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -212,7 +212,7 @@ impl Operation for UseEnsure {
 /// after any leading inner attributes (`#![...]`) and inner doc
 /// comments (`//!`, `/*! */`), which must come before every item.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
 

@@ -15,76 +15,23 @@
 //! all twelve backends share one implementation and differ only in which
 //! node kinds count as an identifier.
 
-use std::fmt;
-use std::path::Path;
-
-use colab_core::Operation;
-
 /// Node kinds this backend treats as renameable identifiers.
-const RENAME_KINDS: &[&str] = &["identifier", "type_identifier", "field_identifier"];
+pub(crate) const RENAME_KINDS: &[&str] = &["identifier", "type_identifier", "field_identifier"];
 
-#[derive(Debug)]
-pub struct SymbolRename {
-    pub from: String,
-    pub to: String,
-}
-
-impl fmt::Display for SymbolRename {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "go::symbol \"{}\" -> \"{}\"", self.from, self.to)
-    }
-}
-
-impl Operation for SymbolRename {
-    fn is_file_relevant(&self, path: &Path) -> bool {
-        path.extension().and_then(|s| s.to_str()) == Some("go")
-    }
-
-    fn apply(&self, source_code: &str) -> String {
-        rename(&self.from, &self.to, source_code)
-    }
-
-    fn prefilter(&self) -> Option<&str> {
-        Some(&self.from)
-    }
-
-    fn near_miss_target(&self) -> Option<&str> {
-        Some(&self.from)
-    }
-
-    fn observed_targets(&self, source: &str) -> Vec<String> {
-        crate::parse(source).map_or_default(|tree| {
-            colab_rewrite::field_texts(&tree, source, RENAME_KINDS, None, &[])
-        })
-    }
-
-    fn conflicts(&self, before: &str, _after: &str) -> Vec<String> {
-        crate::parse(before)
-            .and_then(|tree| {
-                colab_rewrite::rename_conflict(&tree, before, RENAME_KINDS, &self.from, &self.to)
-            })
-            .into_iter()
-            .collect()
-    }
-}
-
-pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
-        return source_code.to_string();
-    };
-    colab_rewrite::rename_nodes_by_text(&tree, source_code, RENAME_KINDS, from, to)
+#[cfg(test)]
+fn rename(from: &str, to: &str, source_code: &str) -> String {
+    crate::LANG.rename(from, to, source_code)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use colab_core::Operation;
+    use std::path::Path;
 
     #[test]
     fn renaming_onto_a_name_already_in_the_file_is_a_conflict() {
-        let op = SymbolRename {
-            from: "load".into(),
-            to: "parse".into(),
-        };
+        let op = crate::LANG.symbol_rename("load", "parse");
         let src = "package p\n\nfunc load() {}\n\nfunc parse() {}\n";
         let conflicts = op.conflicts(src, &op.apply(src));
         assert_eq!(conflicts.len(), 1);
@@ -136,10 +83,7 @@ mod tests {
 
     #[test]
     fn symbol_rename_operation_is_relevant_for_go_files() {
-        let op = SymbolRename {
-            from: "a".into(),
-            to: "b".into(),
-        };
+        let op = crate::LANG.symbol_rename("a", "b");
         assert!(op.is_file_relevant(Path::new("foo.go")));
         assert!(!op.is_file_relevant(Path::new("foo.rs")));
     }

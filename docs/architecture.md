@@ -322,20 +322,39 @@ To add `colab-lang-<x>` (replace `<x>` with `kotlin`, `swift`, etc.):
    workspace `[workspace.dependencies]` table.
 2. **Tree-sitter grammar.** Add the grammar dep
    (e.g. `tree-sitter-kotlin = "0.X"`) to the workspace deps.
-3. **Backend struct + capabilities.** Implement `LanguageBackend`:
-   declare the namespace name, write a `Capability` array describing
-   every `(module, action)` pair, and write `build_rule` to dispatch
-   to your `Operation` impls.
-4. **Operations.** One module per namespace
-   (`src/imports.rs`, `src/symbols.rs`, …). Each Operation impl is
-   a struct that holds the rule's parameters, plus an `apply` built on
-   the shared helpers — `colab_rewrite::apply_edits`, `delete_lines`,
-   `rename_nodes_by_text` — never a hand-rolled edit application. Ops
-   that target a value implement `near_miss_target` / `observed_targets`.
-   Add `src/patterns.rs`: a `PatternLanguage` (grammar, expando char,
-   context wrappers, `also` contexts) for `<x>::pattern`; matching itself
-   lives in `colab_rewrite::pattern`. Implement `import_module`,
-   `prose_ranges` and `fence_names` so the generic clauses work.
+3. **The common floor: a `SourceLanguage`.** `symbol`, `call` and
+   `pattern`, prose ranges, declarations and `colab ast` are written once,
+   in `colab_rewrite::language`. Declare what they need about your
+   language as a `pub(crate) static LANG: SourceLanguage` in `lib.rs`:
+   namespace, file extensions (and whole file names), the
+   `PatternLanguage` (grammar, expando char, context wrappers, `also`
+   contexts — in `src/patterns.rs`), the identifier node kinds `symbol`
+   renames (`src/symbols.rs`'s `RENAME_KINDS`), the prose node kinds,
+   the call shape, and optional pattern `Qualifiers`. The call shape is
+   `CallShape::Fields("<kind>")` when a call is one node kind with
+   `function` / `arguments` fields; otherwise write a `CallLocator` in
+   `src/calls.rs` that returns a call's argument list and callee
+   (`CallShape::Located`). Parse through `LANG.parse`, and gate your own
+   operations on `LANG.is_source`.
+4. **Backend struct + capabilities.** Implement `LanguageBackend`:
+   declare the namespace name and write a `Capability` array describing
+   every `(module, action)` pair (the `pattern` row is
+   `colab_rewrite::language::pattern_capability("…")`). `build_rule`
+   matches your own modules and ends in
+   `(module, spec) => LANG.build_rule(self, module, spec)`, which builds
+   the floor's rules and rejects everything else; `build_rule_where`,
+   `prose_ranges`, `prose_locator`, `syntax_tree` and `declarations`
+   each delegate to `LANG` in one line. Implement `import_module` and
+   `fence_names` so the generic clauses work.
+5. **Operations.** One module per module of your own
+   (`src/imports.rs`, …). Each Operation impl is a struct that holds the
+   rule's parameters, plus an `apply` built on the shared helpers —
+   `colab_rewrite::apply_edits`, `delete_lines`, `rename_nodes_by_text`
+   — never a hand-rolled edit application. Ops that target a value
+   implement `near_miss_target` / `observed_targets`. Test the floor in
+   your language too: `src/symbols.rs`, `src/calls.rs` and
+   `src/patterns.rs` hold tests that run the shared operations on its
+   source.
 5. **Register.** Add `registry.register(Box::new(<X>Backend));` to
    `crates/colab-backends/src/lib.rs::registry`, add `colab-lang-<x>` to
    `crates/colab-backends/Cargo.toml`, and bump `BACKEND_COUNT`. The test

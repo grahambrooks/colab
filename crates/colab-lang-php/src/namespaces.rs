@@ -31,7 +31,7 @@ impl fmt::Display for NamespaceRename {
 
 impl Operation for NamespaceRename {
     fn is_file_relevant(&self, path: &Path) -> bool {
-        crate::is_relevant(path)
+        crate::LANG.is_source(path)
     }
 
     fn apply(&self, source_code: &str) -> String {
@@ -47,14 +47,14 @@ impl Operation for NamespaceRename {
     }
 
     fn observed_targets(&self, source: &str) -> Vec<String> {
-        crate::parse(source).map_or_default(|tree| {
+        crate::LANG.parse(source).map_or_default(|tree| {
             colab_rewrite::field_texts(&tree, source, NAMESPACE_KINDS, Some("name"), &[])
         })
     }
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::parse(source_code) else {
+    let Some(tree) = crate::LANG.parse(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize)> = Vec::new();
