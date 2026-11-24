@@ -103,15 +103,43 @@ impl Operation for MemberEdit {
             return Some("the file does not parse as JSON, so it is left alone".into());
         }
         (!matches!(self.mode, Mode::Delete) && self.edit(source).is_none()).then(|| {
-            format!(
-                "{} (or its path runs through an array element that does not exist)",
-                colab_core::ALREADY
-            )
+            self.blocked(source)
+                .unwrap_or_else(|| colab_core::ALREADY.to_string())
         })
     }
 }
 
 impl MemberEdit {
+    /// Why the pointer reaches nothing that can hold its next step: an
+    /// array without that element, or a scalar. `None` when every step
+    /// resolves or would be created (an object's missing member).
+    fn blocked(&self, source: &str) -> Option<String> {
+        let tree = crate::parse(source)?;
+        let root = tree.root_node();
+        let mut node = root.named_children(&mut root.walk()).find(is_value)?;
+        for (depth, token) in self.tokens.iter().enumerate() {
+            let at = || {
+                let path: Vec<&str> = self.tokens[..depth].iter().map(String::as_str).collect();
+                format!("/{}", path.join("/"))
+            };
+            match child(node, token, source) {
+                Some(Child::Member { value, .. } | Child::Element(value)) => node = value,
+                Some(Child::Missing) => return None,
+                None if node.kind() == "array" => {
+                    return Some(format!("`{}` is an array with no element `{token}`", at()));
+                }
+                None => {
+                    return Some(format!(
+                        "`{}` holds a {}, so nothing can go under it",
+                        at(),
+                        node.kind()
+                    ));
+                }
+            }
+        }
+        None
+    }
+
     /// The one splice this rule makes, or `None` when nothing changes.
     fn edit(&self, source: &str) -> Option<Edit> {
         let tree = crate::parse(source)?;
@@ -316,6 +344,29 @@ fn delete_member(object: Node<'_>, pair: Node<'_>) -> Edit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_no_op_set_says_whether_it_is_done_or_blocked() {
+        let doc = "{\"a\": {\"b\": 1}, \"l\": [1]}\n";
+        let done = MemberEdit::set("/a/b", "1").unwrap();
+        assert_eq!(
+            done.why_unchanged(doc).as_deref(),
+            Some(colab_core::ALREADY)
+        );
+        let past = MemberEdit::set("/l/5", "2").unwrap();
+        assert!(
+            past.why_unchanged(doc)
+                .unwrap()
+                .contains("`/l` is an array with no element `5`")
+        );
+        let under = MemberEdit::set("/a/b/c", "2").unwrap();
+        assert!(
+            under
+                .why_unchanged(doc)
+                .unwrap()
+                .contains("`/a/b` holds a number")
+        );
+    }
 
     const SETTINGS: &str = "{\n  \"permissions\": {\n    \"allow\": [\"Bash(ls:*)\"]\n  },\n  \"enabledPlugins\": {\n    \"mine@elsewhere\": true\n  }\n}\n";
 

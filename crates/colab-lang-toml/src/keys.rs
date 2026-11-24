@@ -147,12 +147,47 @@ impl Operation for KeyEdit {
         if source.parse::<DocumentMut>().is_err() {
             return Some("the file does not parse as TOML, so it is left alone".into());
         }
-        (!matches!(self.mode, Mode::Delete) && self.apply(source) == source).then(|| {
-            format!(
-                "{} (or a `[field=value]` selector matched no array element)",
-                colab_core::ALREADY
-            )
-        })
+        if matches!(self.mode, Mode::Delete) || self.apply(source) != source {
+            return None;
+        }
+        let doc = source.parse::<DocumentMut>().ok()?;
+        Some(blocked(doc.as_table(), &self.path).unwrap_or_else(|| colab_core::ALREADY.to_string()))
+    }
+}
+
+/// Why a `set` / `insert` at `path` can make nothing, when something on
+/// the way is not a table: missing keys and elements would be created, so
+/// that is the only way short of the value already being there.
+fn blocked(table: &dyn TableLike, path: &[Segment]) -> Option<String> {
+    let (first, rest) = path.split_first()?;
+    if rest.is_empty() {
+        return None;
+    }
+    match first {
+        Segment::Key(key) => match table.get(key)?.as_table_like() {
+            Some(child) => blocked(child, rest),
+            None => Some(format!(
+                "`{key}` holds a value, not a table, so nothing can go under it"
+            )),
+        },
+        Segment::Select { key, field, value } => {
+            let item = table.get(key)?;
+            let Some(index) = find(table, key, field, value) else {
+                return match item {
+                    Item::ArrayOfTables(_) | Item::Value(Value::Array(_)) => None,
+                    _ => Some(format!(
+                        "`{key}` is not an array of tables, so `[{field}={value}]` selects nothing"
+                    )),
+                };
+            };
+            match item {
+                Item::ArrayOfTables(tables) => blocked(tables.get(index)?, rest),
+                Item::Value(Value::Array(array)) => {
+                    blocked(array.get(index)?.as_inline_table()?, rest)
+                }
+                _ => None,
+            }
+        }
     }
 }
 
@@ -403,6 +438,30 @@ fn same_item(a: &Item, b: &Item) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_no_op_set_says_whether_it_is_done_or_blocked() {
+        let doc = "[package]\nname = \"x\"\nbins = 3\n";
+        let done = KeyEdit::set("package.name", "\"x\"").unwrap();
+        assert_eq!(
+            done.why_unchanged(doc).as_deref(),
+            Some(colab_core::ALREADY)
+        );
+        let under = KeyEdit::set("package.name.sub", "1").unwrap();
+        assert!(
+            under
+                .why_unchanged(doc)
+                .unwrap()
+                .contains("`name` holds a value, not a table")
+        );
+        let select = KeyEdit::set("package.bins[name=a].path", "\"p\"").unwrap();
+        assert!(
+            select
+                .why_unchanged(doc)
+                .unwrap()
+                .contains("`bins` is not an array of tables")
+        );
+    }
 
     const PREK: &str = r#"# Git hooks, run by prek.
 
