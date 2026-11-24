@@ -2307,6 +2307,36 @@ fn lsp_cmd(root: &std::path::Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
+fn an_action_that_creates_a_file_writes_it() {
+    // rust-analyzer's "Extract module to file" creates a file and fills it
+    // in one edit; the file is not on disk when the write is checked, so
+    // it must not count as one deleted since colab read it.
+    let root = git_workspace("action-create", &[("a.rs", RS_ACT_A)]);
+    let output = lsp_cmd(
+        &root,
+        &[
+            "action",
+            "--at",
+            "a.rs:6:13",
+            "--title",
+            "Extract to new file",
+            "--write",
+        ],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("extracted.txt")).unwrap(),
+        "extracted\n"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn action_lists_and_picks_by_kind_and_title() {
     let root = action_workspace("action-pick");
     let output = lsp_cmd(
@@ -2339,7 +2369,8 @@ fn action_lists_and_picks_by_kind_and_title() {
             "Extract into variable",
             "Uppercase file",
             "Convert to async",
-            "Organize imports"
+            "Organize imports",
+            "Extract to new file"
         ]
     );
     assert_eq!(value["actions"][2]["disabled"], "not a function");

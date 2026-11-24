@@ -291,11 +291,21 @@ pub(crate) fn run_change_set(
             .iter()
             .map(|e| set.origin_of(&e.path).unwrap_or_else(|| e.path.clone()))
             .collect();
+        // A file the change set itself creates (rust-analyzer's "extract
+        // module to file") is not on disk yet, so there is nothing to merge.
+        let created: std::collections::HashSet<&Path> = set
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                colab_core::fileops::FileOp::Create { path } => Some(path.as_path()),
+                _ => None,
+            })
+            .collect();
         let fresh = colab_core::merge::prepare_writes(
             set.edits
                 .iter()
                 .zip(&origins)
-                .filter(|(e, _)| e.changed())
+                .filter(|(e, _)| e.changed() && !created.contains(e.path.as_path()))
                 .map(|(e, origin)| (origin.as_path(), e.before.as_str(), e.after.as_str())),
         )?;
         if !fresh.conflicts.is_empty() {

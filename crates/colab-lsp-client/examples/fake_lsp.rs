@@ -374,6 +374,19 @@ fn main() {
                     json!({"title": "Organize imports", "kind": "source.organizeImports",
                            "data": {"uri": uri, "op": "organize"}}),
                 ];
+                // A new file and its content in one edit, as rust-analyzer's
+                // "Extract module to file" sends: a `create`, then an edit of it.
+                let created = format!("{}/extracted.txt", uri.rsplit_once('/').unwrap().0);
+                actions.push(
+                    json!({"title": "Extract to new file", "kind": "refactor.move.file",
+                    "edit": {"documentChanges": [
+                        {"kind": "create", "uri": created},
+                        {"textDocument": {"uri": created, "version": null},
+                         "edits": [{"range": {"start": {"line": 0, "character": 0},
+                                              "end": {"line": 0, "character": 0}},
+                                    "newText": "extracted\n"}]}
+                    ]}}),
+                );
                 if start < end {
                     actions.insert(0, json!({"title": "Extract into variable", "kind": "refactor.extract.variable",
                            "data": {"uri": uri, "op": "extract", "start": start, "end": end}}));
