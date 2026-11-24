@@ -249,6 +249,22 @@ fn kept_server_is_the_default() {
             .unwrap()
             .contains("fn newest()")
     );
+    // `--status` says keeping is on by default, and lists the daemon.
+    let status = colab()
+        .env_remove("COLAB_KEEP_SERVER")
+        .args(["lsp-daemon", "--status"])
+        .output()
+        .unwrap();
+    let listing = String::from_utf8_lossy(&status.stdout);
+    assert!(
+        listing.starts_with("kept servers: on (the default for the colab binary)"),
+        "{listing}"
+    );
+    assert!(listing.contains(&*root.to_string_lossy()), "{listing}");
+    let off = colab().args(["lsp-daemon", "--status"]).output().unwrap();
+    assert!(
+        String::from_utf8_lossy(&off.stdout).starts_with("kept servers: off (COLAB_KEEP_SERVER=0)")
+    );
     let stop = colab()
         .args(["lsp-daemon", "--stop", "--root"])
         .arg(&root)

@@ -94,7 +94,25 @@ fn a_kept_server_serves_commands_in_a_row_from_disk() {
     assert_eq!(a.after, "fn newest() {}\nfn main() { newest(); }\n");
     assert_eq!(second.old_name.as_deref(), Some("middle"));
 
+    // `colab lsp-daemon --status` lists it: answering, this build's, with
+    // its command and root.
+    let listed = colab_lsp_client::daemon::status();
+    let kept = listed
+        .iter()
+        .find(|k| k.socket == socket)
+        .expect("the daemon is listed");
+    assert!(kept.answers && kept.this_build, "{kept:?}");
+    assert_eq!(kept.root, root);
+    assert!(kept.server.as_deref().unwrap().starts_with(&server.program));
+    assert_eq!(kept.pid, Some(std::process::id()));
+
     colab_lsp_client::daemon::stop(&socket).unwrap();
+    assert!(
+        colab_lsp_client::daemon::status()
+            .iter()
+            .all(|k| k.socket != socket),
+        "a stopped daemon is not listed"
+    );
     // `stop` returns once the daemon has let go of its socket, so a command
     // started right after it starts a fresh server, never the dying one.
     assert!(!socket.exists(), "the socket is gone when stop returns");

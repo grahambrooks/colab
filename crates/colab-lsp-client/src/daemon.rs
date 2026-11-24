@@ -64,6 +64,67 @@ pub fn enabled() -> bool {
     }
 }
 
+/// Whether commands keep servers ([`enabled`]), and why, for
+/// `colab lsp-daemon --status`.
+pub fn keeping() -> (bool, String) {
+    let on = enabled();
+    let why = match std::env::var("COLAB_KEEP_SERVER") {
+        Ok(value) => format!("COLAB_KEEP_SERVER={value}"),
+        Err(_) if on => "the default for the colab binary".into(),
+        Err(_) => "this program is not the colab binary, and COLAB_KEEP_SERVER is unset".into(),
+    };
+    (on, why)
+}
+
+/// A kept server, as `colab lsp-daemon --status` reports it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Kept {
+    pub socket: PathBuf,
+    /// The server command, when the daemon recorded it.
+    pub server: Option<String>,
+    pub root: PathBuf,
+    /// Started by this colab build; a different build never reuses it.
+    pub this_build: bool,
+    pub pid: Option<u32>,
+    /// Seconds since the Unix epoch.
+    pub started: Option<u64>,
+    /// It accepted a connection just now (a stale socket does not).
+    pub answers: bool,
+}
+
+/// Every kept server of this user, from the sockets and the `.info` /
+/// `.root` files beside them. Asks nothing of the servers.
+pub fn status() -> Vec<Kept> {
+    let Ok(entries) = std::fs::read_dir(socket_dir()) else {
+        return Vec::new();
+    };
+    let (exe, built) = build_identity();
+    let mut out: Vec<Kept> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "sock"))
+        .map(|socket| {
+            let info: serde_json::Value = std::fs::read_to_string(socket.with_extension("info"))
+                .ok()
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default();
+            let root = std::fs::read_to_string(socket.with_extension("root")).unwrap_or_default();
+            Kept {
+                server: info["server"].as_str().map(str::to_string),
+                root: PathBuf::from(root.trim()),
+                this_build: info["exe"].as_str() == Some(&*exe.to_string_lossy())
+                    && info["built"].as_str() == Some(&*built.to_string()),
+                pid: info["pid"].as_u64().and_then(|p| u32::try_from(p).ok()),
+                started: info["started"].as_u64(),
+                answers: UnixStream::connect(&socket).is_ok(),
+                socket,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| a.root.cmp(&b.root).then(a.socket.cmp(&b.socket)));
+    out
+}
+
 /// What identifies the colab build that would run the daemon: its path
 /// and when it was built. A rebuilt or upgraded colab gets daemons of its
 /// own, never one running older code.
@@ -190,6 +251,7 @@ pub fn stop_all(root: Option<&Path>) -> usize {
             Err(_) => {
                 let _ = std::fs::remove_file(&path);
                 let _ = std::fs::remove_file(path.with_extension("root"));
+                let _ = std::fs::remove_file(path.with_extension("info"));
             }
         }
     }
@@ -235,6 +297,22 @@ pub fn serve(
         socket.with_extension("root"),
         root.to_string_lossy().as_bytes(),
     )?;
+    // And what `--status` reports.
+    let (exe, built) = build_identity();
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    std::fs::write(
+        socket.with_extension("info"),
+        json!({
+            "server": std::iter::once(program).chain(args.iter().map(String::as_str)).collect::<Vec<_>>().join(" "),
+            "exe": exe.to_string_lossy(),
+            "built": built.to_string(),
+            "pid": std::process::id(),
+            "started": started,
+        })
+        .to_string(),
+    )?;
     let mut server = Server {
         transport: Transport::spawn(program, args, root)?,
         root: root.to_path_buf(),
@@ -275,6 +353,7 @@ pub fn serve(
     };
     let _ = std::fs::remove_file(socket);
     let _ = std::fs::remove_file(socket.with_extension("root"));
+    let _ = std::fs::remove_file(socket.with_extension("info"));
     let _ = server
         .transport
         .send(&json!({"jsonrpc": "2.0", "id": "colab-shutdown", "method": "shutdown"}));

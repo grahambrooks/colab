@@ -1496,6 +1496,7 @@ and later commands connect to it:
 colab action --at src/main.rs:3:5-6:6 --list          # starts rust-analyzer: 3.5 s
 colab action --at src/main.rs:3:5-6:6 --kind refactor.extract --title function --write   # 0.6 s
 colab rename --symbol fun_name --in src/main.rs --to total_price --write                 # 0.6 s
+colab lsp-daemon --status                              # which are kept, and whether keeping is on and why
 colab lsp-daemon --stop                                # stop them all (or --root DIR)
 ```
 

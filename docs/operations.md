@@ -188,8 +188,10 @@ paths with uncommitted changes unless `--allow-dirty`.
 - **Kept language servers.** A server colab starts is kept running
   (`colab lsp-daemon`) and reused by the next command, so only the first
   pays its start-up and indexing; it exits after 600 s without a client.
-  `colab lsp-daemon --stop` stops every one; `COLAB_KEEP_SERVER=0` gives
-  each command its own. This is on by default only for a binary named
+  `colab lsp-daemon --status` lists the kept servers (command, root,
+  uptime, whether each answers and is this build's) and says whether
+  keeping is on and why; `colab lsp-daemon --stop` stops every one;
+  `COLAB_KEEP_SERVER=0` gives each command its own. This is on by default only for a binary named
   `colab`; a renamed copy (`colab-old`) needs `COLAB_KEEP_SERVER=1`.
 - **Waiting for a server.** colab asks only once the server is done
   indexing. rust-analyzer says so (`experimental/serverStatus`), so after

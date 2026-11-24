@@ -58,6 +58,7 @@ cargo run -p colab-cli -- licenses                               # colab's and e
 scripts/third-party-licenses.py [--check]                        # regenerate that file (CI: --check) after changing dependencies
 cargo run -p colab-cli -- undo --from <dir>                      # restore a run made with --backup <dir>
 cargo run -p colab-cli -- lsp-daemon --stop                      # stop every kept language server
+cargo run -p colab-cli -- lsp-daemon --status                    # list them; whether keeping is on, and why
 cargo run -p colab-cli -- server                                 # LSP for .colab files: diagnostics, hover, completion, code actions, go to include
 cargo run -p colab-cli -- mcp                                    # MCP server on stdio (newline-delimited JSON-RPC)
 ```

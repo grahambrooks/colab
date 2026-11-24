@@ -198,16 +198,22 @@ enum Commands {
 #[derive(Parser, Debug)]
 struct LspDaemonArgs {
     /// Stop every kept server of this user, and exit.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "status")]
     stop: bool,
 
+    /// List this user's kept servers (command, root, whether each answers
+    /// and is this build's), and say whether commands keep servers and
+    /// why; then exit.
+    #[arg(long)]
+    status: bool,
+
     /// The socket to listen on.
-    #[arg(long, value_name = "PATH", required_unless_present = "stop")]
+    #[arg(long, value_name = "PATH", required_unless_present_any = ["stop", "status"])]
     socket: Option<PathBuf>,
 
     /// The project root to start the server in (with `--stop`: stop only
     /// the servers for this root).
-    #[arg(long, value_name = "DIR", required_unless_present = "stop")]
+    #[arg(long, value_name = "DIR", required_unless_present_any = ["stop", "status"])]
     root: Option<PathBuf>,
 
     /// Seconds without a client before the server is shut down.
@@ -233,6 +239,43 @@ fn run_lsp_daemon(args: LspDaemonArgs) -> Result<u8> {
 
 #[cfg(unix)]
 fn run_lsp_daemon(args: LspDaemonArgs) -> Result<u8> {
+    if args.status {
+        let (on, why) = colab_lsp_client::daemon::keeping();
+        let mut out = io::stdout().lock();
+        let state = if on { "on" } else { "off" };
+        writeln!(out, "kept servers: {state} ({why})").map_err(io_to_error)?;
+        let kept = colab_lsp_client::daemon::status();
+        if kept.is_empty() {
+            writeln!(out, "none running").map_err(io_to_error)?;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        for k in kept {
+            let mut notes = Vec::new();
+            if !k.answers {
+                notes.push("not answering (a stale socket)".to_string());
+            }
+            if !k.this_build {
+                notes.push("another colab build's".to_string());
+            }
+            if let Some(started) = k.started {
+                notes.push(format!("up {}", human_age(now.saturating_sub(started))));
+            }
+            if let Some(pid) = k.pid {
+                notes.push(format!("pid {pid}"));
+            }
+            writeln!(
+                out,
+                "{}  {}  {}",
+                k.server.as_deref().unwrap_or("(server not recorded)"),
+                k.root.display(),
+                notes.join(", ")
+            )
+            .map_err(io_to_error)?;
+        }
+        return Ok(0);
+    }
     if args.stop {
         let root = args
             .root
@@ -257,6 +300,16 @@ fn run_lsp_daemon(args: LspDaemonArgs) -> Result<u8> {
     )
     .map_err(|e| Error::io_at(&socket, e))?;
     Ok(0)
+}
+
+/// `95` → `1m 35s`, `7300` → `2h 1m`.
+#[cfg(unix)]
+fn human_age(secs: u64) -> String {
+    match secs {
+        0..60 => format!("{secs}s"),
+        60..3600 => format!("{}m {}s", secs / 60, secs % 60),
+        _ => format!("{}h {}m", secs / 3600, secs % 3600 / 60),
+    }
 }
 
 #[derive(Parser, Debug)]
