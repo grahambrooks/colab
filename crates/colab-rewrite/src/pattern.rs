@@ -778,10 +778,36 @@ impl StructuralPattern {
     }
 
     fn rewrite_own(&self, source: &str, template: &str) -> String {
+        let edits = self.rewrite_edits(source, template);
+        if edits.is_empty() {
+            return source.to_string();
+        }
+        apply_edits(source, edits)
+    }
+
+    /// Where the first match whose rewrite alone leaves `source` (which
+    /// parses) unparseable starts, as `(line, column)`, 1-based: the site
+    /// a "would not parse" skip is about. `None` when no single rewrite
+    /// breaks it (only their combination does), or none is made.
+    pub fn first_breaking_rewrite(&self, source: &str, template: &str) -> Option<(usize, usize)> {
+        std::iter::once(self).chain(&self.also).find_map(|form| {
+            let edit = form
+                .rewrite_edits(source, template)
+                .into_iter()
+                .find(|edit| {
+                    let one = apply_edits(source, vec![edit.clone()]);
+                    parse_clean(&self.lang.grammar, &one).is_err()
+                })?;
+            Some(Lines::new(source).at(edit.start))
+        })
+    }
+
+    /// The edits one compilation makes to `source`, outermost matches only.
+    fn rewrite_edits(&self, source: &str, template: &str) -> Vec<crate::Edit> {
         let grep = parsed(&self.lang, source);
         let matches = self.matches(&grep, source);
         if matches.is_empty() {
-            return source.to_string();
+            return Vec::new();
         }
         let requalified = self.qualified.as_ref().and_then(|q| q.template(template));
         let template = requalified.as_deref().unwrap_or(template);
@@ -834,13 +860,12 @@ impl StructuralPattern {
             subs: &subs,
             matches: &matches,
         };
-        let edits = rewriter
+        rewriter
             .outermost(0..source.len(), None)
             .into_iter()
             .map(|i| rewriter.render(source, i))
             .filter(|edit| !same_but_whitespace(&source[edit.start..edit.end], &edit.text))
-            .collect();
-        apply_edits(source, edits)
+            .collect()
     }
 
     /// Remove every match. One that stands alone on its line(s) — apart
@@ -1159,6 +1184,28 @@ mod tests {
                 "colab_rewrite::language::pattern_capability($D)"
             ),
             "colab_rewrite::language::pattern_capability($D)"
+        );
+        // What the template appends to a sequence laid out one per line
+        // starts a line of its own, indented like the line before: a
+        // field after `$$$F`, an item after `$$$B`.
+        assert_eq!(
+            keep_layout(
+                "PatternLanguage {\n        grammar: g,\n        also: &[],\n    }",
+                "PatternLanguage { grammar: g,\n        also: &[], leading: NONE, }"
+            ),
+            "PatternLanguage {\n        grammar: g,\n        also: &[],\n        leading: NONE,\n    }"
+        );
+        assert_eq!(
+            keep_layout(
+                "impl L for R {\n    fn two(&self) -> u8 {\n        2\n    }\n}",
+                "impl L for R { fn two(&self) -> u8 {\n        2\n    } fn three(&self) -> u8 { 3 } }"
+            ),
+            "impl L for R {\n    fn two(&self) -> u8 {\n        2\n    }\n    fn three(&self) -> u8 { 3 }\n}"
+        );
+        // On one line, appended text stays on it.
+        assert_eq!(
+            keep_layout("S { a: 1 }", "S { a: 1, b: 2 }"),
+            "S { a: 1, b: 2 }"
         );
     }
 

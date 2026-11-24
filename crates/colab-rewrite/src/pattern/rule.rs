@@ -132,11 +132,19 @@ impl PatternRule {
         {
             return None;
         }
-        Some(
-            "the rewritten code would not parse, so it was skipped; check the template \
+        // Name the match that breaks it, when one does on its own: in a
+        // file of many matches, the one shaped differently (a struct
+        // literal ending in `..base`) is otherwise hard to find.
+        let site = self
+            .pattern
+            .first_breaking_rewrite(source, template)
+            .map_or_default(|(line, column)| {
+                format!(" (the rewrite of the match at line {line}, column {column} breaks it)")
+            });
+        Some(format!(
+            "the rewritten code would not parse, so it was skipped{site}; check the template \
              (a `$$$` capture keeps its separators, so `$$$ARGS,` doubles a comma)"
-                .into(),
-        )
+        ))
     }
 
     /// Qualifiers this rule's template introduced that the file neither

@@ -122,15 +122,158 @@ impl Rewriter<'_, '_> {
             values.push((derived.var.clone(), var, text, None));
         }
         let edit = nm.make_edit(self.pattern, self.fix);
-        let text = String::from_utf8_lossy(&edit.inserted_text);
-        let text = indent_with_tabs(source, edit.position, &text);
         let (start, end) = (edit.position, edit.position + edit.deleted_length);
         // A node that owns the newline ending it (Go's `expression_case`)
         // keeps that newline: the template replaces the code only.
         let end = start + source[start..end].trim_end().len();
+        // Each capture with a source span is laid out as one token and put
+        // back verbatim, so the layout diff never borrows one capture's
+        // line breaks for another's equal tokens (`swap($A, $B)` →
+        // `swapped($B, $A)` must not spread a one-line `$B` over lines).
+        let captures: Vec<Capture> = values
+            .iter()
+            .enumerate()
+            .filter_map(|(k, (name, var, text, span))| {
+                let span = span.clone()?;
+                let mark = char::from_u32(SENTINEL + u32::try_from(k).ok()?)?;
+                Some(Capture {
+                    mark,
+                    name: name.clone(),
+                    var: var.clone(),
+                    text: text.clone(),
+                    span,
+                })
+            })
+            .collect();
+        if let Some(text) = self.render_verbatim(&nm, source, start..end, &captures) {
+            return Edit::new(start, end, text);
+        }
+        let text = String::from_utf8_lossy(&edit.inserted_text);
+        let text = indent_with_tabs(source, edit.position, &text);
         let text = keep_layout(&source[start..end], &strip_blank_line_indent(&text));
         Edit::new(start, end, text)
     }
+
+    /// The template for match `nm` over `source[range]` with each capture
+    /// as a sentinel character, laid out against the match with each
+    /// capture's span replaced by the same sentinel, then each sentinel
+    /// replaced by the capture's text, its later lines shifted by as many
+    /// columns as the capture moved. `None` (use the plain layout) when
+    /// the text already holds a sentinel character, or a capture lies
+    /// partly outside the match.
+    fn render_verbatim(
+        &self,
+        nm: &NodeMatch<'_, StrDoc<TsLang>>,
+        source: &str,
+        range: std::ops::Range<usize>,
+        captures: &[Capture],
+    ) -> Option<String> {
+        let old = &source[range.clone()];
+        let sentinel = |c: char| (SENTINEL..SENTINEL + 0x100).contains(&u32::from(c));
+        // A `let`'s value is new text derived from a capture; its tokens
+        // find their layout by aligning with the capture's source, which a
+        // sentinel would hide. Such a match keeps the token-level layout.
+        if captures.is_empty() || !self.lets.is_empty() || old.chars().any(sentinel) {
+            return None;
+        }
+        let mut inside: Vec<&Capture> = captures
+            .iter()
+            .filter(|c| c.span.start >= range.start && c.span.end <= range.end)
+            .collect();
+        inside.sort_by_key(|c| c.span.start);
+        if inside.windows(2).any(|w| w[0].span.end > w[1].span.start) {
+            return None;
+        }
+        let mut skeleton_old = String::with_capacity(old.len());
+        let mut at = range.start;
+        for c in &inside {
+            skeleton_old.push_str(&source[at..c.span.start]);
+            skeleton_old.push(c.mark);
+            at = c.span.end;
+        }
+        skeleton_old.push_str(&source[at..range.end]);
+
+        let mut marked = nm.clone();
+        for c in captures {
+            marked.get_env_mut().insert_transformation(
+                &c.var,
+                &c.name,
+                c.mark.to_string().into_bytes(),
+            );
+        }
+        let edit = marked.make_edit(self.pattern, self.fix);
+        let template = String::from_utf8_lossy(&edit.inserted_text);
+        let template = indent_with_tabs(source, range.start, &template);
+        let laid = keep_layout(&skeleton_old, &strip_blank_line_indent(&template));
+
+        // A capture's later lines move with the indentation of the line it
+        // sits on, as the template's lines do: by how much more (or less)
+        // that line is indented than the one the capture came from. Not
+        // by column: `unsafe $X` moves `$X` right, not its body.
+        let indent = |line: &str| line.chars().take_while(|c| c.is_whitespace()).count();
+        let line_start = source[..range.start].rfind('\n').map_or(0, |p| p + 1);
+        let lead = indent(&source[line_start..range.start]);
+        let mut out = String::with_capacity(laid.len() + old.len());
+        for ch in laid.chars() {
+            let Some(c) = captures.iter().find(|c| c.mark == ch) else {
+                out.push(ch);
+                continue;
+            };
+            // Still on the match's first line, that line's indentation.
+            let here = out.rfind('\n').map_or(lead, |p| indent(&out[p + 1..]));
+            let from = source[..c.span.start].rfind('\n').map_or(0, |p| p + 1);
+            let was = indent(&source[from..c.span.start]);
+            out.push_str(&shift_lines(&c.text, here as isize - was as isize));
+        }
+        Some(out)
+    }
+}
+
+/// First of the private-use characters [`Rewriter::render_verbatim`] marks
+/// captures with, one per capture.
+const SENTINEL: u32 = 0xF0000;
+
+/// A capture as [`Rewriter::render_verbatim`] lays it out.
+struct Capture {
+    mark: char,
+    name: String,
+    var: MetaVariable,
+    text: String,
+    span: std::ops::Range<usize>,
+}
+
+/// `text` with every line after the first moved `by` columns: indentation
+/// added (in the line's own indent character) or removed, never more than
+/// a line has.
+fn shift_lines(text: &str, by: isize) -> String {
+    if by == 0 || !text.contains('\n') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    for (i, line) in text.split('\n').enumerate() {
+        if i > 0 {
+            out.push('\n');
+            if line.trim().is_empty() {
+                out.push_str(line);
+                continue;
+            }
+            if by > 0 {
+                let pad = if line.starts_with('\t') { '\t' } else { ' ' };
+                out.extend(std::iter::repeat_n(pad, by.unsigned_abs()));
+                out.push_str(line);
+            } else {
+                let indent = line.len() - line.trim_start().len();
+                let mut cut = indent.min(by.unsigned_abs());
+                while !line.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                out.push_str(&line[cut..]);
+            }
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
 }
 
 /// `new` (a rendered template) with the whitespace of `old` (the text it
@@ -190,9 +333,38 @@ pub(super) fn keep_layout(old: &str, new: &str) -> String {
                     && o.is_empty()
                     && !space.contains('\n')
                     && b[n.clone()].last().is_some_and(|t| t.1 == ",")
-                    && a.get(o.start).is_some_and(|next| next.0.contains('\n'))
+                    && a.get(o.start).is_some_and(|next| {
+                        next.0.contains('\n') && !matches!(next.1, "}" | ")" | "]")
+                    })
                     && b.get(n.end).is_some_and(|next| !next.0.contains('\n'));
-                if in_place || own_line {
+                // Likewise after the last one: what the template appends to
+                // a sequence the original lays out one per line (a field
+                // after `$$$F`, an item after `$$$B`, just before a closing
+                // `}` on its own line) starts a line, indented like the
+                // line before, instead of joining that line's end.
+                let appended = k == 0
+                    && n.start != 0
+                    && o.is_empty()
+                    && o.start > 0
+                    && !space.contains('\n')
+                    && a.get(o.start).is_some_and(|next| next.0.contains('\n'))
+                    && !matches!(a[o.start - 1].1, "{" | "(" | "[")
+                    && !own_line
+                    // An element starts with a name or a string, not a
+                    // closing `)` the template adds (`e` → `g(e)`).
+                    && token.starts_with(|c: char| {
+                        c.is_alphanumeric()
+                            || matches!(c, '_' | '"' | '\'' | '#' | '@')
+                            // A capture laid out as one token.
+                            || (SENTINEL..SENTINEL + 0x100).contains(&u32::from(c))
+                    })
+                    && !b[n.clone()].iter().any(|t| t.0.contains('\n'));
+                if appended {
+                    let line = &out[out.rfind('\n').map_or(0, |p| p + 1)..];
+                    let indent = &line[..line.len() - line.trim_start().len()];
+                    let space = format!("\n{indent}");
+                    emit(&mut out, &mut original_line, &space, token, true);
+                } else if in_place || own_line {
                     emit(&mut out, &mut original_line, a[o.start].0, token, true);
                 } else {
                     emit(&mut out, &mut original_line, space, token, false);

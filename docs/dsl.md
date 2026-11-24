@@ -311,6 +311,18 @@ How it matches:
   what it matched only in whitespace outside quotes — `f($$$A)` →
   `f($$$A)` over a call whose arguments span lines — changes no token, so
   the file is left as it is and the rule explains why it changed nothing.
+- **Captures keep their own layout.** A rewrite keeps the matched code's
+  line breaks around what it does not change, and each capture is put
+  back exactly as it was written, its later lines indented by as much as
+  the line it now sits on is. So `swap($A, $B)` → `swapped($B, $A)` moves
+  a one-line `$B` and a many-line `$A` without reflowing either, and text
+  a template appends after a one-per-line `$$$F` or `$$$B` (a field, an
+  item) starts a line of its own. A template with a `let` lays out its
+  derived values token by token instead.
+- **A skipped rewrite names its site.** When the rewritten file would not
+  parse, the rule changes nothing in it, and its explanation names the
+  first match whose rewrite alone breaks the parse (line and column): in a
+  file of many matches, the one shaped differently.
 - **The whole node, nothing left over.** A match must account for every
   named child of the code it matches, unless a `$$$` absorbs them. So
   `if $C { $$$B }` does not match an `if` that has an `else`,

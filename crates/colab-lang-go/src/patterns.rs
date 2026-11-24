@@ -107,6 +107,17 @@ mod tests {
     }
 
     #[test]
+    fn a_skipped_rewrite_names_the_match_that_breaks_the_file() {
+        // A template that breaks every site names the first.
+        let bad = crate::LANG
+            .compile_pattern("f($$$A)", PatternAction::Replace("g($$$A,,)".into()), &[])
+            .unwrap();
+        let src = "package p\n\nfunc main() {\n\tx := 1\n\tf(1, 2)\n\tf(3)\n}\n";
+        let why = bad.why_unchanged(src).unwrap();
+        assert!(why.contains("at line 5, column 2"), "{why}");
+    }
+
+    #[test]
     fn top_level_declaration_pattern_compiles() {
         let op = crate::LANG
             .compile_pattern("var $NAME = $VALUE", PatternAction::Delete, &[])

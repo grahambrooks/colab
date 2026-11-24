@@ -232,6 +232,76 @@ mod tests {
     }
 
     #[test]
+    fn a_skipped_rewrite_names_the_one_match_that_breaks_the_file() {
+        // The dogfood case: of several literals, one ends in `..base`,
+        // after which the template's new field cannot follow.
+        let op = crate::LANG
+            .compile_pattern(
+                "PatternLanguage { $$$F }",
+                PatternAction::Replace("PatternLanguage { $$$F leading: None, }".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "fn a() -> PatternLanguage {\n    PatternLanguage { grammar: g, }\n}\nfn b() -> PatternLanguage {\n    PatternLanguage { grammar: h, ..rust() }\n}\n";
+        assert_eq!(op.apply(src), src, "skipped as a whole");
+        let why = op.why_unchanged(src).unwrap();
+        assert!(why.contains("at line 5, column 5"), "{why}");
+    }
+
+    #[test]
+    fn captures_keep_their_own_layout_when_a_template_moves_them() {
+        // Swapped, a one-line capture stays on one line and a many-line
+        // one keeps its lines, each where the template puts it.
+        let swap = crate::LANG
+            .compile_pattern(
+                "swap($A, $B)",
+                PatternAction::Replace("swapped($B, $A)".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "fn main() {\n    swap(\n        f(\n            a,\n            b,\n        ),\n        f(a, b),\n    );\n}\n";
+        assert_eq!(
+            swap.apply(src),
+            "fn main() {\n    swapped(\n        f(a, b),\n        f(\n            a,\n            b,\n        )\n    );\n}\n"
+        );
+        // An item the template appends after `$$$B` starts its own line.
+        let append = crate::LANG
+            .compile_pattern(
+                "impl L for R { $$$B }",
+                PatternAction::Replace("impl L for R { $$$B fn three(&self) -> u8 { 3 } }".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "impl L for R {\n    fn two(&self) -> u8 {\n        2\n    }\n}\n";
+        let out = append.apply(src);
+        assert_eq!(
+            out,
+            "impl L for R {\n    fn two(&self) -> u8 {\n        2\n    }\n    fn three(&self) -> u8 { 3 }\n}\n"
+        );
+        // A prefix moves the capture, not its body: `unsafe $X`.
+        let prefix = crate::LANG
+            .compile_pattern(
+                "$X",
+                PatternAction::Replace("unsafe $X".into()),
+                &[colab_core::Constraint {
+                    negated: false,
+                    test: colab_core::Test::Is {
+                        var: colab_core::Var {
+                            name: "X".into(),
+                            multi: false,
+                        },
+                        kind: "foreign_mod_item".into(),
+                    },
+                }],
+            )
+            .unwrap();
+        assert_eq!(
+            prefix.apply("extern \"C\" {\n    fn abs(x: i32) -> i32;\n}\n"),
+            "unsafe extern \"C\" {\n    fn abs(x: i32) -> i32;\n}\n"
+        );
+    }
+
+    #[test]
     fn a_bare_sequence_is_a_placeholder_in_an_item_list() {
         let op = crate::LANG
             .compile_pattern(
