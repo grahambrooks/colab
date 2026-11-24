@@ -1,0 +1,5 @@
+// Patterns read inside the macros whose arguments are expressions
+// (`assert!`, `vec!`, `format!`, …), nested ones included; `matches!`
+// (a pattern), `vec![x; n]` and unknown macros are left alone.
+match rust::pattern 'is_relevant($P)' { replace 'LANG.is_source($P)' }
+match rust::pattern 'legacy_flag($X)' { delete }

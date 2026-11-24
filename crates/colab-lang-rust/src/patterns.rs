@@ -36,8 +36,52 @@ pub(crate) fn language() -> PatternLanguage {
             kinds: &["attribute_item"],
             doc_comments: &["///", "/**"],
         },
+        // A macro call's arguments are a token tree to tree-sitter. These
+        // macros take expressions, so their contents are read as call
+        // arguments; any other macro (`matches!`'s pattern, a DSL such as
+        // `html!` or `sqlx::query!`) is left alone.
+        macro_contents: Some(colab_rewrite::pattern::MacroContents {
+            invocation: "macro_invocation",
+            name_field: "macro",
+            body: "token_tree",
+            macros: EXPRESSION_MACROS,
+            wrapper: "fn _w() {\n_m(@@PATTERN@@);\n}\n",
+        }),
     }
 }
+
+/// Macros whose arguments are comma-separated expressions: the standard
+/// library's, and the common logging and error crates'.
+const EXPRESSION_MACROS: &[&str] = &[
+    "assert",
+    "assert_eq",
+    "assert_ne",
+    "debug_assert",
+    "debug_assert_eq",
+    "debug_assert_ne",
+    "vec",
+    "format",
+    "format_args",
+    "print",
+    "println",
+    "eprint",
+    "eprintln",
+    "write",
+    "writeln",
+    "panic",
+    "todo",
+    "unimplemented",
+    "unreachable",
+    "dbg",
+    "anyhow",
+    "bail",
+    "ensure",
+    "trace",
+    "debug",
+    "info",
+    "warn",
+    "error",
+];
 
 #[cfg(test)]
 mod tests {
@@ -298,6 +342,65 @@ mod tests {
         assert_eq!(
             prefix.apply("extern \"C\" {\n    fn abs(x: i32) -> i32;\n}\n"),
             "unsafe extern \"C\" {\n    fn abs(x: i32) -> i32;\n}\n"
+        );
+    }
+
+    #[test]
+    fn patterns_read_inside_expression_macros() {
+        let src = "fn t(p: &Path, x: Option<u8>) {\n    assert!(is_relevant(p));\n    let v = vec![a, is_relevant(p), vec![is_relevant(q)]];\n    let m = matches!(x, Some(_));\n    let r = vec![is_relevant(p); 3];\n    custom!(is_relevant(p));\n}\n";
+        let find = crate::LANG
+            .compile_pattern("is_relevant($P)", PatternAction::Delete, &[])
+            .unwrap();
+        let lines: Vec<usize> = find.locate(src).unwrap().iter().map(|l| l.line).collect();
+        // `assert!`, `vec!` and the `vec!` nested in it; not `vec![x; n]`
+        // (whose contents are not arguments), nor an unknown macro.
+        assert_eq!(lines, vec![2, 3, 3], "{lines:?}");
+        let replace = crate::LANG
+            .compile_pattern(
+                "is_relevant($P)",
+                PatternAction::Replace("LANG.is_source($P)".into()),
+                &[],
+            )
+            .unwrap();
+        let out = replace.apply(src);
+        assert_eq!(
+            out,
+            "fn t(p: &Path, x: Option<u8>) {\n    assert!(LANG.is_source(p));\n    let v = vec![a, LANG.is_source(p), vec![LANG.is_source(q)]];\n    let m = matches!(x, Some(_));\n    let r = vec![is_relevant(p); 3];\n    custom!(is_relevant(p));\n}\n"
+        );
+        assert_eq!(replace.apply(&out), out, "idempotent");
+        // A delete takes an argument's comma, as in a call.
+        let delete = crate::LANG
+            .compile_pattern("legacy($X)", PatternAction::Delete, &[])
+            .unwrap();
+        assert_eq!(
+            delete.apply("fn f() { let v = vec![a, legacy(1), b]; }\n"),
+            "fn f() { let v = vec![a, b]; }\n"
+        );
+        // `matches!`'s argument is a pattern, never read as an expression.
+        let some = crate::LANG
+            .compile_pattern("Some($X)", PatternAction::Delete, &[])
+            .unwrap();
+        assert!(some.locate(src).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_rule_that_reads_a_matchs_surroundings_skips_macro_contents() {
+        // In the wrapper, `inside` would see the wrapper, not the file.
+        let op = crate::LANG
+            .compile_pattern(
+                "is_relevant($P)",
+                PatternAction::Replace("LANG.is_source($P)".into()),
+                &[colab_core::Constraint {
+                    negated: false,
+                    test: colab_core::Test::Inside("fn t($$$A) { $$$B }".into()),
+                }],
+            )
+            .unwrap();
+        let src =
+            "fn t(p: &Path) {\n    assert!(is_relevant(p));\n    let r = is_relevant(p);\n}\n";
+        assert_eq!(
+            op.apply(src),
+            "fn t(p: &Path) {\n    assert!(is_relevant(p));\n    let r = LANG.is_source(p);\n}\n"
         );
     }
 

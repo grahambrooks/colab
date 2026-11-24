@@ -1,0 +1,2 @@
+1 rust::pattern 'is_relevant($P)' -> 'LANG.is_source($P)'
+1 rust::pattern 'legacy_flag($X)' -> delete

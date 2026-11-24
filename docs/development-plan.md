@@ -55,10 +55,10 @@ items, with their designs in [Follow-ups](#follow-ups-from-shipped-milestones).
 | 1 | ~~**Encapsulate `RunReport`.**~~ Done 2026-11-24: fields `pub(crate)`, accessors of the same names, writes through `warn` / `add_conflict(s)` / `add_rule` / `rules_mut` / `set_counts` …; the per-rule run now counts the first walk once (it used to append `skipped` once per rule). | — |
 | 2 | ~~**One driver for the one-rule-at-a-time runs.**~~ Done 2026-11-24: `pipeline::RuleRun` runs one rule over a `Source` (or one text) and credits its changes to the rule's script index; `--verify`, `--commit-per-rule`, `--split-pr` and the bisect search use it, and each builds its `Source` once instead of asking `git` per rule. Still open: scans under these runs (scan once, then each rule). | — |
 | 3 | ~~**Scan phases on the remaining paths.**~~ Done 2026-11-24 for `--stdin`, MCP `colab.test_rule` and MCP `colab.find`. The per-rule runs and `--changed-since` / `--staged` remain; see the M35 follow-up row. | — |
-| 4 | **Split the oversized, high-churn modules.** `cli.rs`: every clap `Args` struct, 54 commits in 90 days. `colab-mcp/src/lib.rs`: about 2,300 lines of transport, dispatch, argument parsing and tools. `lsp_commands.rs`: CLI commands and the MCP `LspTools`. `language_server.rs`: its own walk. | Each command's `Args` goes into `cli/<cmd>.rs`. MCP becomes `transport.rs` / `args.rs` / `tools/*`. `colab server`'s walk becomes a `Source` + `Hooks` over the pipeline. |
+| 4 | ~~**Split the oversized, high-churn modules.**~~ Done 2026-11-24, except `lsp_commands.rs`: each command's clap `Args` is in `cli/<cmd>.rs` (`cli.rs` 1,185 → 690 lines); `colab-mcp/src/lib.rs` is transport and dispatch, with `scripts.rs` / `args.rs` / `progress.rs` / `schema.rs`; `colab server` plans edits through the pipeline. Still open: split `lsp_commands.rs` (1,700 lines) into its CLI commands and the MCP `LspTools`. | — |
 | 5 | ~~**Parse errors name the file.**~~ Done 2026-11-24: `ParseDetail::path`, set for a script file and for each `include` (the innermost wins), shown as `parse error in <path> at line …` and as MCP `error.data.path`. The editor already puts an include's error on the `include`. | — |
 | 6 | ~~**One base for every path glob.**~~ Done 2026-11-24: `--include` / `--exclude` already took both forms for a relative target (`rebase`); an absolute target, and a file named directly, are now read relative to the run's base (or the working directory) first, as `in` scopes are. The target-relative form stays accepted without a warning: both forms name the same files. | — |
-| 7 | **Patterns inside macros** (Rust token trees). | The most frequent fallback to `text::literal` in the dogfood log. Design: [Patterns inside macros](#patterns-inside-macros). |
+| 7 | ~~**Patterns inside macros** (Rust token trees).~~ | Done 2026-11-24 for find / replace / delete, nested macros included, from an allow-list of expression macros; rules with relational or semantic constraints skip macro contents. See [Patterns inside macros](#patterns-inside-macros). |
 | 8 | ~~**Captures rendered verbatim** in `keep_layout`, plus "would not parse" naming the first match that breaks.~~ | Done 2026-11-24: each capture is laid out as one sentinel token and put back verbatim, re-indented with its line (reproduced with `swap($A, $B)` → `swapped($B, $A)`); text appended after a one-per-line sequence starts its own line; `why_unchanged` names the first match whose rewrite alone breaks the parse. |
 | 9 | ~~**More pattern contexts:** C# class members, switch / when cases (Go, JS, Kotlin), and a bare `$$$` in item lists.~~ | Done 2026-11-24: a bare-compiled pattern tries every context; Go / JS `switch` and Kotlin `when` contexts; a bare `$$$` is a placeholder; a node that owns its trailing newline (Go's `expression_case`) matches and is replaced without it. Corpus `go/pattern_switch_case`. |
 
@@ -129,10 +129,19 @@ whichever milestone touches the same code.
 | Phased runs (scans) under `--bisect`, `--verify`, `--commit-per-rule`, `--split-pr` (scan once, then `RuleRun` each rule) and `--changed-since` / `--staged` (scans over every file, rules over the changed ones), which refuse them today. `--stdin` and every MCP tool run them since 2026-11-24 | M35 |
 | Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
 | `rust::use "tree_sitter::Parser" { delete }` does not remove one member of a brace list (`use tree_sitter::{Parser, Tree};`); a `rust::pattern` rule did | M10.6 |
-| Patterns inside Rust macro calls (`assert!(is_relevant(p))`, `vec![f(x)]`, `format!("{}", g(y))`), which are token trees to tree-sitter, so no pattern sees them; see [Patterns inside macros](#patterns-inside-macros) below | dogfood 2026-11-24 |
+| Patterns inside macros, the rest: evaluate `inside` / `follows` / `nth` / `field` from the macro node outward in the file's tree, and map a semantic question's position back to the file, so rules with those constraints read macro contents too; user-listed expression macros (a `colab.toml` key) beside the built-in list | 2026-11-24 |
 | Verbatim captures in a template with a `let`: its derived values have no source span, so such a match keeps the token-level layout (`render_verbatim` steps aside). A derived value could be laid out against its base capture's span | 2026-11-24 |
 
 ### Patterns inside macros
+
+**Built 2026-11-24** (`colab_rewrite::pattern::MacroContents`, Rust
+only; corpus `rust/pattern_macro_contents`), as designed below, with two
+differences. Macros are read from an allow-list of expression macros
+(the standard, `log`/`tracing` and `anyhow` ones), not from every macro
+whose contents happen to parse: `matches!(x, Some(_))` parses as
+arguments, but its argument is a pattern, so parsing alone is not a
+sound test. And `has` (which looks only inside the match) stays
+available; the rest of point 4 is the follow-up row above.
 
 tree-sitter parses a macro call's arguments as a `token_tree`, so
 `rust::pattern 'is_relevant($P)'` misses `assert!(is_relevant(p))`, and

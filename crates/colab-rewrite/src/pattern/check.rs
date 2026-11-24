@@ -278,6 +278,28 @@ pub(super) fn in_field(node: &TsNode<'_>, name: &str) -> bool {
 }
 
 impl Check {
+    /// Whether the check reads what surrounds a match (an enclosing or
+    /// neighbouring node, its position among its siblings) or asks the
+    /// language server about it. Inside a macro's re-parsed contents both
+    /// would see the wrapper, not the file, so such a rule reads no macro
+    /// contents (see [`MacroContents`](super::MacroContents)).
+    pub(super) fn reads_context(&self) -> bool {
+        match &self.kind {
+            CheckKind::Matches { .. }
+            | CheckKind::Is { .. }
+            | CheckKind::Count { .. }
+            | CheckKind::In { .. }
+            // What a match holds is the same in the wrapper as in the file.
+            | CheckKind::Has(_) => false,
+            CheckKind::Inside(_)
+            | CheckKind::Related { .. }
+            | CheckKind::Nth(_)
+            | CheckKind::Field(_)
+            | CheckKind::Semantic { .. } => true,
+            CheckKind::Any(all) | CheckKind::All(all) => all.iter().any(Check::reads_context),
+        }
+    }
+
     pub(super) fn compile(
         language: &PatternLanguage,
         bound: &[Var],

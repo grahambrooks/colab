@@ -31,6 +31,7 @@ pub(crate) fn language() -> PatternLanguage {
             kinds: &[],
             doc_comments: &["///", "/**"],
         },
+        macro_contents: None,
     }
 }
 

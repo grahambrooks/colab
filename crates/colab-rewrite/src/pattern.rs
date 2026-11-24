@@ -75,6 +75,39 @@ pub struct PatternLanguage {
     /// What a deleted match takes with it from just before it: the doc
     /// comments and attributes that belong to the item (see [`Leading`]).
     pub leading: Leading,
+    /// Macro calls whose contents a pattern reads too (see
+    /// [`MacroContents`]); `None` where the grammar parses macro arguments
+    /// as code already (C, C++) or the language has none.
+    pub macro_contents: Option<MacroContents>,
+}
+
+/// Macro calls whose arguments the grammar keeps as an unparsed token
+/// tree (Rust's `assert!(…)`, `vec![…]`), which a pattern would otherwise
+/// never see into.
+///
+/// The contents of each listed macro's token tree are put into `wrapper`
+/// (at [`PATTERN_SLOT`]) and parsed. Only when that parses cleanly are
+/// they matched, rewritten and deleted in, and the edits mapped back; a
+/// macro whose contents are not expressions (a `matches!` pattern, a DSL)
+/// is never listed, so it is never guessed at. Nested macros are read
+/// the same way, from the parsed contents. A rule with a relational,
+/// position or semantic constraint (`inside`, `follows`, `precedes`,
+/// `nth`, `field`, `type`, …) does not read macro contents: in the
+/// wrapper, what surrounds a match is the wrapper, not the file. (`has`
+/// looks only inside the match, so it does not count.)
+#[derive(Clone, Copy, Debug)]
+pub struct MacroContents {
+    /// The macro-call node kind: Rust's `macro_invocation`.
+    pub invocation: &'static str,
+    /// The field naming the macro (`macro`), whose last path segment is
+    /// compared with `macros`.
+    pub name_field: &'static str,
+    /// The token-tree node kind, the call's last child: `token_tree`.
+    pub body: &'static str,
+    /// The macros whose arguments are expressions, by name.
+    pub macros: &'static [&'static str],
+    /// Where the contents parse as call arguments, at [`PATTERN_SLOT`].
+    pub wrapper: &'static str,
 }
 
 /// The nodes just before an item that belong to it, so deleting the item
@@ -112,6 +145,8 @@ struct TsLang {
     expando: char,
     /// What a deleted match takes with it (not used by ast-grep).
     leading: Leading,
+    /// Macro calls a match may be inside (not used by ast-grep).
+    macro_contents: Option<MacroContents>,
 }
 
 impl Language for TsLang {
@@ -238,6 +273,18 @@ impl Qualified {
         let renamed = !template.contains(self.callee.as_str());
         (callee == self.callee || renamed).then_some(qualified)
     }
+}
+
+/// A macro call's contents, as [`StructuralPattern::find`] reads them.
+struct MacroRegion {
+    /// The contents in the source: inside the call's delimiters.
+    inner: std::ops::Range<usize>,
+    /// Where the contents start in `wrapped`.
+    offset: usize,
+    /// The contents in the language's macro wrapper.
+    wrapped: String,
+    /// The pattern's matches in `wrapped`, all within the contents.
+    found: Vec<Found>,
 }
 
 /// One place a pattern matched.
@@ -470,6 +517,7 @@ impl StructuralPattern {
             grammar: language.grammar.clone(),
             expando: language.expando,
             leading: language.leading,
+            macro_contents: language.macro_contents,
         };
         let expanded = expand(text, lang.expando);
 
@@ -702,6 +750,24 @@ impl StructuralPattern {
     /// Every match in `source` in source order, an outer match before the
     /// matches nested inside it.
     pub fn find(&self, source: &str) -> Vec<Found> {
+        let mut found = self.find_file(source);
+        // Matches inside macro calls' contents, mapped back into `source`.
+        let mut lines = Lines::new(source);
+        for region in self.macro_regions(source) {
+            for mut hit in region.found {
+                hit.start = hit.start - region.offset + region.inner.start;
+                hit.end = hit.end - region.offset + region.inner.start;
+                (hit.line, hit.column) = lines.at(hit.start);
+                found.push(hit);
+            }
+        }
+        found.sort_by_key(|f| (f.start, f.end));
+        found.dedup_by_key(|f| (f.start, f.end));
+        found
+    }
+
+    /// Matches in the file's own tree, every form's, none inside a macro.
+    fn find_file(&self, source: &str) -> Vec<Found> {
         let mut found = self.find_own(source);
         for alt in &self.also {
             found.extend(alt.find_own(source));
@@ -709,6 +775,118 @@ impl StructuralPattern {
         found.sort_by_key(|f| (f.start, f.end));
         found.dedup_by_key(|f| (f.start, f.end));
         found
+    }
+
+    /// The listed macro calls in `source` whose contents parse in the
+    /// language's macro wrapper and hold a match, outermost calls only (a
+    /// call inside another's contents is found when those are read), each
+    /// with its matches in the wrapped text (nested macros' included).
+    /// Empty when the language reads no macro contents, or a constraint
+    /// reads a match's surroundings.
+    fn macro_regions(&self, source: &str) -> Vec<MacroRegion> {
+        let Some(spec) = self.lang.macro_contents else {
+            return Vec::new();
+        };
+        if self.checks.iter().any(Check::reads_context)
+            || self
+                .prefilter
+                .as_deref()
+                .is_some_and(|literal| !source.contains(literal))
+        {
+            return Vec::new();
+        }
+        let Some(slot) = spec.wrapper.find(PATTERN_SLOT) else {
+            return Vec::new();
+        };
+        let Some(tree) = crate::parse_cache::parse(&self.lang.grammar, source) else {
+            return Vec::new();
+        };
+        let mut regions = Vec::new();
+        crate::visit_all(&tree, |node| {
+            if node.kind() != spec.invocation {
+                return;
+            }
+            let named = node
+                .child_by_field_name(spec.name_field)
+                .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                .map(|name| name.rsplit("::").next().unwrap_or(name).trim());
+            if !named.is_some_and(|name| spec.macros.contains(&name)) {
+                return;
+            }
+            let Some(body) = node
+                .named_child(
+                    u32::try_from(node.named_child_count().saturating_sub(1)).unwrap_or(u32::MAX),
+                )
+                .filter(|b| b.kind() == spec.body && b.end_byte() - b.start_byte() >= 2)
+            else {
+                return;
+            };
+            // Inside the delimiters: `(`…`)`, `[`…`]`, `{`…`}`.
+            let inner = body.start_byte() + 1..body.end_byte() - 1;
+            let contents = &source[inner.clone()];
+            if self
+                .prefilter
+                .as_deref()
+                .is_some_and(|literal| !contents.contains(literal))
+            {
+                return;
+            }
+            let wrapped = spec.wrapper.replacen(PATTERN_SLOT, contents, 1);
+            if parse_clean(&self.lang.grammar, &wrapped).is_err() {
+                return;
+            }
+            let found = self.find(&wrapped);
+            let within = slot..slot + contents.len();
+            // A match reaching into the wrapper (`$F($X)` matching the
+            // wrapper's own call) would make an edit outside the macro;
+            // such contents are left alone, so find and rewrite agree.
+            if found.is_empty()
+                || found
+                    .iter()
+                    .any(|f| f.start < within.start || f.end > within.end)
+            {
+                return;
+            }
+            regions.push(MacroRegion {
+                inner,
+                offset: slot,
+                wrapped,
+                found,
+            });
+        });
+        regions
+    }
+
+    /// `edit` (a rewrite or delete of whole text) applied to each macro
+    /// region of `source`: the region's wrapped contents edited, and the
+    /// result's contents put back where they came from. A region whose
+    /// wrapper the edit changed is left as it was.
+    fn edit_macros(&self, source: &str, edit: impl Fn(&str) -> String) -> String {
+        let regions = self.macro_regions(source);
+        if regions.is_empty() {
+            return source.to_string();
+        }
+        let mut out = source.to_string();
+        for region in regions.iter().rev() {
+            let changed = edit(&region.wrapped);
+            let suffix = region.wrapped.len() - region.offset - region.inner.len();
+            let (head, tail) = (
+                &region.wrapped[..region.offset],
+                &region.wrapped[region.wrapped.len() - suffix..],
+            );
+            if changed == region.wrapped
+                || changed.len() < head.len() + tail.len()
+                || !changed.starts_with(head)
+                || !changed.ends_with(tail)
+            {
+                continue;
+            }
+            out.replace_range(
+                region.inner.clone(),
+                &changed[head.len()..changed.len() - tail.len()],
+            );
+        }
+        out
     }
 
     /// Matches of this compilation only, not its `also` ones.
@@ -770,11 +948,14 @@ impl StructuralPattern {
     /// wrap-style template (`f($A)` → `f(g($A))`) cannot run away.
     pub fn rewrite(&self, source: &str, template: &str) -> String {
         // Each compilation matches different nodes, so they rewrite in turn.
-        self.also
+        let out = self
+            .also
             .iter()
             .fold(self.rewrite_own(source, template), |out, alt| {
                 alt.rewrite_own(&out, template)
-            })
+            });
+        // Then inside macro calls, which the file's tree cannot see into.
+        self.edit_macros(&out, |wrapped| self.rewrite(wrapped, template))
     }
 
     fn rewrite_own(&self, source: &str, template: &str) -> String {
@@ -884,7 +1065,7 @@ impl StructuralPattern {
         };
         let leading = self.lang.leading;
         let mut spans: Vec<(usize, usize)> = Vec::new();
-        for found in self.find(source) {
+        for found in self.find_file(source) {
             // An item's doc comments and attributes go with it.
             let start = if leading.kinds.is_empty() && leading.doc_comments.is_empty() {
                 found.start
@@ -929,7 +1110,9 @@ impl StructuralPattern {
         for (start, end) in kept.into_iter().rev() {
             out.replace_range(start..end, "");
         }
-        out
+        // Then inside macro calls, where the wrapper's tree says which
+        // comma goes with an argument.
+        self.edit_macros(&out, |wrapped| self.delete(wrapped))
     }
 
     /// `true` when `source` parses without a syntax error.
@@ -1108,6 +1291,7 @@ mod tests {
             also: &[],
             qualified_calls: None,
             leading: Leading::NONE,
+            macro_contents: None,
         }
     }
 
@@ -1119,6 +1303,7 @@ mod tests {
             also: &["def _(x: @@PATTERN@@): pass\n"],
             qualified_calls: None,
             leading: Leading::NONE,
+            macro_contents: None,
         }
     }
 
@@ -1607,6 +1792,7 @@ mod tests {
             also: &[],
             qualified_calls: None,
             leading: Leading::NONE,
+            macro_contents: None,
         }
     }
 
@@ -1674,6 +1860,7 @@ mod tests {
             also: &[],
             qualified_calls: None,
             leading: Leading::NONE,
+            macro_contents: None,
         };
         let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();
         let src = "package p\n\nfunc f() {\n\tif x {\n\t\tlog.Print(a)\n\t}\n}\n";

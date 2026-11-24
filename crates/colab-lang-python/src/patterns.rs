@@ -30,6 +30,7 @@ pub(crate) fn language() -> PatternLanguage {
             kinds: &["decorator"],
             doc_comments: &[],
         },
+        macro_contents: None,
     }
 }
 

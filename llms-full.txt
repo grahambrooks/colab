@@ -328,6 +328,23 @@ How it matches:
   a template appends after a one-per-line `$$$F` or `$$$B` (a field, an
   item) starts a line of its own. A template with a `let` lays out its
   derived values token by token instead.
+- **Inside Rust macros whose arguments are expressions.** A macro call's
+  arguments are an unparsed token tree to the grammar, so `rust::pattern`
+  reads the contents of the standard and common logging and error macros
+  (`assert!`, `assert_eq!`, `debug_assert*!`, `vec!`, `format!`,
+  `print*!`, `write*!`, `panic!`, `todo!`, `unreachable!`, `dbg!`,
+  `anyhow!`, `bail!`, `ensure!`, `trace!` … `error!`) as call arguments,
+  nested macros included: `is_relevant($P)` finds
+  `assert!(is_relevant(p))` and `vec![f(x), vec![is_relevant(q)]]`, and
+  `replace` and `delete` edit there (a deleted argument takes its comma).
+  Contents that do not parse as arguments (`vec![x; n]`, `info!(target:
+  "a", …)`) are left alone, and so is every other macro: `matches!`'s
+  argument is a pattern, `html!` and `sqlx::query!` are their own
+  languages. A rule with a `where` test of a match's surroundings
+  (`inside`, `follows`, `precedes`, `nth`, `field`) or a semantic one
+  (`type`, `resolves`, …) does not read macro contents, since there the
+  surroundings would be the parser's wrapper, not your file; `has`,
+  `matches`, `is`, `count` and `in` do.
 - **A skipped rewrite names its site.** When the rewritten file would not
   parse, the rule changes nothing in it, and its explanation names the
   first match whose rewrite alone breaks the parse (line and column): in a
