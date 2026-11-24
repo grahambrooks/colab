@@ -18,7 +18,13 @@ pub(super) struct FindArgs {
     pub(super) lsp_timeout: u64,
 
     #[command(flatten)]
-    pub(super) script: ScriptArgs,
+    pub(super) script: FindScript,
+
+    /// The language of a bare `--pattern` (`rust`, `go`, …). Without it,
+    /// the language is the one whose `pattern` compiles and applies to the
+    /// most of the files searched.
+    #[arg(long, value_name = "LANG")]
+    pub(super) lang: Option<String>,
 
     /// Change to this working directory before resolving paths.
     #[arg(short = 'C', long = "change-dir", default_value = ".")]
@@ -71,6 +77,210 @@ pub(super) struct FindArgs {
     pub(super) paths: Vec<PathBuf>,
 }
 
+/// What `find` searches for: a script, inline rules, or a bare pattern
+/// (`colab find 'fn $F($$$A)' src/`, as grep takes a regex). One of them;
+/// a first path that is not on disk is taken as the pattern.
+#[derive(clap::Args, Debug)]
+#[group(multiple = false)]
+pub(super) struct FindScript {
+    /// Path to the codemod script. `-` reads the script from stdin;
+    /// `builtin:<pack>` runs a pack built into colab (`colab pack list`).
+    #[arg(long = "script", value_name = "PATH")]
+    script_path: Option<PathBuf>,
+
+    /// An inline rule, e.g. `match go::import "a" { replace "b" }`.
+    /// Repeatable.
+    #[arg(short = 'e', long = "rule", value_name = "RULE")]
+    rules: Vec<String>,
+
+    /// A structural pattern to find, e.g. `errors.Wrap($E, $M)`: the
+    /// rule `match <lang>::pattern '<it>'`, with `--lang` or the language
+    /// inferred from the files.
+    #[arg(short = 'p', long = "pattern", value_name = "CODE")]
+    pattern: Option<String>,
+}
+
+impl FindArgs {
+    /// The script to run: the one given, or a bare pattern's rule.
+    fn compile(&mut self, backends: &BackendRegistry) -> Result<codemod::Refactoring> {
+        let given = ScriptArgs {
+            script_path: self.script.script_path.take(),
+            rules: std::mem::take(&mut self.script.rules),
+        };
+        if given.script_path.is_some() || !given.rules.is_empty() {
+            return given.compile(backends);
+        }
+        // `colab find '<pattern>' <paths>`: grep's shape. The pattern is
+        // the first path that does not exist.
+        let pattern = match self.script.pattern.take() {
+            Some(pattern) => pattern,
+            None => match self.paths.first() {
+                Some(first) if !first.exists() => {
+                    self.paths.remove(0).to_string_lossy().into_owned()
+                }
+                _ => {
+                    return Err(Error::Config(
+                        "give what to find: a pattern (`colab find 'fn $F($$$A)' src/`, or \
+                         --pattern with --lang), -e '<rule>', or --script <file>"
+                            .into(),
+                    ));
+                }
+            },
+        };
+        let quoted = quote(&pattern);
+        let lang = match self.lang.clone() {
+            Some(lang) => lang,
+            None => self.infer_lang(&quoted, backends)?,
+        };
+        let rule = format!("match {lang}::pattern {quoted} {{ delete }}");
+        ScriptArgs {
+            script_path: None,
+            rules: vec![rule],
+        }
+        .compile(backends)
+    }
+
+    /// The language a bare pattern is in: the language most of the files
+    /// under the paths are in (looking at the first few thousand), when the
+    /// pattern parses in it.
+    fn infer_lang(&self, quoted: &str, backends: &BackendRegistry) -> Result<String> {
+        const SAMPLE: usize = 5_000;
+        // Every language with patterns, by a rule that compiles in each:
+        // its relevance is the language's files, whatever the pattern.
+        let candidates: Vec<(String, codemod::Refactoring)> = backends
+            .languages()
+            .into_iter()
+            .filter(|lang| {
+                backends
+                    .get(lang)
+                    .is_some_and(|b| b.capabilities().iter().any(|c| c.module == "pattern"))
+            })
+            .filter_map(|lang| {
+                let rule = format!("match {lang}::pattern '$X' {{ delete }}");
+                codemod::compile(&rule, backends)
+                    .ok()
+                    .map(|r| (lang.to_string(), r))
+            })
+            .collect();
+        let parses = |lang: &str| {
+            codemod::compile(
+                &format!("match {lang}::pattern {quoted} {{ delete }}"),
+                backends,
+            )
+            .is_ok()
+        };
+        // A census, not a search: the walk asks each path's relevance, which
+        // counts it per language and says no, so no file is read.
+        struct Census<'a> {
+            candidates: &'a [(String, codemod::Refactoring)],
+            counts: Vec<std::sync::atomic::AtomicUsize>,
+            seen: std::sync::atomic::AtomicUsize,
+        }
+        impl colab_core::CodeTransformer for Census<'_> {
+            fn is_file_relevant(&self, path: &Path) -> bool {
+                use std::sync::atomic::Ordering::Relaxed;
+                if self.seen.fetch_add(1, Relaxed) < SAMPLE {
+                    for (i, (_, rules)) in self.candidates.iter().enumerate() {
+                        if rules.is_file_relevant(path) {
+                            self.counts[i].fetch_add(1, Relaxed);
+                        }
+                    }
+                }
+                false
+            }
+            fn apply(&self, source: &str) -> String {
+                source.to_string()
+            }
+        }
+        let census = Census {
+            candidates: &candidates,
+            counts: candidates.iter().map(|_| Default::default()).collect(),
+            seen: Default::default(),
+        };
+        Source::Walk {
+            targets: if self.paths.is_empty() {
+                vec![PathBuf::from(".")]
+            } else {
+                self.paths.clone()
+            },
+            options: WalkOptions {
+                include: self.include.clone(),
+                exclude: self.exclude.clone(),
+                respect_gitignore: !self.no_ignore,
+                follow_symlinks: false,
+                jobs: resolve_jobs(self.jobs),
+            },
+        }
+        .visit(&census, &mut |_| Ok(()))?;
+        // The languages present, most files first.
+        let mut present: Vec<(&str, usize)> = candidates
+            .iter()
+            .zip(&census.counts)
+            .map(|((lang, _), n)| (lang.as_str(), n.load(std::sync::atomic::Ordering::Relaxed)))
+            .filter(|(_, n)| *n > 0)
+            .collect();
+        present.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        let Some(&(top, files)) = present.first() else {
+            return Err(Error::Config(
+                "no file under the paths is in a language colab has patterns for; pass --lang \
+                 and the files to search"
+                    .into(),
+            ));
+        };
+        // A tie between languages the pattern parses in cannot be settled.
+        let tied: Vec<&str> = present
+            .iter()
+            .filter(|(lang, n)| *n == files && parses(lang))
+            .map(|(lang, _)| *lang)
+            .collect();
+        if tied.len() > 1 {
+            return Err(Error::Config(format!(
+                "{quoted} could be {} ({files} file(s) each); pass --lang",
+                tied.join(" or ")
+            )));
+        }
+        if parses(top) {
+            log::info!("searching {top} files ({files} here; --lang chooses another language)");
+            return Ok(top.to_string());
+        }
+        // The files are mostly `top`, and the pattern is not `top` code.
+        let elsewhere: Vec<&str> = present
+            .iter()
+            .filter(|(lang, _)| parses(lang))
+            .map(|(lang, _)| *lang)
+            .collect();
+        let others = if elsewhere.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " (it does parse as {}; pass --lang for that)",
+                elsewhere.join(", ")
+            )
+        };
+        Err(Error::Config(format!(
+            "the files here are mostly {top} ({files}), and {quoted} does not parse as a {top} \
+             pattern{others}. A pattern is complete code with metavariables: a function needs its \
+             body (`fn $F($$$A) -> $R {{ $$$B }}`). `colab ast --lang {top} --pattern …` shows how \
+             it parses"
+        )))
+    }
+}
+
+/// `text` as a DSL string literal: single quotes, else double, else raw.
+fn quote(text: &str) -> String {
+    if !text.contains('\'') {
+        format!("'{text}'")
+    } else if !text.contains('"') {
+        format!("\"{text}\"")
+    } else {
+        let mut hashes = String::from("#");
+        while text.contains(&format!("\"{hashes}")) {
+            hashes.push('#');
+        }
+        format!("r{hashes}\"{text}\"{hashes}")
+    }
+}
+
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FindFormat {
     Human,
@@ -103,12 +313,12 @@ pub(super) struct AstArgs {
     pub(super) format: FindFormat,
 }
 
-pub(super) fn run_find(args: FindArgs) -> Result<u8> {
+pub(super) fn run_find(mut args: FindArgs) -> Result<u8> {
     use colab_core::find::{FindDetail, FindReport, Selector};
 
     change_working_dir(&args.change_dir)?;
     let backends = default_backends();
-    let mut refactoring = args.script.compile(&backends)?;
+    let mut refactoring = args.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
     let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
     let source = Source::Walk {

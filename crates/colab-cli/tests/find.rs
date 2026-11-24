@@ -6,6 +6,52 @@ use common::*;
 const GO_WRAP: &str = "package main\n\nfunc f() error {\n\treturn errors.Wrap(err, \"read\")\n}\n";
 
 #[test]
+fn find_takes_a_bare_pattern_as_grep_takes_a_regex() {
+    let root = workspace_temp("find-bare");
+    write(&root.join("main.go"), GO_WRAP);
+    write(&root.join("notes.md"), "# Notes\n");
+    let run = |args: &[&str]| {
+        colab()
+            .current_dir(&root)
+            .args(["find"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    // Positional, the language inferred from the files (Go, not Markdown).
+    let found = run(&["errors.Wrap($E, $M)", "."]);
+    let stdout = String::from_utf8_lossy(&found.stdout);
+    assert_eq!(
+        found.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&found.stderr)
+    );
+    assert!(stdout.contains("main.go:4:9:"), "{stdout}");
+    // --pattern with --lang says the same; quotes in it are fine.
+    let explicit = run(&[
+        "--pattern",
+        "errors.Wrap($E, \"read\")",
+        "--lang",
+        "go",
+        ".",
+    ]);
+    assert!(String::from_utf8_lossy(&explicit.stdout).contains("main.go:4:9:"));
+    // A pattern that is not code in the files' language says what to do.
+    let incomplete = run(&["errors.Wrap($E,", "."]);
+    assert_ne!(incomplete.status.code(), Some(0));
+    let stderr = String::from_utf8_lossy(&incomplete.stderr);
+    assert!(
+        stderr.contains("mostly go") && stderr.contains("colab ast --lang go"),
+        "{stderr}"
+    );
+    // Nothing to find names the three ways to say it.
+    let nothing = run(&["."]);
+    assert!(String::from_utf8_lossy(&nothing.stderr).contains("give what to find"));
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn find_lists_pattern_matches_as_path_line_col() {
     let root = workspace_temp("find-human");
     write(&root.join("main.go"), GO_WRAP);
