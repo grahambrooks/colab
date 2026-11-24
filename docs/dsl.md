@@ -286,7 +286,10 @@ How it matches:
   `cast(Optional[str], x)` and the annotation in `def f(a: Optional[str])`.
   Text that is code only in such a place compiles there: Python's
   `debug=True` is also a keyword argument and `"debug": True` a dict
-  entry, and JavaScript's `debug: true` is also an object property.
+  entry, and JavaScript's `debug: true` is also an object property. A
+  fragment that parses in more than one wrapper means each: Rust's
+  `legacy: $T` matches the field of a struct declaration and the field of
+  a struct literal. The prefilter is then a literal every reading needs.
 - **Whitespace-only rewrites are not made.** A result that differs from
   what it matched only in whitespace outside quotes — `f($$$A)` →
   `f($$$A)` over a call whose arguments span lines — changes no token, so
@@ -317,7 +320,9 @@ How it matches:
   so `func ($R $T) $F() $OUT { $$$B }` → `… $NAME() $OUT { $$$B }` renames
   the function and leaves a many-line body as it was. Next to a changed
   token, and wherever the template breaks a line, the template's own
-  spacing is used, so a template that re-indents a block still does.
+  spacing is used, so a template that re-indents a block still does. A
+  token the template joins to the one before stays joined, so a path the
+  template introduces comes out as `a::b::f(…)`.
 - **Templates are re-indented.** Lines after a template's first are
   indented to the match's column, so write a multi-line template
   flush-left in its final shape. Tab-indented code (Go) is indented with tabs.

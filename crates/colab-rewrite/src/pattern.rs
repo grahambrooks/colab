@@ -359,6 +359,29 @@ impl StructuralPattern {
                 primary.also.push(alt);
             }
         }
+        // Text that is code in more than one context means each: Rust's
+        // `also: $A` is a struct field in a declaration and in a literal.
+        // The contexts after the one it compiled in are tried strictly, and
+        // each that reads it as a different tree is matched as well.
+        if let Some(index) = primary
+            .context
+            .as_deref()
+            .and_then(|c| language.contexts.iter().position(|k| *k == c))
+        {
+            for context in &language.contexts[index + 1..] {
+                let only = PatternLanguage {
+                    contexts: std::slice::from_ref(context),
+                    also: &[],
+                    ..language.clone()
+                };
+                if let Ok(alt) = Self::compile_with(&only, text, false, false)
+                    && alt.tree != primary.tree
+                    && primary.also.iter().all(|a| a.tree != alt.tree)
+                {
+                    primary.also.push(alt);
+                }
+            }
+        }
         // `to_svg($A)` also as `$COLAB_PATH::to_svg($A)`: the callee
         // `svg::to_svg` is a scoped path, which a bare identifier never
         // matches, so without this a pattern silently misses every
@@ -373,6 +396,7 @@ impl StructuralPattern {
             });
             primary.also.push(alt);
         }
+        primary.prefilter = shared_prefilter(&primary);
         Ok(primary)
     }
 
@@ -828,6 +852,23 @@ impl StructuralPattern {
     }
 }
 
+/// A literal every form of `pattern` needs, so the rule's prefilter stays
+/// sound however many forms it matches in: each form's literal must be in
+/// a file for that form to match, so the one contained in all the others
+/// is in every file any form matches. `None` when no form's literal is in
+/// all the others.
+fn shared_prefilter(pattern: &StructuralPattern) -> Option<String> {
+    let literals: Vec<Option<&str>> = std::iter::once(pattern)
+        .chain(&pattern.also)
+        .map(|form| form.prefilter.as_deref())
+        .collect();
+    let all: Vec<&str> = literals.iter().copied().collect::<Option<_>>()?;
+    all.iter()
+        .filter(|candidate| all.iter().all(|other| other.contains(**candidate)))
+        .max_by_key(|candidate| candidate.len())
+        .map(|s| (*s).to_string())
+}
+
 /// The bytes to remove for the match at `start..end` with the `,` beside
 /// it: up to the next element when a comma follows and an element after
 /// it, else from the end of the previous element when a comma precedes,
@@ -975,6 +1016,15 @@ mod tests {
         );
         // A string is one token: its spaces are never taken from the old.
         assert_eq!(keep_layout("f(\"a  b\")", "f(\"a b\")"), "f(\"a b\")");
+        // A token the template joins to the one before stays joined, though
+        // it replaces one the original spaced: no `a:: b` from `a: b`.
+        assert_eq!(
+            keep_layout(
+                "Capability {\n    module: \"pattern\",\n    description: $D,\n}",
+                "colab_rewrite::language::pattern_capability($D)"
+            ),
+            "colab_rewrite::language::pattern_capability($D)"
+        );
     }
 
     // ---------- relations, positions, any / all ---------------------------

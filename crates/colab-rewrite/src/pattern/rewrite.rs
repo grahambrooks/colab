@@ -170,8 +170,14 @@ pub(super) fn keep_layout(old: &str, new: &str) -> String {
                 // original's whitespace before the first of them (not at
                 // the edit's start, which sits where the match did, and
                 // not where there was none, so `x+y` → `x in y` keeps the
-                // template's spaces).
-                let in_place = k == 0 && n.start != 0 && !o.is_empty() && !a[o.start].0.is_empty();
+                // template's spaces). Only where the template separates
+                // the tokens too: a token it joins to the one before
+                // (`a::b`, `f(x)`) stays joined.
+                let in_place = k == 0
+                    && n.start != 0
+                    && !o.is_empty()
+                    && !a[o.start].0.is_empty()
+                    && !space.is_empty();
                 if in_place {
                     emit(&mut out, &mut original_line, a[o.start].0, token, true);
                 } else {

@@ -1,0 +1,13 @@
+lib.rs:2:5: [0] Capability {\n        module: "pattern",\n        description: "Match code by shape.",\n        actions: &[ActionCapability {\n            name: "replace",\n            description: "Replace each match.",\n        }],\n    }
+    $A = &[ActionCapability {\n            name: "replace",\n            description: "Replace each match.",\n        }]
+    $D = "Match code by shape."
+lib.rs:14:5: [2] legacy: bool
+    $T = bool
+lib.rs:18:14: [1] SymbolRename { from: target.into(), to: replacement.into() }
+    $F = target
+    $T = replacement
+lib.rs:20:17: [1] SymbolRename { from: target.into(), to: replacement.into() }
+    $F = target
+    $T = replacement
+lib.rs:26:9: [2] legacy: false
+    $T = false

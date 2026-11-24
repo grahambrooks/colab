@@ -59,6 +59,40 @@ mod tests {
     }
 
     #[test]
+    fn a_field_pattern_matches_declarations_and_literals() {
+        let op = crate::LANG
+            .compile_pattern("also: $A", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "struct L {\n    also: Vec<u8>,\n    name: u8,\n}\n\nfn f() -> L {\n    L {\n        also: Vec::new(),\n        name: 1,\n    }\n}\n";
+        let found = op.locate(src).unwrap();
+        let texts: Vec<&str> = found.iter().map(|f| f.text.as_str()).collect();
+        assert_eq!(texts, ["also: Vec<u8>", "also: Vec::new()"]);
+        assert_eq!(op.prefilter(), Some("also"));
+        assert_eq!(
+            op.apply(src),
+            "struct L {\n    name: u8,\n}\n\nfn f() -> L {\n    L {\n        name: 1,\n    }\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_struct_literal_is_rewritten_to_an_expression() {
+        let op = crate::LANG
+            .compile_pattern(
+                "SymbolRename { from: $F.into(), to: $T.into() }",
+                PatternAction::Replace("crate::LANG.symbol_rename($F, $T)".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "fn f() -> R {\n    let op = SymbolRename { from: a.into(), to: b.into() };\n    Ok(Box::new(SymbolRename { from: c.into(), to: d.into() }))\n}\n";
+        let out = op.apply(src);
+        assert_eq!(
+            out,
+            "fn f() -> R {\n    let op = crate::LANG.symbol_rename(a, b);\n    Ok(Box::new(crate::LANG.symbol_rename(c, d)))\n}\n"
+        );
+        assert_eq!(op.apply(&out), out, "idempotent");
+    }
+
+    #[test]
     fn rewrites_call_with_two_captures() {
         let op = crate::LANG
             .compile_pattern(

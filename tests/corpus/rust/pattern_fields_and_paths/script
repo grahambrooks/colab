@@ -1,0 +1,13 @@
+// A template that introduces a qualified path keeps it joined
+// (`a::b::f(…)`, not `a:: b:: f(…)`), a struct literal can become an
+// expression, and a field pattern means a field wherever one can be: in a
+// struct declaration and in a struct literal.
+refactor "fields-and-paths" {
+    match rust::pattern 'Capability { module: "pattern", description: $D, actions: $A }' {
+        replace 'colab_rewrite::language::pattern_capability($D)'
+    }
+    match rust::pattern 'SymbolRename { from: $F.into(), to: $T.into() }' {
+        replace 'crate::LANG.symbol_rename($F, $T)'
+    }
+    match rust::pattern 'legacy: $T' { delete }
+}

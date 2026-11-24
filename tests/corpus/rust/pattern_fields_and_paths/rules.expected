@@ -1,0 +1,3 @@
+1 rust::pattern 'Capability { module: "pattern", description: $D, actions: $A }' -> 'colab_rewrite::language::pattern_capability($D)'
+1 rust::pattern 'SymbolRename { from: $F.into(), to: $T.into() }' -> 'crate::LANG.symbol_rename($F, $T)'
+1 rust::pattern 'legacy: $T' -> delete
