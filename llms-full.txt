@@ -326,8 +326,9 @@ How it matches:
   the line it now sits on is. So `swap($A, $B)` → `swapped($B, $A)` moves
   a one-line `$B` and a many-line `$A` without reflowing either, and text
   a template appends after a one-per-line `$$$F` or `$$$B` (a field, an
-  item) starts a line of its own. A template with a `let` lays out its
-  derived values token by token instead.
+  item) starts a line of its own. A `let`'s value is laid out the same
+  way, as one token placed by the template, its later lines moving with
+  the line it lands on as the capture it is derived from would.
 - **Inside Rust macros whose arguments are expressions.** A macro call's
   arguments are an unparsed token tree to the grammar, so `rust::pattern`
   reads the contents of the standard and common logging and error macros

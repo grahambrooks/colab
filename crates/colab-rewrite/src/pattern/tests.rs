@@ -247,6 +247,24 @@ fn derive(var_: &str, from: &str, steps: Vec<colab_core::Transform>) -> Constrai
 }
 
 #[test]
+fn a_lets_value_keeps_its_base_captures_layout() {
+    // `$X` is `$A` upper-cased: many lines, as `$A` is. It is laid out as
+    // one token, like a capture, its later lines moving with its line, so
+    // the one-per-line call stays one per line; token by token, `$B`'s and
+    // `$X`'s text were aligned with each other's, and the call reflowed.
+    let lets = [derive("$X", "$A", vec![colab_core::Transform::Upper])];
+    let p = StructuralPattern::compile(&rust(), "pair($A, $B)")
+        .unwrap()
+        .constrain(&rust(), &lets)
+        .unwrap();
+    let src = "fn f() {\n    pair(\n        build(a,\n              b),\n        c,\n    );\n    pair(x, y);\n}\n";
+    assert_eq!(
+        p.rewrite(src, "pair($B, $X)"),
+        "fn f() {\n    pair(\n        c,\n        BUILD(A,\n              B)\n    );\n    pair(y, X);\n}\n"
+    );
+}
+
+#[test]
 fn a_let_fills_the_template_with_a_derived_value() {
     use colab_core::Transform::{Snake, StripPrefix, Upper};
     let lets = [

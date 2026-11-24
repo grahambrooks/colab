@@ -103,23 +103,33 @@ impl Rewriter<'_, '_> {
                 .insert_transformation(&var, &name, text.clone().into_bytes());
             values.push((name, var, text, span));
         }
+        // Each `let`'s value, with the source span of the capture it comes
+        // from (through earlier `let`s): its layout follows that capture's.
+        let mut derived_values: Vec<Value> = Vec::new();
         for (k, derived) in self.lets.iter().enumerate() {
-            let Some((_, var, text, span)) = values.iter().find(|(n, ..)| *n == derived.from)
+            let Some((_, var, text, span)) = values
+                .iter()
+                .chain(&derived_values)
+                .find(|(n, ..)| *n == derived.from)
             else {
                 continue;
             };
+            let own_span = values
+                .iter()
+                .find(|(n, ..)| *n == derived.from)
+                .and_then(|(.., span)| span.clone());
             // A rewriter starts from the binding's source: each of its
             // matches there rewritten, the text between them kept.
-            let start = match (self.subs.get(k), span) {
+            let start = match (self.subs.get(k), &own_span) {
                 (Some(forms), Some(span)) if !forms.is_empty() => {
                     rewrite_with(forms, source, span.clone())
                 }
                 _ => text.clone(),
             };
-            let (var, text) = (var.clone(), derived.apply(&start));
+            let (var, text, base) = (var.clone(), derived.apply(&start), span.clone());
             nm.get_env_mut()
                 .insert_transformation(&var, &derived.var, text.clone().into_bytes());
-            values.push((derived.var.clone(), var, text, None));
+            derived_values.push((derived.var.clone(), var, text, base));
         }
         let edit = nm.make_edit(self.pattern, self.fix);
         let (start, end) = (edit.position, edit.position + edit.deleted_length);
@@ -130,10 +140,14 @@ impl Rewriter<'_, '_> {
         // back verbatim, so the layout diff never borrows one capture's
         // line breaks for another's equal tokens (`swap($A, $B)` →
         // `swapped($B, $A)` must not spread a one-line `$B` over lines).
+        // A `let`'s value is marked too, and laid out against the capture
+        // it is derived from: only that capture's span is in the source.
         let captures: Vec<Capture> = values
             .iter()
+            .map(|v| (v, true))
+            .chain(derived_values.iter().map(|v| (v, false)))
             .enumerate()
-            .filter_map(|(k, (name, var, text, span))| {
+            .filter_map(|(k, ((name, var, text, span), own))| {
                 let span = span.clone()?;
                 let mark = char::from_u32(SENTINEL + u32::try_from(k).ok()?)?;
                 Some(Capture {
@@ -142,6 +156,7 @@ impl Rewriter<'_, '_> {
                     var: var.clone(),
                     text: text.clone(),
                     span,
+                    own,
                 })
             })
             .collect();
@@ -170,15 +185,14 @@ impl Rewriter<'_, '_> {
     ) -> Option<String> {
         let old = &source[range.clone()];
         let sentinel = |c: char| (SENTINEL..SENTINEL + 0x100).contains(&u32::from(c));
-        // A `let`'s value is new text derived from a capture; its tokens
-        // find their layout by aligning with the capture's source, which a
-        // sentinel would hide. Such a match keeps the token-level layout.
-        if captures.is_empty() || !self.lets.is_empty() || old.chars().any(sentinel) {
+        if captures.is_empty() || old.chars().any(sentinel) {
             return None;
         }
+        // A `let`'s value is not in the source; its mark is a new token in
+        // the template, placed by the template's own whitespace.
         let mut inside: Vec<&Capture> = captures
             .iter()
-            .filter(|c| c.span.start >= range.start && c.span.end <= range.end)
+            .filter(|c| c.own && c.span.start >= range.start && c.span.end <= range.end)
             .collect();
         inside.sort_by_key(|c| c.span.start);
         if inside.windows(2).any(|w| w[0].span.end > w[1].span.start) {
@@ -239,7 +253,11 @@ struct Capture {
     name: String,
     var: MetaVariable,
     text: String,
+    /// The capture's source span, or for a `let`'s value the span of the
+    /// capture it is derived from, whose line its later lines move with.
     span: std::ops::Range<usize>,
+    /// `span` is this value's own text (not a `let`'s source).
+    own: bool,
 }
 
 /// `text` with every line after the first moved `by` columns: indentation
