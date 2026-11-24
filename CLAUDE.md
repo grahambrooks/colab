@@ -10,6 +10,7 @@ cargo build --release --workspace        # release build → target/release/cola
 cargo test --workspace                   # run all unit + corpus tests
 cargo test -p colab-dsl --test corpus    # run only the corpus harness
 cargo test -p colab-cli --test evals     # the agent eval suite (COLAB_BLESS=1 rewrites evals/results.md)
+cargo test -p colab-cli --test lsp       # one area of the CLI's end-to-end tests: cli, find, lsp, workflows, agent (helpers in tests/common/)
 cargo test <name>                        # run a single test (substring match)
 cargo clippy --workspace --all-targets -- -D warnings  # CI-equivalent lint gate
 cargo run -p colab-cli -- refactor --script <script> [paths...]  # run a codemod
