@@ -399,6 +399,32 @@ mod tests {
     }
 
     #[test]
+    fn a_replace_that_unwraps_an_item_takes_its_attributes() {
+        let unwrap = crate::LANG
+            .compile_pattern(
+                "mod tests { $$$B }",
+                PatternAction::Replace("$$$B".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "fn a() {}\n\n/// The tests.\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n";
+        assert_eq!(unwrap.apply(src), "fn a() {}\n\nfn t() {}\n");
+        // A template that writes the item again keeps what is above it.
+        let rename = crate::LANG
+            .compile_pattern(
+                "fn old() {}",
+                PatternAction::Replace("fn new() {}".into()),
+                &[],
+            )
+            .unwrap();
+        let attributed = "/// Docs.\n#[inline]\nfn old() {}\n";
+        assert_eq!(
+            rename.apply(attributed),
+            "/// Docs.\n#[inline]\nfn new() {}\n"
+        );
+    }
+
+    #[test]
     fn top_keeps_a_rule_to_the_files_own_items() {
         use colab_core::Test;
         let src = "use a::b;\nuse c::d;\n\nfn f() {\n    use e::g;\n    h();\n}\n";

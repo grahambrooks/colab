@@ -281,6 +281,14 @@ comment stays, since it may be about the code around it. Deleting lines
 between two blank lines also removes one of the blanks, so deleting a run of
 items leaves a single blank line, not one per item.
 
+A `replace` whose template is only metavariables unwraps the match, and
+takes those doc comments and attributes too, since nothing is left for
+them to belong to: `match rust::pattern 'mod tests { $$$B }' { replace
+'$$$B' }` removes the module's `#[cfg(test)]` with it. Any other template
+writes new code where the match was and keeps what is above it, so a
+rename-style rewrite of an attributed function (`fn old() {}` →
+`fn new() {}`) keeps its `///` docs and `#[inline]`.
+
 **Never writes broken code.** If a file parsed cleanly and a pattern
 rewrite would leave a syntax error in it — usually a template that is not
 valid where it lands — that file is left unchanged and the rule reports no

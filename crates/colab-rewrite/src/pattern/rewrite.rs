@@ -780,13 +780,63 @@ impl StructuralPattern {
             subs: &subs,
             matches: &matches,
         };
-        rewriter
+        let edits: Vec<crate::Edit> = rewriter
             .outermost(0..source.len(), None)
             .into_iter()
             .map(|i| rewriter.render(source, i))
             .filter(|edit| !same_but_whitespace(&source[edit.start..edit.end], &edit.text))
-            .collect()
+            .collect();
+        self.with_attachments(source, &template, frame, edits)
     }
+
+    /// A template that only unwraps the match (nothing but its
+    /// metavariables: `mod tests { $$$B }` → `$$$B`) leaves nothing for
+    /// the match's doc comments and attributes to belong to, so each edit
+    /// takes them, as a delete does ([`Leading`]): the `#[cfg(test)]` goes
+    /// with the module it gated. Any other template keeps them above what
+    /// it writes, so a rename-style rewrite of an attributed item keeps its
+    /// attributes. In a macro's contents there are none to take.
+    fn with_attachments(
+        &self,
+        source: &str,
+        template: &str,
+        frame: Option<&Frame<'_>>,
+        mut edits: Vec<crate::Edit>,
+    ) -> Vec<crate::Edit> {
+        let leading = self.lang.leading;
+        let none = leading.kinds.is_empty() && leading.doc_comments.is_empty();
+        if none || frame.is_some() || edits.is_empty() || !only_metavariables(template) {
+            return edits;
+        }
+        let Some(tree) = crate::parse_cache::parse(&self.lang.grammar, source) else {
+            return edits;
+        };
+        for edit in &mut edits {
+            let start = super::delete::attached_start(&tree, source, edit.start, edit.end, leading);
+            if start < edit.start {
+                // The template's text goes where the first attachment was,
+                // at that line's indentation.
+                edit.start = start;
+            }
+        }
+        edits
+    }
+}
+
+/// `true` when `template` is metavariables and whitespace only (`$$$B`,
+/// `$A $B`): it unwraps what it matched rather than writing new code.
+pub(super) fn only_metavariables(template: &str) -> bool {
+    let (_, names) = transformable_template(template);
+    if names.is_empty() {
+        return false;
+    }
+    let mut rest = template.to_string();
+    for name in &names {
+        rest = rest
+            .replace(&format!("$$${name}"), "")
+            .replace(&format!("${name}"), "");
+    }
+    rest.trim().is_empty()
 }
 
 /// `true` when `a` and `b` differ only in whitespace outside quoted text.

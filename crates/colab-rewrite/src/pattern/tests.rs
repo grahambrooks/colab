@@ -751,6 +751,15 @@ fn nested_multi_captures_and_wrap_templates_rewrite_each_original_match_once() {
 }
 
 #[test]
+fn an_unwrapping_template_is_only_metavariables() {
+    assert!(only_metavariables("$$$B"));
+    assert!(only_metavariables("  $A\n$$$REST "));
+    assert!(!only_metavariables("fn new() {}"));
+    assert!(!only_metavariables("pub $$$B"));
+    assert!(!only_metavariables(""));
+}
+
+#[test]
 fn template_dollars_that_are_not_metavariables_survive() {
     assert_eq!(
         transformable_template("$this->x($$$ARGS, $A, \"$5\", $$)"),
