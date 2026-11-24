@@ -1,0 +1,2 @@
+1 rust::pattern 'use std::fs::$X;' where top -> 'use std::io::$X;'
+1 rust::pattern 'log($M)' where not top -> 'trace($M)'

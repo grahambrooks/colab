@@ -68,6 +68,19 @@ mod tests {
     use colab_rewrite::pattern::PatternAction;
 
     #[test]
+    fn top_is_a_statement_of_the_module() {
+        let top = colab_core::Constraint {
+            negated: false,
+            test: colab_core::Test::Top,
+        };
+        let op = crate::LANG
+            .compile_pattern("print($X)", PatternAction::Delete, &[top])
+            .unwrap();
+        let src = "print(1)\ndef f():\n    print(2)\n";
+        assert_eq!(op.apply(src), "def f():\n    print(2)\n");
+    }
+
+    #[test]
     fn a_deleted_function_takes_its_decorators() {
         let op = crate::LANG
             .compile_pattern("def $F(): pass", PatternAction::Delete, &[])

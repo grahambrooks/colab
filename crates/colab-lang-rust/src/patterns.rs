@@ -399,6 +399,45 @@ mod tests {
     }
 
     #[test]
+    fn top_keeps_a_rule_to_the_files_own_items() {
+        use colab_core::Test;
+        let src = "use a::b;\nuse c::d;\n\nfn f() {\n    use e::g;\n    h();\n}\n";
+        let deleted = |negated| {
+            crate::LANG
+                .compile_pattern(
+                    "use $$$X;",
+                    PatternAction::Delete,
+                    &[when(negated, Test::Top)],
+                )
+                .unwrap()
+                .apply(src)
+        };
+        // The file's imports go; the one inside the function stays.
+        let top = deleted(false);
+        assert!(
+            !top.contains("use a::b") && !top.contains("use c::d"),
+            "{top}"
+        );
+        assert!(top.contains("    use e::g;"), "{top}");
+        // `not top`: only what is nested.
+        let nested = deleted(true);
+        assert!(nested.starts_with("use a::b;\nuse c::d;\n"), "{nested}");
+        assert!(!nested.contains("use e::g"), "{nested}");
+        // A call in a macro's contents is inside the macro, never one of
+        // the file's items, even where the macro itself is.
+        let in_macro = "println!(\"{}\", f(1));\n";
+        let found = |negated| {
+            crate::LANG
+                .compile_pattern("f($X)", PatternAction::Delete, &[when(negated, Test::Top)])
+                .unwrap()
+                .locate(in_macro)
+                .unwrap()
+                .len()
+        };
+        assert_eq!((found(false), found(true)), (0, 1));
+    }
+
+    #[test]
     fn a_match_in_a_macro_is_judged_by_where_the_macro_is() {
         use colab_core::{Relation, Stop, Test};
         let src = "fn t(p: &Path) {\n    assert!(is_relevant(p));\n    let r = is_relevant(p);\n}\nfn u(p: &Path) {\n    assert!(is_relevant(p));\n}\n";

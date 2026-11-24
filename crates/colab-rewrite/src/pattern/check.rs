@@ -126,6 +126,8 @@ pub(super) enum CheckKind {
     All(Vec<Check>),
     Nth(i64),
     Field(String),
+    /// A direct child of the file's root ([`is_top`]).
+    Top,
     /// Read from the scan phases' facts, through `colab_core::facts`.
     In {
         var: Var,
@@ -306,6 +308,15 @@ pub(super) fn is_nth(node: &TsNode<'_>, n: i64) -> bool {
     if n > 0 { at + 1 == n } else { len - at == -n }
 }
 
+/// Whether `node` (or a node spanning the same text) is a direct child of
+/// the tree's root: one of the file's own items or statements. A match
+/// that spans the whole file is the root, which is no item of itself.
+pub(super) fn is_top(node: &TsNode<'_>) -> bool {
+    same_span(node)
+        .iter()
+        .any(|n| n.parent().is_some_and(|parent| parent.parent().is_none()))
+}
+
 /// Whether `node` (or a node spanning the same text) is its parent's
 /// child in field `name`.
 pub(super) fn in_field(node: &TsNode<'_>, name: &str) -> bool {
@@ -439,6 +450,7 @@ impl Check {
                 }
                 CheckKind::Field(name.clone())
             }
+            Test::Top => CheckKind::Top,
             Test::Let { .. } => unreachable!("`let` is compiled by `Derived`"),
         };
         Ok(Self {
@@ -526,6 +538,9 @@ impl Check {
             // no `field`, as the contents of a token tree are.
             CheckKind::Nth(n) => is_nth(m.get_node(), *n),
             CheckKind::Field(name) => in_field(m.get_node(), name),
+            // A macro's contents are inside the macro call, so never the
+            // file's own items, whatever the wrapper's tree says.
+            CheckKind::Top => frame.is_none() && is_top(m.get_node()),
             CheckKind::In { var, set, field } => {
                 let text = if var.multi {
                     let nodes = env.get_multiple_matches(&var.name);

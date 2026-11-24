@@ -55,6 +55,7 @@ test        = metavar "matches" ( regex | string )
             | "all" "(" constraint ( "," constraint )* ")"
             | "nth" [ "-" ] number
             | "field" identifier
+            | "top"
 stop        = "directly" | "until" pattern
 pattern     = string | identifier            -- code, or the name of a `pattern` item
 range       = number | number ".." number | number ".." | ".." number
@@ -415,6 +416,7 @@ match go::pattern 'errors.Wrap($E, $M)'
 | `… until '<pattern>'` | after the same four: look no further than a node matching this pattern (`inside 'for $$$ { $$$ }' until 'func() { $$$ }'`: in a loop, not across a closure) |
 | `nth n` | the match is its parent's `n`th named child, from 1; `nth -1` is the last |
 | `field <name>` | the match is the child in that field of its parent (`function` of a call, `body` of a loop; an unknown field gets a "did you mean") |
+| `top` | the match is one of the file's own items or statements, a direct child of its root, judged as `nth` is (a call alone on a line is its statement). `not top` is everything nested in something: `match rust::pattern 'use $$$X;' where top { delete }` removes the file's imports and leaves a function's own. Never true in a macro's contents. |
 | `any(c, …)` | at least one of the constraints holds: one rule for two shapes. `all(c, …)` groups constraints that must all hold, under `not` or `any` (at the top level a comma does the same). |
 | `$X type "<type>"` | the language server says `$X` has this type (see [Asking the language server](#asking-the-language-server-type-resolves-implements-calls-called_by)) |
 | `$F resolves "<path>.<name>"` | the language server says `$F` refers to that declaration |
@@ -1153,7 +1155,7 @@ The grammar keywords are:
 `refactor`, `match`, `in`, `include`, `pattern`, `rewriter`, `scan`, `as`, `then`, `replace`, `delete`, `ensure`,
 `replace_call`, `set`, `insert`; for location clauses `and`, `fences`,
 `prose`; for `where` / import clauses `where`, `not`, `matches`, `is`,
-`count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `requires`, `import`, `drops`, `when`,
+`count`, `inside`, `has`, `follows`, `precedes`, `directly`, `until`, `any`, `all`, `nth`, `field`, `top`, `requires`, `import`, `drops`, `when`,
 `unused`, `type`, `resolves`, `implements`, `calls`, `called_by`; `let` for derived values; and for finding clauses `message`, `severity`, `id`, `url` (`error`,
 `warning` and `info` are ordinary identifiers).
 

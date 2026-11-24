@@ -103,6 +103,11 @@ pub enum Test {
     /// `field <name>`: the match is its parent's child in that field
     /// (`function` of a call, `body` of a loop, …).
     Field(String),
+    /// `top`: the match is one of the file's own items, a direct child of
+    /// its root (judged, as `nth` is, by the widest node spanning the
+    /// match, so a call alone on a line is its statement). Never true in a
+    /// macro's contents. `not top` is everything nested in something.
+    Top,
     /// `let $NEW = $FROM | step | …` in a rule's action block: not a
     /// test but a value derived from a binding, for the `replace`
     /// template. It narrows nothing, so it is carried with the
@@ -466,6 +471,7 @@ impl fmt::Display for Constraint {
                 None => write!(f, "{var} in {set}"),
             },
             Test::Field(name) => write!(f, "field {name}"),
+            Test::Top => write!(f, "top"),
             Test::Let { var, from, steps } => {
                 write!(f, "let {var} = {from}")?;
                 for step in steps {

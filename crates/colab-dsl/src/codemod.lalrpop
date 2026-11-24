@@ -110,6 +110,8 @@ Test: Test = {
     "nth" <n: Number> => Test::Nth(i64::try_from(n).unwrap_or(i64::MAX)),
     "nth" "-" <n: Number> => Test::Nth(-i64::try_from(n).unwrap_or(i64::MAX)),
     "field" <name: Identifier> => Test::Field(name),
+    // `top`: one of the file's own items, not something nested in one.
+    "top" => Test::Top,
 };
 
 // How far `inside` / `has` / `follows` / `precedes` look.
@@ -250,6 +252,7 @@ pub Identifier: String = {
     "all" => "all".to_string(),
     "nth" => "nth".to_string(),
     "field" => "field".to_string(),
+    "top" => "top".to_string(),
     "pattern" => "pattern".to_string(),
     "rewriter" => "rewriter".to_string(),
     "id" => "id".to_string(),

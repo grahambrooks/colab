@@ -1,0 +1,5 @@
+// `top` keeps a rule to the file's own items: the file's imports move to
+// `std::io`, the function-local one is left alone; `not top` renames only
+// the nested call.
+match rust::pattern 'use std::fs::$X;' where top { replace 'use std::io::$X;' }
+match rust::pattern 'log($M)' where not top { replace 'trace($M)' }

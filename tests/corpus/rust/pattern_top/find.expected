@@ -1,0 +1,8 @@
+lib.rs:1:1: [0] use std::fs::File;
+    $X = File
+lib.rs:2:1: [0] use std::fs::read;
+    $X = read
+lib.rs:4:20: [1] log("start")
+    $M = "start"
+lib.rs:8:5: [1] log("load")
+    $M = "load"
