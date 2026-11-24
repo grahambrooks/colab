@@ -42,6 +42,26 @@ what it lets that dogfooding cover.
 | ---- | --------- | ------- |
 | 1 | Release 2026.11.4 | M20's install step has shipped (installer, uninstaller, post-edit hook, marketplace, MCP resources); the plugin pins 2026.11.4, which waits for stable-gate criterion 2 (1 of 2 clean milestones). |
 
+## Next improvements (2026-11-24 architecture review)
+
+The review that produced `colab_dsl::pipeline` (one run sequence for the
+CLI and MCP) and `colab_rewrite::language` (one common floor for the 12
+source backends) left these, in order. The first four are structural and
+cheapest now, while the pipeline is fresh. The rest are the open dogfood
+items, with their designs in [Follow-ups](#follow-ups-from-shipped-milestones).
+
+| Rank | Improvement | Why, and where |
+| ---- | ----------- | -------------- |
+| 1 | **Encapsulate `RunReport`.** 15 public fields, referenced from 20 files, written in place (`report.warnings.push`, `report.conflicts.extend`, `report.elapsed = …`). | The pipeline is now its main writer. Make the fields private behind `warn` / `add_conflicts` / `record*` / `finish`, with read accessors for `render`, so no surface can shape a report its own way. `colab-core/src/report.rs`. |
+| 2 | **One driver for the one-rule-at-a-time runs.** `--verify` / `--commit-per-rule` (`cli/bisect.rs`) and `--split-pr` (`cli/split.rs`) each re-index `rules_fired` and conflicts for a `SingleRule`, and count visits once. | A `pipeline::run_rule(refactoring, index, source)` that returns the re-indexed changes. That removes the last hand-sequenced copies, and a phased script could then run per rule (scans once, then each rule). |
+| 3 | **Scan phases on the remaining paths.** `--stdin` and MCP `colab.test_rule` read one text, and `Source::Text` already runs phased. MCP `colab.find` can use `Source::visit_phased` as `colab find` does. | Cheap now; it removes three refusals. `--changed-since` / `--staged` still need a decision: scans over every file, rules over the changed ones. |
+| 4 | **Split the oversized, high-churn modules.** `cli.rs`: every clap `Args` struct, 54 commits in 90 days. `colab-mcp/src/lib.rs`: about 2,300 lines of transport, dispatch, argument parsing and tools. `lsp_commands.rs`: CLI commands and the MCP `LspTools`. `language_server.rs`: its own walk. | Each command's `Args` goes into `cli/<cmd>.rs`. MCP becomes `transport.rs` / `args.rs` / `tools/*`. `colab server`'s walk becomes a `Source` + `Hooks` over the pipeline. |
+| 5 | **Parse errors name the file.** `--script` and `include`d files report `parse error at line 2, column 24` with no path, so an error in an include cannot be placed. | Add a path to `ParseDetail`, set by `compile_at_path` / include expansion. Show it in the CLI line, MCP `error.data` and editor diagnostics. |
+| 6 | **One base for every path glob.** `--include` / `--exclude` match relative to the walked target; `in "<glob>"` matches relative to the run's base (`Run::base`, else the working directory). | Now that runs carry a base, make the walk filters relative to it too, accepting the target-relative form with a deprecation warning. See the M10.6 row below. |
+| 7 | **Patterns inside macros** (Rust token trees). | The most frequent fallback to `text::literal` in the dogfood log. Design: [Patterns inside macros](#patterns-inside-macros). |
+| 8 | **Captures rendered verbatim** in `keep_layout`, plus "would not parse" naming the first match that breaks. | The two remaining pattern-output complaints. See the follow-up rows. |
+| 9 | **More pattern contexts:** C# class members, switch / when cases (Go, JS, Kotlin), and a bare `$$$` in item lists. | Each is a context entry in that backend's `patterns.rs`, plus a corpus case. |
+
 ## Stable gate before M20
 
 A version is pinned into Claude (plugin, MCP config, hook) when all of
