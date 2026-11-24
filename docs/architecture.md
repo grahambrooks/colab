@@ -437,7 +437,9 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
   `colab.preview` / `colab.apply` / `colab.test_rule` call it; the runs
   that apply one rule at a time (`--verify`, `--commit-per-rule`,
   `--split-pr`, the bisect search) compose its stage functions
-  (`Source::visit`, `prepare`, `refuse`, `write`) rather than copy them.
+  (`RuleRun`, which runs one rule over a `Source` and credits its
+  changes to the rule's index in the script, then `prepare`, `refuse`,
+  `write`) rather than copy them.
   A surface plugs in through `Hooks` (streaming, `--baseline`, `--backup`,
   progress) and `Check` (`--tidy`, the Markdown link check,
   `--verify-lsp`). Checks that need crates `colab-dsl` / `colab-mcp` must

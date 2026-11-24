@@ -58,27 +58,21 @@ pub(super) fn run_split(
     // Stacked: each file as the rules so far left it. A rule reads this,
     // not the disk, for a file an earlier rule changed.
     let mut state: std::collections::BTreeMap<PathBuf, String> = Default::default();
-    for (index, rule) in refactoring.rules.iter().enumerate() {
-        let single =
-            codemod::SingleRule::new(rule.as_ref()).in_script(refactoring.script_of(index));
+    // One source for every rule: `git` is asked once, not once per rule.
+    let source = source(args, targets)?;
+    for index in 0..refactoring.rules.len() {
+        let one = codemod::pipeline::RuleRun::new(refactoring, index);
         let mut changes = Vec::new();
         let mut seen_now = BTreeSet::new();
         let restack = |change: FileChange| -> FileChange {
             match state.get(&change.path) {
-                Some(current) if args.stacked => {
-                    let outcome = single.apply_at(&change.path, current);
-                    FileChange::from_outcome(change.path, current.clone(), outcome)
-                }
+                Some(current) if args.stacked => one.apply_at(&change.path, current),
                 _ => change,
             }
         };
         let mut visit = |change: FileChange| -> Result<()> {
             seen_now.insert(change.path.clone());
-            let mut change = restack(change);
-            change.rules_fired = change.rules_fired.iter().map(|_| index).collect();
-            for conflict in &mut change.conflicts {
-                conflict.rule = index;
-            }
+            let change = restack(change);
             if scanned.insert(change.path.clone()) {
                 bytes_before += change.before.len() as u64;
             }
@@ -89,7 +83,7 @@ pub(super) fn run_split(
             }
             Ok(())
         };
-        let outcome = run_transformer(&single, args, targets, &mut visit)?;
+        let outcome = one.visit(&source, &mut visit)?;
         if index == 0 {
             report.record_walk(outcome);
         }
@@ -97,15 +91,10 @@ pub(super) fn run_split(
         // prefilter looks for, though the walker skipped it on disk.
         if args.stacked {
             for (path, current) in &state {
-                if seen_now.contains(path) || !single.is_file_relevant(path) {
+                if seen_now.contains(path) || !one.is_file_relevant(path) {
                     continue;
                 }
-                let outcome = single.apply_at(path, current);
-                let mut change = FileChange::from_outcome(path.clone(), current.clone(), outcome);
-                change.rules_fired = change.rules_fired.iter().map(|_| index).collect();
-                for conflict in &mut change.conflicts {
-                    conflict.rule = index;
-                }
+                let change = one.apply_at(path, current);
                 if change.changed() {
                     changed_paths.insert(change.path.clone());
                     delta += change.after.len() as i64 - change.before.len() as i64;

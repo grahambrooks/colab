@@ -24,7 +24,7 @@
 //!
 //! Runs that apply rules one at a time (`--verify`, `--commit-per-rule`,
 //! `--split-pr`, the bisect search) cannot be one pass, so they compose the
-//! stage functions ([`Source::visit`], [`prepare`], [`refuse`], [`write`])
+//! stage functions ([`RuleRun`], [`prepare`], [`refuse`], [`write`])
 //! themselves instead of re-implementing them.
 //!
 //! Checks that need crates this one must not depend on (language servers,
@@ -368,6 +368,66 @@ impl<'a> Pipeline<'a> {
             written,
             blocked,
         })
+    }
+}
+
+/// One rule of a script, run alone: what `--verify`, `--commit-per-rule`,
+/// `--split-pr` and the bisect search do once per rule. Every change it
+/// yields is credited to the rule's index in the whole script (a
+/// [`SingleRule`](crate::SingleRule) alone would say rule 0), so the
+/// report reads as a normal run's.
+pub struct RuleRun<'a> {
+    single: crate::SingleRule<'a>,
+    index: usize,
+}
+
+impl<'a> RuleRun<'a> {
+    /// Rule `index` of `refactoring`.
+    pub fn new(refactoring: &'a Refactoring, index: usize) -> Self {
+        Self {
+            single: crate::SingleRule::new(refactoring.rules[index].as_ref())
+                .in_script(refactoring.script_of(index)),
+            index,
+        }
+    }
+
+    /// The rule's index in the script.
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// Whether the rule applies to `path` at all.
+    pub fn is_file_relevant(&self, path: &Path) -> bool {
+        self.single.is_file_relevant(path)
+    }
+
+    /// The rule over every relevant file of `source`, then the semantic gate.
+    pub fn visit<F>(&self, source: &Source, visit: &mut F) -> Result<WalkOutcome>
+    where
+        F: FnMut(FileChange) -> Result<()>,
+    {
+        let outcome = source.visit(&self.single, &mut |change| visit(self.credit(change)))?;
+        semantic_failure()?;
+        Ok(outcome)
+    }
+
+    /// The rule over one text in memory (`--split-pr --stacked` applies a
+    /// rule to what the rules before it left).
+    pub fn apply_at(&self, path: &Path, text: &str) -> FileChange {
+        let applied = self.single.apply_at(path, text);
+        self.credit(FileChange::from_outcome(
+            path.to_path_buf(),
+            text.to_string(),
+            applied,
+        ))
+    }
+
+    fn credit(&self, mut change: FileChange) -> FileChange {
+        change.rules_fired = change.rules_fired.iter().map(|_| self.index).collect();
+        for conflict in &mut change.conflicts {
+            conflict.rule = self.index;
+        }
+        change
     }
 }
 

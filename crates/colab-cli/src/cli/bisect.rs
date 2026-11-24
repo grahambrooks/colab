@@ -18,9 +18,11 @@ pub(super) fn run_refactor_per_rule(
     let mut reporter = format::make_reporter(args.format, ExecMode::Write, args.render_options());
     let started = Instant::now();
     let mut report = refactoring.report();
+    // One source for every rule: `git` is asked once, not once per rule.
+    let source = source(args, targets)?;
 
     for (idx, rule) in refactoring.rules.iter().enumerate() {
-        let single = codemod::SingleRule::new(rule.as_ref()).in_script(refactoring.script_of(idx));
+        let one = codemod::pipeline::RuleRun::new(refactoring, idx);
         let rule_label = rule.to_string();
         info!(
             "[{}/{}] Applying rule: {}",
@@ -37,13 +39,7 @@ pub(super) fn run_refactor_per_rule(
         let mut backups: std::collections::HashMap<PathBuf, String> =
             std::collections::HashMap::new();
         let mut pending: Vec<FileChange> = Vec::new();
-        let mut visit = |mut change: FileChange| -> Result<()> {
-            // `SingleRule` always reports index 0; re-index it against
-            // the full script so the report reads the same as a normal run.
-            change.rules_fired = change.rules_fired.into_iter().map(|_| idx).collect();
-            for conflict in &mut change.conflicts {
-                conflict.rule = idx;
-            }
+        let mut visit = |change: FileChange| -> Result<()> {
             report.record(&change);
             if change.changed() {
                 pending.push(change);
@@ -55,7 +51,7 @@ pub(super) fn run_refactor_per_rule(
             Ok(())
         };
 
-        let outcome = run_transformer(&single, args, targets, &mut visit)?;
+        let outcome = one.visit(&source, &mut visit)?;
         // Each rule re-walks the same tree, so only the first pass's visits
         // and unreadable files count; the rest would multiply them.
         if idx == 0 {
@@ -287,9 +283,9 @@ pub(super) fn bisect_rules(
     targets: &[PathBuf],
     verify_cmd: &str,
 ) -> Result<usize> {
-    let rules = &refactoring.rules;
+    let source = source(args, targets)?;
     let mut lo = 0usize;
-    let mut hi = rules.len();
+    let mut hi = refactoring.rules.len();
     while hi - lo > 1 {
         let mid = lo + (hi - lo) / 2;
         // Restore the pre-run state for every snapshotted file.
@@ -297,13 +293,9 @@ pub(super) fn bisect_rules(
             fs::write(path, before).map_err(|e| Error::io_at(path, e))?;
         }
         // Apply rules[..mid] sequentially.
-        for (i, rule) in rules.iter().enumerate().take(mid) {
-            let single =
-                codemod::SingleRule::new(rule.as_ref()).in_script(refactoring.script_of(i));
-            run_transformer(
-                &single,
-                args,
-                targets,
+        for index in 0..mid {
+            codemod::pipeline::RuleRun::new(refactoring, index).visit(
+                &source,
                 &mut |change: FileChange| -> Result<()> {
                     if change.changed() {
                         fs::write(&change.path, &change.after)

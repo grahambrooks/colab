@@ -17,8 +17,8 @@ use std::time::Instant;
 
 use colab_core::render::{self, Detail, RenderOptions};
 use colab_core::report::RunReport;
-use colab_core::walker::{FileChange, WalkOptions, WalkOutcome};
-use colab_core::{BackendRegistry, CodeTransformer, Error, Result};
+use colab_core::walker::{FileChange, WalkOptions};
+use colab_core::{BackendRegistry, Error, Result};
 use colab_dsl as codemod;
 use colab_dsl::pipeline::{Source, semantic_failure};
 

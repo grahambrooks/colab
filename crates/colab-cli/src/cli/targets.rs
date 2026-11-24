@@ -29,23 +29,6 @@ pub(super) fn source(args: &RefactorArgs, targets: &[PathBuf]) -> Result<Source>
     })
 }
 
-/// One transformer (a single rule, for the runs that apply rules one at a
-/// time) over the run's [`source`], then the semantic gate.
-pub(super) fn run_transformer<T, F>(
-    transformer: &T,
-    args: &RefactorArgs,
-    targets: &[PathBuf],
-    visit: &mut F,
-) -> Result<WalkOutcome>
-where
-    T: CodeTransformer + Sync,
-    F: FnMut(FileChange) -> Result<()>,
-{
-    let outcome = source(args, targets)?.visit(transformer, visit)?;
-    semantic_failure()?;
-    Ok(outcome)
-}
-
 pub(super) fn git_changed_since(reference: &str) -> Result<Vec<PathBuf>> {
     git_paths(&["diff", "--name-only", "--diff-filter=ACMRT", reference])
 }
