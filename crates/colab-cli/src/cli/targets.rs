@@ -29,6 +29,16 @@ pub(super) fn source(args: &RefactorArgs, targets: &[PathBuf]) -> Result<Source>
     })
 }
 
+/// What a script's `scan` phases read: always the whole walk of the
+/// targets, so `--changed-since` / `--staged` (and the per-rule runs)
+/// decide `in` as a full run would, though they change fewer files.
+pub(super) fn scan_source(args: &RefactorArgs, targets: &[PathBuf]) -> Source {
+    Source::Walk {
+        targets: targets.to_vec(),
+        options: walk_options(args),
+    }
+}
+
 pub(super) fn git_changed_since(reference: &str) -> Result<Vec<PathBuf>> {
     git_paths(&["diff", "--name-only", "--diff-filter=ACMRT", reference])
 }

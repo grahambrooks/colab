@@ -1,7 +1,6 @@
-//! The pieces a run needs before it walks: the language-server oracle a
-//! script's `type` / `resolves` constraints ask, and the run paths that
-//! refuse phased runs (scripts with `scan` phases, which
-//! `colab_dsl::pipeline` reads whole before any rule changes a file).
+//! The language-server oracle a script's `type` / `resolves` constraints
+//! ask, installed for the run. (Scripts with `scan` phases need nothing
+//! here: every run path reads them through `colab_dsl::pipeline`.)
 
 use super::*;
 
@@ -39,30 +38,5 @@ impl Drop for OracleGuard {
             colab_core::semantic::take_failure();
             oracle.shutdown();
         }
-    }
-}
-
-/// The run paths a script with scans cannot take yet: each applies one
-/// rule at a time, or reads only some of the files (a scan must see them
-/// all). `--stdin` runs one: its scans read the one text.
-pub(super) fn refuse_phased(refactoring: &codemod::Refactoring, args: &RefactorArgs) -> Result<()> {
-    if !refactoring.has_scans() {
-        return Ok(());
-    }
-    let flag = [
-        (args.split_pr.is_some(), "--split-pr"),
-        (args.verify.is_some(), "--verify"),
-        (args.commit_per_rule, "--commit-per-rule"),
-        (args.bisect.is_some(), "--bisect"),
-        (args.changed_since.is_some(), "--changed-since"),
-        (args.staged, "--staged"),
-    ]
-    .into_iter()
-    .find_map(|(on, name)| on.then_some(name));
-    match flag {
-        Some(flag) => Err(Error::UnsupportedOperation(format!(
-            "a script with `scan` phases reads every file before it edits one, which {flag} does not do yet; run it without {flag}"
-        ))),
-        None => Ok(()),
     }
 }

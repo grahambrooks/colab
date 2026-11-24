@@ -20,6 +20,7 @@ pub(super) fn run_refactor_per_rule(
     let mut report = refactoring.report();
     // One source for every rule: `git` is asked once, not once per rule.
     let source = source(args, targets)?;
+    codemod::pipeline::prepare_scans(refactoring, &scan_source(args, targets))?;
 
     for (idx, rule) in refactoring.rules.iter().enumerate() {
         let one = codemod::pipeline::RuleRun::new(refactoring, idx);
@@ -212,6 +213,7 @@ pub(super) fn run_refactor_bisect(
     // then sees formatted code, and a subset bisected later is checked
     // untidied, which a build does not mind.
     let outcome = codemod::pipeline::Pipeline::new(refactoring, source(args, targets)?)
+        .scan_over(scan_source(args, targets))
         .write(true)
         .allow_conflicts(args.allow_conflicts)
         .refusal_hint(REFUSAL_HINT)
@@ -284,6 +286,7 @@ pub(super) fn bisect_rules(
     verify_cmd: &str,
 ) -> Result<usize> {
     let source = source(args, targets)?;
+    codemod::pipeline::prepare_scans(refactoring, &scan_source(args, targets))?;
     let mut lo = 0usize;
     let mut hi = refactoring.rules.len();
     while hi - lo > 1 {

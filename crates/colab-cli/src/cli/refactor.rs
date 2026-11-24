@@ -420,7 +420,6 @@ pub(super) fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorAr
         args.paths.clone()
     };
 
-    refuse_phased(refactoring, args)?;
     if let Some(prefix) = &args.split_pr {
         return run_split(refactoring, args, &targets, prefix);
     }
@@ -470,6 +469,7 @@ pub(super) fn run_compiled(refactoring: &codemod::Refactoring, args: &RefactorAr
     let mut hooks = CliHooks::new(reporter.as_mut(), args.backup.as_deref());
     hooks.baseline = baseline.as_mut().map(|b| (b, &rules_only));
     let outcome = codemod::pipeline::Pipeline::new(refactoring, source(args, &targets)?)
+        .scan_over(scan_source(args, &targets))
         .write(matches!(exec_mode, ExecMode::Write))
         .allow_conflicts(args.allow_conflicts)
         .refusal_hint(REFUSAL_HINT)

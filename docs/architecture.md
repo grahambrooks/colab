@@ -502,13 +502,17 @@ M35 relaxes "every rule acts on one file" for **reading** only.
   meant. The pattern engine reads `colab_core::facts::contains`; with no
   facts installed it records a failure (the run fails at the end of the
   walk, before writes) rather than answer from an empty set.
-- Paths that cannot make a phased run refuse a script with scans:
-  `--bisect`, `--verify`, `--commit-per-rule`, `--split-pr`, and
-  `--changed-since` / `--staged`. The rest run them through the pipeline:
-  MCP `colab.preview` / `colab.apply` over a walk, `--stdin` and MCP
-  `colab.test_rule` over their one text (so its scans read only that), and
-  `colab find` / MCP `colab.find` with `Source::visit_phased` before they
-  locate hits. Facts are plain text; nothing
+- Every run path takes a script with scans. MCP `colab.preview` /
+  `colab.apply` run it over a walk; `--stdin` and MCP `colab.test_rule`
+  over their one text (so its scans read only that); `colab find` / MCP
+  `colab.find` with `Source::visit_phased` before they locate hits.
+  `--changed-since` / `--staged` use `Pipeline::scan_over`: the scans read
+  the whole walk of the targets, and only git's files are changed (and
+  reported by git's names). The one-rule-at-a-time runs (`--verify`,
+  `--commit-per-rule`, `--split-pr`, the bisect search) call
+  `pipeline::prepare_scans` first, which runs the whole script phased in
+  memory once and leaves its facts installed, so each `RuleRun` reads what
+  the whole run would. Facts are plain text; nothing
   resolves names across files. Every edit is still one rule's in one
   file, so conflicts, `colab:ignore`, attribution and idempotency hold.
 - Deferred: `create` (a new file from a match), which needs `FileOp`s in

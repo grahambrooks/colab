@@ -39,7 +39,6 @@ pub(super) fn run_stdin(args: RefactorArgs) -> Result<u8> {
     let mut refactoring = args.script.compile(&backends)?;
     args.select.apply(&mut refactoring)?;
     let _oracle = OracleGuard::install(&refactoring, args.lsp.as_deref(), args.lsp_timeout)?;
-    refuse_phased(&refactoring, &args)?;
     // The rules are in every report; the log names the script, so an
     // agent does not read each rule twice.
     info!(

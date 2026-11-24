@@ -170,6 +170,26 @@ impl CodeTransformer for Relevant<'_> {
     }
 }
 
+/// `path` as two sources can compare it: `git` names `src/a.rs` where a walk
+/// of `.` yields `./src/a.rs`.
+fn comparable(path: &Path) -> PathBuf {
+    path.components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect()
+}
+
+/// Run a script's `scan` phases once over `source`, leaving their facts
+/// installed in the current run, for the runs that then apply its rules one
+/// at a time ([`RuleRun`]): each rule's `in` reads the facts the whole
+/// script's run would give it. A script without scans costs nothing.
+pub fn prepare_scans(refactoring: &Refactoring, source: &Source) -> Result<()> {
+    if refactoring.has_scans() {
+        source.visit_phased(refactoring, &mut |_| Ok(()))?;
+        semantic_failure()?;
+    }
+    Ok(())
+}
+
 /// A question a rule's `type` / `resolves` / `in` constraint could not have
 /// answered fails the run, before anything is written.
 pub fn semantic_failure() -> Result<()> {
@@ -250,6 +270,7 @@ pub struct Pipeline<'a> {
     allow_conflicts: bool,
     refusal_hint: &'a str,
     checks: Vec<Box<dyn Check + 'a>>,
+    scan_source: Option<Source>,
 }
 
 impl<'a> Pipeline<'a> {
@@ -262,7 +283,19 @@ impl<'a> Pipeline<'a> {
             allow_conflicts: false,
             refusal_hint: "fix the rules, or allow conflicts",
             checks: Vec::new(),
+            scan_source: None,
         }
+    }
+
+    /// Let a script's `scan` phases read `scans` while its rules change
+    /// only the files of the run's own source: `--changed-since` /
+    /// `--staged` edit the files git names, but a scan must see the whole
+    /// tree for `in` to mean what it means in a full run. Only a
+    /// [`Source::Paths`] is narrowed this way; for any other source the
+    /// scans read the run's own source, as without it.
+    pub fn scan_over(mut self, scans: Source) -> Self {
+        self.scan_source = Some(scans);
+        self
     }
 
     /// Write the result (ignored for a [`Source::Text`] run).
@@ -317,10 +350,27 @@ impl<'a> Pipeline<'a> {
             report.record(&change);
             hooks.unchanged(&change)
         };
-        let outcome = if refactoring.has_scans() {
-            self.source.visit_phased(refactoring, &mut visit)?
-        } else {
-            self.source.visit(refactoring, &mut visit)?
+        let outcome = match (&self.source, &self.scan_source) {
+            // Scans over the whole tree, the run over the named files: the
+            // phased run reads everything, and only the named files'
+            // results are kept.
+            (Source::Paths(named), Some(scans)) if refactoring.has_scans() => {
+                // Each kept file is reported by the name the source gave it.
+                let named: std::collections::HashMap<PathBuf, &PathBuf> =
+                    named.iter().map(|p| (comparable(p), p)).collect();
+                let mut kept = WalkOutcome::default();
+                scans.visit_phased(refactoring, &mut |mut change: FileChange| {
+                    let Some(&name) = named.get(&comparable(&change.path)) else {
+                        return Ok(());
+                    };
+                    change.path = name.clone();
+                    kept.files_visited += 1;
+                    visit(change)
+                })?;
+                kept
+            }
+            _ if refactoring.has_scans() => self.source.visit_phased(refactoring, &mut visit)?,
+            _ => self.source.visit(refactoring, &mut visit)?,
         };
         // 2. Nothing is written after a question that went unanswered.
         semantic_failure()?;

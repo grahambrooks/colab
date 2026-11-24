@@ -4415,6 +4415,50 @@ fn a_script_file_of_bare_rules_runs_named_after_the_file() {
 }
 
 #[test]
+fn a_scan_reads_the_whole_tree_when_the_run_changes_only_what_git_names() {
+    let root = git_workspace(
+        "scan-changed-since",
+        &[
+            ("api/api.go", "package api\n\nfunc Exported() {}\n"),
+            ("app/main.go", "package main\n\nfunc main() {}\n"),
+        ],
+    );
+    // Only main.go changes since HEAD; the scan must still read api.go.
+    write(
+        &root.join("app/main.go"),
+        "package main\n\nfunc main() {\n\tapi.Exported()\n}\n",
+    );
+    write(
+        &root.join("s.colab"),
+        r#"scan go::pattern 'func $F() {}' in "api/**" where $F matches /^[A-Z]/ as exported
+match go::pattern 'api.$F()' where $F in exported { replace 'api.$F(nil)' }
+"#,
+    );
+    let out = colab()
+        .current_dir(&root)
+        .args([
+            "refactor",
+            "--script",
+            "s.colab",
+            "--changed-since",
+            "HEAD",
+            "--format",
+            "json",
+            ".",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc["changed"], serde_json::json!(["app/main.go"]), "{doc}");
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
 fn a_scan_reads_every_file_before_a_rule_edits_one() {
     let root = workspace_temp("scan-phases");
     write(
@@ -4462,10 +4506,23 @@ fn a_scan_reads_every_file_before_a_rule_edits_one() {
         found.contains("main.go:4:2") && !found.contains("main.go:5:"),
         "{found}"
     );
-    // A run path that reads files one at a time refuses, naming itself.
-    let refused = run(&["--bisect", "true", "--write"]);
-    assert!(!refused.status.success());
-    assert!(String::from_utf8_lossy(&refused.stderr).contains("--bisect does not do yet"));
+    // The runs that apply one rule at a time read the same facts: the
+    // scans run once, over the whole tree, first.
+    let verified = run(&["--verify", "true"]);
+    assert!(
+        verified.status.success(),
+        "{}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
+    let main = fs::read_to_string(root.join("app/main.go")).unwrap();
+    assert!(
+        main.contains("api.Exported(nil)") && !main.contains("api.internal(nil)"),
+        "{main}"
+    );
+    write(
+        &root.join("app/main.go"),
+        "package main\n\nfunc main() {\n\tapi.Exported()\n\tapi.internal()\n}\n",
+    );
     // `--stdin` runs it over the one text: its scans read that text.
     let mut child = colab()
         .current_dir(&root)

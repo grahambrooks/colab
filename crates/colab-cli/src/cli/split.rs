@@ -60,6 +60,7 @@ pub(super) fn run_split(
     let mut state: std::collections::BTreeMap<PathBuf, String> = Default::default();
     // One source for every rule: `git` is asked once, not once per rule.
     let source = source(args, targets)?;
+    codemod::pipeline::prepare_scans(refactoring, &scan_source(args, targets))?;
     for index in 0..refactoring.rules.len() {
         let one = codemod::pipeline::RuleRun::new(refactoring, index);
         let mut changes = Vec::new();
