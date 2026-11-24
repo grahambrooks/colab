@@ -155,7 +155,6 @@ whichever milestone touches the same code.
 | Modifiers in item patterns, the rest (Rust, Java, Kotlin, Swift, C# and PHP done 2026-11-24 with one `$COLAB_MODS` sentinel form each; JS and the new `ts` backend with `modifier_tokens`): C# matches at most four modifiers before a metavariable type (`$T $F() {}`); and in C++, `void $F() { $$$B }` is refused, since the grammar reads `void F() { x }` as a declaration with a brace initializer in every context (C# and PHP lone bodies fixed 2026-11-24) | dogfood 2026-11-24 |
 | Hover text is matched as the server spells it, so a callee's parameter types outside `->` (Go, TypeScript) can still match `type` (a file's questions are batched now, and answers kept for the run) | M32 |
 | Incremental reparse: after a rule changes a file, reparse with the old tree and an `InputEdit` from the rule's edits, instead of from scratch | M10.6 |
-| Markdown placement after a sibling: `markdown::section "New < Next"` places only before one, so a section to go after another needs the name of the one that follows (after the last, `Parent > New` appends). Needs a syntax that does not collide with ` > ` paths: decision for Graham (`colab mv-section` within one file was done 2026-11-24) | tsx worker 2026-11-24 |
 ### Patterns inside macros
 
 **Built 2026-11-24** (`colab_rewrite::pattern::MacroContents`, Rust

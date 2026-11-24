@@ -20,12 +20,12 @@ pub fn parse(text: &str) -> Result<Command> {
 /// quotes, a raw string shown in documentation). Say where it closed.
 pub(crate) fn raw_string_hint(source: &str, detail: &ParseDetail) -> Option<String> {
     let offset = detail.offset.min(source.len());
-    // `\"` just before the error: an escape the DSL does not have.
+    // `\'` just before the error: single-quoted strings are literal.
     let line_start = source[..offset].rfind('\n').map_or(0, |i| i + 1);
-    if source[line_start..offset].contains("\\\"") {
+    if source[line_start..offset].contains("\\'") {
         return Some(
-            "; DSL strings have no escapes, so `\\\"` ends the string. Quote text that holds `\"` \
-             with '…', or r#\"…\"# when it holds both quotes"
+            "; '…' strings are literal, so `\\'` ends the string. Write text that holds `'` in \
+             \"…\", which takes JSON's escapes (`\\\"`, `\\\\`, `\\n`, `\\t`)"
                 .into(),
         );
     }
@@ -42,11 +42,14 @@ pub(crate) fn raw_string_hint(source: &str, detail: &ParseDetail) -> Option<Stri
             .take_while(|c| !c.is_whitespace())
             .take(20)
             .collect();
-        let other = if quote == '\'' { '"' } else { '\'' };
+        let fix = if quote == '\'' {
+            "quote it with \"…\" instead (a `\"` inside escaped as `\\\"`)"
+        } else {
+            "escape it as `\\\"`, or quote the text with '…'"
+        };
         return Some(format!(
-            "; the string ended at the `{quote}` just before `{token}`: a string quoted with \
-             {quote}…{quote} cannot hold {quote}. Quote it with {other}…{other}, or r#\"…\"# when it \
-             holds both quotes"
+            "; the string ended at the `{quote}` just before `{token}`: the text held a \
+             {quote}; {fix}"
         ));
     }
     let open = source[..offset].rfind("r#\"")?;

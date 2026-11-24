@@ -454,9 +454,12 @@ How it matches:
   must appear in a file before it is parsed. A pattern made only of
   metavariables and punctuation (`$A + $B`) parses every file of its
   language.
-- **Quoting.** The DSL has no escapes, so write patterns containing `"`
-  with single quotes, as above, and patterns or templates containing both
-  quotes (a Rust lifetime and a string) as a raw string, `r#"…"#`; see
+- **Quoting.** `"…"` takes JSON's escapes: `\"`, `\\`, `\n` (a line break)
+  and `\t`; any other backslash is kept as written (`"\d"` stays `\d`).
+  `'…'` and raw strings (`r#"…"#`, `r##"…"##`) are literal, which is what
+  a code pattern or template wants: its own `\n` and `\\` reach the file
+  untouched. So write code in single quotes, and text that holds both
+  quotes in double quotes with `\"`; see
   [Reserved tokens](#reserved-tokens).
 
 - **The layout around a change is kept.** A template replaces the whole

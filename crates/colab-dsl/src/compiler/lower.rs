@@ -128,8 +128,9 @@ pub(crate) fn lower_match_ops(
         && spec_texts(&spec).iter().any(|t| t.contains("\\n"))
     {
         advice.push(
-            "the rule's text holds `\\n`, which colab writes as a backslash and an `n`: DSL strings \
-             have no escapes. If a line break was meant, write one inside the quotes"
+            "the rule's text holds `\\n`, which colab writes as a backslash and an `n`: '…' and \
+             r#\"…\"# strings are literal. If a line break was meant, quote the text with \"…\", \
+             where `\\n` is one"
                 .into(),
         );
     }

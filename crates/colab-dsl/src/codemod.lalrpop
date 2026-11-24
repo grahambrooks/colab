@@ -290,7 +290,9 @@ pub Identifier: String = {
 // LALRPOP quotes each token's regex in an `r###` string in the code it
 // generates. All may span lines.
 pub StringLiteral: String = {
-    <s:r#""[^"]*""#> => s[1..s.len() - 1].to_string(),
+    // "…" takes JSON's escapes (`\"`, `\\`, `\n`, `\t`); '…' and r#"…"#
+    // are literal, so a code template keeps its own backslashes.
+    <s:r#""([^"\\]|\\(.|\n))*""#> => crate::ast::unescape(&s[1..s.len() - 1]),
     <s:r#"'[^']*'"#> => s[1..s.len() - 1].to_string(),
     <s:r##"r#"([^"]|"+[^"#])*"+#"##> => s[3..s.len() - 2].to_string(),
     <s:r###"r##"([^"]|"+[^"#]|"+#[^"#])*"+##"###> => s[4..s.len() - 3].to_string(),

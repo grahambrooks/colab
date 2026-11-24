@@ -489,10 +489,13 @@ fn a_backslash_n_in_text_or_markdown_is_advised_and_in_code_is_not() {
             .iter()
             .any(|w| w.contains("a backslash and an `n`"))
     };
-    assert!(warned(r#"match text::literal "a\nb" { replace "c" }"#));
+    // Literal strings: the two characters, advised.
+    assert!(warned(r#"match text::literal 'a\nb' { replace "c" }"#));
     assert!(warned(
-        r#"match markdown::item "Log[x]" { replace "y\nz" }"#
+        r##"match markdown::item "Log[x]" { replace r#"y\nz"# }"##
     ));
+    // In "…" it is a line break, so nothing to advise.
+    assert!(!warned(r#"match text::literal "a\nb" { replace "c" }"#));
     // A code template's `\n` is the language's own escape.
     assert!(!warned(
         r#"match rust::pattern 'println!("x")' { replace 'print!("x\n")' }"#
@@ -556,10 +559,36 @@ fn and_fences_lowers_to_the_rule_and_its_fenced_twin() {
 }
 
 #[test]
-fn an_escaped_quote_says_the_dsl_has_no_escapes() {
-    let script = "refactor \"r\" { match markdown::section \"a \\\"b\\\" c\" { delete } }";
-    let err = crate::parse(script).unwrap_err().to_string();
-    assert!(err.contains("DSL strings have no escapes"), "{err}");
+fn double_quoted_strings_take_json_escapes_and_single_quoted_are_literal() {
+    let target = |script: &str| match crate::parse(script).unwrap().items.remove(0) {
+        Item::Match(m) => m.match_string,
+        other => panic!("{other:?}"),
+    };
+    // What agents write by habit, as JSON and most languages read it.
+    assert_eq!(
+        target(r#"match text::literal "a \"b\" c\\d\ne\tf" { delete }"#),
+        "a \"b\" c\\d\ne\tf"
+    );
+    // An unknown escape keeps its backslash: `\d` stays `\d`.
+    assert_eq!(target(r#"match text::literal "x\dy" { delete }"#), "x\\dy");
+    // '…' and r#"…"# are literal, so code keeps its own escapes.
+    assert_eq!(
+        target(r#"match rust::pattern 'f("a\n")' { delete }"#),
+        "f(\"a\\n\")"
+    );
+    // A `\'` in single quotes ends the string, and the error says so.
+    let err = crate::parse(r"match text::literal 'it\'s' { delete }")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("'…' strings are literal"), "{err}");
+    // `quote_double` reads back as itself.
+    for text in ["plain", "a \"q\" \\ b\nc\td", "'single'"] {
+        let script = format!(
+            "match text::literal {} {{ delete }}",
+            crate::ast::quote_double(text)
+        );
+        assert_eq!(target(&script), text);
+    }
 }
 
 #[test]
@@ -569,12 +598,12 @@ fn a_quote_inside_a_string_says_the_string_ended_there() {
     let err = crate::parse(script).unwrap_err().to_string();
     assert!(
         err.contains("the string ended at the `'` just before `emx')`")
-            && err.contains("Quote it with \"…\""),
+            && err.contains("quote it with \"…\" instead"),
         "{err}"
     );
     let doubled = r#"match rust::pattern "f("x")" { delete }"#;
     let err = crate::parse(doubled).unwrap_err().to_string();
-    assert!(err.contains("Quote it with '…'"), "{err}");
+    assert!(err.contains("escape it as `\\\"`"), "{err}");
     // An error after a string and a space is some other mistake: no hint.
     let spaced = "match rust::pattern 'f($A)' nope { delete }";
     let err = crate::parse(spaced).unwrap_err().to_string();

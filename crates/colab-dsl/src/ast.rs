@@ -165,6 +165,51 @@ pub(crate) struct Clauses {
 }
 
 /// `true` for a rule id: letters, digits, and `-` `_` `.` `/`, not empty.
+/// The text of a double-quoted DSL string: `\"` is `"`, `\\` is `\`,
+/// `\n` a line break and `\t` a tab, as in JSON. Any other backslash is
+/// kept as written (`"\d+"` stays `\d+`), so text with stray backslashes
+/// means what it shows. Single-quoted and raw strings are never unescaped.
+pub fn unescape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+/// `text` as a double-quoted DSL string, escaped so it reads back as
+/// itself (the inverse of [`unescape`]).
+pub fn quote_double(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id

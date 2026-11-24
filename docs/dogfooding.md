@@ -138,7 +138,7 @@ colab rename --symbol build_rule --in crates/colab-core/src/backend.rs --to buil
 - **Write templates flush-left, in their final multi-line shape.** colab
   re-indents every line after the first to the column of the match. A
   template written on one line comes out on one line.
-- **Quotes and lifetimes.** DSL strings have no escapes. A pattern or template that holds both `'` and `"`, such as `&'static str` beside a string literal, goes in a raw string: `r#"fn f() -> &'static str { "x" }"#`. If the text itself contains `"#`, use two hashes.
+- **Quotes and lifetimes.** `'…'` and raw strings are literal; `"…"` takes `\"`, `\\`, `\n` and `\t`. A pattern or template that holds both `'` and `"`, such as `&'static str` beside a string literal, goes in a raw string: `r#"fn f() -> &'static str { "x" }"#`. If the text itself contains `"#`, use two hashes.
 - **`$$$B` for a body.** `{ $$$B }` matches a block of any length.
   `$_` matches one node you do not need to bind.
 - **When a pattern matches nothing**, check its tree first:

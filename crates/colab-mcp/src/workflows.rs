@@ -10,24 +10,17 @@ use serde_json::Value;
 
 use crate::{ToolError, arg_str, suggest};
 
-/// `s` as a DSL string. DSL strings have no escapes, so a value is quoted
-/// with whichever quote it does not contain, or as a raw string
-/// (`r#"…"#`, `r##"…"##`) when it holds both.
-pub(crate) fn dsl_string(s: &str, what: &str) -> Result<String, ToolError> {
-    if !s.contains('"') {
-        Ok(format!("\"{s}\""))
+/// `s` as a DSL string that reads back as itself, as plainly as it can:
+/// `"…"` when nothing in it needs an escape, `'…'` (literal) when it holds
+/// `"` or a backslash but no `'`, else `"…"` with JSON's escapes.
+pub(crate) fn dsl_string(s: &str, _what: &str) -> Result<String, ToolError> {
+    Ok(if !s.contains(['"', '\\', '\n', '\t']) {
+        format!("\"{s}\"")
     } else if !s.contains('\'') {
-        Ok(format!("'{s}'"))
-    } else if !s.contains("\"#") {
-        Ok(format!("r#\"{s}\"#"))
-    } else if !s.contains("\"##") && !s.ends_with("\"#") {
-        Ok(format!("r##\"{s}\"##"))
+        format!("'{s}'")
     } else {
-        Err(ToolError::protocol(format!(
-            "`{what}` holds both quote characters and `\"##`, which no DSL string can hold; \
-             use colab.preview with a script instead"
-        )))
-    }
+        colab_dsl::ast::quote_double(s)
+    })
 }
 
 fn unknown_language(lang: &str, backends: &BackendRegistry) -> ToolError {
@@ -160,15 +153,17 @@ mod tests {
     fn values_are_quoted_with_the_quote_they_lack() {
         assert_eq!(dsl_string("a/b", "x").unwrap(), "\"a/b\"");
         assert_eq!(dsl_string("\"1.2\"", "x").unwrap(), "'\"1.2\"'");
+        // Both quotes: double-quoted, escaped; any text can be written.
         assert_eq!(
             dsl_string("it's \"x\" ok", "x").unwrap(),
-            "r#\"it's \"x\" ok\"#"
+            "\"it's \\\"x\\\" ok\""
         );
         assert_eq!(
-            dsl_string("'a' \"#b\" c", "x").unwrap(),
-            "r##\"'a' \"#b\" c\"##"
+            dsl_string("'a' \"##b\" \\ c", "x").unwrap(),
+            "\"'a' \\\"##b\\\" \\\\ c\""
         );
-        assert!(dsl_string("'a' \"##b\" c", "x").is_err());
+        // A backslash without `'` stays literal in single quotes.
+        assert_eq!(dsl_string("a\\nb", "x").unwrap(), "'a\\nb'");
     }
 
     #[test]
@@ -176,7 +171,7 @@ mod tests {
         let row = json!({"module": "row", "action": "insert", "target": "Log^[Date=2026-11-14]", "value": "Task=a 'b' \"c\""});
         assert_eq!(
             markdown_script(&row).unwrap(),
-            "refactor \"edit_markdown\" {\n    match markdown::row \"Log^[Date=2026-11-14]\" { insert r#\"Task=a 'b' \"c\"\"# }\n}\n"
+            "refactor \"edit_markdown\" {\n    match markdown::row \"Log^[Date=2026-11-14]\" { insert \"Task=a 'b' \\\"c\\\"\" }\n}\n"
         );
         let item = json!({"module": "item", "action": "ensure", "target": "Notes[x]"});
         assert!(markdown_script(&item).unwrap().contains("{ ensure }"));

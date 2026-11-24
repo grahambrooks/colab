@@ -342,16 +342,12 @@ impl FindArgs {
 
 /// `text` as a DSL string literal: single quotes, else double, else raw.
 fn quote(text: &str) -> String {
-    if !text.contains('\'') {
-        format!("'{text}'")
-    } else if !text.contains('"') {
-        format!("\"{text}\"")
+    // Single quotes are literal, so a code pattern keeps its backslashes;
+    // a pattern holding `'` is escaped in double quotes instead.
+    if text.contains('\'') {
+        codemod::ast::quote_double(text)
     } else {
-        let mut hashes = String::from("#");
-        while text.contains(&format!("\"{hashes}")) {
-            hashes.push('#');
-        }
-        format!("r{hashes}\"{text}\"{hashes}")
+        format!("'{text}'")
     }
 }
 
