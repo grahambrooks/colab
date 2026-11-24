@@ -623,3 +623,159 @@ pub(super) fn unbound_in_template(
          filled with nothing; a `where` pattern's metavariables are its own"
     ))
 }
+
+impl StructuralPattern {
+    /// Replace every match with `template`, substituting `$NAME` /
+    /// `$$$NAME` bindings.
+    ///
+    /// Matches can nest — `errors.Wrap(errors.Wrap(err, "a"), "b")` holds
+    /// two. ast-grep's own `replace_all` rewrites only the outermost,
+    /// which leaves the inner one for a second run: a rule that is not
+    /// idempotent. Here every binding is rewritten first, recursively,
+    /// and the template is filled with those rewritten texts, so one pass
+    /// reaches the fixed point. Only matches present in `source` are
+    /// rewritten; text the template introduces is never re-matched, so a
+    /// wrap-style template (`f($A)` → `f(g($A))`) cannot run away.
+    pub fn rewrite(&self, source: &str, template: &str) -> String {
+        // Each compilation matches different nodes, so they rewrite in turn.
+        let out = self
+            .also
+            .iter()
+            .fold(self.rewrite_own(source, template), |out, alt| {
+                alt.rewrite_own(&out, template)
+            });
+        // Then inside macro calls, which the file's tree cannot see into.
+        self.edit_macros(&out, |wrapped| self.rewrite(wrapped, template))
+    }
+
+    fn rewrite_own(&self, source: &str, template: &str) -> String {
+        let edits = self.rewrite_edits(source, template);
+        if edits.is_empty() {
+            return source.to_string();
+        }
+        apply_edits(source, edits)
+    }
+
+    /// Where the first match whose rewrite alone leaves `source` (which
+    /// parses) unparseable starts, as `(line, column)`, 1-based: the site
+    /// a "would not parse" skip is about. `None` when no single rewrite
+    /// breaks it (only their combination does), or none is made.
+    pub fn first_breaking_rewrite(&self, source: &str, template: &str) -> Option<(usize, usize)> {
+        std::iter::once(self).chain(&self.also).find_map(|form| {
+            let edit = form
+                .rewrite_edits(source, template)
+                .into_iter()
+                .find(|edit| {
+                    let one = apply_edits(source, vec![edit.clone()]);
+                    parse_clean(&self.lang.grammar, &one).is_err()
+                })?;
+            Some(Lines::new(source).at(edit.start))
+        })
+    }
+
+    /// The edits one compilation makes to `source`, outermost matches only.
+    fn rewrite_edits(&self, source: &str, template: &str) -> Vec<crate::Edit> {
+        let grep = parsed(&self.lang, source);
+        let matches = self.matches(&grep, source);
+        if matches.is_empty() {
+            return Vec::new();
+        }
+        let requalified = self.qualified.as_ref().and_then(|q| q.template(template));
+        let template = requalified.as_deref().unwrap_or(template);
+        let (template, names) = transformable_template(template);
+        let fix = TemplateFix::with_transform(&template, &self.lang, &names);
+        // A `let`'s `rewrite(<name>)` step: for each form the rewriter's
+        // pattern compiled to (its `also` ones too), the fix and its
+        // matches in this source; one list per `let`, empty without one.
+        type Parts<'g> = Vec<(
+            &'g StructuralPattern,
+            TemplateFix,
+            Vec<NodeMatch<'g, StrDoc<TsLang>>>,
+        )>;
+        let sub_parts: Vec<Parts<'_>> = self
+            .lets
+            .iter()
+            .map(|d| {
+                let grep = &grep;
+                d.rewriters
+                    .iter()
+                    .flat_map(|(sub, template)| {
+                        let (template, names) = transformable_template(template);
+                        std::iter::once(sub).chain(&sub.also).map(move |form| {
+                            let fix = TemplateFix::with_transform(&template, &form.lang, &names);
+                            (form, fix, form.matches(grep, source))
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
+        let subs: Vec<Vec<Rewriter<'_, '_>>> = sub_parts
+            .iter()
+            .map(|parts| {
+                parts
+                    .iter()
+                    .map(|(form, fix, matches)| Rewriter {
+                        pattern: &form.pattern,
+                        fix,
+                        lets: &[],
+                        subs: &[],
+                        matches,
+                    })
+                    .collect()
+            })
+            .collect();
+        let rewriter = Rewriter {
+            pattern: &self.pattern,
+            fix: &fix,
+            lets: &self.lets,
+            subs: &subs,
+            matches: &matches,
+        };
+        rewriter
+            .outermost(0..source.len(), None)
+            .into_iter()
+            .map(|i| rewriter.render(source, i))
+            .filter(|edit| !same_but_whitespace(&source[edit.start..edit.end], &edit.text))
+            .collect()
+    }
+}
+
+/// `true` when `a` and `b` differ only in whitespace outside quoted text.
+///
+/// A multi-line `$$$` capture filled into a one-line template loses the
+/// line breaks around it, so `f($$$A)` → `f($$$A)` would reflow every
+/// call it matched and report each as changed. Such an edit changes no
+/// token, so it is not made. Whitespace inside `"…"`, `'…'` or `` `…` ``
+/// is compared as is (a string's spaces are its content); a quote the
+/// scan misreads, such as a Rust lifetime, only keeps more whitespace in
+/// the comparison, so the edit is made, as it would be without the check.
+pub(super) fn same_but_whitespace(a: &str, b: &str) -> bool {
+    fn tokens(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut quote: Option<char> = None;
+        let mut escaped = false;
+        for c in text.chars() {
+            match quote {
+                Some(q) => {
+                    out.push(c);
+                    if escaped {
+                        escaped = false;
+                    } else if c == '\\' {
+                        escaped = true;
+                    } else if c == q {
+                        quote = None;
+                    }
+                }
+                None if c.is_whitespace() => {}
+                None => {
+                    if matches!(c, '"' | '\'' | '`') {
+                        quote = Some(c);
+                    }
+                    out.push(c);
+                }
+            }
+        }
+        out
+    }
+    a != b && tokens(a) == tokens(b)
+}
