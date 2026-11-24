@@ -14,6 +14,10 @@ pub(super) struct Rewriter<'a, 't> {
     pub(super) subs: &'a [Vec<Rewriter<'a, 't>>],
     /// Every match in the source, nested ones included.
     pub(super) matches: &'a [NodeMatch<'t, StrDoc<TsLang>>],
+    /// The template `fix` was built from, its language and names, so a
+    /// match whose sequence capture is empty can be filled without the
+    /// separator around it ([`tighten`]). `None` keeps `fix` for all.
+    pub(super) template: Option<(&'a str, &'a TsLang, &'a [String])>,
 }
 
 impl Rewriter<'_, '_> {
@@ -131,7 +135,22 @@ impl Rewriter<'_, '_> {
                 .insert_transformation(&var, &derived.var, text.clone().into_bytes());
             derived_values.push((derived.var.clone(), var, text, base));
         }
-        let edit = nm.make_edit(self.pattern, self.fix);
+        // A sequence that matched nothing leaves no gap behind it.
+        let empty: Vec<&str> = values
+            .iter()
+            .filter(|(_, var, _, span)| {
+                matches!(var, MetaVariable::MultiCapture(_)) && span.is_none()
+            })
+            .map(|(name, ..)| name.as_str())
+            .collect();
+        let tight = match self.template {
+            Some((template, lang, names)) if !empty.is_empty() => {
+                tighten(template, &empty).map(|t| TemplateFix::with_transform(&t, lang, names))
+            }
+            _ => None,
+        };
+        let fix = tight.as_ref().unwrap_or(self.fix);
+        let edit = nm.make_edit(self.pattern, fix);
         let (start, end) = (edit.position, edit.position + edit.deleted_length);
         // A node that owns the newline ending it (Go's `expression_case`)
         // keeps that newline: the template replaces the code only.
@@ -160,7 +179,7 @@ impl Rewriter<'_, '_> {
                 })
             })
             .collect();
-        if let Some(text) = self.render_verbatim(&nm, source, start..end, &captures) {
+        if let Some(text) = self.render_verbatim(&nm, fix, source, start..end, &captures) {
             return Edit::new(start, end, text);
         }
         let text = String::from_utf8_lossy(&edit.inserted_text);
@@ -179,6 +198,7 @@ impl Rewriter<'_, '_> {
     fn render_verbatim(
         &self,
         nm: &NodeMatch<'_, StrDoc<TsLang>>,
+        fix: &TemplateFix,
         source: &str,
         range: std::ops::Range<usize>,
         captures: &[Capture],
@@ -215,7 +235,7 @@ impl Rewriter<'_, '_> {
                 c.mark.to_string().into_bytes(),
             );
         }
-        let edit = marked.make_edit(self.pattern, self.fix);
+        let edit = marked.make_edit(self.pattern, fix);
         let template = String::from_utf8_lossy(&edit.inserted_text);
         let template = indent_with_tabs(source, range.start, &template);
         let laid = keep_layout(&skeleton_old, &strip_blank_line_indent(&template));
@@ -545,6 +565,47 @@ pub(super) fn strip_blank_line_indent(text: &str) -> String {
         .join("\n")
 }
 
+/// `template` (as [`transformable_template`] writes it, `$NAME`) with each
+/// of `empty` (sequence captures that matched nothing) taken out together
+/// with the separator that would be left over: one of the spaces around
+/// it (`{ log(); $B }` → `{ log(); }`), or its comma (`g($R, 1)` →
+/// `g(1)`, `g(1, $R)` → `g(1)`). `None` when nothing changes.
+pub(super) fn tighten(template: &str, empty: &[&str]) -> Option<String> {
+    let mut out = template.to_string();
+    for name in empty {
+        let var = format!("${name}");
+        let mut from = 0;
+        while let Some(found) = out[from..].find(&var) {
+            let at = from + found;
+            let end = at + var.len();
+            // `$B` in `$BODY` is another name.
+            if out[end..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+            {
+                from = end;
+                continue;
+            }
+            let (before, after) = (&out[..at], &out[end..]);
+            let cut = if after.starts_with(", ") {
+                at..end + 2
+            } else if after.starts_with(',') {
+                at..end + 1
+            } else if before.ends_with(", ") {
+                at - 2..end
+            } else if before.ends_with(' ') && after.starts_with(' ') {
+                at..end + 1
+            } else {
+                at..end
+            };
+            out.replace_range(cut.clone(), "");
+            from = cut.start;
+        }
+    }
+    (out != template).then_some(out)
+}
+
 /// `template` with every `$$$NAME` written as `$NAME`, and the names it
 /// uses — so ast-grep takes each binding's value from the rewritten text
 /// [`Rewriter::render`] supplies instead of from the original source.
@@ -771,6 +832,7 @@ impl StructuralPattern {
                         lets: &[],
                         subs: &[],
                         matches,
+                        template: None,
                     })
                     .collect()
             })
@@ -781,6 +843,7 @@ impl StructuralPattern {
             lets: &self.lets,
             subs: &subs,
             matches: &matches,
+            template: Some((&template, &self.lang, &names)),
         };
         let edits: Vec<crate::Edit> = rewriter
             .outermost(0..source.len(), None)

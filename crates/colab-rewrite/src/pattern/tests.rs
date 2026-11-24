@@ -32,6 +32,23 @@ fn python() -> PatternLanguage {
 const GO_SRC: &str = "package main\n\nfunc main() {\n\tif err := f(); err != nil {\n\t\treturn errors.Wrap(err, \"f failed\")\n\t}\n\tlog.Println(\"a\", 1)\n}\n";
 
 #[test]
+fn an_empty_sequence_takes_its_separator_with_it() {
+    assert_eq!(
+        tighten("{ log(); $B }", &["B"]).as_deref(),
+        Some("{ log(); }")
+    );
+    assert_eq!(tighten("g($R, 1)", &["R"]).as_deref(), Some("g(1)"));
+    assert_eq!(tighten("g(1, $R)", &["R"]).as_deref(), Some("g(1)"));
+    // Another name that starts the same is left alone.
+    assert_eq!(tighten("f($BODY, $B)", &["B"]).as_deref(), Some("f($BODY)"));
+    assert_eq!(tighten("f($A)", &["B"]), None);
+    // End to end: the Go block gets no double space.
+    let op = StructuralPattern::compile(&go(), "func $F() { $$$B }").unwrap();
+    let out = op.rewrite("package p\n\nfunc a() {}\n", "func $F() { log(); $$$B }");
+    assert_eq!(out, "package p\n\nfunc a() { log(); }\n");
+}
+
+#[test]
 fn a_rewrite_keeps_the_layout_of_what_it_does_not_change() {
     // A one-line template over a many-line match changes one name.
     assert_eq!(
