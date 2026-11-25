@@ -376,12 +376,26 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    backend's `PatternLanguage`. The property suite's new `matcher`
    column self-matches the same sampled nodes with it: equal to the
    ast-grep engine in 12 languages and ahead in two (Go 40 / 40 against
-   38, Swift 32 against 31). Not yet behind `StructuralPattern`: next,
-   the engine's forms (modifiers,
-   qualified calls, shorthand) on top, then a differential run against
-   the ast-grep engine over the conformance matrix, the property suite
-   and the corpus before the switch. After that, the engine's other tree
-   readers (`declarations`, `calls`, rename, delete, generalize), each
+   38, Swift 32 against 31). **The engine's forms, 2026-11-25:** modifiers
+   are native, not forms: `pattern::Rules` absorbs the leading modifiers a
+   pattern node leaves out (its kinds and the modifier tokens, listed in
+   `Match::absorbed` for a rewrite to give back) and holds a spelled
+   modifiers node to its tokens, replacing the sentinel text, the
+   `k`-placeholder forms, `Visible::bound`, `led_forms` and
+   `Shape::Modifiers` / `Tokens`. The rest are text forms,
+   `colab_rewrite::syntax::compile_forms`: qualified and rooted calls
+   (`Role::Qualified`), field shorthand (`Role::Shorthand`), the trailing
+   `;` a node does not hold and the class-field reading, and the trailing
+   `,` that changes nothing. `colab-backends/tests/engines.rs` runs both
+   engines on every `<lang>::pattern` in the conformance matrix and the
+   corpus (256 comparisons) and requires the same matched ranges; the
+   one difference left is matching inside Rust macro contents
+   (`pattern/macros.rs`), listed with its reason. Still to do before
+   `StructuralPattern` moves over: macro contents; then the rest of the
+   engine on the new matches (constraints and `Check`, rewriting with
+   `Role`s and absorbed modifiers, delete, the prefilter), each against
+   the same comparison and the corpus. After that, the engine's other
+   tree readers (`declarations`, `calls`, rename, generalize), each
    behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a
    safe-Rust port of the 0.25 runtime, five weeks old; tree-sitter's own

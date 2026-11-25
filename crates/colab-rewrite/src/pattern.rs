@@ -42,6 +42,8 @@ use crate::{Edit, apply_edits, line_span};
 
 mod compile;
 use compile::*;
+// The text transforms both matchers' forms share (`crate::syntax`).
+pub(crate) use compile::{qualify_call, root_path, shorthand_fields};
 mod find;
 mod macros;
 use macros::*;

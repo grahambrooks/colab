@@ -99,6 +99,16 @@ impl Grammar {
         self.fields.get(usize::from(field.0)).map_or("?", |n| n)
     }
 
+    /// Every kind called `name`: an aliased kind has more than one id.
+    pub fn kinds_named(&self, name: &str) -> Vec<Kind> {
+        self.kinds
+            .iter()
+            .enumerate()
+            .filter(|(_, (n, _))| &**n == name)
+            .filter_map(|(i, _)| u16::try_from(i).ok().map(Kind))
+            .collect()
+    }
+
     /// The field called `name`, if the grammar has one.
     pub fn field(&self, name: &str) -> Option<Field> {
         let i = self.fields.iter().position(|f| &**f == name)?;

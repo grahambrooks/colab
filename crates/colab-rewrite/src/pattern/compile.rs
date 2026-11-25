@@ -40,7 +40,7 @@ const NOT_CALLEES: &[&str] = &[
 /// [`QUALIFIER`] and `sep` before it, and the callee's (or type's) name.
 /// `None` for anything else: a metavariable callee, a path that is already
 /// qualified, a macro, a keyword.
-pub(super) fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t str)> {
+pub(crate) fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t str)> {
     let body = text.trim_start();
     let lead = &text[..text.len() - body.len()];
     let end = body
@@ -67,7 +67,7 @@ pub(super) fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t 
 /// `fn f(a: $T)` never count, nor does a Ruby `def`'s `(a: $T)`, whose
 /// shorthand `a:` is a required keyword, not one set from `a`. Each is
 /// `(the bytes from the name to the end of $VAR, name, VAR)`.
-pub(super) fn shorthand_fields(
+pub(crate) fn shorthand_fields(
     text: &str,
     shorthand: Shorthand,
 ) -> Vec<(std::ops::Range<usize>, String, String)> {
@@ -171,7 +171,7 @@ pub(super) fn terminate_lone_sequences(text: &str) -> Option<String> {
 
 /// `qualified` (from [`qualify_call`]) with `sep` before its path, after
 /// any leading whitespace: `$COLAB_PATH::f()` → `::$COLAB_PATH::f()`.
-fn root_path(qualified: &str, sep: &str) -> String {
+pub(crate) fn root_path(qualified: &str, sep: &str) -> String {
     let body = qualified.trim_start();
     format!("{}{sep}{body}", &qualified[..qualified.len() - body.len()])
 }

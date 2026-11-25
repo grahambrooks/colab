@@ -78,6 +78,34 @@ fn found(pattern: &Pattern, tree: &Tree) -> Vec<(String, Vec<String>)> {
         .collect()
 }
 
+#[test]
+fn modifiers_a_pattern_leaves_out_are_absorbed_and_reported() {
+    let tree = rust_tree("pub fn f() {}\nfn g() {}\npub(crate) fn h() {}\n");
+    let visibility = tree.grammar().kinds_named("visibility_modifier");
+    let rules = crate::pattern::Rules {
+        absorb: visibility.clone(),
+        exact: visibility,
+    };
+    let bare = compile(tree_sitter_rust::LANGUAGE.into(), "rust", "@", "fn $F() {}");
+    assert_eq!(found(&bare, &tree).len(), 1, "without the rules, only `g`");
+    let open = bare.with_rules(rules.clone());
+    let matches = open.find_all(&tree);
+    let names: Vec<&str> = matches.iter().map(|m| m.get("F").unwrap().text()).collect();
+    assert_eq!(names, ["f", "g", "h"]);
+    let absorbed: Vec<&str> = matches[0].absorbed.iter().map(Node::text).collect();
+    assert_eq!(absorbed, ["pub"]);
+    // A pattern that spells its visibility is held to it.
+    let spelled = compile(
+        tree_sitter_rust::LANGUAGE.into(),
+        "rust",
+        "@",
+        "pub fn $F() {}",
+    )
+    .with_rules(rules);
+    let names: Vec<String> = found(&spelled, &tree).into_iter().map(|h| h.0).collect();
+    assert_eq!(names, ["pub fn f() {}"]);
+}
+
 mod fragments {
     use super::*;
     use crate::fragment::{Fragments, compile, terminate_lone_sequences};

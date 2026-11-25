@@ -36,6 +36,8 @@ colab-lang-tsx = { workspace = true }
 # tests/properties.rs runs colab's own matcher beside the ast-grep one.
 colab-syntax = { workspace = true, features = ["tree-sitter"] }
 colab-rewrite = { workspace = true }
+# tests/engines.rs reads the conformance cases.
+toml_edit = { workspace = true }
 similar = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-c = { workspace = true }

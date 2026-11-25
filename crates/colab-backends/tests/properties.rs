@@ -176,7 +176,7 @@ fn source_language(lang: &str) -> &'static colab_rewrite::SourceLanguage {
 fn own_self_match(lang: &str, source: &str, node: &Node<'_>) -> Outcome {
     let language = (source_language(lang).pattern)();
     let text = &source[node.byte_range()];
-    let Ok(compiled) = colab_rewrite::syntax::compile_fragment(&language, text) else {
+    let Ok(compiled) = colab_rewrite::syntax::compile_forms(&language, text) else {
         return Outcome::Refused;
     };
     let Some(tree) = colab_rewrite::syntax::tree(&language.grammar, source) else {

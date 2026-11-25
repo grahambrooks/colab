@@ -134,10 +134,27 @@ pub enum PatternNode {
     Var(MetaVar),
 }
 
+/// A language's rules for an item's modifiers (`public static`, `pub`,
+/// `static inline`, `@Deprecated`), which a pattern usually leaves out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Rules {
+    /// Kinds a pattern may leave out: where a pattern node spells none of
+    /// them, the candidate's leading children of these kinds are taken as
+    /// given (and listed in [`Match::absorbed`], for a rewrite to keep), so
+    /// `fn f()` matches `pub fn f()`. Where it spells one, they are matched
+    /// as written.
+    pub absorb: Vec<Kind>,
+    /// Kinds matched token for token, passing over nothing: a modifiers
+    /// node the pattern spells, so `public void f()` does not match
+    /// `public static void f()`.
+    pub exact: Vec<Kind>,
+}
+
 /// A compiled pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pattern {
     root: PatternNode,
+    rules: Rules,
 }
 
 /// Whether matching passes over `node`: trivia, and comments. tree-sitter
@@ -175,15 +192,27 @@ fn compile(node: Node<'_>, expando: char) -> PatternNode {
 impl Pattern {
     /// A pattern from its nodes, as a parser or a test composes it.
     pub fn new(root: PatternNode) -> Self {
-        Self { root }
+        Self {
+            root,
+            rules: Rules::default(),
+        }
     }
 
     /// The pattern `node` spells: a node of a tree parsed from the pattern
     /// text (expanded with `expando`), usually the one node that spans it.
     pub fn from_node(node: Node<'_>, expando: char) -> Self {
-        Self {
-            root: compile(node, expando),
-        }
+        Self::new(compile(node, expando))
+    }
+
+    /// The pattern matched under a language's modifier `rules`.
+    #[must_use]
+    pub fn with_rules(mut self, rules: Rules) -> Self {
+        self.rules = rules;
+        self
+    }
+
+    pub fn rules(&self) -> &Rules {
+        &self.rules
     }
 
     pub fn root(&self) -> &PatternNode {
@@ -215,7 +244,7 @@ impl Pattern {
             }
             goal => goal,
         };
-        match_node(goal, candidate, &mut state).then(|| state.into_match(candidate))
+        match_node(goal, candidate, &mut state, &self.rules).then(|| state.into_match(candidate))
     }
 
     /// Every match in `tree`, in document order: an outer match before
@@ -266,6 +295,9 @@ pub struct Match<'t> {
     /// The candidate's anonymous tokens the pattern had nothing for
     /// (`static`, a trailing `,`), in document order.
     pub skipped: Vec<Node<'t>>,
+    /// The candidate's modifiers the pattern left out ([`Rules::absorb`]),
+    /// in document order.
+    pub absorbed: Vec<Node<'t>>,
 }
 
 impl<'t> Match<'t> {
@@ -281,15 +313,18 @@ impl<'t> Match<'t> {
 struct State<'t> {
     bindings: Vec<(String, Binding<'t>)>,
     skipped: Vec<Node<'t>>,
+    absorbed: Vec<Node<'t>>,
 }
 
 impl<'t> State<'t> {
     fn into_match(mut self, node: Node<'t>) -> Match<'t> {
         self.skipped.sort_by_key(Node::id);
+        self.absorbed.sort_by_key(Node::id);
         Match {
             node,
             bindings: self.bindings,
             skipped: self.skipped,
+            absorbed: self.absorbed,
         }
     }
 
@@ -343,7 +378,20 @@ fn same_code(a: &[Node<'_>], b: &[Node<'_>]) -> bool {
     code_tokens(a) == code_tokens(b)
 }
 
-fn match_node<'t>(goal: &PatternNode, cand: Node<'t>, state: &mut State<'t>) -> bool {
+/// Whether `goals` spell a node or token of one of `kinds`.
+fn spells(goals: &[PatternNode], kinds: &[Kind]) -> bool {
+    goals.iter().any(|g| match g {
+        PatternNode::Token { kind, .. } | PatternNode::Node { kind, .. } => kinds.contains(kind),
+        PatternNode::Var(_) => false,
+    })
+}
+
+fn match_node<'t>(
+    goal: &PatternNode,
+    cand: Node<'t>,
+    state: &mut State<'t>,
+    rules: &Rules,
+) -> bool {
     match goal {
         PatternNode::Token { kind, text, named } => {
             cand.text() == text && (!named || cand.kind() == *kind)
@@ -363,19 +411,38 @@ fn match_node<'t>(goal: &PatternNode, cand: Node<'t>, state: &mut State<'t>) -> 
             None => true,
         },
         PatternNode::Node { kind, children } => {
-            cand.kind() == *kind
-                && !cand.is_token()
-                && match_children(children, &significant(cand), state)
+            if cand.kind() != *kind || cand.is_token() {
+                return false;
+            }
+            let mut cands = significant(cand);
+            // Modifiers the pattern leaves out are taken as given.
+            if !rules.absorb.is_empty() && !spells(children, &rules.absorb) {
+                let leading = cands
+                    .iter()
+                    .take_while(|c| rules.absorb.contains(&c.kind()))
+                    .count();
+                state.absorbed.extend(cands.drain(..leading));
+            }
+            let exact = rules.exact.contains(kind);
+            match_children(children, &cands, state, rules, exact)
         }
     }
 }
 
 /// `goals` against `cands`, all of them: each candidate is matched by a
-/// goal, absorbed by a sequence, or (an anonymous token only) skipped.
-fn match_children<'t>(goals: &[PatternNode], cands: &[Node<'t>], state: &mut State<'t>) -> bool {
+/// goal, absorbed by a sequence, or (an anonymous token only, and not in
+/// an `exact` node) skipped.
+fn match_children<'t>(
+    goals: &[PatternNode],
+    cands: &[Node<'t>],
+    state: &mut State<'t>,
+    rules: &Rules,
+    exact: bool,
+) -> bool {
+    let skippable = |c: &Node<'_>| !exact && c.is_token() && !c.is_named();
     let Some((goal, rest)) = goals.split_first() else {
         // Only anonymous tokens may be left over.
-        if cands.iter().all(|c| c.is_token() && !c.is_named()) {
+        if cands.iter().all(skippable) {
             state.skipped.extend_from_slice(cands);
             return true;
         }
@@ -398,7 +465,7 @@ fn match_children<'t>(goals: &[PatternNode], cands: &[Node<'t>], state: &mut Sta
             {
                 continue;
             }
-            if match_children(rest, &cands[take..], &mut attempt) {
+            if match_children(rest, &cands[take..], &mut attempt, rules, exact) {
                 *state = attempt;
                 return true;
             }
@@ -409,15 +476,17 @@ fn match_children<'t>(goals: &[PatternNode], cands: &[Node<'t>], state: &mut Sta
         return false;
     };
     let mut attempt = state.clone();
-    if match_node(goal, cand, &mut attempt) && match_children(rest, later, &mut attempt) {
+    if match_node(goal, cand, &mut attempt, rules)
+        && match_children(rest, later, &mut attempt, rules, exact)
+    {
         *state = attempt;
         return true;
     }
     // A keyword or punctuation the pattern has nothing for here.
-    if cand.is_token() && !cand.is_named() {
+    if skippable(&cand) {
         let mut attempt = state.clone();
         attempt.skipped.push(cand);
-        if match_children(goals, later, &mut attempt) {
+        if match_children(goals, later, &mut attempt, rules, exact) {
             *state = attempt;
             return true;
         }
