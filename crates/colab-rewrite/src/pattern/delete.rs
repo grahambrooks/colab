@@ -134,7 +134,7 @@ pub(crate) fn attached_start(
 /// `line_end`, or past the blank line after it when the deleted lines
 /// `line_start..line_end` sit between two blank lines (or open the file
 /// before one): the deletion then leaves one blank line, not two.
-pub(super) fn without_double_blank(source: &str, line_start: usize, line_end: usize) -> usize {
+pub(crate) fn without_double_blank(source: &str, line_start: usize, line_end: usize) -> usize {
     let blank_before = line_start == 0 || {
         let prev = source[..line_start - 1].rfind('\n').map_or(0, |p| p + 1);
         source[prev..line_start].trim().is_empty()
@@ -154,7 +154,7 @@ pub(super) fn without_double_blank(source: &str, line_start: usize, line_end: us
 /// it, else from the end of the previous element when a comma precedes,
 /// else the match and a trailing comma alone (`f(a,)`). `None` when no
 /// comma is beside it.
-pub(super) fn with_separator(
+pub(crate) fn with_separator(
     tree: &tree_sitter::Tree,
     start: usize,
     end: usize,

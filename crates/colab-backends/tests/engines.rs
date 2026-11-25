@@ -40,7 +40,7 @@ fn source_language(lang: &str) -> Option<&'static colab_rewrite::SourceLanguage>
 /// One `<lang>::pattern` rule: language, pattern, constraints (its `let`s
 /// lowered by the DSL compiler's `lower_lets`, as `build_rule_where` gets
 /// them), and its `replace` template when it has one.
-type Rule = (String, String, Vec<Constraint>, Option<String>);
+type Rule = (String, String, Vec<Constraint>, Option<String>, bool);
 
 /// Every pattern rule in a script, `then` stages included, as the
 /// compiler hands it to a backend: named patterns and rewriters resolved.
@@ -74,6 +74,7 @@ fn rules(script: &str) -> Vec<Rule> {
                         m.match_string.clone(),
                         constraints,
                         template,
+                        matches!(m.action, colab_dsl::ast::Action::Delete),
                     ));
                 }
                 Item::Then(items) => walk(items, out),
@@ -176,7 +177,7 @@ fn narrowing(constraints: &[Constraint]) -> Vec<Constraint> {
         .collect()
 }
 
-fn old_engine((lang, pattern, constraints, _): &Rule, source: &str) -> Result<Ranges, String> {
+fn old_engine((lang, pattern, constraints, ..): &Rule, source: &str) -> Result<Ranges, String> {
     let language = source_language(lang).unwrap();
     let constraints = &narrowing(constraints);
     let op = language
@@ -190,18 +191,26 @@ fn old_engine((lang, pattern, constraints, _): &Rule, source: &str) -> Result<Ra
         .collect())
 }
 
-fn new_engine((lang, pattern, constraints, _): &Rule, source: &str) -> Result<Ranges, String> {
+fn new_engine((lang, pattern, constraints, ..): &Rule, source: &str) -> Result<Ranges, String> {
     let constraints = &narrowing(constraints);
     let language = (source_language(lang).unwrap().pattern)();
     let forms = colab_rewrite::syntax::compile_forms(&language, pattern)?;
     let bound = colab_rewrite::syntax::bound(&forms.forms[0].pattern);
     let checks = colab_rewrite::syntax::Checks::compile(&language, &bound, constraints)?;
-    Ok(
-        colab_rewrite::syntax::find_where(&language, &forms, &checks, source)
-            .iter()
-            .map(|f| trimmed(source, f.range.start, f.range.end))
-            .collect(),
-    )
+    let found: Ranges = colab_rewrite::syntax::find_where(&language, &forms, &checks, source)
+        .iter()
+        .map(|f| trimmed(source, f.range.start, f.range.end))
+        .collect();
+    // The prefilter is sound: a file that matches holds its literal.
+    if let Some(literal) = colab_rewrite::syntax::prefilter(&forms)
+        && !found.is_empty()
+        && !source.contains(&literal)
+    {
+        return Err(format!(
+            "prefilter {literal:?} is absent from a file that matches"
+        ));
+    }
+    Ok(found)
 }
 
 /// Where the engines may differ, by the place's prefix, and why. Each is
@@ -244,7 +253,7 @@ fn both_engines_find_the_same_matches() {
             (Ok(_), Err(e)) => format!("only the new engine refuses it: {e}"),
             (Err(e), Ok(_)) => format!("only the old engine refuses it: {e}"),
         };
-        let (lang, pattern, constraints, _) = &rule;
+        let (lang, pattern, constraints, ..) = &rule;
         let wheres: Vec<String> = constraints.iter().map(ToString::to_string).collect();
         differ.push((
             place,
@@ -292,7 +301,7 @@ fn both_engines_rewrite_alike() {
     let (mut compared, mut changed, mut with_lets, mut with_rewriters) = (0, 0, 0, 0);
     let mut differ: Vec<(String, String)> = Vec::new();
     for (place, rule, source) in cases(&root) {
-        let (lang, pattern, constraints, Some(template)) = &rule else {
+        let (lang, pattern, constraints, Some(template), _) = &rule else {
             continue;
         };
         let Some(language) = source_language(lang) else {
@@ -369,4 +378,60 @@ fn both_engines_rewrite_alike() {
             "{prefix} no longer differs ({why}): take it out of KNOWN_REWRITES"
         );
     }
+}
+
+#[test]
+fn both_engines_delete_alike() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (mut compared, mut changed) = (0, 0);
+    let mut differ: Vec<String> = Vec::new();
+    for (place, rule, source) in cases(&root) {
+        let (lang, pattern, constraints, _, true) = &rule else {
+            continue;
+        };
+        let Some(language) = source_language(lang) else {
+            continue;
+        };
+        let constraints = &narrowing(constraints);
+        let Ok(op) = language.compile_pattern(pattern, PatternAction::Delete, constraints) else {
+            continue;
+        };
+        compared += 1;
+        let old = op.apply(&source);
+        if old != source {
+            changed += 1;
+        }
+        let patterns = (language.pattern)();
+        let new = colab_rewrite::syntax::compile_forms(&patterns, pattern).and_then(|forms| {
+            let bound = colab_rewrite::syntax::bound(&forms.forms[0].pattern);
+            let checks = colab_rewrite::syntax::Checks::compile(&patterns, &bound, constraints)?;
+            Ok(colab_rewrite::syntax::delete(
+                &patterns, &forms, &checks, &source,
+            ))
+        });
+        match new {
+            Ok(new) if new == old => {}
+            Ok(new) => {
+                let diff = similar::TextDiff::from_lines(&old, &new)
+                    .unified_diff()
+                    .header("old engine", "new engine")
+                    .to_string();
+                differ.push(format!(
+                    "{place} {lang}::pattern {pattern:?} delete:\n{diff}"
+                ));
+            }
+            Err(e) => differ.push(format!("{place} {lang}::pattern {pattern:?}: refused: {e}")),
+        }
+    }
+    eprintln!(
+        "{compared} deletes compared ({changed} change their input), {} differ",
+        differ.len()
+    );
+    assert!(compared > 30, "too few deletes compared: {compared}");
+    assert!(
+        differ.is_empty(),
+        "the deletes differ ({}):\n{}",
+        differ.len(),
+        differ.join("\n")
+    );
 }

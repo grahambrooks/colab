@@ -418,9 +418,21 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    (`colab_dsl::compiler::resolved_matches`: includes, named patterns
    and rewriters resolved; `lower_lets` for the `let`s): 254 finds with
    none refused by both, and 200 rewrites, 4 `let`s and a rewriter among
-   them, none differing. Still to do before `StructuralPattern` moves
-   over: delete (with attached docs and attributes) and the prefilter;
-   then the switch, with the corpus as the bar. After that, the engine's other
+   them, none differing. **Delete and the prefilter, 2026-11-25:**
+   `syntax::delete` removes matches with their line, attached docs and
+   attributes, or list comma, then inside macro contents;
+   `syntax::prefilter` is the longest named-token literal every form
+   spells. The comparison adds 52 deletes, all identical, and checks the
+   prefilter on every find (a matching file always holds it). Every part
+   of a `<lang>::pattern` rule now runs on colab's matcher and agrees with
+   the ast-grep engine. **Next: the switch.** `PatternRule`
+   (`pattern/rule.rs`) moves onto `syntax`: apply (replace, delete,
+   create), `locate` with captures, `prefilter`, `why_unchanged`
+   (`first_breaking_rewrite`), near misses, conflicts; the corpus,
+   conformance matrix and property suite are the bar. Then
+   `StructuralPattern`, the corrections it carried (`Shape`, the
+   sentinels and placeholder forms, `Visible`, `led_forms`,
+   `errors_captured`) and `ast-grep-core` are deleted. After that, the engine's other
    tree readers (`declarations`, `calls`, rename, generalize), each
    behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a

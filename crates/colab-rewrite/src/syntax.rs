@@ -16,8 +16,10 @@ use colab_syntax::{Grammar, Tree};
 use crate::pattern::PatternLanguage;
 
 mod check;
+mod delete;
 mod rewrite;
 pub use check::{Checks, Enclosing, Frame, Nested, bound};
+pub use delete::delete;
 pub use rewrite::{Lets, rewrite};
 
 /// `language`'s kind and field names, built on first use.
@@ -234,6 +236,42 @@ pub fn compile_forms(language: &PatternLanguage, text: &str) -> Result<Forms, St
         }
     }
     Ok(Forms { forms, tolerant })
+}
+
+/// A literal every match of `forms` must contain, so a file without it is
+/// skipped unparsed (`Operation::prefilter`): the longest text of a named
+/// token that every form spells (the forms read the pattern differently,
+/// so a literal only one of them needs proves nothing). Named tokens are
+/// matched by exact text, so the literal's absence implies no match.
+/// `None` for a pattern with no such literal (a lone metavariable).
+pub fn prefilter(forms: &Forms) -> Option<String> {
+    fn literals(node: &colab_syntax::pattern::PatternNode, out: &mut Vec<String>) {
+        use colab_syntax::pattern::PatternNode;
+        match node {
+            PatternNode::Token {
+                text, named: true, ..
+            } if !text.trim().is_empty() => {
+                out.push(text.clone());
+            }
+            PatternNode::Node { children, .. } => {
+                for c in children {
+                    literals(c, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut each = forms.forms.iter().map(|f| {
+        let mut out = Vec::new();
+        literals(f.pattern.root(), &mut out);
+        out
+    });
+    let first = each.next()?;
+    let rest: Vec<Vec<String>> = each.collect();
+    first
+        .into_iter()
+        .filter(|l| rest.iter().all(|r| r.contains(l)))
+        .max_by(|a, b| a.len().cmp(&b.len()).then_with(|| b.cmp(a)))
 }
 
 /// A match of a form, as a span of the file it was found in.
