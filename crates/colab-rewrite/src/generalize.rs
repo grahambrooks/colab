@@ -365,7 +365,7 @@ fn collect(
     if !node.is_named() || node.is_extra() {
         return;
     }
-    if field.is_some_and(|f| NAME_FIELDS.contains(&f)) {
+    if field.is_some_and(|f| NAME_FIELDS.contains(&f)) || unnamed_callee(&node, field, parent) {
         return;
     }
     let text = &source[node.byte_range()];
@@ -397,6 +397,25 @@ fn collect(
         let field = node.field_name_for_child(u32::try_from(i).unwrap_or(u32::MAX));
         collect(child, field, &node, source, after, cut);
     }
+}
+
+/// A callee in a grammar that gives it no `function` field (Kotlin's and
+/// Swift's `call_expression`): a child of a call, in no field, before the
+/// call's arguments. Kept literal like a named one, or `Random(42)` would
+/// generalize to `$A($B)`, every call there is.
+fn unnamed_callee(node: &Node<'_>, field: Option<&str>, parent: &Node<'_>) -> bool {
+    let kind = parent.kind();
+    if field.is_some() || !(kind.contains("call") || kind.contains("invocation")) {
+        return false;
+    }
+    let mut sibling = node.next_named_sibling();
+    while let Some(s) = sibling {
+        if is_list(&s) || s.kind() == "call_suffix" {
+            return true;
+        }
+        sibling = s.next_named_sibling();
+    }
+    false
 }
 
 /// `$A`, `$B`, … `$Z`, `$A1`, …

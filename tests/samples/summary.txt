@@ -9,7 +9,7 @@ csharp                36/35/1/0              36/35/1/0                4/4/0/0
 go                    40/35/3/2              40/37/3/0                8/8/0/0
 java                  40/39/1/0              40/39/1/0                6/6/0/0
 js                    39/38/0/1              39/39/0/0                7/7/0/0
-kotlin                40/38/1/1              40/39/1/0                8/5/1/2
+kotlin                40/38/1/1              40/39/1/0                8/7/1/0
 php                   37/34/3/0              37/34/3/0                5/5/0/0
 python                38/38/0/0              38/38/0/0                9/9/0/0
 ruby                  34/34/0/0              34/34/0/0              11/11/0/0
@@ -32,7 +32,7 @@ java identity: switch_block_statement_group (refused) ×1
 js self-match: assignment_pattern (missed) ×1
 kotlin self-match: constructor_invocation (missed) ×1, variable_declaration (refused) ×1
 kotlin identity: variable_declaration (refused) ×1
-kotlin generalize: call_expression (missed) ×2, call_expression (refused) ×1
+kotlin generalize: call_expression (refused) ×1
 php self-match: case_statement (refused) ×1, match_conditional_expression (refused) ×1, sequence_expression (refused) ×1
 php identity: case_statement (refused) ×1, match_conditional_expression (refused) ×1, sequence_expression (refused) ×1
 rust self-match: closure_parameters (refused) ×1, ordered_field_declaration_list (missed) ×2

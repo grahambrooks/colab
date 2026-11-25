@@ -178,8 +178,51 @@ fn a_changed_string_argument_lifts_to_the_call_not_its_argument_list() {
 fn a_string_quote_is_not_a_value() {
     // Python names a string's quotes (`string_start`, `string_end`); the
     // quote `"` is in `after` too, but it is no value to carry over.
-    let rules = learn("python", r#"Library("Main Street")"#, r#"Library("High Street")"#);
-    assert_eq!(pairs(&rules), [("Library($A)", r#"Library("High Street")"#)]);
+    let rules = learn(
+        "python",
+        r#"Library("Main Street")"#,
+        r#"Library("High Street")"#,
+    );
+    assert_eq!(
+        pairs(&rules),
+        [("Library($A)", r#"Library("High Street")"#)]
+    );
+}
+
+#[test]
+fn a_callee_in_no_field_stays_literal() {
+    // Kotlin's and Swift's calls give the callee no `function` field.
+    for (lang, before, after, rule) in [
+        (
+            "kotlin",
+            "Random(42)",
+            "Random(7)",
+            ("Random($A)", "Random(7)"),
+        ),
+        (
+            "kotlin",
+            "playlist.best(1)",
+            "playlist.best(3)",
+            ("playlist.best($A)", "playlist.best(3)"),
+        ),
+        (
+            "swift",
+            "hottest(1)",
+            "hottest(3)",
+            ("hottest($A)", "hottest(3)"),
+        ),
+    ] {
+        assert_eq!(
+            pairs(&learn(lang, before, after)),
+            [rule],
+            "{lang}: {before}"
+        );
+    }
+    let rules = learn("kotlin", "Random(42)", "Random(7)");
+    assert_eq!(
+        apply("kotlin", &rules, "fun f() {\n    g(Random(1), h(2))\n}\n"),
+        "fun f() {\n    g(Random(7), h(2))\n}\n"
+    );
 }
 
 #[test]
