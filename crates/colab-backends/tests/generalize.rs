@@ -241,6 +241,20 @@ fn a_swift_call_suffix_stands_for_its_call() {
 }
 
 #[test]
+fn changed_lines_that_are_no_code_alone_keep_their_context() {
+    // Only the middle line changed, and `"Sunday",` alone does not parse:
+    // the whole call is the snippet.
+    let before = "Playlist.of(\n    \"Sunday\",\n    track,\n)";
+    let after = "Playlist.of(\n    \"Monday\",\n    track,\n)";
+    let rules = learn("kotlin", before, after);
+    assert_eq!(rules.len(), 1, "{rules:?}");
+    assert_eq!(
+        apply("kotlin", &rules, &format!("fun f() {{\n    {before}\n}}\n")),
+        format!("fun f() {{\n    {after}\n}}\n")
+    );
+}
+
+#[test]
 fn mistakes_are_explained() {
     let registry = colab_backends::registry();
     let rust = registry.get("rust").unwrap();

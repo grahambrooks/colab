@@ -52,7 +52,16 @@ pub fn generalize(
     // An Edit's text is a slice of lines that need not be one node
     // (`func a() {` and the line changed): the lines both share at either
     // end are context, not the change.
-    let (before, after) = changed_lines(before, after);
+    let (trimmed_b, trimmed_a) = changed_lines(before, after);
+    // Unless the changed lines alone are no code (one argument of a call
+    // spread over lines, `"Sunday",`): then the whole snippets.
+    let (before, after) = match (locate(language, trimmed_b), locate(language, trimmed_a)) {
+        (Some(_), Some(_)) => (trimmed_b, trimmed_a),
+        _ if locate(language, before).is_some() && locate(language, after).is_some() => {
+            (before, after)
+        }
+        _ => (trimmed_b, trimmed_a),
+    };
     let (Some((tree_b, src_b, range_b)), Some((tree_a, src_a, range_a))) =
         (locate(language, before), locate(language, after))
     else {
