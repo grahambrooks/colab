@@ -32,8 +32,10 @@ colab-lang-tsx = { workspace = true }
 [dev-dependencies]
 # The property suite (tests/properties.rs) walks the samples' own trees to
 # choose nodes; the backends keep their grammars to themselves.
-# tests/syntax_tree.rs checks colab's own tree against tree-sitter's.
+# tests/syntax_tree.rs checks colab's own tree against tree-sitter's;
+# tests/properties.rs runs colab's own matcher beside the ast-grep one.
 colab-syntax = { workspace = true, features = ["tree-sitter"] }
+colab-rewrite = { workspace = true }
 similar = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-c = { workspace = true }

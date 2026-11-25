@@ -302,6 +302,7 @@ dependencies = [
  "colab-lang-toml",
  "colab-lang-ts",
  "colab-lang-tsx",
+ "colab-rewrite",
  "colab-syntax",
  "similar",
  "tree-sitter",
@@ -572,6 +573,7 @@ version = "2026.11.24"
 dependencies = [
  "ast-grep-core",
  "colab-core",
+ "colab-syntax",
  "regex",
  "similar",
  "tree-sitter",

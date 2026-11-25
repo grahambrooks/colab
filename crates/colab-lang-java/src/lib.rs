@@ -17,7 +17,7 @@ use colab_rewrite::{CallShape, SourceLanguage};
 
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about Java ([`colab_rewrite::language`]).
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "java",
     extensions: &["java"],
     file_names: &[],

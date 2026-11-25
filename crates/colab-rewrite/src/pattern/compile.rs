@@ -5,28 +5,10 @@
 use super::*;
 
 /// Replace each metavariable `$` with `expando`, leaving every other `$`
-/// (a PHP variable, a `$` inside a string) alone.
+/// (a PHP variable, a `$` inside a string) alone: one rule for both
+/// matchers, `colab_syntax`'s.
 pub(super) fn expand(query: &str, expando: char) -> String {
-    let chars: Vec<char> = query.chars().collect();
-    let mut out = String::with_capacity(query.len());
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '$' {
-            // `$$$NAME`, `$NAME`, `$_`: a run of `$` followed by a name start.
-            let run = chars[i..].iter().take_while(|&&c| c == '$').count();
-            // A bare `$$$` is an anonymous sequence: ast-grep reads
-            // `µµµ` as one, and it is an identifier where `$$$` is not.
-            let named = chars.get(i + run).is_some_and(|&c| is_var_start(c));
-            if (run <= 3 && named) || (run == 3 && !named) {
-                out.extend(std::iter::repeat_n(expando, run));
-                i += run;
-                continue;
-            }
-        }
-        out.push(chars[i]);
-        i += 1;
-    }
-    out
+    colab_syntax::pattern::expand(query, expando)
 }
 
 /// `$X` or `$_`: one single-node metavariable and nothing else.
@@ -181,31 +163,10 @@ pub(super) fn shorthand_template(
 /// `case X: $$$B;`), or `None` when it has none. C++ reads
 /// `void f() { $$$B }` as a declaration with a brace initializer, and Java
 /// a `case` needs a statement; with the `;` it is a function or a case, and
-/// `$$$B;` is read as the capture itself.
+/// `$$$B;` is read as the capture itself. One rule for both matchers,
+/// `colab_syntax`'s.
 pub(super) fn terminate_lone_sequences(text: &str) -> Option<String> {
-    let mut out = String::with_capacity(text.len() + 4);
-    let mut rest = text;
-    let mut changed = false;
-    while let Some(at) = rest.find("$$$") {
-        let (head, tail) = rest.split_at(at);
-        out.push_str(head);
-        let len = 3 + tail[3..]
-            .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'))
-            .unwrap_or(tail.len() - 3);
-        let (var, after) = tail.split_at(len);
-        out.push_str(var);
-        let before = out[..out.len() - var.len()].trim_end();
-        let after_trimmed = after.trim_start();
-        if (before.ends_with('{') && after_trimmed.starts_with('}'))
-            || (before.ends_with(':') && after_trimmed.is_empty())
-        {
-            out.push(';');
-            changed = true;
-        }
-        rest = after;
-    }
-    out.push_str(rest);
-    changed.then_some(out)
+    colab_syntax::fragment::terminate_lone_sequences(text)
 }
 
 /// `qualified` (from [`qualify_call`]) with `sep` before its path, after

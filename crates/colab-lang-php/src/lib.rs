@@ -20,7 +20,7 @@ use colab_rewrite::{CallShape, SourceLanguage};
 
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about PHP ([`colab_rewrite::language`]).
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "php",
     extensions: &["php", "phtml"],
     file_names: &[],

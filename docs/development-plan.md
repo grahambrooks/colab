@@ -365,9 +365,19 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    deep as the pattern. Held to self-match, soundness (an exact pattern
    matches only the same code), all-names and whole-sequence
    generalization over 22,589 nodes of the repo's 439 source files in all
-   14 languages (`colab-backends/tests/matcher.rs`). Not yet behind
-   `StructuralPattern`: next, fragment compiling (the contexts, until
-   parsers have entry points), then the engine's forms (modifiers,
+   14 languages (`colab-backends/tests/matcher.rs`). **Fragment
+   compiling, 2026-11-25:** `colab_syntax::fragment::compile` reads a
+   pattern's text bare or in a backend's contexts (the parser is the
+   caller's), keeps every other reading as a form, accepts a
+   placeholder-only error when nothing reads it cleanly, and falls back
+   to `{ $$$B; }`; it needs no "earlier node of that kind" refusal, since
+   it picks the pattern by its span rather than ast-grep's first node of
+   the kind. `colab_rewrite::syntax::compile_fragment` runs it with a
+   backend's `PatternLanguage`. The property suite's new `matcher`
+   column self-matches the same sampled nodes with it: equal to the
+   ast-grep engine in 12 languages and ahead in two (Go 40 / 40 against
+   38, Swift 32 against 31). Not yet behind `StructuralPattern`: next,
+   the engine's forms (modifiers,
    qualified calls, shorthand) on top, then a differential run against
    the ast-grep engine over the conformance matrix, the property suite
    and the corpus before the switch. After that, the engine's other tree

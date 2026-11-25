@@ -33,7 +33,11 @@ use tree_sitter::{Node, Parser, Tree};
 const PER_FILE: usize = 40;
 /// Calls checked for the generalize round trip per sample file, at most.
 const CALLS_PER_FILE: usize = 12;
-const NAMES: [&str; 3] = ["self-match", "identity", "generalize"];
+/// The last is self-match again, by colab's own matcher
+/// (`colab_syntax::pattern`, through `colab_rewrite::syntax`), compiled
+/// with the same contexts, so the two engines are compared node for node
+/// until the new one takes over.
+const NAMES: [&str; 4] = ["self-match", "identity", "generalize", "matcher"];
 
 mod common;
 use common::grammar;
@@ -142,6 +146,49 @@ fn self_match(backend: &dyn LanguageBackend, source: &str, node: &Node<'_>) -> O
         let at = (f.start, f.end);
         near(at, range)
             || (f.start <= range.0 && range.1 <= f.end && f.end - f.start <= range.1 - range.0 + 2)
+    });
+    if hit { Outcome::Pass } else { Outcome::Missed }
+}
+
+/// The backend's pattern setup, for compiling with colab's own matcher.
+fn source_language(lang: &str) -> &'static colab_rewrite::SourceLanguage {
+    match lang {
+        "c" => &colab_lang_c::LANG,
+        "cpp" => &colab_lang_cpp::LANG,
+        "csharp" => &colab_lang_csharp::LANG,
+        "go" => &colab_lang_go::LANG,
+        "java" => &colab_lang_java::LANG,
+        "js" => &colab_lang_js::LANG,
+        "kotlin" => &colab_lang_kotlin::LANG,
+        "php" => &colab_lang_php::LANG,
+        "python" => &colab_lang_python::LANG,
+        "ruby" => &colab_lang_ruby::LANG,
+        "rust" => &colab_lang_rust::LANG,
+        "swift" => &colab_lang_swift::LANG,
+        "ts" => &colab_lang_ts::LANG,
+        "tsx" => &colab_lang_tsx::LANG,
+        other => panic!("no backend {other}"),
+    }
+}
+
+/// Self-match by colab's own matcher: the node's text compiled with the
+/// backend's contexts, found in the file at (or around) the node.
+fn own_self_match(lang: &str, source: &str, node: &Node<'_>) -> Outcome {
+    let language = (source_language(lang).pattern)();
+    let text = &source[node.byte_range()];
+    let Ok(compiled) = colab_rewrite::syntax::compile_fragment(&language, text) else {
+        return Outcome::Refused;
+    };
+    let Some(tree) = colab_rewrite::syntax::tree(&language.grammar, source) else {
+        return Outcome::Missed;
+    };
+    let range = (node.start_byte(), node.end_byte());
+    let hit = compiled.forms.iter().any(|form| {
+        form.pattern.find_all(&tree).iter().any(|m| {
+            let at = (m.node.start(), m.node.end());
+            near(at, range)
+                || (at.0 <= range.0 && range.1 <= at.1 && at.1 - at.0 <= range.1 - range.0 + 2)
+        })
     });
     if hit { Outcome::Pass } else { Outcome::Missed }
 }
@@ -343,7 +390,7 @@ fn properties_over_the_samples() {
     let verbose = std::env::var_os("COLAB_PROPERTIES_VERBOSE").is_some();
     let mut problems: Vec<String> = Vec::new();
     // lang → (self-match, identity, generalize)
-    let mut tallies: BTreeMap<String, [Tally; 3]> = BTreeMap::new();
+    let mut tallies: BTreeMap<String, [Tally; 4]> = BTreeMap::new();
     for dir in &langs {
         let lang = dir.file_name().unwrap().to_string_lossy().into_owned();
         let backend = registry
@@ -381,12 +428,13 @@ fn properties_over_the_samples() {
                 let kind = node.kind().to_string();
                 let checks = catch_unwind(AssertUnwindSafe(|| {
                     if call {
-                        [None, None, generalize(&lang, backend, &source, &node)]
+                        [None, None, generalize(&lang, backend, &source, &node), None]
                     } else {
                         [
                             Some(self_match(backend, &source, &node)),
                             Some(identity(backend, &source, &node)),
                             None,
+                            Some(own_self_match(&lang, &source, &node)),
                         ]
                     }
                 }));
@@ -433,7 +481,7 @@ fn properties_over_the_samples() {
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
-fn render(tallies: &BTreeMap<String, [Tally; 3]>) -> String {
+fn render(tallies: &BTreeMap<String, [Tally; 4]>) -> String {
     let mut out = String::from(
         "# Property suite over tests/samples/ (crates/colab-backends/tests/properties.rs).\n\
          # Per language and property: checked / passed / refused / missed.\n\
@@ -441,17 +489,18 @@ fn render(tallies: &BTreeMap<String, [Tally; 3]>) -> String {
     );
     let _ = writeln!(
         out,
-        "{:<8} {:>22} {:>22} {:>22}",
-        "lang", NAMES[0], NAMES[1], NAMES[2]
+        "{:<8} {:>22} {:>22} {:>22} {:>22}",
+        "lang", NAMES[0], NAMES[1], NAMES[2], NAMES[3]
     );
     for (lang, t) in tallies {
         let cell = |t: &Tally| format!("{}/{}/{}/{}", t.checked, t.passed, t.refused, t.missed);
         let _ = writeln!(
             out,
-            "{lang:<8} {:>22} {:>22} {:>22}",
+            "{lang:<8} {:>22} {:>22} {:>22} {:>22}",
             cell(&t[0]),
             cell(&t[1]),
-            cell(&t[2])
+            cell(&t[2]),
+            cell(&t[3])
         );
     }
     out.push_str("\n# What failed, by node kind.\n");

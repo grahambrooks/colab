@@ -20,7 +20,7 @@ use colab_rewrite::{CallShape, SourceLanguage};
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about Rust ([`colab_rewrite::language`]). `Cargo.toml` belongs to
 /// `rust::crate` alone ([`deps`]).
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "rust",
     extensions: &["rs"],
     file_names: &[],

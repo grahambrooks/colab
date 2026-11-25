@@ -18,6 +18,7 @@
 //! are loops, so a file nested any depth is safe to hold and walk.
 
 mod builder;
+pub mod fragment;
 #[cfg(feature = "tree-sitter")]
 mod from_tree_sitter;
 pub mod pattern;

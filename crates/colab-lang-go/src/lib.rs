@@ -16,7 +16,7 @@ use colab_rewrite::{CallShape, SourceLanguage};
 
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about Go ([`colab_rewrite::language`]).
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "go",
     extensions: &["go"],
     file_names: &[],

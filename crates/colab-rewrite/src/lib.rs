@@ -30,6 +30,7 @@ pub use language::{CallShape, SourceLanguage};
 pub mod parse_cache;
 pub mod pattern;
 pub mod scope;
+pub mod syntax;
 
 use tree_sitter::{Node, Tree, TreeCursor};
 

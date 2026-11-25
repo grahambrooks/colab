@@ -19,7 +19,7 @@ use colab_rewrite::{CallShape, SourceLanguage};
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about Kotlin ([`colab_rewrite::language`]). `.kts` is the Kotlin
 /// script form used by Gradle build files.
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "kotlin",
     extensions: &["kt", "kts"],
     file_names: &[],

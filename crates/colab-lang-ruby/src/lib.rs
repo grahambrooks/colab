@@ -20,7 +20,7 @@ use colab_rewrite::{CallShape, SourceLanguage};
 
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about Ruby ([`colab_rewrite::language`]).
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "ruby",
     extensions: &["rb", "rake", "gemspec", "ru"],
     // Extension-less Ruby files that are conventional enough to claim by name.

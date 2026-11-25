@@ -21,7 +21,7 @@ use colab_rewrite::{CallShape, SourceLanguage};
 
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about C# ([`colab_rewrite::language`]). `.csx` is the C# scripting form.
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "csharp",
     extensions: &["cs", "csx"],
     file_names: &[],

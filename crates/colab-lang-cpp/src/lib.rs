@@ -26,7 +26,7 @@ use colab_rewrite::{CallShape, SourceLanguage};
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about C++ ([`colab_rewrite::language`]). `.h` overlaps with
 /// `colab-lang-c` deliberately — see the module docs.
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "cpp",
     extensions: &["cpp", "cc", "cxx", "c++", "hpp", "hh", "hxx", "h++", "h"],
     file_names: &[],

@@ -34,7 +34,7 @@ pub const RENAME_KINDS: &[&str] = &[
 
 /// What the shared `symbol` / `call` / `pattern` floor needs to know
 /// about TypeScript ([`colab_rewrite::language`]).
-pub(crate) static LANG: SourceLanguage = SourceLanguage {
+pub static LANG: SourceLanguage = SourceLanguage {
     namespace: "ts",
     extensions: &["ts", "mts", "cts"],
     file_names: &[],

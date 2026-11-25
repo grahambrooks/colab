@@ -78,6 +78,75 @@ fn found(pattern: &Pattern, tree: &Tree) -> Vec<(String, Vec<String>)> {
         .collect()
 }
 
+mod fragments {
+    use super::*;
+    use crate::fragment::{Fragments, compile, terminate_lone_sequences};
+
+    const GO: Fragments<'static> = Fragments {
+        expando: 'µ',
+        contexts: &[
+            "package p\nfunc _() {\n@@PATTERN@@\n}\n",
+            "package p\n@@PATTERN@@\n",
+        ],
+        also: &[],
+    };
+
+    fn go_parse(text: &str) -> Option<Tree> {
+        Some(parse(tree_sitter_go::LANGUAGE.into(), "go", text))
+    }
+
+    #[test]
+    fn an_expression_compiles_and_binds() {
+        // tree-sitter-go reads a bare expression cleanly, so it compiles
+        // as-is; a context reading it the same adds no form.
+        let compiled = compile("errors.Wrap($E, $M)", &GO, &go_parse).unwrap();
+        assert!(!compiled.tolerant);
+        assert!(
+            compiled
+                .forms
+                .iter()
+                .skip(1)
+                .all(|f| f.pattern != compiled.forms[0].pattern),
+            "forms are distinct"
+        );
+        let tree = go_tree("package p\nfunc f() {\n\treturn errors.Wrap(err, \"x\")\n}\n");
+        let hits = found(&compiled.forms[0].pattern, &tree);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].1, ["E=err", "M=\"x\""]);
+    }
+
+    #[test]
+    fn a_declaration_compiles_bare_and_a_lone_metavariable_takes_anything() {
+        let compiled = compile("func $F() {}", &GO, &go_parse).unwrap();
+        let tree = go_tree("package p\n\nfunc a() {}\n\nfunc b(x int) {}\n");
+        let hits = found(&compiled.forms[0].pattern, &tree);
+        assert_eq!(hits, [("func a() {}".into(), vec!["F=a".into()])]);
+        let lone = compile("$X", &GO, &go_parse).unwrap();
+        assert!(lone.forms[0].pattern.kind().is_none());
+    }
+
+    #[test]
+    fn a_fragment_that_reads_nowhere_names_every_attempt() {
+        let err = compile("func (", &GO, &go_parse).unwrap_err();
+        assert!(err.contains("as-is"), "{err}");
+        assert!(err.contains("in `package p func _() {"), "{err}");
+        assert!(compile("  ", &GO, &go_parse).is_err());
+    }
+
+    #[test]
+    fn a_lone_sequence_body_is_terminated() {
+        assert_eq!(
+            terminate_lone_sequences("void f() { $$$B }").as_deref(),
+            Some("void f() { $$$B; }")
+        );
+        assert_eq!(
+            terminate_lone_sequences("case X: $$$B").as_deref(),
+            Some("case X: $$$B;")
+        );
+        assert_eq!(terminate_lone_sequences("f($$$A)"), None);
+    }
+}
+
 #[test]
 fn metavariables_are_read_as_colab_writes_them() {
     let one = |n: &str, named_only| MetaVar::One {
