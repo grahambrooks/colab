@@ -20,6 +20,7 @@
 mod builder;
 #[cfg(feature = "tree-sitter")]
 mod from_tree_sitter;
+pub mod pattern;
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -371,5 +372,7 @@ impl<'t> Node<'t> {
     }
 }
 
+#[cfg(all(test, feature = "tree-sitter"))]
+mod pattern_tests;
 #[cfg(test)]
 mod tests;

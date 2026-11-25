@@ -351,9 +351,28 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    (`colab-backends/tests/syntax_tree.rs`). Building it costs about 40%
    of tree-sitter's parse (84 ms beside 216 ms over those files,
    release), paid only until a language has its own parser, which emits
-   the tree directly. Next: the matcher over `colab_syntax::Tree`, then
-   the engine's other tree readers (`declarations`, `calls`, rename,
-   delete, generalize), each behind the same parity bar.
+   the tree directly. **The matcher, started 2026-11-25:**
+   `colab_syntax::pattern` compiles a pattern from a parsed fragment and
+   matches it with colab's rules built in, not checked afterwards: every
+   named child accounted for (what `Shape` does now), an error node taken
+   only by a capture (what `errors_captured` does now; tree-sitter marks
+   some recovered `ERROR` nodes *extra*, like comments, which the first
+   version wrongly passed over), anonymous tokens passed over alike
+   everywhere and reported in the match (what `led_forms` and
+   `keep_modifier_tokens` work around now), `$$$` that backtracks (a last
+   one takes the rest), and a repeated metavariable compared token by
+   token. Comments and trivia are invisible; matching recurses only as
+   deep as the pattern. Held to self-match, soundness (an exact pattern
+   matches only the same code), all-names and whole-sequence
+   generalization over 22,589 nodes of the repo's 439 source files in all
+   14 languages (`colab-backends/tests/matcher.rs`). Not yet behind
+   `StructuralPattern`: next, fragment compiling (the contexts, until
+   parsers have entry points), then the engine's forms (modifiers,
+   qualified calls, shorthand) on top, then a differential run against
+   the ast-grep engine over the conformance matrix, the property suite
+   and the corpus before the switch. After that, the engine's other tree
+   readers (`declarations`, `calls`, rename, delete, generalize), each
+   behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a
    safe-Rust port of the 0.25 runtime, five weeks old; tree-sitter's own
    generator, `tree-sitter-generate`, is already Rust). If colab's

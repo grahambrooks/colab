@@ -1,0 +1,426 @@
+//! Structural patterns over a [`Tree`]: code with metavariables, matched
+//! node for node, the matcher of colab's own that replaces ast-grep's.
+//!
+//! A pattern is a parsed fragment ([`Pattern::from_node`]): each node whose
+//! text is a metavariable becomes one (`$X` one node, `$$$X` a run of
+//! siblings, `$_` / `$$$` the same without a binding), every other node
+//! must be met by a candidate node of the same kind with children that
+//! match in order, and every token by one with the same text.
+//!
+//! The rules are the ones colab needs for rewriting, built in rather than
+//! checked afterwards:
+//!
+//! - **Every named child is accounted for.** A candidate's named children
+//!   are each matched by a pattern child, or absorbed by a `$$$`. Nothing
+//!   trails unseen, so a rewrite of `if $C { $$$B }` never drops an `else`.
+//! - **A syntax error is never skipped.** An `ERROR` node is named, so only
+//!   a metavariable can take it, and a rewrite copies a capture verbatim;
+//!   a match never silently loses text the parser could not read.
+//! - **Anonymous tokens are treated alike everywhere.** A candidate's
+//!   keyword or punctuation token may be passed over only where the pattern
+//!   has nothing to put against it (`static` before a method a pattern
+//!   names by `$M`, a trailing `,`), and every token passed over is listed
+//!   in the [`Match`], so a rewrite can keep it. A token the pattern spells
+//!   must be there.
+//! - **`$$$` backtracks.** A sequence takes as few siblings as it can and
+//!   more when what follows does not match, so `f($$$A, $L)` finds the last
+//!   argument wherever it is.
+//! - **A repeated metavariable means the same code**, compared token by
+//!   token with layout and comments set aside.
+//!
+//! Comments (`extra` nodes) and trivia are invisible to matching on both
+//! sides. Matching recurses only as deep as the *pattern*, never the file.
+
+use crate::{Kind, Node, Tree};
+
+/// What a metavariable stands for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetaVar {
+    /// `$X` (one named node) or `$$X` (one node, named or not), bound to
+    /// `name`; `None` for `$_`, which binds nothing.
+    One {
+        name: Option<String>,
+        named_only: bool,
+    },
+    /// `$$$X`: zero or more siblings, bound to `name`; `None` for `$$$`
+    /// and `$$$_`.
+    Many { name: Option<String> },
+}
+
+/// `text` as a metavariable written with `expando` (`$`, or `µ` where `$`
+/// cannot start an identifier and patterns are [`expand`]ed): `$X`, `$$X`,
+/// `$_`, `$$$X`, `$$$`. Names are upper case, digits and `_`, starting
+/// with a letter or `_`. A statement holding only a sequence (`$$$B;`) is
+/// the sequence.
+pub fn meta_variable(text: &str, expando: char) -> Option<MetaVar> {
+    let text = text.trim();
+    if let Some(stripped) = text.strip_suffix(';')
+        && let Some(var @ MetaVar::Many { .. }) = meta_variable(stripped, expando)
+    {
+        return Some(var);
+    }
+    let valid_first = |c: char| c.is_ascii_uppercase() || c == '_';
+    let valid = |c: char| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_';
+    let name_of = |name: &str| -> Option<Option<String>> {
+        if !name.starts_with(valid_first) || !name.chars().all(valid) {
+            return None;
+        }
+        Some((!name.starts_with('_')).then(|| name.to_string()))
+    };
+    let ellipsis: String = std::iter::repeat_n(expando, 3).collect();
+    if text == ellipsis {
+        return Some(MetaVar::Many { name: None });
+    }
+    if let Some(name) = text.strip_prefix(&ellipsis) {
+        return Some(MetaVar::Many {
+            name: name_of(name)?,
+        });
+    }
+    let rest = text.strip_prefix(expando)?;
+    let (name, named_only) = match rest.strip_prefix(expando) {
+        Some(name) => (name, false),
+        None => (rest, true),
+    };
+    Some(MetaVar::One {
+        name: name_of(name)?,
+        named_only,
+    })
+}
+
+/// `query` with each metavariable's `$`s replaced by `expando`, so the
+/// pattern parses where `$` cannot start an identifier. A `$` that starts
+/// no metavariable (`"$5"`, a PHP `$x`) is left alone.
+pub fn expand(query: &str, expando: char) -> String {
+    if expando == '$' {
+        return query.to_string();
+    }
+    let is_var_start = |c: char| c.is_ascii_uppercase() || c == '_';
+    let chars: Vec<char> = query.chars().collect();
+    let mut out = String::with_capacity(query.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '$' {
+            let run = chars[i..].iter().take_while(|&&c| c == '$').count();
+            let named = chars.get(i + run).is_some_and(|&c| is_var_start(c));
+            if (run <= 3 && named) || (run == 3 && !named) {
+                out.extend(std::iter::repeat_n(expando, run));
+                i += run;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// One node of a compiled pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatternNode {
+    /// A token the candidate must repeat: same text, and the same kind when
+    /// it is named (`x` the identifier, not `x` the type).
+    Token {
+        kind: Kind,
+        text: String,
+        named: bool,
+    },
+    /// A node of `kind` whose significant children match `children` in
+    /// order.
+    Node {
+        kind: Kind,
+        children: Vec<PatternNode>,
+    },
+    /// A metavariable.
+    Var(MetaVar),
+}
+
+/// A compiled pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pattern {
+    root: PatternNode,
+}
+
+/// Whether matching passes over `node`: trivia, and comments. tree-sitter
+/// also marks some recovered `ERROR` nodes as extra; an error is never
+/// invisible, or a match would skip text it cannot read.
+fn invisible(node: Node<'_>) -> bool {
+    node.is_trivia() || (node.is_extra() && !node.is_error())
+}
+
+/// The children matching sees.
+fn significant<'t>(node: Node<'t>) -> Vec<Node<'t>> {
+    node.children().filter(|c| !invisible(*c)).collect()
+}
+
+fn compile(node: Node<'_>, expando: char) -> PatternNode {
+    if let Some(var) = meta_variable(node.text(), expando) {
+        return PatternNode::Var(var);
+    }
+    if node.is_token() {
+        return PatternNode::Token {
+            kind: node.kind(),
+            text: node.text().to_string(),
+            named: node.is_named(),
+        };
+    }
+    PatternNode::Node {
+        kind: node.kind(),
+        children: significant(node)
+            .into_iter()
+            .map(|c| compile(c, expando))
+            .collect(),
+    }
+}
+
+impl Pattern {
+    /// A pattern from its nodes, as a parser or a test composes it.
+    pub fn new(root: PatternNode) -> Self {
+        Self { root }
+    }
+
+    /// The pattern `node` spells: a node of a tree parsed from the pattern
+    /// text (expanded with `expando`), usually the one node that spans it.
+    pub fn from_node(node: Node<'_>, expando: char) -> Self {
+        Self {
+            root: compile(node, expando),
+        }
+    }
+
+    pub fn root(&self) -> &PatternNode {
+        &self.root
+    }
+
+    /// The kind every match has, unless the pattern is a lone
+    /// metavariable, which matches any node.
+    pub fn kind(&self) -> Option<Kind> {
+        match &self.root {
+            PatternNode::Token { kind, .. } | PatternNode::Node { kind, .. } => Some(*kind),
+            PatternNode::Var(_) => None,
+        }
+    }
+
+    /// The match at `candidate`, if the pattern matches it.
+    pub fn matches<'t>(&self, candidate: Node<'t>) -> Option<Match<'t>> {
+        if invisible(candidate) {
+            return None;
+        }
+        let mut state = State::default();
+        let goal = match &self.root {
+            // A lone `$$$X` at the root stands for one node.
+            PatternNode::Var(MetaVar::Many { name }) => {
+                if let Some(name) = name {
+                    state.bind_many(name, vec![candidate])?;
+                }
+                return Some(state.into_match(candidate));
+            }
+            goal => goal,
+        };
+        match_node(goal, candidate, &mut state).then(|| state.into_match(candidate))
+    }
+
+    /// Every match in `tree`, in document order: an outer match before
+    /// those inside it.
+    pub fn find_all<'t>(&self, tree: &'t Tree) -> Vec<Match<'t>> {
+        let kind = self.kind();
+        tree.nodes()
+            .filter(|n| kind.is_none_or(|k| n.kind() == k))
+            .filter_map(|n| self.matches(n))
+            .collect()
+    }
+}
+
+/// What a metavariable was bound to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Binding<'t> {
+    One(Node<'t>),
+    Many(Vec<Node<'t>>),
+}
+
+impl Binding<'_> {
+    /// The source text the binding covers (empty for an empty sequence).
+    pub fn text(&self) -> &str {
+        match self {
+            Binding::One(n) => n.text(),
+            Binding::Many(nodes) => match (nodes.first(), nodes.last()) {
+                (Some(first), Some(last)) => &first.tree().text()[first.start()..last.end()],
+                _ => "",
+            },
+        }
+    }
+
+    /// The byte range it covers; `None` for an empty sequence.
+    pub fn range(&self) -> Option<std::ops::Range<usize>> {
+        match self {
+            Binding::One(n) => Some(n.range()),
+            Binding::Many(nodes) => Some(nodes.first()?.start()..nodes.last()?.end()),
+        }
+    }
+}
+
+/// A pattern matched at a node.
+#[derive(Debug, Clone)]
+pub struct Match<'t> {
+    pub node: Node<'t>,
+    /// Each named metavariable's binding, in the order first bound.
+    pub bindings: Vec<(String, Binding<'t>)>,
+    /// The candidate's anonymous tokens the pattern had nothing for
+    /// (`static`, a trailing `,`), in document order.
+    pub skipped: Vec<Node<'t>>,
+}
+
+impl<'t> Match<'t> {
+    pub fn get(&self, name: &str) -> Option<&Binding<'t>> {
+        self.bindings
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, b)| b)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct State<'t> {
+    bindings: Vec<(String, Binding<'t>)>,
+    skipped: Vec<Node<'t>>,
+}
+
+impl<'t> State<'t> {
+    fn into_match(mut self, node: Node<'t>) -> Match<'t> {
+        self.skipped.sort_by_key(Node::id);
+        Match {
+            node,
+            bindings: self.bindings,
+            skipped: self.skipped,
+        }
+    }
+
+    fn bind_one(&mut self, name: &str, node: Node<'t>) -> Option<()> {
+        match self.bindings.iter().find(|(n, _)| n == name) {
+            Some((_, Binding::One(bound))) => same_code(&[*bound], &[node]).then_some(()),
+            Some((_, Binding::Many(_))) => None,
+            None => {
+                self.bindings.push((name.to_string(), Binding::One(node)));
+                Some(())
+            }
+        }
+    }
+
+    fn bind_many(&mut self, name: &str, nodes: Vec<Node<'t>>) -> Option<()> {
+        match self.bindings.iter().find(|(n, _)| n == name) {
+            Some((_, Binding::Many(bound))) => same_code(bound, &nodes).then_some(()),
+            Some((_, Binding::One(_))) => None,
+            None => {
+                self.bindings.push((name.to_string(), Binding::Many(nodes)));
+                Some(())
+            }
+        }
+    }
+}
+
+/// The significant tokens of `nodes`, in order: none from trivia or from
+/// inside a comment (Rust's block comments have tokens of their own).
+fn code_tokens<'t>(nodes: &[Node<'t>]) -> Vec<&'t str> {
+    let mut out = Vec::new();
+    for node in nodes {
+        let mut hidden_until = 0;
+        for n in node.descendants() {
+            if n.start() < hidden_until {
+                continue;
+            }
+            if invisible(n) {
+                hidden_until = n.end().max(n.start() + 1);
+                continue;
+            }
+            if n.is_token() {
+                out.push(n.text());
+            }
+        }
+    }
+    out
+}
+
+/// Whether two runs of nodes are the same code, layout and comments aside.
+fn same_code(a: &[Node<'_>], b: &[Node<'_>]) -> bool {
+    code_tokens(a) == code_tokens(b)
+}
+
+fn match_node<'t>(goal: &PatternNode, cand: Node<'t>, state: &mut State<'t>) -> bool {
+    match goal {
+        PatternNode::Token { kind, text, named } => {
+            cand.text() == text && (!named || cand.kind() == *kind)
+        }
+        PatternNode::Var(MetaVar::One { name, named_only }) => {
+            if *named_only && !cand.is_named() {
+                return false;
+            }
+            match name {
+                Some(name) => state.bind_one(name, cand).is_some(),
+                None => true,
+            }
+        }
+        // A sequence among one node's worth of candidates: one node.
+        PatternNode::Var(MetaVar::Many { name }) => match name {
+            Some(name) => state.bind_many(name, vec![cand]).is_some(),
+            None => true,
+        },
+        PatternNode::Node { kind, children } => {
+            cand.kind() == *kind
+                && !cand.is_token()
+                && match_children(children, &significant(cand), state)
+        }
+    }
+}
+
+/// `goals` against `cands`, all of them: each candidate is matched by a
+/// goal, absorbed by a sequence, or (an anonymous token only) skipped.
+fn match_children<'t>(goals: &[PatternNode], cands: &[Node<'t>], state: &mut State<'t>) -> bool {
+    let Some((goal, rest)) = goals.split_first() else {
+        // Only anonymous tokens may be left over.
+        if cands.iter().all(|c| c.is_token() && !c.is_named()) {
+            state.skipped.extend_from_slice(cands);
+            return true;
+        }
+        return false;
+    };
+    if let PatternNode::Var(MetaVar::Many { name }) = goal {
+        // Last, a sequence takes everything left: nothing after it could
+        // claim a token, so none is passed over.
+        if rest.is_empty() {
+            if let Some(name) = name {
+                return state.bind_many(name, cands.to_vec()).is_some();
+            }
+            return true;
+        }
+        // Otherwise as few siblings as will do, then more.
+        for take in 0..=cands.len() {
+            let mut attempt = state.clone();
+            if let Some(name) = name
+                && attempt.bind_many(name, cands[..take].to_vec()).is_none()
+            {
+                continue;
+            }
+            if match_children(rest, &cands[take..], &mut attempt) {
+                *state = attempt;
+                return true;
+            }
+        }
+        return false;
+    }
+    let Some((&cand, later)) = cands.split_first() else {
+        return false;
+    };
+    let mut attempt = state.clone();
+    if match_node(goal, cand, &mut attempt) && match_children(rest, later, &mut attempt) {
+        *state = attempt;
+        return true;
+    }
+    // A keyword or punctuation the pattern has nothing for here.
+    if cand.is_token() && !cand.is_named() {
+        let mut attempt = state.clone();
+        attempt.skipped.push(cand);
+        if match_children(goals, later, &mut attempt) {
+            *state = attempt;
+            return true;
+        }
+    }
+    false
+}
