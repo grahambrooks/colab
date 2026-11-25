@@ -493,7 +493,23 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    grammar's external scanner (Python 437 lines, Kotlin 459, C# 713,
    Ruby 1,107, Swift 1,119, C++ 148, PHP 17, Go and Java none) and of
    keeping tree-sitter's misparses.
-3. Parsers in order of value, each replacing tree-sitter for its
+3. **Rust started 2026-11-25:** `colab-parse-rust` turns rust-analyzer's
+   parse (`ra_ap_syntax`, 34 pure-Rust crates) into a colab tree
+   through `colab_syntax::SourceParser`. Over the Cargo registry's
+   122,558 `.rs` files (2 GB) every tree is lossless, and rust-analyzer
+   reads real Rust far better than tree-sitter: 5,347 files tree-sitter
+   gives an error that rust-analyzer parses cleanly (macros, mostly),
+   against 51 the other way (a few macro bodies; `gen` handled by parsing
+   as 2021, then 2024 when that reads a file with fewer errors). Parsing
+   takes 120 s against tree-sitter's 124 s. Two things it does not give
+   colab as tree-sitter did: **fields** (rust-analyzer's live in its typed
+   AST) and **tree-sitter's kind names** (`call_expr`, not
+   `call_expression`), which `where … is`, `field`, the backend's
+   modifier, attribute and macro kinds, and `colab ast` all expose. Next:
+   the engine reads a `PatternLanguage`'s parser when it has one, and a
+   distance test runs the Rust rules on both parsers, to see what moving
+   them changes before any of it reaches users.
+   Parsers in order of value, each replacing tree-sitter for its
    language once it passes the bar: Rust (`ra_ap_syntax`) and JS / TS /
    TSX / JSON (Biome) through adapters; then Go, Java and Kotlin
    hand-written. Drop C++; decide Ruby, Swift and C# by use. Until a

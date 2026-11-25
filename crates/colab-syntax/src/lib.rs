@@ -28,6 +28,17 @@ use std::sync::Arc;
 
 pub use builder::{BuildError, Builder};
 
+/// A parser of colab's own (or an adapter over one) for a language: what
+/// takes tree-sitter's place for that language, one at a time. `parse`
+/// always gives a tree, the text it could not read in `ERROR` nodes, and
+/// marks a parse error it shows no node for ([`Builder::error_seen`]).
+pub trait SourceParser: Send + Sync {
+    /// The names of the kinds and fields its trees use.
+    fn grammar(&self) -> Arc<Grammar>;
+    /// `text` as a lossless tree.
+    fn parse(&self, text: &str) -> Tree;
+}
+
 /// A node kind: an index into its [`Grammar`]'s kinds, or one of the two
 /// kinds every grammar has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

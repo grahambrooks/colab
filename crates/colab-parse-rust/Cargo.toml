@@ -1,0 +1,18 @@
+[package]
+name = "colab-parse-rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rust source as colab's own syntax tree, parsed by rust-analyzer's parser (ra_ap_syntax): pure Rust, lossless, error-tolerant."
+
+[dependencies]
+colab-syntax = { workspace = true }
+# rust-analyzer's crates release weekly at 0.0.x and break freely: pinned
+# exactly, bumped on purpose with the conformance matrix and corpus.
+ra_ap_syntax = "=0.0.364"
+
+[lints]
+workspace = true

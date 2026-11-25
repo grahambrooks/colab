@@ -36,6 +36,8 @@ colab-lang-tsx = { workspace = true }
 # tests/properties.rs self-matches with the pattern compiler directly.
 colab-syntax = { workspace = true, features = ["tree-sitter"] }
 colab-rewrite = { workspace = true }
+# tests/rust_parser.rs measures rust-analyzer's parser against tree-sitter.
+colab-parse-rust = { workspace = true }
 similar = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-c = { workspace = true }
