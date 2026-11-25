@@ -128,9 +128,9 @@ pub(crate) fn lower_match_ops(
         && spec_texts(&spec).iter().any(|t| t.contains("\\n"))
     {
         advice.push(
-            "the rule's text holds `\\n`, which colab writes as a backslash and an `n`: '…' and \
-             r#\"…\"# strings are literal. If a line break was meant, quote the text with \"…\", \
-             where `\\n` is one"
+            "the rule's text holds `\\n` as two characters, a backslash and an `n`, not a line \
+             break. If a line break was meant: in a script, quote the text with \"…\", where `\\n` \
+             is one ('…' and r#\"…\"# are literal); in `rules`, JSON's `\\n` is one"
                 .into(),
         );
     }
