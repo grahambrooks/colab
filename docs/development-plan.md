@@ -555,6 +555,27 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    hand-written. Drop C++; decide Ruby, Swift and C# by use. Until a
    language has its parser it keeps tree-sitter behind a Cargo feature,
    or the bridge from step 2.
+   **The rest, assessed 2026-11-25** (crates.io and a spike, after Rust):
+
+   | Language | Pure-Rust parser | Shape | Effort |
+   | --- | --- | --- | --- |
+   | JS / TS / TSX | `biome_js_parser` 0.7.3 (110 crates, no C) | lossless tree with trivia, bogus nodes on errors: rust-analyzer's shape | **next**. Spike over the workspace's 27,566 files: all lossless; 2.7× faster than tree-sitter (3.3 s against 9.1 s); syntax errors in 156 files only Biome sees, 124 only tree-sitter (`.js` read with JSX as tree-sitter does; the rest are parser options: CommonJS top-level `return`, parameter decorators) |
+   | JSON | `biome_json_parser` (shares Biome's crates), or a small own parser | lossless | easy, with JS |
+   | Python | `ruff_python_parser` 0.0.23 (63 crates, no C) | AST with ranges plus a token stream, error-recovering | medium: the tree is built from node ranges and tokens |
+   | Markdown | `markdown` 1.0 (3 crates) or `comrak` | mdast / AST with source positions | medium: colab's sections, rows and links read positions, not a CST |
+   | PHP | `mago-syntax` 1.61 (87 crates; C only through blake3's SIMD, `pure` avoids it) | spans and trivia, error-recovering | medium |
+   | Go | `gosyn` 0.2.16 (AST), or hand-written | AST with positions | medium: a small grammar; hand-written is likely the sturdier path |
+   | Java | none | — | hard: a parser of colab's own; a regular grammar, but large |
+   | Ruby | `lib-ruby-parser` (Ruby 3.1, last release 2024-04); Prism's Rust crate wraps C | — | **very difficult** |
+   | Kotlin | none | — | **very difficult**: newline-sensitive, large grammar |
+   | Swift | none | — | **very difficult**: large, context-sensitive grammar |
+   | C# | none | — | **very difficult**: one of the largest grammars |
+   | C | `lang-c` (needs preprocessed input, 2023) | — | **very difficult**: the preprocessor; macros make source unparseable as C |
+   | C++ | none | — | **very difficult**: the hardest grammar there is, plus the preprocessor |
+
+   The tree-sitter runtime goes only when the last of these does, so the
+   very difficult six decide when: drop them, keep tree-sitter for them
+   alone, or write parsers.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would
