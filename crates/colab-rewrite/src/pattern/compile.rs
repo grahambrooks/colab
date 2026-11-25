@@ -177,9 +177,11 @@ pub(super) fn shorthand_template(
 }
 
 /// `text` with a `;` after each sequence capture that is alone in braces
-/// (`{ $$$B }` → `{ $$$B; }`), or `None` when it has none. C++ reads
-/// `void f() { $$$B }` as a declaration with a brace initializer; with the
-/// `;` it is a function, and `$$$B;` is read as the capture itself.
+/// (`{ $$$B }` → `{ $$$B; }`) or ends a case (`case X: $$$B` →
+/// `case X: $$$B;`), or `None` when it has none. C++ reads
+/// `void f() { $$$B }` as a declaration with a brace initializer, and Java
+/// a `case` needs a statement; with the `;` it is a function or a case, and
+/// `$$$B;` is read as the capture itself.
 pub(super) fn terminate_lone_sequences(text: &str) -> Option<String> {
     let mut out = String::with_capacity(text.len() + 4);
     let mut rest = text;
@@ -192,8 +194,10 @@ pub(super) fn terminate_lone_sequences(text: &str) -> Option<String> {
             .unwrap_or(tail.len() - 3);
         let (var, after) = tail.split_at(len);
         out.push_str(var);
-        if out[..out.len() - var.len()].trim_end().ends_with('{')
-            && after.trim_start().starts_with('}')
+        let before = out[..out.len() - var.len()].trim_end();
+        let after_trimmed = after.trim_start();
+        if (before.ends_with('{') && after_trimmed.starts_with('}'))
+            || (before.ends_with(':') && after_trimmed.is_empty())
         {
             out.push(';');
             changed = true;

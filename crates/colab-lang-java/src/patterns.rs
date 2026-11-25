@@ -22,6 +22,7 @@ pub(crate) fn language() -> PatternLanguage {
             "class C {\nvoid m() {\n@@PATTERN@@\n}\n}\n",
             "class C {\nvoid m() {\n@@PATTERN@@;\n}\n}\n",
             "class C {\n@@PATTERN@@\n}\n",
+            "class C {\nvoid m() {\nswitch (_x) {\n@@PATTERN@@\n}\n}\n}\n",
         ],
         also: &[],
         qualified_calls: None,
@@ -47,6 +48,21 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_switch_case_is_a_pattern() {
+        let op = crate::LANG
+            .compile_pattern(
+                "case HIGH: $$$B",
+                PatternAction::Replace("case URGENT: $$$B".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "class A {\n  String f(P p) {\n    switch (p) {\n      case HIGH:\n        return \"now\";\n      default:\n        return \"later\";\n    }\n  }\n}\n";
+        let out = op.apply(src);
+        assert_eq!(out, src.replace("case HIGH", "case URGENT"));
+        assert_eq!(op.apply(&out), out, "idempotent");
+    }
 
     #[test]
     fn calls_are_not_declarations_and_new_ones_are_not_recursion() {

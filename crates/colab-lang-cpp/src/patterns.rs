@@ -12,7 +12,9 @@ use colab_rewrite::pattern::PatternLanguage;
 /// ast-grep selects the *first* node of the pattern's kind in a context, so
 /// the first context, a top-level expression statement, has nothing before
 /// the slot; the function-body contexts, for statements that need one,
-/// follow (as written, then with `;` appended).
+/// follow (as written, then with `;` appended). Last, a parameter
+/// (`const Graph &$G`); its `typedef` puts a type name before the slot, so
+/// a bare name is never also read as a parameter's type.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_cpp::LANGUAGE.into(),
@@ -21,6 +23,8 @@ pub(crate) fn language() -> PatternLanguage {
             "@@PATTERN@@;",
             "void _() {\n@@PATTERN@@\n}\n",
             "void _() {\n@@PATTERN@@;\n}\n",
+            "typedef int _t;\nvoid _(@@PATTERN@@);\n",
+            "struct _S {\n@@PATTERN@@\n};\n",
         ],
         also: &[],
         // `ns::f(…)` is a call of `f` named by its namespace.
@@ -56,6 +60,34 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    fn replace(pattern: &str, template: &str, src: &str) -> String {
+        let op = crate::LANG
+            .compile_pattern(pattern, PatternAction::Replace(template.into()), &[])
+            .unwrap();
+        let out = op.apply(src);
+        assert_eq!(op.apply(&out), out, "idempotent");
+        out
+    }
+
+    #[test]
+    fn a_parameter_and_a_field_are_patterns() {
+        let src = "void visit(Id id, int depth);\n";
+        assert_eq!(
+            replace("Id $I", "NodeId $I", src),
+            "void visit(NodeId id, int depth);\n"
+        );
+        let src = "class Graph {\n    std::vector<Edge> edges_;\n};\n";
+        assert_eq!(
+            replace("std::vector<Edge> $F;", "std::deque<Edge> $F;", src),
+            "class Graph {\n    std::deque<Edge> edges_;\n};\n"
+        );
+        // The parameter context does not make a bare name a type as well.
+        let op = crate::LANG
+            .compile_pattern("Id", PatternAction::Delete, &[])
+            .unwrap();
+        assert!(op.locate("void visit(Id id);\n").unwrap().is_empty());
+    }
 
     #[test]
     fn a_bare_call_pattern_also_finds_namespaced_calls() {

@@ -16,7 +16,7 @@ mod patterns;
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
 use colab_rewrite::{CallShape, SourceLanguage};
 
-pub use patterns::MODIFIER_TOKENS;
+pub use patterns::{ALSO as PATTERN_ALSO, MODIFIER_TOKENS};
 
 /// TypeScript's pattern setup (contexts, `also` readings, modifiers), for
 /// a backend on another TypeScript grammar to take with its own: `tsx`.

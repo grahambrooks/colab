@@ -6,6 +6,7 @@ on:
   pull_request:
   schedule:
     - cron: "17 6 * * 1" # weekly, so new RustSec advisories surface without a push
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -78,6 +79,19 @@ jobs:
       # `cargo +<floor>` explicitly, not bare `cargo`: rust-toolchain.toml would
       # otherwise override whatever was installed and the job would test nothing.
       - run: cargo +${{ steps.floor.outputs.version }} check --workspace --all-targets --all-features --locked
+
+  real-lsp:
+    name: real language servers — the LSP commands against rust-analyzer
+    # Weekly (and by hand): every other LSP test drives a fake server, so
+    # this is what notices a rust-analyzer release that answers differently.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - run: rustup component add rust-analyzer
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p colab-cli --test real_lsp --locked -- --ignored
 
   licenses:
     name: cargo-deny licenses

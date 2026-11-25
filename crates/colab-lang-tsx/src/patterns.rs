@@ -8,9 +8,21 @@
 
 use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 
+/// TypeScript's `also` readings, and one more: a JSX child or attribute
+/// value (`{$NAME}`, `{() => $F}`), which alone is a block. The text
+/// before the slot keeps a bare word from also reading as JSX text.
+static ALSO: [&str; 5] = [
+    colab_lang_ts::PATTERN_ALSO[0],
+    colab_lang_ts::PATTERN_ALSO[1],
+    colab_lang_ts::PATTERN_ALSO[2],
+    colab_lang_ts::PATTERN_ALSO[3],
+    "<_x>_t @@PATTERN@@</_x>;\n",
+];
+
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_typescript::LANGUAGE_TSX.into(),
+        also: &ALSO,
         ..colab_lang_ts::pattern_language()
     }
 }
@@ -42,6 +54,19 @@ mod tests {
     }
 
     const APP: &str = "import { Button } from './ui';\n\nexport function App(props: { label: string }): JSX.Element {\n  return <Button onClick={save} kind=\"primary\">{props.label}</Button>;\n}\n\nfunction Bare() {\n  return <Button onClick={load} />;\n}\n";
+
+    #[test]
+    fn a_jsx_expression_is_a_pattern_and_jsx_text_is_not_a_name() {
+        let src = "const a = <p title={name}>{name} and name</p>;\n";
+        assert_eq!(
+            replace("{name}", "{props.name}", src),
+            "const a = <p title={props.name}>{props.name} and name</p>;\n"
+        );
+        let op = crate::LANG
+            .compile_pattern("and", PatternAction::Delete, &[])
+            .unwrap();
+        assert!(op.locate(src).unwrap().is_empty());
+    }
 
     #[test]
     fn a_typed_component_function_is_a_pattern() {

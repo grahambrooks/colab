@@ -3,39 +3,31 @@
 # Regenerate with COLAB_BLESS=1 cargo test -p colab-backends --test properties.
 
 lang                 self-match               identity             generalize
-c                     39/35/3/1              39/36/3/0                3/3/0/0
-cpp                   35/32/1/2              35/34/1/0                4/4/0/0
+c                     39/38/0/1              39/39/0/0                3/3/0/0
+cpp                   35/34/0/1              35/35/0/0                4/4/0/0
 csharp                36/35/1/0              36/35/1/0                4/4/0/0
-go                    40/35/3/2              40/37/3/0                8/8/0/0
-java                  40/39/1/0              40/39/1/0                6/6/0/0
+go                    40/38/0/2              40/40/0/0                8/8/0/0
+java                  40/40/0/0              40/40/0/0                6/6/0/0
 js                    39/38/0/1              39/39/0/0                7/7/0/0
 kotlin                40/38/1/1              40/39/1/0                8/8/0/0
-php                   37/34/3/0              37/34/3/0                5/5/0/0
+php                   37/37/0/0              37/37/0/0                5/5/0/0
 python                38/38/0/0              38/38/0/0                9/9/0/0
 ruby                  34/34/0/0              34/34/0/0              11/11/0/0
 rust                  40/37/1/2              40/39/1/0              10/10/0/0
-swift                 36/30/1/5              36/35/1/0                5/5/0/0
+swift                 36/31/0/5              36/36/0/0                5/5/0/0
 ts                    40/40/0/0              40/40/0/0                4/4/0/0
-tsx                   34/28/0/6              34/34/0/0                2/2/0/0
+tsx                   34/33/0/1              34/34/0/0                2/2/0/0
 
 # What failed, by node kind.
-c self-match: field_declaration_list (missed) ×1, parameter_declaration (refused) ×3
-c identity: parameter_declaration (refused) ×3
-cpp self-match: field_declaration (missed) ×1, field_declaration_list (missed) ×1, parameter_declaration (refused) ×1
-cpp identity: parameter_declaration (refused) ×1
+c self-match: field_declaration_list (missed) ×1
+cpp self-match: field_declaration_list (missed) ×1
 csharp self-match: declaration_list (refused) ×1
 csharp identity: declaration_list (refused) ×1
-go self-match: expression_list (refused) ×2, parameter_declaration (missed) ×2, variadic_parameter_declaration (refused) ×1
-go identity: expression_list (refused) ×2, variadic_parameter_declaration (refused) ×1
-java self-match: switch_block_statement_group (refused) ×1
-java identity: switch_block_statement_group (refused) ×1
+go self-match: parameter_declaration (missed) ×2
 js self-match: assignment_pattern (missed) ×1
 kotlin self-match: constructor_invocation (missed) ×1, variable_declaration (refused) ×1
 kotlin identity: variable_declaration (refused) ×1
-php self-match: case_statement (refused) ×1, match_conditional_expression (refused) ×1, sequence_expression (refused) ×1
-php identity: case_statement (refused) ×1, match_conditional_expression (refused) ×1, sequence_expression (refused) ×1
 rust self-match: closure_parameters (refused) ×1, ordered_field_declaration_list (missed) ×2
 rust identity: closure_parameters (refused) ×1
-swift self-match: call_suffix (missed) ×3, protocol_function_declaration (refused) ×1, statements (missed) ×2
-swift identity: protocol_function_declaration (refused) ×1
-tsx self-match: jsx_expression (missed) ×5, object_assignment_pattern (missed) ×1
+swift self-match: call_suffix (missed) ×3, statements (missed) ×2
+tsx self-match: object_assignment_pattern (missed) ×1

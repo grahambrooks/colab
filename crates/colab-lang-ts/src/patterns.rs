@@ -12,6 +12,15 @@ use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 /// (`interface`, `type`, `function`) parse on their own; the contexts
 /// admit a class member (a method, a field with its modifiers) and a
 /// `switch` case.
+/// The `also` readings of [`crate::pattern_language`], public so `tsx` can
+/// add JSX's.
+pub const ALSO: [&str; 4] = [
+    "({@@PATTERN@@});\n",
+    "let _x: @@PATTERN@@;\n",
+    "interface _I {\n@@PATTERN@@\n}\n",
+    "class _C {\n@@PATTERN@@\n}\n",
+];
+
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
@@ -25,12 +34,7 @@ pub(crate) fn language() -> PatternLanguage {
         // adds three: `Promise<$T>` alone is a comparison, and a type in an
         // annotation; `port: number` is also an interface's property, and
         // `count: number = 1;` a class's field.
-        also: &[
-            "({@@PATTERN@@});\n",
-            "let _x: @@PATTERN@@;\n",
-            "interface _I {\n@@PATTERN@@\n}\n",
-            "class _C {\n@@PATTERN@@\n}\n",
-        ],
+        also: &ALSO,
         qualified_calls: None,
         // TSDoc documents the declaration after it, and a decorator belongs
         // to the member it decorates.

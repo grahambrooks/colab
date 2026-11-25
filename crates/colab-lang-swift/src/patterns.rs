@@ -8,7 +8,7 @@ use colab_rewrite::pattern::PatternLanguage;
 
 /// `$0` is a Swift closure argument, so metavariables are parsed as `µ`.
 /// Contexts, in order: a statement or expression inside a function body,
-/// then a class member.
+/// then a class member, then a protocol's requirement (`func $F() async`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_swift::LANGUAGE.into(),
@@ -16,6 +16,7 @@ pub(crate) fn language() -> PatternLanguage {
         contexts: &[
             "func f() {\n@@PATTERN@@\n}\n",
             "class C {\n@@PATTERN@@\n}\n",
+            "protocol _P {\n@@PATTERN@@\n}\n",
         ],
         also: &[],
         qualified_calls: None,
@@ -40,6 +41,23 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_protocol_requirement_is_a_pattern() {
+        let op = crate::LANG
+            .compile_pattern(
+                "func readings(for $S: String) async throws -> [Reading]",
+                PatternAction::Replace(
+                    "func readings(at $S: String) async throws -> [Reading]".into(),
+                ),
+                &[],
+            )
+            .unwrap();
+        let src = "protocol Source {\n    func readings(for station: String) async throws -> [Reading]\n}\n";
+        let out = op.apply(src);
+        assert_eq!(out, src.replace("(for ", "(at "));
+        assert_eq!(op.apply(&out), out, "idempotent");
+    }
 
     #[test]
     fn a_function_pattern_without_modifiers_matches_any_and_keeps_them() {

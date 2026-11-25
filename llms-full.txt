@@ -441,14 +441,20 @@ How it matches:
   with it (a TypeScript class field's `;` is its sibling), and a
   template's own trailing `;` then goes too, so it is not doubled; a
   statement's `;` (`f(x);`) is kept. Switch cases are patterns as well:
-  Go and JavaScript `case $X: $$$B` (a delete takes the case and its
-  body), and a Kotlin `when` entry `$X -> $E`. A pattern that also parses
-  on its own still matches in every wrapper it fits: C#'s `void $F() {}`
-  is a top-level local function bare, and matches class methods too,
-  with a body that is a lone `$$$B` as well (one C# and PHP only accept
-  with the placeholder kept in an error node). C++ cannot take
-  `void $F() { $$$B }`: its grammar reads `T f() { x }` as a declaration
-  with a brace initializer, so name a statement in the body instead. A
+  Go, Java, JavaScript and PHP `case $X: $$$B` (a delete takes the case
+  and its body), a Kotlin `when` entry `$X -> $E`, and a PHP `match` arm
+  `Status::Draft => $V`. So are the other fragments that only parse
+  inside something: a C, C++ or Go parameter (`const ring_t *$R`,
+  `$W ...string`), a C or C++ struct field, the values of a Go `return`
+  (`nil, $E`) or a PHP `echo` (`$A, "\n"`), a Swift protocol requirement,
+  and a TSX `{…}` child or attribute value (`{$NAME}`). A bare name stays
+  a name: it is not also read as a parameter's type or as JSX text. A
+  pattern that also parses on its own still matches in every wrapper it
+  fits: C#'s `void $F() {}` is a top-level local function bare, and
+  matches class methods too, with a body that is a lone `$$$B` as well
+  (one C# and PHP only accept with the placeholder kept in an error
+  node). C++ reads `void $F() { $$$B }` as a declaration with a brace
+  initializer, so colab reads it as `{ $$$B; }`, a function body. A
   bare `$$$` is an anonymous sequence wherever `$$$B` is accepted, so
   `where inside 'mod tests { $$$ }'` scopes a Rust rule to a test module.
 - **Whitespace-only rewrites are not made.** A result that differs from

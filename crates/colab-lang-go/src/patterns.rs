@@ -9,7 +9,9 @@ use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 /// `$` cannot start a Go identifier, so metavariables are parsed as `µ`.
 /// The contexts are tried in order: a statement or expression inside a
 /// function body, a top-level declaration, then a `switch` case
-/// (`case $X: $$$B`).
+/// (`case $X: $$$B`), the values a `return` lists (`nil, $E`), and a
+/// parameter (`words ...string`). The parameter context declares a type
+/// before the slot, so a bare name is never also read as a parameter's type.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_go::LANGUAGE.into(),
@@ -18,6 +20,8 @@ pub(crate) fn language() -> PatternLanguage {
             "package p\nfunc _() {\n@@PATTERN@@\n}\n",
             "package p\n@@PATTERN@@\n",
             "package p\nfunc _() {\nswitch {\n@@PATTERN@@\n}\n}\n",
+            "package p\nfunc _() {\nreturn @@PATTERN@@\n}\n",
+            "package p\ntype _t int\nfunc _(@@PATTERN@@) {}\n",
         ],
         also: &[],
         qualified_calls: None,
@@ -48,6 +52,35 @@ pub(crate) const QUALIFIERS: Qualifiers = Qualifiers {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    fn replace(pattern: &str, template: &str, src: &str) -> String {
+        let op = crate::LANG
+            .compile_pattern(pattern, PatternAction::Replace(template.into()), &[])
+            .unwrap();
+        let out = op.apply(src);
+        assert_eq!(op.apply(&out), out, "idempotent");
+        out
+    }
+
+    #[test]
+    fn returned_values_and_a_parameter_are_patterns() {
+        let src = "package p\nfunc f() (int, error) {\n\treturn 0, errors.New(\"no\")\n}\n";
+        assert_eq!(
+            replace("0, errors.New($M)", "-1, errors.New($M)", src),
+            "package p\nfunc f() (int, error) {\n\treturn -1, errors.New(\"no\")\n}\n"
+        );
+        let src = "package p\nfunc join(words ...string) string { return \"\" }\n";
+        assert_eq!(
+            replace("$W ...string", "$W ...any", src),
+            "package p\nfunc join(words ...any) string { return \"\" }\n"
+        );
+        // The parameter context does not make a bare name a type as well.
+        let op = crate::LANG
+            .compile_pattern("Order", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "package p\nfunc f(o Order) {}\n";
+        assert!(op.locate(src).unwrap().is_empty());
+    }
 
     #[test]
     fn rewrites_errors_wrap_to_fmt_errorf() {

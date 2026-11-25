@@ -15,12 +15,20 @@ use colab_rewrite::pattern::PatternLanguage;
 /// PHP-only grammar still accepts a leading `<?php` tag, so ordinary files
 /// match normally; only inline HTML around the code is seen as an error
 /// region (matches elsewhere in the file are unaffected). Contexts, in
-/// order: an expression made a statement with `;`, then a class member.
+/// order: an expression made a statement with `;`, a class member, a
+/// `match` arm (`Status::Draft => $V`), a `switch` case, and the list an
+/// `echo` prints (`$A, "\n"`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
         grammar: tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
         expando: 'µ',
-        contexts: &["@@PATTERN@@;", "class C {\n@@PATTERN@@\n}\n"],
+        contexts: &[
+            "@@PATTERN@@;",
+            "class C {\n@@PATTERN@@\n}\n",
+            "match ($_x) {\n@@PATTERN@@\n};\n",
+            "switch ($_x) {\n@@PATTERN@@\n}\n",
+            "echo @@PATTERN@@;\n",
+        ],
         also: &[],
         // `\M\f(…)` is a call of `f` named by its namespace.
         qualified_calls: Some("\\"),
@@ -53,6 +61,34 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    fn replace(pattern: &str, template: &str, src: &str) -> String {
+        let op = crate::LANG
+            .compile_pattern(pattern, PatternAction::Replace(template.into()), &[])
+            .unwrap();
+        let out = op.apply(src);
+        assert_eq!(op.apply(&out), out, "idempotent");
+        out
+    }
+
+    #[test]
+    fn a_match_arm_a_case_and_an_echo_list_are_patterns() {
+        let src = "<?php\n$s = match ($x) {\n    Status::Draft => 'not yet',\n    default => 'done',\n};\n";
+        assert_eq!(
+            replace("Status::Draft => $V", "Status::Pending => $V", src),
+            src.replace("Status::Draft", "Status::Pending")
+        );
+        let src = "<?php\nswitch ($n) {\n    case 0:\n        echo 'none';\n        break;\n}\n";
+        assert_eq!(
+            replace("case 0: $$$B", "case 1: $$$B", src),
+            src.replace("case 0", "case 1")
+        );
+        let src = "<?php\necho json_encode($v), \"\\n\";\n";
+        assert_eq!(
+            replace("$A, \"\\n\"", "$A, PHP_EOL", src),
+            "<?php\necho json_encode($v), PHP_EOL;\n"
+        );
+    }
 
     #[test]
     fn a_lone_sequence_body_matches_functions_and_methods_and_keeps_it() {
