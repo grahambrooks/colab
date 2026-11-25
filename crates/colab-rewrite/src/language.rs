@@ -237,7 +237,7 @@ impl SourceLanguage {
     }
 
     /// For `LanguageBackend::generalize` (`colab.generalize`).
-    pub fn generalize(&self, before: &str, after: &str) -> Result<colab_core::Generalized> {
+    pub fn generalize(&self, before: &str, after: &str) -> Result<Vec<colab_core::Generalized>> {
         crate::generalize::generalize(&(self.pattern)(), before, after)
             .map_err(|e| Error::Config(format!("{}: {e}", self.namespace)))
     }

@@ -44,6 +44,221 @@ pub fn generalize(
     language: &PatternLanguage,
     before: &str,
     after: &str,
+) -> Result<Vec<Generalized>, String> {
+    let (before, after) = (before.trim(), after.trim());
+    if before == after {
+        return Err("`before` and `after` are the same: there is no change to generalize".into());
+    }
+    // An Edit's text is a slice of lines that need not be one node
+    // (`func a() {` and the line changed): the lines both share at either
+    // end are context, not the change.
+    let (before, after) = changed_lines(before, after);
+    let (Some((tree_b, src_b, range_b)), Some((tree_a, src_a, range_a))) =
+        (locate(language, before), locate(language, after))
+    else {
+        // Too little to walk: try the snippets as one unit.
+        return generalize_one(language, before, after).map(|g| vec![g]);
+    };
+    let items_b = items(tree_b.root_node(), &range_b);
+    let items_a = items(tree_a.root_node(), &range_a);
+    if items_b.len() != items_a.len() || items_b.is_empty() {
+        return generalize_one(language, before, after).map(|g| vec![g]);
+    }
+    let mut units: Vec<(Node<'_>, Node<'_>)> = Vec::new();
+    for (b, a) in items_b.iter().zip(&items_a) {
+        differing(*b, *a, &src_b, &src_a, &mut units);
+    }
+    // Each unit generalized; one that finds nothing to vary is lifted to
+    // its parent, inside the snippet, and tried again.
+    let within = |n: Node<'_>, r: &Range<usize>| r.start <= n.start_byte() && n.end_byte() <= r.end;
+    let mut rules: Vec<(Range<usize>, Generalized)> = Vec::new();
+    let mut last_error = None;
+    for (mut b, mut a) in units {
+        loop {
+            match generalize_one(language, &src_b[b.byte_range()], &src_a[a.byte_range()]) {
+                Ok(g) => {
+                    rules.push((b.byte_range(), g));
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    match (b.parent(), a.parent()) {
+                        (Some(pb), Some(pa)) if within(pb, &range_b) && within(pa, &range_a) => {
+                            (b, a) = (pb, pa);
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        }
+    }
+    // A unit inside another (a lifted callee and its call) is the outer's.
+    let ranges: Vec<Range<usize>> = rules.iter().map(|(r, _)| r.clone()).collect();
+    let mut out: Vec<Generalized> = Vec::new();
+    for (range, g) in rules {
+        let inside_another = ranges
+            .iter()
+            .any(|r| *r != range && r.start <= range.start && range.end <= r.end);
+        if !inside_another && !out.contains(&g) {
+            out.push(g);
+        }
+    }
+    if out.is_empty() {
+        return Err(last_error.unwrap_or_else(|| "no change to generalize".into()));
+    }
+    Ok(out)
+}
+
+/// `before` and `after` without the whole lines they share at the start and
+/// at the end, trimmed; unchanged when that would leave either empty.
+fn changed_lines<'s>(before: &'s str, after: &'s str) -> (&'s str, &'s str) {
+    let lines_b: Vec<&str> = before.lines().collect();
+    let lines_a: Vec<&str> = after.lines().collect();
+    let shortest = lines_b.len().min(lines_a.len());
+    let head = lines_b
+        .iter()
+        .zip(&lines_a)
+        .take_while(|(b, a)| b == a)
+        .count()
+        .min(shortest);
+    let tail = lines_b
+        .iter()
+        .rev()
+        .zip(lines_a.iter().rev())
+        .take_while(|(b, a)| b == a)
+        .count()
+        .min(shortest - head);
+    if head + tail >= lines_b.len() || head + tail >= lines_a.len() {
+        return (before, after);
+    }
+    let middle = |lines: &[&str]| lines[head..lines.len() - tail].join("\n");
+    let (b, a) = (middle(&lines_b), middle(&lines_a));
+    // Borrowed back from the inputs, so the result lives as long as they do.
+    match (before.find(b.trim()), after.find(a.trim())) {
+        (Some(i), Some(j)) => (
+            &before[i..i + b.trim().len()],
+            &after[j..j + a.trim().len()],
+        ),
+        _ => (before, after),
+    }
+}
+
+/// The nodes a snippet is: the one named node spanning it, or the named
+/// children of the node containing it that lie inside it (statements in a
+/// block, items in a file).
+fn items<'t>(root: Node<'t>, range: &Range<usize>) -> Vec<Node<'t>> {
+    let Some(node) = node_spanning(root, range) else {
+        return Vec::new();
+    };
+    if node.byte_range() == *range {
+        return vec![node];
+    }
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .filter(|c| range.start <= c.start_byte() && c.end_byte() <= range.end && !c.is_extra())
+        .collect()
+}
+
+/// Whether `node` is a list of others (an argument or parameter list): never
+/// a unit or a value on its own, only what holds them.
+fn is_list(node: &Node<'_>) -> bool {
+    let kind = node.kind();
+    kind.ends_with("arguments")
+        || kind.ends_with("argument_list")
+        || kind.ends_with("parameters")
+        || kind.ends_with("_list")
+        || kind == "arguments"
+}
+
+/// `(b, a)` as a unit: a list stands for the node it belongs to (an
+/// argument list for its call), and so does a callee (`x.sort_by` is half
+/// of `x.sort_by(…)`'s change); anything inside an import is the import
+/// (`std::path::Path` alone would match every type path).
+fn unit<'t>(mut b: Node<'t>, mut a: Node<'t>) -> (Node<'t>, Node<'t>) {
+    while let (Some(pb), Some(pa)) = (b.parent(), a.parent())
+        && (is_list(&b) || field_of(&b) == Some("function"))
+    {
+        (b, a) = (pb, pa);
+    }
+    // Inside an import declaration: the whole declaration.
+    let mut up = b;
+    let mut up_a = a;
+    while let (Some(pb), Some(pa)) = (up.parent(), up_a.parent()) {
+        if is_import(&pb) {
+            return (pb, pa);
+        }
+        (up, up_a) = (pb, pa);
+    }
+    (b, a)
+}
+
+/// The field `node` sits in under its parent, if any.
+fn field_of<'t>(node: &Node<'t>) -> Option<&'t str> {
+    let parent = node.parent()?;
+    let mut cursor = parent.walk();
+    for (i, child) in parent.children(&mut cursor).enumerate() {
+        if child.id() == node.id() {
+            return parent.field_name_for_child(u32::try_from(i).ok()?);
+        }
+    }
+    None
+}
+
+/// An import declaration: Rust's `use`, Go's / Java's / JS's `import`, C's
+/// `#include`, PHP's `use`.
+fn is_import(node: &Node<'_>) -> bool {
+    let kind = node.kind();
+    kind == "use_declaration"
+        || kind.starts_with("import")
+        || kind.contains("include")
+        || kind == "namespace_use_declaration"
+        || kind == "using_directive"
+}
+
+/// The smallest pairs of subtrees where `b` and `a` differ: descend while
+/// both are the same kind with as many named children, stop where not. A
+/// differing leaf (a renamed callee) stands for its parent, which holds
+/// what varies around it.
+fn differing<'t>(
+    b: Node<'t>,
+    a: Node<'t>,
+    src_b: &str,
+    src_a: &str,
+    out: &mut Vec<(Node<'t>, Node<'t>)>,
+) {
+    if src_b[b.byte_range()] == src_a[a.byte_range()] {
+        return;
+    }
+    let (nb, na) = (b.named_child_count(), a.named_child_count());
+    if b.kind() == a.kind() && nb == na && nb > 0 {
+        let mut cb = b.walk();
+        let mut ca = a.walk();
+        let kids_b: Vec<Node<'t>> = b.named_children(&mut cb).collect();
+        let kids_a: Vec<Node<'t>> = a.named_children(&mut ca).collect();
+        let before = out.len();
+        for (kb, ka) in kids_b.iter().zip(&kids_a) {
+            if kb.named_child_count() == 0 && src_b[kb.byte_range()] != src_a[ka.byte_range()] {
+                // A leaf changed: the unit is this node, around it.
+                out.truncate(before);
+                out.push(unit(b, a));
+                return;
+            }
+            differing(*kb, *ka, src_b, src_a, out);
+        }
+        // Only anonymous tokens differ (an operator): this node is the unit.
+        if out.len() == before {
+            out.push(unit(b, a));
+        }
+        return;
+    }
+    out.push(unit(b, a));
+}
+
+/// One unit: `before` as one node, generalized against `after`.
+fn generalize_one(
+    language: &PatternLanguage,
+    before: &str,
+    after: &str,
 ) -> Result<Generalized, String> {
     let (before, after) = (before.trim(), after.trim());
     if before == after {
@@ -65,6 +280,11 @@ pub fn generalize(
 
     // The subtrees to abstract, by range in `source`.
     let mut cut: Vec<Range<usize>> = Vec::new();
+    if node.byte_range() != range {
+        return Err(
+            "`before` is not one syntax node; give one expression, statement or item".into(),
+        );
+    }
     let mut cursor = node.walk();
     for (i, child) in node.children(&mut cursor).enumerate() {
         let field = node.field_name_for_child(u32::try_from(i).unwrap_or(u32::MAX));
@@ -143,8 +363,10 @@ fn collect(
         return;
     }
     let text = &source[node.byte_range()];
-    let shared = !text.trim().is_empty() && !token_positions(after, text).is_empty();
-    let argument = parent.kind().contains("argument");
+    // A list is what holds the values, not one: look inside it.
+    let shared =
+        !is_list(&node) && !text.trim().is_empty() && !token_positions(after, text).is_empty();
+    let argument = !is_list(&node) && parent.kind().contains("argument");
     if shared || argument {
         cut.push(node.byte_range());
         return;

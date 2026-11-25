@@ -385,26 +385,34 @@ pub(crate) fn generalize(
     let learned = backend
         .generalize(&before, &after)
         .map_err(ToolError::from_error)?;
-    let rule = serde_json::json!({
-        "lang": lang,
-        "match": learned.pattern,
-        "replace": learned.template,
-    });
-    let rules = vec![rule.clone()];
-    let script = script_of(&rules)?;
-    let bindings: Map<String, Value> = learned
-        .bindings
+    // One rule per change the edit made (an edit with context lines, or
+    // two places changed, gives one for each).
+    let rules: Vec<Value> = learned
         .iter()
-        .map(|(var, text)| (var.clone(), Value::String(text.clone())))
+        .map(|g| serde_json::json!({"lang": lang, "match": g.pattern, "replace": g.template}))
         .collect();
+    let script = script_of(&rules)?;
+    let bindings: Vec<Value> = learned
+        .iter()
+        .map(|g| {
+            Value::Object(
+                g.bindings
+                    .iter()
+                    .map(|(var, text)| (var.clone(), Value::String(text.clone())))
+                    .collect(),
+            )
+        })
+        .collect();
+    let warnings: Vec<&String> = learned.iter().flat_map(|g| &g.warnings).collect();
     let mut out = serde_json::json!({
-        "rule": rule,
+        "rules": rules,
+        "rule": rules[0],
         "script": script,
         "bindings": bindings,
-        "next": "check the rule's matches below (or pass `paths`), adjust `match` / `replace` if needed, then call colab.preview and colab.apply with `rules: [rule]`",
+        "next": "check the rules' matches below (or pass `paths`), adjust `match` / `replace` if needed, then call colab.preview and colab.apply with `rules` as given here",
     });
-    if !learned.warnings.is_empty() {
-        out["warnings"] = serde_json::json!(learned.warnings);
+    if !warnings.is_empty() {
+        out["warnings"] = serde_json::json!(warnings);
     }
     if args.get("paths").is_some() {
         let mut find_args = args.clone();

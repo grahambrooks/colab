@@ -225,7 +225,13 @@ literal. `assert.Equal(t, 1, got)` → `require.Equal(t, got, 1)` gives
 `assert.Equal($A, $B, $C)` → `require.Equal($A, $C, $B)`, with its other
 matches under `paths`. A value `after` holds only inside a longer token
 (`"read config"` in `"read config: %w"`) is a warning: the template writes
-it as it is. The reply's `rule` goes to `colab.apply` as `rules: [rule]`.
+it as it is. The reply's `rules` go to `colab.apply` as they are.
+
+The edit need not be one node: lines `before` and `after` share at either
+end are context and left out, and the two trees are compared so that each
+place the edit changed gives a rule of its own (two calls changed in one
+block give two rules). A changed callee stands for its whole call, and a
+change inside an import for the import.
 
 You can also write rules as JSON directly.
 

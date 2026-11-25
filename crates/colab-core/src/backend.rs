@@ -340,7 +340,7 @@ pub trait LanguageBackend: Send + Sync {
     /// `after` (one edit an agent made by hand) wherever else it applies,
     /// for `colab.generalize`. Backends without a source grammar keep the
     /// default, which says so.
-    fn generalize(&self, _before: &str, _after: &str) -> Result<Generalized> {
+    fn generalize(&self, _before: &str, _after: &str) -> Result<Vec<Generalized>> {
         Err(crate::Error::UnsupportedOperation(format!(
             "`{}` cannot generalize an edit: it works for source-language backends",
             self.lang()

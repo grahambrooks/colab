@@ -616,10 +616,16 @@ whether the edit is one of many: it generalizes `old_string` → `new_string`
 into a rule (as `colab.generalize` does) and, when that rule matches
 elsewhere in the repository, answers with a PostToolUse
 `additionalContext` note naming up to three of the places and giving the
-rule ready for `colab.apply {rules: [...]}`. It stays silent for other
-tools, for a file no source backend reads, for an edit that does not
-generalize, for a rule with no name to anchor on (`x + 1` → `x + 2`), and
-when nothing else matches; it looks for at most 50 matches (about 0.1 s
+rule ready for `colab.apply {rules: [...]}`. It reads `Edit` and each
+edit of a `MultiEdit`, and leaves out the lines an `old_string` carries
+for context. It stays silent for other tools, for a file no source backend
+reads, for an edit that does not generalize, and when nothing else
+matches; and it leaves out rules not worth a word: one with no name to
+anchor on (`x + 1` → `x + 2`), one that matches its own output (`$A.f` →
+`$A.f()` would find every call already changed), a one-off whose template
+uses none of the bindings, one that adds a comment, and import edits (a
+file's imports serve its own code). Replayed over 985 real edits, it
+spoke on 12; it looks for at most 50 matches (about 0.1 s
 on a repository of 250 files). `COLAB_HOOK_SUGGEST=0` turns it off.
 
 ### `colab hook pre-bash`

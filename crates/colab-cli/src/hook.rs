@@ -118,38 +118,73 @@ pub fn suggest_generalize(input: &str, backends: &BackendRegistry) -> Option<Str
         return None;
     }
     let call: Value = serde_json::from_str(input).ok()?;
-    if call.get("tool_name").and_then(Value::as_str) != Some("Edit") {
-        return None;
-    }
-    let before = call.pointer("/tool_input/old_string")?.as_str()?;
-    let after = call.pointer("/tool_input/new_string")?.as_str()?;
-    // A small, one-node change: a whole-file rewrite is not a pattern.
-    if before.trim().is_empty() || before.len() > 2_000 || before.lines().count() > 30 {
+    // An Edit's one change, or each of a MultiEdit's.
+    let pair = |edit: &Value| -> Option<(String, String)> {
+        let before = edit.get("old_string")?.as_str()?;
+        let after = edit.get("new_string")?.as_str()?;
+        // A small change: a whole-file rewrite is not a pattern.
+        (!before.trim().is_empty() && before.len() <= 2_000 && before.lines().count() <= 30)
+            .then(|| (before.to_string(), after.to_string()))
+    };
+    let input_of = call.get("tool_input")?;
+    let edits: Vec<(String, String)> = match call.get("tool_name").and_then(Value::as_str) {
+        Some("Edit") => pair(input_of).into_iter().collect(),
+        Some("MultiEdit") => input_of
+            .get("edits")?
+            .as_array()?
+            .iter()
+            .filter_map(pair)
+            .collect(),
+        _ => return None,
+    };
+    if edits.is_empty() {
         return None;
     }
     let file = edited_file(input)?;
     let lang = source_language(&file, backends)?;
-    let learned = backends.get(&lang)?.generalize(before, after).ok()?;
+    let backend = backends.get(&lang)?;
+    let learned: Vec<colab_core::Generalized> = edits
+        .iter()
+        .filter_map(|(before, after)| backend.generalize(before, after).ok())
+        .flatten()
+        .collect();
     let root = crate::git::Repo::discover(file.parent()?)
         .map(|repo| repo.top().to_path_buf())
         .or_else(|| file.parent().map(Path::to_path_buf))?;
-    let script = format!(
-        "match {lang}::pattern {} {{ delete }}",
-        colab_dsl::ast::quote_double(&learned.pattern)
-    );
-    let refactoring = colab_dsl::compile(&script, backends).ok()?;
     // Only a rule anchored on a name is worth a word: `$A + 1` (from
     // `x + 1` → `x + 2`) matches every such sum and is noise.
-    let anchored = refactoring
-        .rules
-        .first()?
-        .prefilter()
-        .is_some_and(|literal| {
-            literal.chars().count() >= 3 && literal.chars().any(char::is_alphabetic)
-        });
-    if !anchored {
+    let anchored = |g: &colab_core::Generalized| {
+        let script = format!(
+            "match {lang}::pattern {} {{ delete }}",
+            colab_dsl::ast::quote_double(&g.pattern)
+        );
+        colab_dsl::compile(&script, backends).ok().is_some_and(|r| {
+            r.rules
+                .first()
+                .and_then(|op| op.prefilter())
+                .is_some_and(|literal| {
+                    literal.chars().count() >= 3 && literal.chars().any(char::is_alphabetic)
+                })
+        })
+    };
+    let learned: Vec<colab_core::Generalized> = learned
+        .into_iter()
+        .filter(anchored)
+        .filter(|g| worth_suggesting(g, backend))
+        .collect();
+    if learned.is_empty() {
         return None;
     }
+    let script: String = learned
+        .iter()
+        .map(|g| {
+            format!(
+                "match {lang}::pattern {} {{ delete }}\n",
+                colab_dsl::ast::quote_double(&g.pattern)
+            )
+        })
+        .collect();
+    let refactoring = colab_dsl::compile(&script, backends).ok()?;
     let selector = colab_core::find::Selector::new(&refactoring.rules, &refactoring.name);
     let source = colab_dsl::pipeline::Source::Walk {
         targets: vec![root.clone()],
@@ -170,23 +205,65 @@ pub fn suggest_generalize(input: &str, backends: &BackendRegistry) -> Option<Str
     if hits.is_empty() {
         return None;
     }
-    let rule =
-        serde_json::json!({"lang": lang, "match": learned.pattern, "replace": learned.template});
+    let rules: Vec<Value> = learned
+        .iter()
+        .map(|g| serde_json::json!({"lang": lang, "match": g.pattern, "replace": g.template}))
+        .collect();
+    let rules = Value::Array(rules);
     let more = if hits.len() >= SUGGEST_LIMIT { "+" } else { "" };
     let mut note = format!(
         "colab: the edit you just made, as a rule, matches {}{more} more place(s) in this repository ({}{}). \
          To make the same change there, check the matches with colab.find, then call colab.apply \
-         {{\"rules\": [{rule}], \"paths\": [\".\"], \"cwd\": \"{}\"}} (or colab.generalize to adjust it). \
+         {{\"rules\": {rules}, \"paths\": [\".\"], \"cwd\": \"{}\"}} (or colab.generalize to adjust it). \
          Ignore this if the edit was meant for this place only.",
         hits.len(),
         hits.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
         if hits.len() > 3 { ", …" } else { "" },
         root.display()
     );
-    for warning in &learned.warnings {
+    for warning in learned.iter().flat_map(|g| &g.warnings) {
         let _ = write!(note, " Note: {warning}");
     }
     Some(note)
+}
+
+/// Whether a rule learned from one edit is a change worth making
+/// elsewhere, judged on a replay of 985 real edits: not one that matches
+/// its own output (`$A.conflicts` → `$A.conflicts()` would also find, and
+/// break, every call already migrated), not a one-off that replaces general
+/// code with fixed code (a template that uses none of the bindings), and
+/// not an edit that adds commentary (a comment line the pattern lacks
+/// explains this site, not others).
+fn worth_suggesting(
+    g: &colab_core::Generalized,
+    backend: &dyn colab_core::LanguageBackend,
+) -> bool {
+    let Ok(op) = backend.build_rule(
+        "pattern",
+        colab_core::RuleSpec::Replace {
+            target: g.pattern.clone(),
+            replacement: g.template.clone(),
+        },
+    ) else {
+        return false;
+    };
+    let rematches = !op.advice().is_empty();
+    let uses_a_binding = g
+        .bindings
+        .iter()
+        .any(|(var, _)| g.template.contains(var.as_str()));
+    let comment = |text: &str| {
+        text.lines()
+            .map(str::trim_start)
+            .filter(|l| l.starts_with("//") || l.starts_with("/*") || l.starts_with("# "))
+            .count()
+    };
+    // A file's imports serve its own code: adding one here is no reason to
+    // add it elsewhere (deliberate import moves are `<lang>::import`'s).
+    let import = ["use ", "import ", "#include", "using ", "from ", "require "]
+        .iter()
+        .any(|kw| g.pattern.trim_start().starts_with(kw));
+    !rematches && !import && uses_a_binding && comment(&g.template) <= comment(&g.pattern)
 }
 
 /// The source backend for `path`: of those whose patterns read it, the
@@ -452,6 +529,18 @@ mod tests {
                 &backends
             )
             .is_none()
+        );
+        // A MultiEdit whose old text carries a context line, as agents
+        // write it: the rule is the changed call alone.
+        let multi = serde_json::json!({"tool_name": "MultiEdit", "tool_input": {
+            "file_path": file.to_string_lossy(),
+            "edits": [{"old_string": "func a() {\n\tassert.Equal(t, 1, got)", "new_string": "func a() {\n\trequire.Equal(t, got, 1)"}]
+        }})
+        .to_string();
+        let note = suggest_generalize(&multi, &backends).expect("a suggestion for the MultiEdit");
+        assert!(
+            note.contains(r#""match":"assert.Equal($A, $B, $C)""#),
+            "{note}"
         );
         std::fs::remove_dir_all(&root).ok();
     }

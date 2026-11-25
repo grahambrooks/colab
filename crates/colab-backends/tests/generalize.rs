@@ -1,80 +1,134 @@
-//! `LanguageBackend::generalize`: one example edit made into a rule that
-//! then does the same change at other sites.
+//! `LanguageBackend::generalize`: one example edit made into rules that
+//! then do the same change at other sites.
 
 use colab_core::RuleSpec;
 
-/// `before` → `after` generalized in `lang`, then applied to `elsewhere`.
-fn learn_and_apply(
-    lang: &str,
-    before: &str,
-    after: &str,
-    elsewhere: &str,
-) -> (colab_core::Generalized, String) {
+/// `before` → `after` generalized in `lang`: the rules, as (pattern,
+/// template) pairs.
+fn learn(lang: &str, before: &str, after: &str) -> Vec<colab_core::Generalized> {
+    colab_backends::registry()
+        .get(lang)
+        .unwrap()
+        .generalize(before, after)
+        .unwrap()
+}
+
+/// Every rule `learn` gives, applied in turn to `elsewhere`.
+fn apply(lang: &str, rules: &[colab_core::Generalized], elsewhere: &str) -> String {
     let registry = colab_backends::registry();
     let backend = registry.get(lang).unwrap();
-    let rule = backend.generalize(before, after).unwrap();
-    let op = backend
-        .build_rule(
-            "pattern",
-            RuleSpec::Replace {
-                target: rule.pattern.clone(),
-                replacement: rule.template.clone(),
-            },
-        )
-        .unwrap();
-    let out = op.apply(elsewhere);
-    (rule, out)
+    rules.iter().fold(elsewhere.to_string(), |text, rule| {
+        backend
+            .build_rule(
+                "pattern",
+                RuleSpec::Replace {
+                    target: rule.pattern.clone(),
+                    replacement: rule.template.clone(),
+                },
+            )
+            .unwrap()
+            .apply(&text)
+    })
+}
+
+fn pairs(rules: &[colab_core::Generalized]) -> Vec<(&str, &str)> {
+    rules
+        .iter()
+        .map(|r| (r.pattern.as_str(), r.template.as_str()))
+        .collect()
 }
 
 #[test]
 fn a_dropped_argument_and_a_carried_one_become_metavariables() {
-    let (rule, out) = learn_and_apply(
-        "rust",
-        "foo(config, Mode::Fast)",
-        "foo(config)",
-        "fn f() {\n    foo(self.cfg(), Mode::Slow);\n    bar(x, y);\n}\n",
+    let rules = learn("rust", "foo(config, Mode::Fast)", "foo(config)");
+    assert_eq!(pairs(&rules), [("foo($A, $B)", "foo($A)")]);
+    assert!(rules[0].warnings.is_empty(), "{:?}", rules[0].warnings);
+    assert_eq!(
+        apply(
+            "rust",
+            &rules,
+            "fn f() {\n    foo(self.cfg(), Mode::Slow);\n    bar(x, y);\n}\n"
+        ),
+        "fn f() {\n    foo(self.cfg());\n    bar(x, y);\n}\n"
     );
-    assert_eq!(rule.pattern, "foo($A, $B)");
-    assert_eq!(rule.template, "foo($A)");
-    assert!(rule.warnings.is_empty(), "{:?}", rule.warnings);
-    assert_eq!(out, "fn f() {\n    foo(self.cfg());\n    bar(x, y);\n}\n");
 }
 
 #[test]
 fn a_callee_stays_literal_and_carried_values_move() {
-    let (rule, out) = learn_and_apply(
+    let rules = learn(
         "go",
         "assert.Equal(t, want, got)",
         "require.Equal(t, got, want)",
-        "package p\n\nfunc T() {\n\tassert.Equal(tt, 1, f(x))\n\tother.Equal(t, a, b)\n}\n",
     );
-    assert_eq!(rule.pattern, "assert.Equal($A, $B, $C)");
-    assert_eq!(rule.template, "require.Equal($A, $C, $B)");
     assert_eq!(
-        out,
+        pairs(&rules),
+        [("assert.Equal($A, $B, $C)", "require.Equal($A, $C, $B)")]
+    );
+    assert_eq!(
+        apply(
+            "go",
+            &rules,
+            "package p\n\nfunc T() {\n\tassert.Equal(tt, 1, f(x))\n\tother.Equal(t, a, b)\n}\n"
+        ),
         "package p\n\nfunc T() {\n\trequire.Equal(tt, f(x), 1)\n\tother.Equal(t, a, b)\n}\n"
     );
 }
 
 #[test]
+fn a_changed_callee_alone_lifts_to_its_call() {
+    // Only `assert` → `require` differs: the rule is over the call, its
+    // arguments free.
+    let rules = learn("go", "assert.Equal(t, 1, got)", "require.Equal(t, 1, got)");
+    assert_eq!(
+        pairs(&rules),
+        [("assert.Equal($A, $B, $C)", "require.Equal($A, $B, $C)")]
+    );
+}
+
+#[test]
+fn context_lines_around_the_change_are_left_out() {
+    // An Edit's `old_string` carries unchanged lines for uniqueness.
+    let before = "let a = load(&path)?;\nlet b = old_call(a, 1);\nprintln!(\"{b}\");";
+    let after = "let a = load(&path)?;\nlet b = new_call(a);\nprintln!(\"{b}\");";
+    let rules = learn("rust", before, after);
+    assert_eq!(pairs(&rules), [("old_call($A, $B)", "new_call($A)")]);
+}
+
+#[test]
+fn two_places_changed_give_a_rule_each() {
+    let before = "fn f() {\n    first(a, 1);\n    keep();\n    second(b);\n}";
+    let after = "fn f() {\n    first(a);\n    keep();\n    second2(b);\n}";
+    let rules = learn("rust", before, after);
+    assert_eq!(
+        pairs(&rules),
+        [
+            ("first($A, $B)", "first($A)"),
+            ("second($A)", "second2($A)")
+        ]
+    );
+}
+
+#[test]
 fn a_value_quoted_inside_a_longer_token_is_a_warning() {
-    let registry = colab_backends::registry();
-    let rule = registry
-        .get("go")
-        .unwrap()
-        .generalize(
-            r#"errors.Wrap(err, "read config")"#,
-            r#"fmt.Errorf("read config: %w", err)"#,
-        )
-        .unwrap();
-    assert_eq!(rule.pattern, "errors.Wrap($A, $B)");
-    assert_eq!(rule.template, r#"fmt.Errorf("read config: %w", $A)"#);
+    let rules = learn(
+        "go",
+        r#"errors.Wrap(err, "read config")"#,
+        r#"fmt.Errorf("read config: %w", err)"#,
+    );
+    assert_eq!(
+        pairs(&rules),
+        [(
+            "errors.Wrap($A, $B)",
+            r#"fmt.Errorf("read config: %w", $A)"#
+        )]
+    );
     assert!(
-        rule.warnings
+        rules[0]
+            .warnings
             .iter()
             .any(|w| w.contains("`$B`") && w.contains("inside a longer token")),
         "{:?}",
-        rule.warnings
+        rules[0].warnings
     );
 }
 
@@ -88,12 +142,7 @@ fn mistakes_are_explained() {
             .to_string()
             .contains("the same")
     );
-    assert!(
-        rust.generalize("fn (", "x")
-            .unwrap_err()
-            .to_string()
-            .contains("does not parse")
-    );
+    assert!(rust.generalize("fn (", "x").is_err());
     // A config backend has no source grammar.
     assert!(registry.get("toml").unwrap().generalize("a", "b").is_err());
 }

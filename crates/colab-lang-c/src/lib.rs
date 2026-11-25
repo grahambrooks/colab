@@ -119,7 +119,7 @@ impl LanguageBackend for CBackend {
         LANG.syntax_tree(input)
     }
 
-    fn generalize(&self, before: &str, after: &str) -> Result<colab_core::Generalized> {
+    fn generalize(&self, before: &str, after: &str) -> Result<Vec<colab_core::Generalized>> {
         LANG.generalize(before, after)
     }
 
