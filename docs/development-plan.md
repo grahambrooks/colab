@@ -191,6 +191,69 @@ nothing. `colab server`, its module and its test are gone, and with them
 are still `colab_dsl::check`, which the corpus harness uses; agents get
 the same compile errors and warnings from `colab.lint_script`.
 
+### Direction: pure-Rust syntax trees (decided to explore, 2026-11-25)
+
+tree-sitter's grammars are C, compiled by `cc` in every build; the
+preference is a pure-Rust colab, at the cost of some languages if need
+be. A spike on 2026-11-25 built each candidate parser and fed it a
+realistic snippet, the same snippet with a syntax error in its middle
+function, and a 5,000-line file:
+
+| Language | Crate | Lossless | Recovers from an error | Pure Rust | Risk | Verdict |
+| -------- | ----- | -------- | ---------------------- | --------- | ---- | ------- |
+| Rust | `ra_ap_syntax` 0.0.364 (rust-analyzer, rowan) | yes, comments are tokens | yes, one `ERROR` node, the rest intact | yes | weekly 0.0.x releases that break freely | strong |
+| JS / TS / TSX | `biome_js_parser` 0.7.3 (rowan-style) | yes, comments are trivia | yes, `BOGUS` nodes | yes | sporadic crates.io releases; types moved between crates | strong |
+| JSON | `biome_json_parser` 0.7.3 | yes | yes | yes | as above | strong |
+| YAML | `biome_yaml_parser` 0.7.3 | yes | partly | yes | new on crates.io | usable |
+| Python | `ruff_python_parser` 0.0.23 | AST with ranges; tokens cover the rest | yes, except an unclosed bracket swallows the file | yes | "internal component crate of Ruff", 0.0.x | usable |
+| PHP | `mago-syntax` 1.61 | nodes and trivia have spans; brackets are span-only fields | yes | no: `cc` through `blake3` (its `pure` feature may avoid it; untested) | one owner | usable |
+| Markdown | `pulldown-cmark` 0.13 | events with byte ranges, no token tree | no errors to recover from | yes | very active | usable as an index |
+| C / C++ | `cpp_parser` 0.4 (rowan) | yes | yes | yes | a month old, one author, wants preprocessed input | risky |
+| JS / TS | `oxc_parser` 0.160 | AST with spans | **no**: any error leaves an empty program | yes | — | weak |
+| Go | `gosyn` 0.2.16 | no (start offsets only) | **no** | yes | one owner | weak |
+| Ruby | `lib-ruby-parser` 4.0.6 | AST with locations | sometimes | yes | last release 2024-04, Ruby 3.1 | weak |
+| C | `lang-c` 0.15 | no, rejects comments | **no** | yes | last release 2023-09 | none |
+| YAML | `saphyr-parser` 0.4 | events; markers count characters | **no** | yes | — | weak |
+| Java, C#, Kotlin, Swift | — | — | — | — | nothing credible; ANTLR's pure-Rust runtimes (`antlr4rust`) with the grammars-v4 grammars are the only route, unproven for recovery or losslessness | none |
+
+So pure Rust covers **Rust, JavaScript, TypeScript, TSX, Python, PHP,
+JSON, YAML, TOML (`toml_edit`, already) and Markdown** well, and **Go,
+Java, Kotlin, C#, Swift, C, C++ and Ruby** not at all today. Go, Java and
+Kotlin are the losses that hurt most: the workspace colab maintains has
+about seven Go repositories and six Maven / Gradle ones.
+
+What the move takes, whichever languages stay:
+
+1. **A tree of colab's own.** The engine reads tree-sitter's node API
+   (kind, named children, fields, byte ranges) throughout. A generic
+   lossless tree (`rowan`, itself pure Rust, or a small type of colab's)
+   with a tree-sitter adapter first changes nothing and gives every later
+   step a target. The rowan-based parsers (rust-analyzer, biome) map onto
+   it almost directly; the AST-with-spans ones (ruff, mago) need the
+   text between child spans made into anonymous tokens, and comments
+   attached from their side list. None of them exposes tree-sitter's
+   *named fields* generically, so each language needs a field table
+   (written, or generated from its typed layer) for `replace_call`,
+   `where … field`, declarations and the like.
+2. **The matcher of colab's own** ([above](#dependencies-what-each-one-buys)),
+   over that tree. ast-grep is tree-sitter's; this step was due anyway.
+3. **One language at a time, behind the parity bar** (conformance
+   matrix, property suite, corpus): Rust first (the best parser, and
+   colab's own code to dogfood on), then JS / TS / TSX / JSON, Python,
+   Markdown, PHP.
+4. **The rest: drop, write, or gate.** Per language: drop it; write a
+   lossless recovering parser of colab's own (Go is the candidate: a
+   small, regular grammar, perhaps 4–6k lines in rust-analyzer's style;
+   Java is larger, Kotlin much larger); or keep tree-sitter for it behind
+   a Cargo feature, so the default build is pure Rust while the
+   languages last.
+
+The cost to weigh: four upstreams that break on most bumps (rust-analyzer
+weekly at 0.0.x, Ruff "internal", Biome's moves) instead of one stable
+runtime API, so each must be pinned exactly and bumped on purpose, with
+the conformance matrix as the check. The spike's crates are in the
+session scratchpad, `parser-spike/`, and are not kept.
+
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would
 drop them and could give agent-oriented error messages; worth it when the
