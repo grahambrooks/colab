@@ -4,6 +4,47 @@
 
 use super::*;
 
+/// Whether every syntax error inside `m` lies within one of its captures,
+/// whose text a rewrite copies as written. ast-grep passes over an `ERROR`
+/// node as it does any unnamed child, so `old($A)` matched `old(x :: y)`
+/// with `$A` = `x`, and the rewrite dropped `:: y`; a JavaScript rule over
+/// a `.ts` file lost `x as` from `old(x as any)` the same way. Such a match
+/// is no match: what it would change is not what the pattern describes.
+fn errors_captured(m: &NodeMatch<'_, StrDoc<TsLang>>) -> bool {
+    let node = m.get_node().get_inner_node();
+    if !node.has_error() {
+        return true;
+    }
+    let mut errors = Vec::new();
+    let mut stack = vec![node];
+    while let Some(n) = stack.pop() {
+        if n.is_error() {
+            errors.push(n.byte_range());
+        } else if n.has_error() {
+            stack.extend(n.children(&mut n.walk()));
+        }
+    }
+    if errors.is_empty() {
+        // Only `MISSING` nodes, which hold no text to lose.
+        return true;
+    }
+    let env = m.get_env();
+    let spans: Vec<std::ops::Range<usize>> = env
+        .get_matched_variables()
+        .filter_map(|var| match var {
+            MetaVariable::Capture(name, _) => env.get_match(&name).map(ast_grep_core::Node::range),
+            MetaVariable::MultiCapture(name) => {
+                let nodes = env.get_multiple_matches(&name);
+                Some(nodes.first()?.range().start..nodes.last()?.range().end)
+            }
+            _ => None,
+        })
+        .collect();
+    errors
+        .iter()
+        .all(|e| spans.iter().any(|s| s.start <= e.start && e.end <= s.end))
+}
+
 impl StructuralPattern {
     /// Every match in the tree that satisfies the constraints, judged in
     /// `frame` when `source` is a macro's contents.
@@ -22,6 +63,7 @@ impl StructuralPattern {
         let mut found: Vec<_> = candidates(grep, source, &self.pattern)
             .into_iter()
             .filter(|m| self.shape.fits(m.get_node()))
+            .filter(errors_captured)
             .filter(|m| {
                 self.led
                     .is_none_or(|k| leading_modifiers(m.get_node(), self.lang.modifier_tokens) == k)

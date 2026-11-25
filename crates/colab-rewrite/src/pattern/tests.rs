@@ -53,6 +53,24 @@ fn an_empty_sequence_takes_its_separator_with_it() {
 }
 
 #[test]
+fn a_syntax_error_outside_every_capture_is_no_match() {
+    // `$A` is `x`; the `ERROR` holding `:: y` was skipped, and lost.
+    let src = "package p\nfunc f() {\n\told(x :: y)\n\told(z)\n}\n";
+    let one = StructuralPattern::compile(&go(), "old($A)").unwrap();
+    assert_eq!(
+        one.rewrite(src, "neu($A)"),
+        "package p\nfunc f() {\n\told(x :: y)\n\tneu(z)\n}\n"
+    );
+    assert_eq!(one.find(src).len(), 1, "find agrees");
+    // Inside a capture the error is copied as written, so it may stay.
+    let all = StructuralPattern::compile(&go(), "old($$$A)").unwrap();
+    assert_eq!(
+        all.rewrite(src, "neu($$$A)"),
+        "package p\nfunc f() {\n\tneu(x :: y)\n\tneu(z)\n}\n"
+    );
+}
+
+#[test]
 fn a_rewrite_keeps_the_layout_of_what_it_does_not_change() {
     // A one-line template over a many-line match changes one name.
     assert_eq!(

@@ -457,6 +457,12 @@ How it matches:
   initializer, so colab reads it as `{ $$$B; }`, a function body. A
   bare `$$$` is an anonymous sequence wherever `$$$B` is accepted, so
   `where inside 'mod tests { $$$ }'` scopes a Rust rule to a test module.
+- **Code that does not parse is matched only through captures.** A match
+  holding a syntax error outside every capture is no match:
+  `go::pattern 'old($A)'` leaves `old(x :: y)` alone, where the rewrite
+  would have kept `x` and lost `:: y`, while `old($$$A)` copies the whole
+  argument list, error and all. The same keeps a `js::` rule from
+  rewriting TypeScript-only syntax in a `.ts` file; use `ts::` there.
 - **Whitespace-only rewrites are not made.** A result that differs from
   what it matched only in whitespace outside quotes — `f($$$A)` →
   `f($$$A)` over a call whose arguments span lines — changes no token, so

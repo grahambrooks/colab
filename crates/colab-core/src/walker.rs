@@ -48,6 +48,9 @@ use crate::transformer::CodeTransformer;
 /// 12 cores busy, at 4096 all of them, for about 10% more peak memory.
 const WINDOW: usize = 4096;
 
+/// Each walker thread's stack: see [`build_pool`].
+const WORKER_STACK: usize = 64 * 1024 * 1024;
+
 /// Build a rayon thread pool sized for this walk. Each call to
 /// [`walk_with`] gets its own pool so back-to-back invocations with
 /// different `jobs` settings honour the new value (the rayon
@@ -57,8 +60,12 @@ fn build_pool(jobs: Option<usize>) -> Result<ThreadPool> {
     let n = jobs
         .filter(|j| *j > 0)
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, std::num::NonZero::get));
+    // Tree walks recurse once per nesting level, so rayon's 2 MiB default
+    // aborted the whole run on a file nested ~4000 deep (generated or
+    // minified code). The stack is reserved, not committed.
     rayon::ThreadPoolBuilder::new()
         .num_threads(n)
+        .stack_size(WORKER_STACK)
         .build()
         .map_err(|e| Error::Config(format!("could not build thread pool: {e}")))
 }

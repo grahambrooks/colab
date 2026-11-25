@@ -22,6 +22,23 @@ pub(super) struct Rewriter<'a, 't> {
     /// the pattern's head, so a rewrite puts back a match's modifiers that
     /// the template leaves out ([`keep_modifier_tokens`]). `None` for none.
     pub(super) keep: Option<(&'static [&'static str], &'a str)>,
+    /// `matches`' ranges with their indices, by start, then the wider
+    /// first, then the earlier match ([`match_order`]), so
+    /// [`Self::outermost`] is one sweep, not a comparison of every pair.
+    pub(super) order: Vec<(std::ops::Range<usize>, usize)>,
+}
+
+/// The ranges of `matches` in the order [`Rewriter::outermost`] sweeps.
+pub(super) fn match_order(
+    matches: &[NodeMatch<'_, StrDoc<TsLang>>],
+) -> Vec<(std::ops::Range<usize>, usize)> {
+    let mut order: Vec<_> = matches
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.range(), i))
+        .collect();
+    order.sort_by_key(|(r, i)| (r.start, std::cmp::Reverse(r.end), *i));
+    order
 }
 
 impl Rewriter<'_, '_> {
@@ -35,26 +52,26 @@ impl Rewriter<'_, '_> {
         span: std::ops::Range<usize>,
         outer: Option<usize>,
     ) -> Vec<usize> {
-        let inside: Vec<(usize, std::ops::Range<usize>)> = self
-            .matches
-            .iter()
-            .enumerate()
-            .filter(|&(i, _)| Some(i) != outer)
-            .map(|(i, m)| (i, m.range()))
-            .filter(|(_, r)| r.start >= span.start && r.end <= span.end)
-            .collect();
-        let mut out: Vec<(usize, std::ops::Range<usize>)> = Vec::new();
-        for (i, r) in &inside {
-            let covered = inside.iter().any(|(j, other)| {
-                let contains = other.start <= r.start && r.end <= other.end;
-                contains && (other != r || j < i)
-            });
-            if !covered {
-                out.push((*i, r.clone()));
+        // In `order`, every match that contains another inside `span`
+        // comes before it, so a match is covered exactly when one before
+        // it inside the span reaches as far.
+        let first = self.order.partition_point(|(r, _)| r.start < span.start);
+        let mut out = Vec::new();
+        let mut reach: Option<usize> = None;
+        for (r, i) in &self.order[first..] {
+            if r.start > span.end {
+                break;
             }
+            if r.end > span.end || Some(*i) == outer {
+                continue;
+            }
+            if reach.is_some_and(|end| r.end <= end) {
+                continue;
+            }
+            reach = Some(reach.map_or(r.end, |end| end.max(r.end)));
+            out.push(*i);
         }
-        out.sort_by_key(|(_, r)| r.start);
-        out.into_iter().map(|(i, _)| i).collect()
+        out
     }
 
     /// `source[span]` with each outermost match inside it rewritten.
@@ -963,6 +980,7 @@ impl StructuralPattern {
                         matches,
                         template: None,
                         keep: None,
+                        order: match_order(matches),
                     })
                     .collect()
             })
@@ -975,6 +993,7 @@ impl StructuralPattern {
             matches: &matches,
             template: Some((&template, &self.lang, &names)),
             keep: self.kept_modifiers(&template),
+            order: match_order(&matches),
         };
         let edits: Vec<crate::Edit> = rewriter
             .outermost(0..source.len(), None)
