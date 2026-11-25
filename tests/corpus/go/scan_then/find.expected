@@ -1,5 +1,5 @@
 api/store.go:3:1: [0] func Load(id string) error {\n	return nil\n}
-    $B = return nil\n
+    $B = return nil
     $F = Load
     $P = id string
 api/store.go:7:1: [0] func Save(id string, v int) error { return nil }

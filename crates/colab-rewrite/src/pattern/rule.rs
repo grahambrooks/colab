@@ -22,7 +22,8 @@ pub enum PatternAction {
 /// to and print its namespace.
 #[derive(Debug)]
 pub struct PatternRule {
-    pub pattern: StructuralPattern,
+    /// On colab's own matcher (`crate::syntax`).
+    pub pattern: crate::syntax::RulePattern,
     pub action: PatternAction,
     /// How this language spells a qualified name, for
     /// [`conflicts`](PatternRule::conflicts). `None` skips that check.
@@ -91,8 +92,7 @@ impl PatternRule {
             PatternAction::Delete => {}
         }
         Ok(Self {
-            pattern: StructuralPattern::compile(language, text)?
-                .constrain(language, constraints)?,
+            pattern: crate::syntax::RulePattern::compile(language, text, constraints)?,
             action,
             qualifiers: None,
         })
@@ -168,7 +168,7 @@ impl PatternRule {
         let (Some(q), PatternAction::Replace(template)) = (self.qualifiers, &self.action) else {
             return Vec::new();
         };
-        let grammar = &self.pattern.lang.grammar;
+        let grammar = &self.pattern.language().grammar;
         let (Ok(old), Ok(new)) = (parse_clean(grammar, before), parse_clean(grammar, after)) else {
             return Vec::new();
         };

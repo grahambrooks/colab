@@ -55,6 +55,21 @@ impl Frame<'_> {
     fn to_file(&self, span: std::ops::Range<usize>) -> std::ops::Range<usize> {
         (self.map)(span.start)..(self.map)(span.end)
     }
+
+    /// The frame of the same wrapped text after edits inside the contents
+    /// took it from `from` bytes to `to`: the wrapper's text after the
+    /// contents is where it was from the end. Positions still map as they
+    /// were read, so a semantic question asks about the place before the
+    /// edit.
+    pub fn resized(&self, from: usize, to: usize) -> Frame<'_> {
+        let tail = from - self.contents.end;
+        Frame {
+            contents: self.contents.start..to - tail,
+            outside: self.outside,
+            file: self.file,
+            map: Box::new(move |p| (self.map)(p)),
+        }
+    }
 }
 
 enum StopAt {

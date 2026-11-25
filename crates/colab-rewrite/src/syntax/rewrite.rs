@@ -14,9 +14,9 @@ use colab_syntax::pattern::{Binding, Match, PatternNode};
 
 use super::{Checks, EngineForm, Forms, Frame, Role};
 use crate::pattern::{
-    PatternLanguage, indent_with_tabs, keep_layout, only_metavariables, qualify_call, root_path,
-    same_but_whitespace, shift_lines, shorthand_template, strip_blank_line_indent, tighten,
-    transformable_template,
+    PatternLanguage, indent_with_tabs, keep_layout, keep_modifier_words, only_metavariables,
+    qualify_call, root_path, same_but_whitespace, shift_lines, shorthand_template,
+    strip_blank_line_indent, tighten, transformable_template,
 };
 use crate::{Edit, apply_edits};
 
@@ -180,6 +180,10 @@ struct Rewriter<'a, 't> {
     /// Whether a match's absorbed modifiers go back in front of the
     /// template's text.
     gives_back: bool,
+    /// The language's modifier keywords and the pattern's head (before
+    /// its first `(` or `{`), for a template that leaves some out; `None`
+    /// without any, or for a template that only unwraps.
+    keep: Option<(&'static [&'static str], &'a str)>,
     lets: &'a [Derived],
     /// The rewriter of each `let` with a `rewrite` step, by position: one
     /// per form its patterns compiled to (empty without one).
@@ -339,6 +343,20 @@ impl Rewriter<'_, '_> {
             }
             _ => text,
         };
+        // The modifier keywords the template leaves out, put back.
+        let text = match self.keep {
+            Some((kinds, head)) => {
+                let mods: Vec<&str> = m
+                    .node
+                    .children()
+                    .filter(|c| !c.is_trivia() && !c.is_extra())
+                    .take_while(|c| kinds.contains(&c.kind_name()))
+                    .map(|c| c.text())
+                    .collect();
+                keep_modifier_words(&mods, text, head)
+            }
+            None => text,
+        };
         Edit::new(start, end, text)
     }
 
@@ -449,6 +467,31 @@ fn gives_back(language: &PatternLanguage, form: &EngineForm, template: &str) -> 
     })
 }
 
+/// What a rewrite with `template` needs to keep a match's modifier
+/// keywords: the language's list and the pattern's head (before its first
+/// `(` or `{`). `None` without a list, and for a template that is one
+/// metavariable, which unwraps the item and leaves nothing to put them on.
+fn kept_modifiers<'p>(
+    language: &PatternLanguage,
+    template: &str,
+    pattern_text: &'p str,
+) -> Option<(&'static [&'static str], &'p str)> {
+    let tokens = language.modifier_tokens;
+    let only = template.trim();
+    let unwraps = only.strip_prefix('$').is_some_and(|name| {
+        !name.is_empty()
+            && name
+                .trim_start_matches('$')
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    });
+    if tokens.is_empty() || unwraps {
+        return None;
+    }
+    let head = &pattern_text[..pattern_text.find(['(', '{']).unwrap_or(pattern_text.len())];
+    Some((tokens, head))
+}
+
 /// The template a form fills: requalified, shorthand, without the `;` its
 /// node does not hold.
 fn template_for(form: &EngineForm, language: &PatternLanguage, template: &str) -> String {
@@ -474,10 +517,13 @@ fn template_for(form: &EngineForm, language: &PatternLanguage, template: &str) -
 }
 
 /// The edits one form makes to `source`: its outermost matches, each
-/// rendered, none that changes only whitespace.
+/// rendered, none that changes only whitespace. `pattern_text` is the
+/// rule's pattern as written.
+#[allow(clippy::too_many_arguments)] // one rule's parts, not an API
 fn edits(
     language: &PatternLanguage,
     form: &EngineForm,
+    pattern_text: &str,
     checks: &Checks,
     lets: &Lets,
     source: &str,
@@ -524,6 +570,7 @@ fn edits(
                     order: order_of(matches),
                     template,
                     gives_back: false,
+                    keep: None,
                     lets: &[],
                     subs: &[],
                 })
@@ -536,6 +583,7 @@ fn edits(
         order: order_of(&matches),
         template: &filled,
         gives_back: gives_back(language, form, &written),
+        keep: kept_modifiers(language, &written, pattern_text),
         lets: &lets.0,
         subs: &subs,
     };
@@ -580,17 +628,27 @@ fn rewrite_in(
 ) -> String {
     let mut text = source.to_string();
     for form in &forms.forms {
-        let made = edits(language, form, checks, lets, &text, template, frame);
+        let made = edits(
+            language,
+            form,
+            &forms.text,
+            checks,
+            lets,
+            &text,
+            template,
+            frame,
+        );
         if !made.is_empty() {
             text = apply_edits(&text, made);
         }
     }
+    let moved = frame.map(|f| f.resized(source.len(), text.len()));
     super::edit_macros(
         language,
         forms,
         checks,
         &text,
-        frame,
+        moved.as_ref(),
         depth,
         |wrapped, inner, d| {
             rewrite_in(
@@ -619,7 +677,7 @@ pub fn rewrite(
     source: &str,
     template: &str,
 ) -> String {
-    let text = rewrite_in(language, forms, checks, lets, source, template, None, 0);
+    let text = rewrite_unguarded(language, forms, checks, lets, source, template);
     // A rewrite that leaves code which parsed unparseable is not made (the
     // rule explains why it changed nothing).
     let breaks = |t: &str| super::tree(&language.grammar, t).is_none_or(|t| t.has_error());
@@ -627,4 +685,46 @@ pub fn rewrite(
         return source.to_string();
     }
     text
+}
+
+/// [`rewrite`] without refusing a result that does not parse: what a rule
+/// explains a skipped file by.
+pub(crate) fn rewrite_unguarded(
+    language: &PatternLanguage,
+    forms: &Forms,
+    checks: &Checks,
+    lets: &Lets,
+    source: &str,
+    template: &str,
+) -> String {
+    rewrite_in(language, forms, checks, lets, source, template, None, 0)
+}
+
+/// Where the first edit whose rewrite alone leaves `source` (which parses)
+/// unparseable starts: the site a "would not parse" skip is about. `None`
+/// when no single edit breaks it, only their combination.
+pub(crate) fn first_breaking_edit(
+    language: &PatternLanguage,
+    forms: &Forms,
+    checks: &Checks,
+    lets: &Lets,
+    source: &str,
+    template: &str,
+) -> Option<usize> {
+    let breaks = |t: &str| super::tree(&language.grammar, t).is_none_or(|t| t.has_error());
+    forms.forms.iter().find_map(|form| {
+        edits(
+            language,
+            form,
+            &forms.text,
+            checks,
+            lets,
+            source,
+            template,
+            None,
+        )
+        .into_iter()
+        .find(|edit| breaks(&apply_edits(source, vec![edit.clone()])))
+        .map(|edit| edit.start)
+    })
 }

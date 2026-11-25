@@ -212,9 +212,13 @@ fn the_matcher_holds_its_properties_over_every_source_file() {
                 match seq.matches(*node) {
                     None => fail("sequence: no match"),
                     Some(m) => {
-                        let kids: Vec<Node<'_>> = node.children().filter(visible).collect();
+                        // Every child but trivia, comments included (a
+                        // sequence takes the comments beside it), and
+                        // no whitespace at the end.
+                        let kids: Vec<Node<'_>> =
+                            node.children().filter(|c| !c.is_trivia()).collect();
                         let expected = match (kids.first(), kids.last()) {
-                            (Some(a), Some(b)) => &text[a.start()..b.end()],
+                            (Some(a), Some(b)) => text[a.start()..b.end()].trim_end(),
                             _ => "",
                         };
                         if m.get("S").map(Binding::text) != Some(expected) {

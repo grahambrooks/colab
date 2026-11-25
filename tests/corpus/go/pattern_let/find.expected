@@ -5,7 +5,7 @@ user.go:8:1: [0] func (u *User) GetName() string { return u.name }
     $R = u
     $T = *User
 user.go:10:1: [0] func (u *User) GetEmail() string {\n	return u.email\n}
-    $B = return u.email\n
+    $B = return u.email
     $F = GetEmail
     $OUT = string
     $R = u

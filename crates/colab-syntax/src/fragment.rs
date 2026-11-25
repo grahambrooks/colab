@@ -102,6 +102,25 @@ fn read(
     let span = trim_span(&filled, slot..slot + expanded.len());
     let node = spanning(&tree, span)
         .ok_or_else(|| "the pattern is not a single syntax node there".to_string())?;
+    // Only the root spans it: it is several nodes (`$A\nuse x;`), and as a
+    // pattern the root would match whole files.
+    if node.id() == 0 {
+        return Err("the pattern is more than one syntax node".into());
+    }
+    // A context's own text before the slot holding a node of the pattern's
+    // kind means the context reads the pattern as something it is not
+    // meant to: the languages' contexts put a declared type before a
+    // parameter slot precisely so a bare name gains no type reading.
+    if context.is_some()
+        && tree
+            .nodes()
+            .any(|n| n.kind() == node.kind() && n.end() <= slot && !n.is_trivia())
+    {
+        return Err(format!(
+            "the wrapper has an earlier `{}` than the pattern",
+            node.kind_name()
+        ));
+    }
     Ok(Form {
         pattern: Pattern::from_node(node, expando),
         context: context.map(str::to_string),

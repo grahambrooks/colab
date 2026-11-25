@@ -425,14 +425,26 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    spells. The comparison adds 52 deletes, all identical, and checks the
    prefilter on every find (a matching file always holds it). Every part
    of a `<lang>::pattern` rule now runs on colab's matcher and agrees with
-   the ast-grep engine. **Next: the switch.** `PatternRule`
-   (`pattern/rule.rs`) moves onto `syntax`: apply (replace, delete,
-   create), `locate` with captures, `prefilter`, `why_unchanged`
-   (`first_breaking_rewrite`), near misses, conflicts; the corpus,
-   conformance matrix and property suite are the bar. Then
-   `StructuralPattern`, the corrections it carried (`Shape`, the
+   the ast-grep engine. **The switch, 2026-11-25:** `PatternRule` holds a
+   `syntax::RulePattern` (forms, checks, `let`s, prefilter), so every
+   `<lang>::pattern` rule runs on colab's matcher. The full suite found
+   five things, all fixed: the contexts rely on refusing a wrapper with
+   an earlier node of the pattern's kind (restored; it costs the two Go
+   self-matches the new matcher had gained); a nested macro needs its
+   frame resized after its contents are rewritten; a `$$$` binding takes
+   the comments beside it (a `create` lost a doc comment) and not the
+   whitespace ending it (three corpus captures, reblessed); TypeScript's
+   modifier keywords stay loose even when a pattern spells others
+   (`Rules::loose`, put back by the old engine's word placement, now
+   `keep_modifier_words`); and a pattern only the file's root spans is
+   several nodes, refused (the hook replay caught it proposing one). The
+   property summary is the old engine's, number for number. **Next:**
+   delete `StructuralPattern` and what only it used (`Shape`, the
    sentinels and placeholder forms, `Visible`, `led_forms`,
-   `errors_captured`) and `ast-grep-core` are deleted. After that, the engine's other
+   `errors_captured`, the ast-grep `Check`s and rewriter), move
+   `colab ast`'s `describe` and the scope patterns onto `syntax`, and
+   drop `ast-grep-core`; `tests/engines.rs` then has no second engine to
+   compare and goes. After that, the engine's other
    tree readers (`declarations`, `calls`, rename, generalize), each
    behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a

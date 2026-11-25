@@ -85,6 +85,7 @@ fn modifiers_a_pattern_leaves_out_are_absorbed_and_reported() {
     let rules = crate::pattern::Rules {
         absorb: visibility.clone(),
         exact: visibility,
+        loose: Vec::new(),
     };
     let bare = compile(tree_sitter_rust::LANGUAGE.into(), "rust", "@", "fn $F() {}");
     assert_eq!(found(&bare, &tree).len(), 1, "without the rules, only `g`");

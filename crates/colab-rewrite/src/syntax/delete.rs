@@ -73,12 +73,13 @@ fn delete_in(
     }
     // Then inside macro calls, where the wrapper's tree says which comma
     // goes with an argument.
+    let moved = frame.map(|f| f.resized(source.len(), out.len()));
     super::edit_macros(
         language,
         forms,
         checks,
         &out,
-        frame,
+        moved.as_ref(),
         depth,
         |wrapped, inner, d| delete_in(language, forms, checks, wrapped, Some(inner), d),
     )

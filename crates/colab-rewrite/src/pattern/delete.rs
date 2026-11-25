@@ -80,11 +80,6 @@ impl StructuralPattern {
             self.delete_in(wrapped, Some(inner))
         })
     }
-
-    /// `true` when `source` parses without a syntax error.
-    pub(super) fn parses_cleanly(&self, source: &str) -> bool {
-        parse_clean(&self.lang.grammar, source).is_ok()
-    }
 }
 
 /// Where the item matched at `start..end` really starts: before the doc

@@ -6,7 +6,7 @@ lang                 self-match               identity             generalize   
 c                     39/38/0/1              39/39/0/0                3/3/0/0              39/38/0/1
 cpp                   35/34/0/1              35/35/0/0                4/4/0/0              35/34/0/1
 csharp                36/35/1/0              36/35/1/0                4/4/0/0              36/35/1/0
-go                    40/38/0/2              40/40/0/0                8/8/0/0              40/40/0/0
+go                    40/38/0/2              40/40/0/0                8/8/0/0              40/38/0/2
 java                  40/40/0/0              40/40/0/0                6/6/0/0              40/40/0/0
 js                    39/38/0/1              39/39/0/0                7/7/0/0              39/38/0/1
 kotlin                40/38/1/1              40/39/1/0                8/8/0/0              40/38/1/1
@@ -27,6 +27,7 @@ csharp self-match: declaration_list (refused) ×1
 csharp identity: declaration_list (refused) ×1
 csharp matcher: declaration_list (refused) ×1
 go self-match: parameter_declaration (missed) ×2
+go matcher: parameter_declaration (missed) ×2
 js self-match: assignment_pattern (missed) ×1
 js matcher: assignment_pattern (missed) ×1
 kotlin self-match: constructor_invocation (missed) ×1, variable_declaration (refused) ×1

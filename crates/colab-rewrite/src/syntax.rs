@@ -18,9 +18,11 @@ use crate::pattern::PatternLanguage;
 mod check;
 mod delete;
 mod rewrite;
+mod rule;
 pub use check::{Checks, Enclosing, Frame, Nested, bound};
 pub use delete::delete;
 pub use rewrite::{Lets, rewrite};
+pub use rule::RulePattern;
 
 /// `language`'s kind and field names, built on first use.
 pub fn grammar_of(language: &tree_sitter::Language) -> Arc<Grammar> {
@@ -80,6 +82,8 @@ pub struct EngineForm {
 pub struct Forms {
     pub forms: Vec<EngineForm>,
     pub tolerant: bool,
+    /// The pattern as written.
+    pub text: String,
 }
 
 /// The modifier rules for `language`'s patterns: its modifiers' kinds
@@ -91,11 +95,13 @@ pub fn rules_for(language: &PatternLanguage) -> colab_syntax::pattern::Rules {
         names.iter().flat_map(|n| grammar.kinds_named(n)).collect()
     };
     let modifiers = language.modifiers.map_or(&[][..], |m| m.kinds);
-    let mut absorb = kinds(modifiers);
-    absorb.extend(kinds(language.modifier_tokens));
     colab_syntax::pattern::Rules {
-        absorb,
+        absorb: kinds(modifiers),
         exact: kinds(modifiers),
+        // Keywords no sentinel stands for may be left out one by one, and
+        // a rewrite puts back those its template leaves out
+        // (`keep_modifier_words`).
+        loose: kinds(language.modifier_tokens),
     }
 }
 
@@ -142,6 +148,7 @@ pub fn compile_forms(language: &PatternLanguage, text: &str) -> Result<Forms, St
             for form in &mut loose.forms {
                 form.loose_semicolon = true;
             }
+            loose.text = text.to_string();
             return Ok(loose);
         }
     }
@@ -235,7 +242,11 @@ pub fn compile_forms(language: &PatternLanguage, text: &str) -> Result<Forms, St
             }
         }
     }
-    Ok(Forms { forms, tolerant })
+    Ok(Forms {
+        forms,
+        tolerant,
+        text: text.to_string(),
+    })
 }
 
 /// A literal every match of `forms` must contain, so a file without it is
@@ -282,6 +293,11 @@ pub struct Found {
     pub form: usize,
     /// It was found inside a macro call's contents.
     pub in_macro: bool,
+    /// The match's text (all of its node's, a trailing newline included).
+    pub text: String,
+    /// Its metavariables' bindings, sorted by name; a `$$$` binding is the
+    /// text from its first node to its last.
+    pub captures: Vec<(String, String)>,
 }
 
 /// Every match of `forms` in `source`: in its tree, then inside the
@@ -324,10 +340,21 @@ fn find_in_tree(
     for (form, f) in forms.forms.iter().enumerate() {
         let mut found = f.pattern.find_all(tree);
         checks.retain(&mut found, tree.text(), frame);
-        out.extend(found.into_iter().map(|m| Found {
-            range: m.node.range(),
-            form,
-            in_macro: frame.is_some(),
+        out.extend(found.into_iter().map(|m| {
+            let mut captures: Vec<(String, String)> = m
+                .bindings
+                .iter()
+                .map(|(name, b)| (name.clone(), b.text().to_string()))
+                .collect();
+            captures.sort();
+            captures.dedup();
+            Found {
+                range: m.node.range(),
+                form,
+                in_macro: frame.is_some(),
+                text: m.node.text().to_string(),
+                captures,
+            }
         }));
     }
     out

@@ -612,6 +612,14 @@ pub(super) fn keep_modifier_tokens<D: ast_grep_core::Doc>(
         .take_while(|c| kinds.contains(&c.kind().as_ref()))
         .map(|c| &source[c.range()])
         .collect();
+    keep_modifier_words(&mods, text, head)
+}
+
+/// [`keep_modifier_tokens`]'s text work, for either engine: `text` with the
+/// item's leading modifiers `mods` (their texts) put back where the
+/// template leaves them out, given `head`, the pattern before its first
+/// `(` or `{`.
+pub(crate) fn keep_modifier_words(mods: &[&str], text: String, head: &str) -> String {
     if mods.is_empty() {
         return text;
     }
@@ -657,7 +665,7 @@ pub(super) fn keep_modifier_tokens<D: ast_grep_core::Doc>(
         return text;
     }
     let mut words: Vec<&str> = Vec::new();
-    for m in &mods {
+    for m in mods {
         let written = have.contains(m) || (*m == "*" && rest.starts_with('*'));
         if have.contains(m) || (!written && !spelled(m)) {
             words.push(m);

@@ -148,6 +148,12 @@ pub struct Rules {
     /// node the pattern spells, so `public void f()` does not match
     /// `public static void f()`.
     pub exact: Vec<Kind>,
+    /// Modifiers a pattern may leave out even when it spells others
+    /// (JavaScript's `static` and `async`, TypeScript's `private`): a
+    /// candidate child of these kinds with no goal for it is passed over
+    /// and listed in [`Match::absorbed`], so `private f()` matches
+    /// `private static async f()` and a rewrite can keep the rest.
+    pub loose: Vec<Kind>,
 }
 
 /// A compiled pattern.
@@ -268,20 +274,50 @@ pub enum Binding<'t> {
 impl Binding<'_> {
     /// The source text the binding covers (empty for an empty sequence).
     pub fn text(&self) -> &str {
-        match self {
-            Binding::One(n) => n.text(),
-            Binding::Many(nodes) => match (nodes.first(), nodes.last()) {
-                (Some(first), Some(last)) => &first.tree().text()[first.start()..last.end()],
-                _ => "",
-            },
+        match (self, self.range()) {
+            (Binding::One(n), _) => n.text(),
+            (Binding::Many(nodes), Some(range)) => &nodes[0].tree().text()[range],
+            _ => "",
         }
     }
 
-    /// The byte range it covers; `None` for an empty sequence.
+    /// The byte range it covers; `None` for an empty sequence. A sequence
+    /// takes the comments directly before its first node and after its
+    /// last (back to the previous sibling the match used, on to the next):
+    /// matching passes over them, but a rewrite must not drop them, and a
+    /// doc comment belongs to the item after it. Whitespace at its end is
+    /// left out.
     pub fn range(&self) -> Option<std::ops::Range<usize>> {
         match self {
             Binding::One(n) => Some(n.range()),
-            Binding::Many(nodes) => Some(nodes.first()?.start()..nodes.last()?.end()),
+            Binding::Many(nodes) => {
+                let comment = |n: &Node<'_>| n.is_extra() && !n.is_error();
+                let (first, last) = (*nodes.first()?, *nodes.last()?);
+                let mut start = first.start();
+                let mut prev = first.prev_sibling();
+                while let Some(p) = prev {
+                    if comment(&p) {
+                        start = p.start();
+                    } else if !p.is_trivia() {
+                        break;
+                    }
+                    prev = p.prev_sibling();
+                }
+                let mut end = last.end();
+                let mut next = last.next_sibling();
+                while let Some(n) = next {
+                    if comment(&n) {
+                        end = n.end();
+                    } else if !n.is_trivia() {
+                        break;
+                    }
+                    next = n.next_sibling();
+                }
+                // Whitespace ending it is layout, not code: Go's statement
+                // list owns the newline after its last statement.
+                let text = first.tree().text();
+                Some(start..start + text[start..end].trim_end().len())
+            }
         }
     }
 }
@@ -497,10 +533,16 @@ fn match_children_from<'t>(
         *state = attempt;
         return true;
     }
-    // A keyword or punctuation the pattern has nothing for here.
-    if skip_first && skippable(&cand) {
+    // A keyword or punctuation the pattern has nothing for here, or a
+    // modifier it may leave out.
+    let loose = !exact && rules.loose.contains(&cand.kind());
+    if skip_first && (skippable(&cand) || loose) {
         let mut attempt = state.clone();
-        attempt.skipped.push(cand);
+        if loose {
+            attempt.absorbed.push(cand);
+        } else {
+            attempt.skipped.push(cand);
+        }
         if match_children(goals, later, &mut attempt, rules, exact) {
             *state = attempt;
             return true;
