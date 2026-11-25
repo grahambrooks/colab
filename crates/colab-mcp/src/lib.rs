@@ -124,7 +124,11 @@ nothing: fix the rule, do not fall back to sed.\n\
 Also: colab.rename_symbol / colab.rename (scope-aware, via the language server), \
 colab.edit_symbol (replace one declaration by name), colab.outline / colab.section / \
 colab.edit_markdown (Markdown by heading), colab.set_config_key, colab.move_import. \
-colab.schema / colab.list_rules list each language's modules; colab.lint_script checks a script.";
+colab.schema / colab.list_rules list each language's modules; colab.lint_script checks a script.\n\
+\n\
+Already made the change once by hand? colab.generalize {lang, before, after, paths, cwd} turns that \
+edit into a rule (carried and changed arguments become $METAVARS) and lists its other matches; \
+pass the returned `rule` to colab.apply as `rules: [rule]`.";
 
 /// Run the MCP server reading from `reader` and writing to
 /// `writer`. Returns when the client closes stdin (EOF) or sends an
@@ -625,6 +629,7 @@ fn call_tool(
         "colab.test_rule" => test_rule(args, backends),
         "colab.find" => find(args, backends),
         "colab.ast" => ast(args, backends),
+        "colab.generalize" => rules::generalize(args, backends),
         "colab.preview" => run_script(args, backends, extra, RunMode::Preview, &mut NoProgress),
         "colab.apply" => run_script(args, backends, extra, RunMode::Apply, &mut NoProgress),
         "colab.move_import" => {

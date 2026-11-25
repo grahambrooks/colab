@@ -217,6 +217,18 @@ match rust::pattern 'mod $M { $$$B }' { replace 'mod $M;' }
 
 ## Rules as JSON
 
+An agent that has made a change once by hand need not write the rule:
+`colab.generalize {lang, before, after, paths, cwd}` infers it from that
+edit. A subtree `after` carries over, and an argument the edit changed or
+dropped, becomes a metavariable; callees, fields, types and keys stay
+literal. `assert.Equal(t, 1, got)` → `require.Equal(t, got, 1)` gives
+`assert.Equal($A, $B, $C)` → `require.Equal($A, $C, $B)`, with its other
+matches under `paths`. A value `after` holds only inside a longer token
+(`"read config"` in `"read config: %w"`) is a warning: the template writes
+it as it is. The reply's `rule` goes to `colab.apply` as `rules: [rule]`.
+
+You can also write rules as JSON directly.
+
 Every MCP tool that takes `script` (`colab.preview`, `colab.apply`,
 `colab.find`, `colab.test_rule`, `colab.lint_script`) takes `rules`
 instead, and the CLI's `refactor` / `find` take the same JSON with

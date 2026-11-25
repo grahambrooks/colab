@@ -365,6 +365,62 @@ fn flag(object: &Map<String, Value>, key: &str) -> Result<bool, String> {
     }
 }
 
+/// `colab.generalize`: one edit made by hand (`before` → `after`) as a rule
+/// that makes it everywhere else, with that rule's other matches under
+/// `paths` when they are given. Nothing is written: the rule goes to
+/// `colab.preview` / `colab.apply` as `rules`.
+pub(crate) fn generalize(
+    args: &Value,
+    backends: &colab_core::BackendRegistry,
+) -> Result<Value, ToolError> {
+    let lang = crate::arg_str(args, "lang")?;
+    let before = crate::arg_str(args, "before")?;
+    let after = crate::arg_str(args, "after")?;
+    let backend = backends.get(&lang).ok_or_else(|| {
+        ToolError::from_error(colab_core::Error::UnsupportedOperation(format!(
+            "unknown language `{lang}`; {}",
+            colab_core::suggest::candidates_note(&lang, "languages", &backends.languages())
+        )))
+    })?;
+    let learned = backend
+        .generalize(&before, &after)
+        .map_err(ToolError::from_error)?;
+    let rule = serde_json::json!({
+        "lang": lang,
+        "match": learned.pattern,
+        "replace": learned.template,
+    });
+    let rules = vec![rule.clone()];
+    let script = script_of(&rules)?;
+    let bindings: Map<String, Value> = learned
+        .bindings
+        .iter()
+        .map(|(var, text)| (var.clone(), Value::String(text.clone())))
+        .collect();
+    let mut out = serde_json::json!({
+        "rule": rule,
+        "script": script,
+        "bindings": bindings,
+        "next": "check the rule's matches below (or pass `paths`), adjust `match` / `replace` if needed, then call colab.preview and colab.apply with `rules: [rule]`",
+    });
+    if !learned.warnings.is_empty() {
+        out["warnings"] = serde_json::json!(learned.warnings);
+    }
+    if args.get("paths").is_some() {
+        let mut find_args = args.clone();
+        let object = find_args
+            .as_object_mut()
+            .ok_or_else(|| ToolError::protocol("arguments must be an object"))?;
+        for key in ["lang", "before", "after"] {
+            object.remove(key);
+        }
+        object.insert("rules".into(), Value::Array(rules));
+        let found = crate::scripts::find(&find_args, backends)?;
+        out["matches"] = found;
+    }
+    Ok(out)
+}
+
 /// The JSON Schema of `rules`, for the tools' `inputSchema`.
 pub(crate) fn rules_schema() -> Value {
     serde_json::json!({

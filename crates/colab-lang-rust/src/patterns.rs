@@ -169,6 +169,13 @@ mod tests {
         let recursive = "fn new(n: u8) -> u8 {\n    if n == 0 { old(0) } else { new(n - 1) }\n}\n";
         let renamed = "fn new(n: u8) -> u8 {\n    if n == 0 { new2(0) } else { new(n - 1) }\n}\n";
         assert!(crate::LANG.new_self_calls(recursive, renamed).is_empty());
+        // Delegating to another value's method of the same name is not
+        // recursion; calling it through `self` is.
+        let plain = "impl A {\n    fn g(&self) -> u8 { 1 }\n}\n";
+        let delegates = "impl A {\n    fn g(&self) -> u8 { LANG.g() }\n}\n";
+        assert!(crate::LANG.new_self_calls(plain, delegates).is_empty());
+        let recurses = "impl A {\n    fn g(&self) -> u8 { self.g() }\n}\n";
+        assert_eq!(crate::LANG.new_self_calls(plain, recurses).len(), 1);
     }
 
     #[test]

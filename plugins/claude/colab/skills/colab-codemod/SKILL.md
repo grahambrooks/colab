@@ -569,6 +569,8 @@ On the CLI the same JSON goes to `colab refactor --rules-json <file|->` and `col
 
 To move a file over MCP use `colab.mv {from, to, cwd}` (previews unless `write: true`; `git mv` plus the server's reference updates). There is no MCP tool for `colab fix`; use the CLI for it.
 
+**Made the change once already? Generalize it.** `colab.generalize {lang, before, after, paths, cwd}` takes the old and new text of an edit you made by hand and returns the rule (`rule`), its other `matches` under `paths`, and `warnings` for what it could not derive. Check the matches, adjust `rule.match` / `rule.replace` if needed, then `colab.apply {rules: [rule], paths, cwd}`.
+
 **Three common jobs need no script at all.** Each previews unless
 `write: true`, and returns the generated `script` so you can extend it:
 

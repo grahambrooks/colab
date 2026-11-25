@@ -18,6 +18,49 @@ impl ProgressSink for EditsMidRun<'_> {
 }
 
 #[test]
+fn generalize_learns_a_rule_from_one_edit_and_finds_the_others() {
+    let dir = std::env::temp_dir().join(format!("colab-mcp-generalize-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("a.go"),
+        "package p\n\nimport (\n\t\"github.com/stretchr/testify/assert\"\n\t\"github.com/stretchr/testify/require\"\n)\n\nfunc a() {\n\tassert.Equal(t, 1, got)\n}\n\nfunc b() {\n\tassert.Equal(t, want, f(x))\n}\n",
+    )
+    .unwrap();
+    // The agent changed one call by hand: the first one, before the edit.
+    let learned = crate::rules::generalize(
+        &json!({
+            "lang": "go",
+            "before": "assert.Equal(t, 1, got)",
+            "after": "require.Equal(t, got, 1)",
+            "paths": ["."],
+            "cwd": dir.to_string_lossy()
+        }),
+        &registry(),
+    )
+    .unwrap();
+    assert_eq!(learned["rule"]["match"], "assert.Equal($A, $B, $C)");
+    assert_eq!(learned["rule"]["replace"], "require.Equal($A, $C, $B)");
+    assert_eq!(learned["matches"]["summary"]["matches"], 2, "{learned}");
+    // The rule goes straight to colab.apply.
+    let arguments =
+        json!({"rules": [learned["rule"]], "paths": ["."], "cwd": dir.to_string_lossy()});
+    run_script(
+        &arguments,
+        &registry(),
+        &NoTools,
+        RunMode::Apply,
+        &mut NoProgress,
+    )
+    .unwrap();
+    assert!(
+        std::fs::read_to_string(dir.join("a.go"))
+            .unwrap()
+            .contains("require.Equal(t, f(x), want)")
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn rules_run_as_a_script_does_and_the_reply_holds_the_script() {
     let dir = std::env::temp_dir().join(format!("colab-mcp-rules-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

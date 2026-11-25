@@ -224,12 +224,7 @@ impl SourceLanguage {
                     let own = lang
                         .callees(body)
                         .iter()
-                        .filter(|callee| {
-                            callee
-                                .rsplit([':', '.', '>'])
-                                .next()
-                                .is_some_and(|last| last.trim() == decl.name)
-                        })
+                        .filter(|callee| is_self_call(callee, &decl.name))
                         .count();
                     *out.entry(decl.name.clone()).or_default() += own;
                 }
@@ -239,6 +234,12 @@ impl SourceLanguage {
         let mut out = std::collections::BTreeMap::new();
         walk(self, source, &self.declarations(source), &mut out);
         out
+    }
+
+    /// For `LanguageBackend::generalize` (`colab.generalize`).
+    pub fn generalize(&self, before: &str, after: &str) -> Result<colab_core::Generalized> {
+        crate::generalize::generalize(&(self.pattern)(), before, after)
+            .map_err(|e| Error::Config(format!("{}: {e}", self.namespace)))
     }
 
     /// For `LanguageBackend::prose_ranges`.
@@ -548,6 +549,21 @@ impl Operation for PatternOp {
     fn advice(&self) -> Vec<String> {
         self.rule.advice()
     }
+}
+
+/// Whether `callee` calls the function or method named `name` itself: bare
+/// (`name`), or through the item's own receiver or type (`self.name`,
+/// `Self::name`, `this.name`, `$this->name`). Another value's method of the
+/// same name (`LANG.name`, `inner.name`) is a delegation, not recursion.
+fn is_self_call(callee: &str, name: &str) -> bool {
+    let callee: String = callee.chars().filter(|c| !c.is_whitespace()).collect();
+    let Some(qualifier) = callee.strip_suffix(name) else {
+        return false;
+    };
+    matches!(
+        qualifier,
+        "" | "self." | "Self::" | "self::" | "this." | "$this->" | "self->" | "static::"
+    )
 }
 
 /// `path` with `.` dropped and each `..` taking the segment before it

@@ -24,6 +24,7 @@ pub mod calls;
 pub mod declarations;
 pub use declarations::declarations;
 mod derive;
+pub mod generalize;
 pub mod language;
 pub use language::{CallShape, SourceLanguage};
 pub mod parse_cache;

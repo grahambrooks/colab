@@ -184,6 +184,20 @@ impl RuleSpec {
     }
 }
 
+/// What [`LanguageBackend::generalize`] made of one example edit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Generalized {
+    /// The pattern: `before` with its varying parts as metavariables.
+    pub pattern: String,
+    /// The template: `after` with the same metavariables.
+    pub template: String,
+    /// Each metavariable and the text it stands for in the example.
+    pub bindings: Vec<(String, String)>,
+    /// What the inference could not do on its own, for the agent to fix in
+    /// the rule (a captured value written inside a longer token of `after`).
+    pub warnings: Vec<String>,
+}
+
 /// A file an [`Operation::creates`] would make from one match.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Creation {
@@ -320,6 +334,17 @@ pub trait LanguageBackend: Send + Sync {
     /// sections are addressed by `markdown::section`).
     fn declarations(&self, _source: &str) -> Option<Vec<crate::symbols::Declaration>> {
         None
+    }
+
+    /// A pattern and template that make the change from `before` to
+    /// `after` (one edit an agent made by hand) wherever else it applies,
+    /// for `colab.generalize`. Backends without a source grammar keep the
+    /// default, which says so.
+    fn generalize(&self, _before: &str, _after: &str) -> Result<Generalized> {
+        Err(crate::Error::UnsupportedOperation(format!(
+            "`{}` cannot generalize an edit: it works for source-language backends",
+            self.lang()
+        )))
     }
 
     /// Debugging aid behind `colab ast`: the printed syntax tree of a

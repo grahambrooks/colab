@@ -219,6 +219,28 @@ pub fn list() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "colab.generalize",
+            "description": "Turn one edit you made by hand into a rule that makes it everywhere else: give the code `before` and `after` (e.g. an Edit's old and new text). Parts carried over or changed in arguments become $METAVARS; callees, fields and types stay literal. Returns `rule` (pass it to colab.preview / colab.apply as `rules: [rule]`), the equivalent `script`, `bindings`, `warnings` for what it could not derive, and, given `paths`, the rule's `matches` there. Writes nothing.",
+            "annotations": { "readOnlyHint": true },
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "lang": { "type": "string", "description": "Language backend, e.g. `go`, `rust`, `ts`." },
+                    "before": { "type": "string", "description": "The code as it was: one expression, statement or item." },
+                    "after": { "type": "string", "description": "The same code after your edit." },
+                    "paths": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional: where to look for the rule's other matches. Give `cwd` too."
+                    },
+                    "cwd": { "type": "string", "description": CWD_PARAM },
+                    "max_results": { "type": "integer", "minimum": 0, "description": "With `paths`: list at most this many matches." }
+                },
+                "required": ["lang", "before", "after"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": "colab.preview",
             "description": "Apply a script to one or more paths in dry-run mode. Disk is not modified. Returns a summary, per-rule match counts, and the changed paths; pass `detail: \"diff\"` for hunks.",
             "annotations": { "readOnlyHint": true },

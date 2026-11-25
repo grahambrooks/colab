@@ -125,6 +125,10 @@ impl LanguageBackend for JavaBackend {
         LANG.syntax_tree(input)
     }
 
+    fn generalize(&self, before: &str, after: &str) -> Result<colab_core::Generalized> {
+        LANG.generalize(before, after)
+    }
+
     fn declarations(&self, source: &str) -> Option<Vec<colab_core::symbols::Declaration>> {
         Some(LANG.declarations(source))
     }
