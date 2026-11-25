@@ -12,7 +12,7 @@ in that language and checks the output and a second, unchanged run.
 | [A call replaced by name](#a-call-replaced-by-name) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A call rewritten](#a-call-rewritten) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Held back by colab:ignore](#held-back-by-colabignore) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A deleted item takes its docs](#a-deleted-item-takes-its-docs) | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| [A deleted item takes its docs](#a-deleted-item-takes-its-docs) | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Field shorthand](#field-shorthand) | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a | ❌ | ✅ | n/a | ✅ | ✅ |
 | [Generalized from an edit](#generalized-from-an-edit) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | [An import moved](#an-import-moved) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -24,7 +24,7 @@ in that language and checks the output and a second, unchanged run.
 | [Scoped with where inside](#scoped-with-where-inside) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A binding tested with where matches](#a-binding-tested-with-where-matches) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-161 working, 13 known gaps, 22 not applicable, 0 without a case.
+164 working, 10 known gaps, 22 not applicable, 0 without a case.
 
 ## A call replaced by name
 
@@ -50,11 +50,8 @@ Deleting an item takes the doc comment and attributes (or decorators) directly a
 
 Cases: [`tests/conformance/delete-takes-docs.toml`](../tests/conformance/delete-takes-docs.toml).
 
-- ❌ **c**: C sets `Leading::NONE`: a `/** … */` comment above a function is not taken with it.
 - ❌ **cpp**: no function pattern compiles in C++ (see A lone body), so none can be deleted with its docs.
-- ❌ **go**: Go sets `Leading::NONE`: its doc comments are plain `//` lines, which `Leading` never takes (a plain comment may be about the code around it).
 - ❌ **kotlin**: the match of a modifier-relaxed form starts after the function's `modifiers` node (the annotation), so a delete leaves `@Deprecated(…)` and the `/** … */` above it behind.
-- ❌ **ruby**: Ruby sets `Leading::NONE`: its doc comments are plain `#` lines, which `Leading` never takes.
 
 ## Field shorthand
 

@@ -25,7 +25,11 @@ pub(crate) fn language() -> PatternLanguage {
         ],
         also: &[],
         qualified_calls: None,
-        leading: colab_rewrite::pattern::Leading::NONE,
+        // Doxygen comments document the declaration after them.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["/**", "///"],
+        },
         macro_contents: None,
         modifiers: None,
         shorthand_fields: false,

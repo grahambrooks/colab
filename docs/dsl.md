@@ -375,9 +375,12 @@ before it (`f(a, b)` → `f(a)`). A match with no comma beside it
 removing it would leave broken code; `colab find` still lists it, and
 `replace` can rewrite it. A deleted declaration takes what belongs to it
 from just above: its doc comments (`///` and `/** */` in Rust, C#, Swift;
-`/** */` in JavaScript, Java, Kotlin, PHP), Rust's `#[…]` attributes and
-Python's decorators, up to the first blank line. A plain `//` or `#`
-comment stays, since it may be about the code around it. Deleting lines
+`/** */` in JavaScript, Java, Kotlin, PHP; `/** */` and `///` in C), Rust's
+`#[…]` attributes and Python's decorators, up to the first blank line. A
+plain `//` or `#` comment stays, since it may be about the code around it,
+except in Go and Ruby: their documentation tools read any comment directly
+above a declaration as its doc (go doc, RDoc / YARD), so a deleted Go `func`
+takes the `//` lines above it, and a Ruby `def` the `#` lines. Deleting lines
 between two blank lines also removes one of the blanks, so deleting a run of
 items leaves a single blank line, not one per item.
 

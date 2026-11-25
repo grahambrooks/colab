@@ -16,7 +16,12 @@ pub(crate) fn language() -> PatternLanguage {
         contexts: &["def _\n@@PATTERN@@\nend\n", "class C\n@@PATTERN@@\nend\n"],
         also: &[],
         qualified_calls: None,
-        leading: colab_rewrite::pattern::Leading::NONE,
+        // RDoc and YARD read the `#` comments directly before a method or
+        // class, with no blank line between, as its documentation.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["#"],
+        },
         macro_contents: None,
         modifiers: None,
         shorthand_fields: false,

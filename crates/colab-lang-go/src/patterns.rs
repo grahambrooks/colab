@@ -21,7 +21,13 @@ pub(crate) fn language() -> PatternLanguage {
         ],
         also: &[],
         qualified_calls: None,
-        leading: colab_rewrite::pattern::Leading::NONE,
+        // Go defines a declaration's doc comment as the comments directly
+        // before it, with no blank line between (go.dev/doc/comment), and
+        // `Leading` takes only those.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["//", "/*"],
+        },
         macro_contents: None,
         modifiers: None,
         shorthand_fields: false,
