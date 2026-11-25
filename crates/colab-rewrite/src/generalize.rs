@@ -174,6 +174,8 @@ fn is_list(node: &Node<'_>) -> bool {
         || kind.ends_with("parameters")
         || kind.ends_with("_list")
         || kind == "arguments"
+        // Swift: a call's `call_suffix` holds its `value_arguments`.
+        || kind == "call_suffix"
 }
 
 /// `(b, a)` as a unit: a list stands for the node it belongs to (an
@@ -410,7 +412,7 @@ fn unnamed_callee(node: &Node<'_>, field: Option<&str>, parent: &Node<'_>) -> bo
     }
     let mut sibling = node.next_named_sibling();
     while let Some(s) = sibling {
-        if is_list(&s) || s.kind() == "call_suffix" {
+        if is_list(&s) {
             return true;
         }
         sibling = s.next_named_sibling();

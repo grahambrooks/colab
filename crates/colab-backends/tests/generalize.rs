@@ -226,6 +226,21 @@ fn a_callee_in_no_field_stays_literal() {
 }
 
 #[test]
+fn a_swift_call_suffix_stands_for_its_call() {
+    // Swift wraps a call's arguments in `call_suffix`; alone, the suffix
+    // `("airport", 12.0)` is a tuple, and the rule lost its callee.
+    let rules = learn(
+        "swift",
+        r#"makeReading("airport", 12.0)"#,
+        r#"makeReading("harbour", 12.0)"#,
+    );
+    assert_eq!(
+        pairs(&rules),
+        [("makeReading($A, $B)", r#"makeReading("harbour", $B)"#)]
+    );
+}
+
+#[test]
 fn mistakes_are_explained() {
     let registry = colab_backends::registry();
     let rust = registry.get("rust").unwrap();

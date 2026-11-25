@@ -14,7 +14,7 @@ php                   37/34/3/0              37/34/3/0                5/5/0/0
 python                38/38/0/0              38/38/0/0                9/9/0/0
 ruby                  34/34/0/0              34/34/0/0              11/11/0/0
 rust                  40/37/1/2              40/39/1/0              10/10/0/0
-swift                 36/30/1/5              36/35/1/0                5/2/0/3
+swift                 36/30/1/5              36/35/1/0                5/5/0/0
 ts                    40/40/0/0              40/40/0/0                4/4/0/0
 tsx                   34/28/0/6              34/34/0/0                2/2/0/0
 
@@ -39,5 +39,4 @@ rust self-match: closure_parameters (refused) ×1, ordered_field_declaration_lis
 rust identity: closure_parameters (refused) ×1
 swift self-match: call_suffix (missed) ×3, protocol_function_declaration (refused) ×1, statements (missed) ×2
 swift identity: protocol_function_declaration (refused) ×1
-swift generalize: call_expression (missed) ×3
 tsx self-match: jsx_expression (missed) ×5, object_assignment_pattern (missed) ×1
