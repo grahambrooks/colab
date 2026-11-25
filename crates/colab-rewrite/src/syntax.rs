@@ -16,7 +16,9 @@ use colab_syntax::{Grammar, Tree};
 use crate::pattern::PatternLanguage;
 
 mod check;
+mod rewrite;
 pub use check::{Checks, Enclosing, Frame, Nested, bound};
+pub use rewrite::rewrite;
 
 /// `language`'s kind and field names, built on first use.
 pub fn grammar_of(language: &tree_sitter::Language) -> Arc<Grammar> {
@@ -176,7 +178,11 @@ pub fn compile_forms(language: &PatternLanguage, text: &str) -> Result<Forms, St
         && let Some((qualified, callee)) = crate::pattern::qualify_call(text, sep)
     {
         let rooted = crate::pattern::root_path(&qualified, sep);
-        for (text, rooted) in [(qualified, false), (rooted, true)] {
+        // Rooted first: the plain form also matches `\M\f()` with the
+        // leading separator passed over, and a rewrite by it would drop
+        // the separator; forms rewrite in order, so the rooted one goes
+        // first and leaves the plain one nothing there.
+        for (text, rooted) in [(rooted, true), (qualified, false)] {
             if let Some(pattern) = first(&text) {
                 let role = Role::Qualified {
                     separator: sep,

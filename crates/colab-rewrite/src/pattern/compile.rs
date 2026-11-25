@@ -127,7 +127,7 @@ pub(crate) fn shorthand_fields(
 /// [`shorthand_fields`]): each `$VAR` is the field's name, and a field
 /// that ends up `name: name` is written as the shorthand (`name`, Ruby's
 /// `name:`).
-pub(super) fn shorthand_template(
+pub(crate) fn shorthand_template(
     template: &str,
     fields: &[(String, String)],
     shorthand: Shorthand,

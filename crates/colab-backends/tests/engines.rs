@@ -37,19 +37,28 @@ fn source_language(lang: &str) -> Option<&'static colab_rewrite::SourceLanguage>
     })
 }
 
-/// One `<lang>::pattern` rule: language, pattern, constraints.
-type Rule = (String, String, Vec<Constraint>);
+/// One `<lang>::pattern` rule: language, pattern, constraints, and its
+/// `replace` template when it has one and no `let`s (whose lowering is
+/// the DSL compiler's own).
+type Rule = (String, String, Vec<Constraint>, Option<String>);
 
 /// Every pattern rule in a script, `then` stages included.
 fn rules(script: &str) -> Vec<Rule> {
     fn walk(items: &[Item], out: &mut Vec<Rule>) {
         for item in items {
             match item {
-                Item::Match(m) if m.namespace.module == "pattern" => out.push((
-                    m.namespace.lang.clone(),
-                    m.match_string.clone(),
-                    m.constraints.clone(),
-                )),
+                Item::Match(m) if m.namespace.module == "pattern" => {
+                    let template = match (&m.action, m.lets.is_empty()) {
+                        (colab_dsl::ast::Action::Replace(t), true) => Some(t.clone()),
+                        _ => None,
+                    };
+                    out.push((
+                        m.namespace.lang.clone(),
+                        m.match_string.clone(),
+                        m.constraints.clone(),
+                        template,
+                    ));
+                }
                 Item::Then(items) => walk(items, out),
                 _ => {}
             }
@@ -142,7 +151,7 @@ fn trimmed(source: &str, start: usize, end: usize) -> (usize, usize) {
     (start, start + source[start..end].trim_end().len())
 }
 
-fn old_engine((lang, pattern, constraints): &Rule, source: &str) -> Result<Ranges, String> {
+fn old_engine((lang, pattern, constraints, _): &Rule, source: &str) -> Result<Ranges, String> {
     let language = source_language(lang).unwrap();
     let op = language
         .compile_pattern(pattern, PatternAction::Delete, constraints)
@@ -155,7 +164,7 @@ fn old_engine((lang, pattern, constraints): &Rule, source: &str) -> Result<Range
         .collect())
 }
 
-fn new_engine((lang, pattern, constraints): &Rule, source: &str) -> Result<Ranges, String> {
+fn new_engine((lang, pattern, constraints, _): &Rule, source: &str) -> Result<Ranges, String> {
     let language = (source_language(lang).unwrap().pattern)();
     let forms = colab_rewrite::syntax::compile_forms(&language, pattern)?;
     let bound = colab_rewrite::syntax::bound(&forms.forms[0].pattern);
@@ -208,7 +217,7 @@ fn both_engines_find_the_same_matches() {
             (Ok(_), Err(e)) => format!("only the new engine refuses it: {e}"),
             (Err(e), Ok(_)) => format!("only the old engine refuses it: {e}"),
         };
-        let (lang, pattern, constraints) = &rule;
+        let (lang, pattern, constraints, _) = &rule;
         let wheres: Vec<String> = constraints.iter().map(ToString::to_string).collect();
         differ.push((
             place,
@@ -242,6 +251,85 @@ fn both_engines_find_the_same_matches() {
         assert!(
             differ.iter().any(|(place, _)| place.starts_with(prefix)),
             "{prefix} no longer differs ({why}): take it out of KNOWN"
+        );
+    }
+}
+
+/// Where the rewrites may differ, by the place's prefix, and why; kept
+/// true as `KNOWN` is.
+const KNOWN_REWRITES: &[(&str, &str)] = &[(
+    "tests/corpus/rust/pattern_macro_contents/",
+    "rewriting inside a macro's token tree (`pattern/macros.rs::edit_macros`) \
+     is not yet done on colab's matcher",
+)];
+
+#[test]
+fn both_engines_rewrite_alike() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (mut compared, mut changed) = (0, 0);
+    let mut differ: Vec<(String, String)> = Vec::new();
+    for (place, rule, source) in cases(&root) {
+        let (lang, pattern, constraints, Some(template)) = &rule else {
+            continue;
+        };
+        let Some(language) = source_language(lang) else {
+            continue;
+        };
+        let Ok(op) = language.compile_pattern(
+            pattern,
+            PatternAction::Replace(template.clone()),
+            constraints,
+        ) else {
+            continue;
+        };
+        compared += 1;
+        let old = op.apply(&source);
+        let patterns = (language.pattern)();
+        let new = colab_rewrite::syntax::compile_forms(&patterns, pattern).and_then(|forms| {
+            let bound = colab_rewrite::syntax::bound(&forms.forms[0].pattern);
+            let checks = colab_rewrite::syntax::Checks::compile(&patterns, &bound, constraints)?;
+            Ok(colab_rewrite::syntax::rewrite(
+                &patterns, &forms, &checks, &source, template,
+            ))
+        });
+        if old != source {
+            changed += 1;
+        }
+        match new {
+            Ok(new) if new == old => {}
+            Ok(new) => {
+                let diff = similar::TextDiff::from_lines(&old, &new)
+                    .unified_diff()
+                    .header("old engine", "new engine")
+                    .to_string();
+                differ.push((
+                    place,
+                    format!("{lang}::pattern {pattern:?} -> {template:?}:\n{diff}"),
+                ));
+            }
+            Err(e) => differ.push((place, format!("{lang}::pattern {pattern:?}: refused: {e}"))),
+        }
+    }
+    eprintln!(
+        "{compared} rewrites compared ({changed} change their input), {} differ",
+        differ.len()
+    );
+    assert!(compared > 100, "too few rewrites compared: {compared}");
+    let unexplained: Vec<String> = differ
+        .iter()
+        .filter(|(place, _)| !KNOWN_REWRITES.iter().any(|(p, _)| place.starts_with(p)))
+        .map(|(place, line)| format!("{place} {line}"))
+        .collect();
+    assert!(
+        unexplained.is_empty(),
+        "the rewrites differ ({}):\n{}",
+        unexplained.len(),
+        unexplained.join("\n")
+    );
+    for (prefix, why) in KNOWN_REWRITES {
+        assert!(
+            differ.iter().any(|(place, _)| place.starts_with(prefix)),
+            "{prefix} no longer differs ({why}): take it out of KNOWN_REWRITES"
         );
     }
 }

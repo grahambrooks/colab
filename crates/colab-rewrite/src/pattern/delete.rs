@@ -90,7 +90,7 @@ impl StructuralPattern {
 /// Where the item matched at `start..end` really starts: before the doc
 /// comments and attributes just above it that belong to it ([`Leading`]),
 /// each on its own line(s) with no blank line between it and the next.
-pub(super) fn attached_start(
+pub(crate) fn attached_start(
     tree: &tree_sitter::Tree,
     source: &str,
     start: usize,

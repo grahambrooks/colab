@@ -439,6 +439,21 @@ fn match_children<'t>(
     rules: &Rules,
     exact: bool,
 ) -> bool {
+    match_children_from(goals, cands, state, rules, exact, true)
+}
+
+/// [`match_children`]; `skip_first` false right after a sequence, whose
+/// end is where the next goal matches: a token there is the sequence's
+/// to take, never one to pass over (a TypeScript member's `;` stays in
+/// `{ $$$M }`'s `$$$M`, or a rewrite would drop it).
+fn match_children_from<'t>(
+    goals: &[PatternNode],
+    cands: &[Node<'t>],
+    state: &mut State<'t>,
+    rules: &Rules,
+    exact: bool,
+    skip_first: bool,
+) -> bool {
     let skippable = |c: &Node<'_>| !exact && c.is_token() && !c.is_named();
     let Some((goal, rest)) = goals.split_first() else {
         // Only anonymous tokens may be left over.
@@ -465,7 +480,7 @@ fn match_children<'t>(
             {
                 continue;
             }
-            if match_children(rest, &cands[take..], &mut attempt, rules, exact) {
+            if match_children_from(rest, &cands[take..], &mut attempt, rules, exact, false) {
                 *state = attempt;
                 return true;
             }
@@ -483,7 +498,7 @@ fn match_children<'t>(
         return true;
     }
     // A keyword or punctuation the pattern has nothing for here.
-    if skippable(&cand) {
+    if skip_first && skippable(&cand) {
         let mut attempt = state.clone();
         attempt.skipped.push(cand);
         if match_children(goals, later, &mut attempt, rules, exact) {

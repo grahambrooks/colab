@@ -397,11 +397,21 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    new matches, a macro's matches judged in a `Frame` as the old engine
    does. The comparison now takes each rule with its constraints from the
    DSL's parser: 256 comparisons, 81 with `where`, 2 refused by both,
-   none differing. Still to do before `StructuralPattern` moves over:
-   rewriting on the new matches (with `Role`s, absorbed and skipped
-   modifiers, `let`s and rewriters, layout keeping), delete (with
-   attached docs and attributes), and the prefilter; then the switch,
-   with the corpus as the bar. After that, the engine's other
+   none differing. **Rewriting, 2026-11-25:** `syntax::rewrite` fills
+   templates itself (no `TemplateFix`): bindings rewritten first, each
+   laid out as one mark against the match (`keep_layout`) and put back
+   verbatim, forms' `Role`s (requalified, shorthand, loose `;`), an empty
+   sequence's separator tightened, attachments taken by an unwrapping
+   template, and a match's absorbed modifiers given back to a template
+   that is the same kind of item in any reading. Rooted qualified forms
+   now go before plain ones, and the matcher no longer passes over the
+   token right after a `$$$` (it is the sequence's: a TypeScript member's
+   `;`). The comparison gains `both_engines_rewrite_alike`: of 196
+   `replace` rules without `let`s, 195 rewrite to the same text; the one
+   left is rewriting inside Rust macro contents, listed. Still to do
+   before `StructuralPattern` moves over: macro-content rewriting, `let`s
+   and rewriters, delete (with attached docs and attributes), and the
+   prefilter; then the switch, with the corpus as the bar. After that, the engine's other
    tree readers (`declarations`, `calls`, rename, generalize), each
    behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a

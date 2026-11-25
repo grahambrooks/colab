@@ -307,7 +307,7 @@ struct Capture {
 /// `text` with every line after the first moved `by` columns: indentation
 /// added (in the line's own indent character) or removed, never more than
 /// a line has.
-fn shift_lines(text: &str, by: isize) -> String {
+pub(crate) fn shift_lines(text: &str, by: isize) -> String {
     if by == 0 || !text.contains('\n') {
         return text.to_string();
     }
@@ -350,7 +350,7 @@ fn shift_lines(text: &str, by: isize) -> String {
 /// before it in `new`. A rewrite then changes what it changes and leaves
 /// the layout around it, as a layout-only rewrite is not made at all
 /// ([`same_but_whitespace`]).
-pub(super) fn keep_layout(old: &str, new: &str) -> String {
+pub(crate) fn keep_layout(old: &str, new: &str) -> String {
     let (a, b) = (layout_tokens(old), layout_tokens(new));
     if a.is_empty() || b.is_empty() {
         return new.to_string();
@@ -543,7 +543,7 @@ pub(super) fn rewrite_with(
 /// match's column with spaces, and not at all when the line is indented
 /// with tabs. In that case give each later non-empty line the matched
 /// line's own indentation, tabs and all.
-pub(super) fn indent_with_tabs(source: &str, at: usize, text: &str) -> String {
+pub(crate) fn indent_with_tabs(source: &str, at: usize, text: &str) -> String {
     let line_start = source[..at].rfind('\n').map_or(0, |i| i + 1);
     let indent: String = source[line_start..at]
         .chars()
@@ -566,7 +566,7 @@ pub(super) fn indent_with_tabs(source: &str, at: usize, text: &str) -> String {
 /// ast-grep indents every line of a multi-line template to the match's
 /// column, blank ones included, which leaves trailing whitespace. Empty
 /// those lines again.
-pub(super) fn strip_blank_line_indent(text: &str) -> String {
+pub(crate) fn strip_blank_line_indent(text: &str) -> String {
     if !text.contains('\n') {
         return text.to_string();
     }
@@ -684,7 +684,7 @@ pub(super) fn keep_modifier_tokens<D: ast_grep_core::Doc>(
 /// with the separator that would be left over: one of the spaces around
 /// it (`{ log(); $B }` → `{ log(); }`), or its comma (`g($R, 1)` →
 /// `g(1)`, `g(1, $R)` → `g(1)`). `None` when nothing changes.
-pub(super) fn tighten(template: &str, empty: &[&str]) -> Option<String> {
+pub(crate) fn tighten(template: &str, empty: &[&str]) -> Option<String> {
     let mut out = template.to_string();
     for name in empty {
         let var = format!("${name}");
@@ -723,7 +723,7 @@ pub(super) fn tighten(template: &str, empty: &[&str]) -> Option<String> {
 /// `template` with every `$$$NAME` written as `$NAME`, and the names it
 /// uses — so ast-grep takes each binding's value from the rewritten text
 /// [`Rewriter::render`] supplies instead of from the original source.
-pub(super) fn transformable_template(template: &str) -> (String, Vec<String>) {
+pub(crate) fn transformable_template(template: &str) -> (String, Vec<String>) {
     let mut out = String::with_capacity(template.len());
     let mut names: Vec<String> = Vec::new();
     let mut rest = template;
@@ -1040,7 +1040,7 @@ impl StructuralPattern {
 
 /// `true` when `template` is metavariables and whitespace only (`$$$B`,
 /// `$A $B`): it unwraps what it matched rather than writing new code.
-pub(super) fn only_metavariables(template: &str) -> bool {
+pub(crate) fn only_metavariables(template: &str) -> bool {
     let (_, names) = transformable_template(template);
     if names.is_empty() {
         return false;
@@ -1063,7 +1063,7 @@ pub(super) fn only_metavariables(template: &str) -> bool {
 /// is compared as is (a string's spaces are its content); a quote the
 /// scan misreads, such as a Rust lifetime, only keeps more whitespace in
 /// the comparison, so the edit is made, as it would be without the check.
-pub(super) fn same_but_whitespace(a: &str, b: &str) -> bool {
+pub(crate) fn same_but_whitespace(a: &str, b: &str) -> bool {
     fn tokens(text: &str) -> String {
         let mut out = String::with_capacity(text.len());
         let mut quote: Option<char> = None;
