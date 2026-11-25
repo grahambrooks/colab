@@ -14,7 +14,7 @@ in that language and checks the output and a second, unchanged run.
 | [Held back by colab:ignore](#held-back-by-colabignore) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A deleted item takes its docs](#a-deleted-item-takes-its-docs) | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Field shorthand](#field-shorthand) | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a | ❌ | ✅ | n/a | ✅ | ✅ |
-| [Generalized from an edit](#generalized-from-an-edit) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| [Generalized from an edit](#generalized-from-an-edit) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [An import moved](#an-import-moved) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A lone body](#a-lone-body) | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Modifiers left out](#modifiers-left-out) | ❌ | ❌ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ | ✅ | ✅ | ✅ |
@@ -24,7 +24,7 @@ in that language and checks the output and a second, unchanged run.
 | [Scoped with where inside](#scoped-with-where-inside) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A binding tested with where matches](#a-binding-tested-with-where-matches) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-166 working, 8 known gaps, 22 not applicable, 0 without a case.
+167 working, 7 known gaps, 22 not applicable, 0 without a case.
 
 ## A call replaced by name
 
@@ -75,8 +75,6 @@ Cases: [`tests/conformance/field-shorthand.toml`](../tests/conformance/field-sho
 `colab.generalize` learns rules from one hand-made edit, `log(ctx, "a")` → `log("a")`, and they make the same change at another call: the dropped and the carried argument become metavariables, the callee stays literal.
 
 Cases: [`tests/conformance/generalize.toml`](../tests/conformance/generalize.toml).
-
-- ❌ **swift**: generalize takes the smallest node spanning the change, which in Swift is `value_arguments` (inside `call_suffix`), not the `call_expression`: it learns `(ctx, $A)` → `($A)`, which loses the callee, keeps the dropped `ctx` literal, and matches no call.
 
 ## An import moved
 

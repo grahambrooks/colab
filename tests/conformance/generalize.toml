@@ -166,7 +166,6 @@ fn f() {
 
 [[case]]
 lang = "swift"
-xfail = "generalize takes the smallest node spanning the change, which in Swift is `value_arguments` (inside `call_suffix`), not the `call_expression`: it learns `(ctx, $A)` → `($A)`, which loses the callee, keeps the dropped `ctx` literal, and matches no call."
 before = 'log(ctx, "a")'
 after = 'log("a")'
 input = '''
