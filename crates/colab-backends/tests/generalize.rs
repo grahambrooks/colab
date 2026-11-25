@@ -38,6 +38,26 @@ fn pairs(rules: &[colab_core::Generalized]) -> Vec<(&str, &str)> {
         .collect()
 }
 
+/// From the 2026-11-24 replay: a `"."` inside a macro's token tree was
+/// bound as `$A`, and the template's `args.source()` became `$B$Asource()`.
+#[test]
+fn punctuation_and_string_contents_are_never_bound() {
+    let rules = learn(
+        "rust",
+        "let source = make(args, vec![PathBuf::from(\".\")]);",
+        "let source = args.source();",
+    );
+    for rule in &rules {
+        assert!(!rule.pattern.contains("\"$"), "{:?}", pairs(&rules));
+        assert!(
+            !rule.template.contains("$A$") && !rule.template.contains("$B$"),
+            "{:?}",
+            pairs(&rules)
+        );
+        assert!(rule.template.contains(".source()"), "{:?}", pairs(&rules));
+    }
+}
+
 #[test]
 fn a_dropped_argument_and_a_carried_one_become_metavariables() {
     let rules = learn("rust", "foo(config, Mode::Fast)", "foo(config)");
