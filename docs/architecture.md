@@ -31,10 +31,11 @@ crates/
                       # visit_all, rename_nodes_by_text, rename_conflict),
                       # `calls` (replace_call for the backends whose calls
                       # have `function` / `arguments` fields)
-                      # and `pattern`, the structural matcher behind
-                      # every <lang>::pattern (wraps ast-grep-core; also
-                      # evaluates `where`; build_rule_where). Depends on
-                      # tree-sitter, ast-grep-core, regex and
+                      # `pattern` (what a backend supplies for
+                      # <lang>::pattern, the PatternRule it wraps,
+                      # build_rule_where) and `syntax`, which runs every
+                      # pattern on colab's own matcher (colab-syntax).
+                      # Depends on tree-sitter, colab-syntax, regex and
                       # colab-core; colab-core never depends on it, so
                       # colab-dsl and colab-mcp never inherit a grammar
                       # engine.

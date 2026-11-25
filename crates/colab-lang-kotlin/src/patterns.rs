@@ -33,9 +33,7 @@ pub(crate) fn language() -> PatternLanguage {
         macro_contents: None,
         // One `modifiers` node holds the keywords and annotations alike.
         modifiers: Some(colab_rewrite::pattern::Modifiers {
-            sentinel: "@ColabMods",
             kinds: &["modifiers"],
-            several: false,
         }),
         shorthand_fields: None,
         modifier_tokens: &[],

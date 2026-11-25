@@ -1,11 +1,10 @@
-//! The engine's bridge to `colab_syntax`, colab's own tree and matcher,
-//! while the languages still parse with tree-sitter: a grammar's names
-//! (built once per grammar), a source text as a colab tree, and a
-//! pattern compiled with a backend's [`PatternLanguage`].
-//!
-//! Nothing in the engine matches through this yet; it is here so the new
-//! matcher can be run beside the ast-grep one on the same patterns
-//! (`colab-backends/tests/properties.rs`) until it can take over.
+//! Every `<lang>::pattern` rule on `colab_syntax`, colab's own tree and
+//! matcher, while the languages still parse with tree-sitter: a grammar's
+//! names (built once per grammar), a source text as a colab tree, a
+//! pattern compiled with a backend's [`PatternLanguage`] into its forms,
+//! its `where` checks and `let`s, and find, rewrite and delete over a
+//! file and the macro calls whose contents it reads. [`RulePattern`] is
+//! what `pattern::PatternRule` holds.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -106,7 +105,7 @@ pub fn rules_for(language: &PatternLanguage) -> colab_syntax::pattern::Rules {
 }
 
 /// `text` compiled for `language` with every form the engine reads it in
-/// (see `pattern::compile` for the ast-grep engine's): the readings in
+/// (the text transforms are `pattern/compile.rs`'s): the readings in
 /// each context; the qualified and rooted call; the field shorthand;
 /// the pattern without a trailing `;` its node does not hold, or a
 /// trailing `,` that changes nothing. Modifiers need no forms: the
@@ -303,8 +302,7 @@ pub struct Found {
 /// Every match of `forms` in `source`: in its tree, then inside the
 /// contents of the macro calls the language reads (Rust's `assert!(…)`,
 /// `vec![…]`, a project's own from `colab.toml`), each re-parsed in the
-/// language's macro wrapper and its matches mapped back, as
-/// `pattern/macros.rs` does for the ast-grep engine. A macro whose matches
+/// language's macro wrapper and its matches mapped back. A macro whose matches
 /// would reach into the wrapper is left out, so a rewrite never edits
 /// outside the call. Sorted by position, outer matches first.
 pub fn find(language: &PatternLanguage, forms: &Forms, source: &str) -> Vec<Found> {

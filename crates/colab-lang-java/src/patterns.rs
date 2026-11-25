@@ -9,7 +9,8 @@ use colab_rewrite::pattern::PatternLanguage;
 /// `$` is a legal Java identifier character with no other meaning, so
 /// metavariables parse as identifiers unchanged.
 ///
-/// ast-grep selects the *first* node of the pattern's kind in a context, so
+/// The pattern compiler refuses a context with an earlier node of the
+/// pattern's kind than the pattern itself, so
 /// an expression is tried first as a top-level statement, with nothing
 /// before the slot. Then a statement inside a method body (as written, then
 /// with `;` appended), then a class member.
@@ -35,9 +36,7 @@ pub(crate) fn language() -> PatternLanguage {
         macro_contents: None,
         // One `modifiers` node holds the keywords and annotations alike.
         modifiers: Some(colab_rewrite::pattern::Modifiers {
-            sentinel: "@ColabMods",
             kinds: &["modifiers"],
-            several: false,
         }),
         shorthand_fields: None,
         modifier_tokens: &[],

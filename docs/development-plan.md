@@ -438,13 +438,24 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    (`Rules::loose`, put back by the old engine's word placement, now
    `keep_modifier_words`); and a pattern only the file's root spans is
    several nodes, refused (the hook replay caught it proposing one). The
-   property summary is the old engine's, number for number. **Next:**
-   delete `StructuralPattern` and what only it used (`Shape`, the
-   sentinels and placeholder forms, `Visible`, `led_forms`,
-   `errors_captured`, the ast-grep `Check`s and rewriter), move
-   `colab ast`'s `describe` and the scope patterns onto `syntax`, and
-   drop `ast-grep-core`; `tests/engines.rs` then has no second engine to
-   compare and goes. After that, the engine's other
+   property summary is the old engine's, number for number. **ast-grep
+   removed, 2026-11-25:** `StructuralPattern` and everything only it used
+   (`Shape`, the modifier sentinels and placeholder forms, `Visible`,
+   `led_forms`, `errors_captured`, its checks, rewriter, macro frames and
+   finder) are deleted (with colab: `rust::pattern` deletes by item name),
+   `Modifiers` keeps only `kinds`, `colab ast` prints a pattern's tree
+   from the new compiler's form, and `ast-grep-core` is gone from the
+   workspace (101 run-time crates to 97; 4,326 lines removed). The old
+   engine's 67 unit tests run unchanged on the new one through a small
+   adapter; four exposed differences, all fixed: "did you mean" hints for
+   an unknown kind or field, a template's later lines taking the match
+   line's indentation with spaces as well as tabs (`indent_later_lines`;
+   ast-grep did spaces, colab patched tabs), and a parse error tree-sitter
+   reports without a node (a missing hidden token, Go's final newline),
+   which `Tree::has_error` now takes from the parser, so Go patterns read
+   in their context as before. `tests/engines.rs` had no second engine
+   left and is gone. Matching no longer depends on any third-party
+   matcher; parsing still uses tree-sitter (step 2 onwards). After that, the engine's other
    tree readers (`declarations`, `calls`, rename, generalize), each
    behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a

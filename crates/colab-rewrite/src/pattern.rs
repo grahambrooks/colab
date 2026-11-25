@@ -2,12 +2,14 @@
 //!
 //! `errors.Wrap($ERR, $MSG)` matches any call of `errors.Wrap` with two
 //! arguments, binding them to `$ERR` / `$MSG`, wherever it appears.
-//! Matching is delegated to [`ast_grep_core`], which works on the same
-//! tree-sitter version as every colab backend. Nothing outside this module
-//! sees an ast-grep type, so a backend only supplies its grammar, an
-//! expando character, and context wrappers ([`PatternLanguage`]).
+//! Matching is colab's own (`colab_syntax::pattern`, driven by
+//! [`crate::syntax`]); this module is what a backend supplies
+//! ([`PatternLanguage`]: grammar, expando character, context wrappers and
+//! the language's modifier, shorthand and macro rules), the
+//! [`PatternRule`] every backend wraps, `colab ast`'s printed tree, and
+//! the text helpers rewriting and deleting share.
 //!
-//! Metavariables follow ast-grep:
+//! Metavariables:
 //!
 //! | Syntax     | Matches                                         |
 //! | ---------- | ----------------------------------------------- |
@@ -18,27 +20,16 @@
 //! A name used twice must bind identical text. Names are upper-case
 //! letters, digits and `_`, starting with a letter or `_`.
 //!
-//! The module is laid out by stage: `compile.rs` (contexts, forms, the
-//! qualified-call form, the shape a match must fit),
-//! `check.rs` (`where` constraints and `let`s), `find.rs` (matching in a
-//! file's own tree), `macros.rs` (matching inside macro calls' contents),
-//! `rewrite.rs` (templates and layout), `delete.rs` (deleting a match
-//! with what belongs to it), `parse.rs` and `tree.rs` (parsing helpers and
-//! the printed tree), and `rule.rs` (the `Operation` every backend wraps).
+//! The module's files: `compile.rs` (the text transforms behind the
+//! qualified-call and shorthand forms), `check.rs` (the `where` gate every
+//! backend's `build_rule_where` shares), `rewrite.rs` (layout keeping and
+//! template helpers), `delete.rs` (what a deleted match takes with it),
+//! `parse.rs` and `tree.rs` (parsing helpers and the printed tree), and
+//! `rule.rs` (the `Operation` every backend wraps).
 use std::fmt::Write as _;
 
-use std::borrow::Cow;
-
-use ast_grep_core::language::Language;
-use ast_grep_core::matcher::PatternBuilder;
-use ast_grep_core::meta_var::MetaVariable;
-use ast_grep_core::replacer::TemplateFix;
-use ast_grep_core::tree_sitter::{LanguageExt, StrDoc, TSLanguage};
-use ast_grep_core::{NodeMatch, Pattern, PatternError};
-use colab_core::{Constraint, LanguageBackend, Operation, Relation, RuleSpec, Stop, Test, Var};
+use colab_core::{Constraint, LanguageBackend, Operation, RuleSpec, Test, Var};
 use tree_sitter::{Node, Parser};
-
-use crate::{Edit, apply_edits, line_span};
 
 mod compile;
 use compile::*;
@@ -46,16 +37,12 @@ use compile::*;
 pub(crate) use compile::{qualify_call, root_path, shorthand_fields, shorthand_template};
 pub(crate) use delete::{attached_start, with_separator, without_double_blank};
 pub(crate) use rewrite::{
-    indent_with_tabs, keep_layout, keep_modifier_words, only_metavariables, same_but_whitespace,
+    indent_later_lines, keep_layout, keep_modifier_words, only_metavariables, same_but_whitespace,
     shift_lines, strip_blank_line_indent, tighten, transformable_template, unbound_in_template,
 };
-mod find;
-mod macros;
-use macros::*;
+mod check;
 mod delete;
 mod rewrite;
-use rewrite::*;
-mod check;
 pub use check::*;
 mod rule;
 pub use rule::*;
@@ -130,30 +117,18 @@ pub struct PatternLanguage {
 /// `pub(super) fn f() {}`, and `void $F() {}` matches `public static void
 /// f() {}`.
 ///
-/// An item pattern that spells no modifiers is compiled once more with
-/// `sentinel` in front, which parses as the modifiers and becomes the
-/// reserved metavariable [`MODIFIERS`], so one more form matches every
-/// combination. That form refuses an item with none (the pattern as
-/// written matches those), and a rewrite whose template is an item that
-/// spells none gets the matched ones back. A pattern that spells one
-/// (`pub fn …`, `static function …`) is matched as written.
+/// A pattern node that spells none of these kinds matches an item with any
+/// of them leading it: the matcher takes them as given
+/// (`colab_syntax::pattern::Rules::absorb`), and a rewrite whose template
+/// is the same item spelling none gets them back. A pattern that spells
+/// one (`pub fn …`, `static function …`) is matched as written, a spelled
+/// modifiers node token for token.
 #[derive(Clone, Copy, Debug)]
 pub struct Modifiers {
-    /// Text no code contains that parses where an item's modifiers go:
-    /// Java's `@ColabMods`, Rust's `pub(in colab_mods)`.
-    pub sentinel: &'static str,
-    /// The node kinds an item's modifiers parse as, the sentinel's
-    /// included: Java's `modifiers`; C#'s `modifier` and `attribute_list`.
+    /// The node kinds an item's modifiers parse as: Java's `modifiers`;
+    /// C#'s `modifier` and `attribute_list`; Rust's `visibility_modifier`.
     pub kinds: &'static [&'static str],
-    /// Whether the modifiers are several sibling nodes (C#, PHP: one per
-    /// keyword), captured as a `$$$` sequence, rather than one node that
-    /// holds them all (Java's `modifiers`).
-    pub several: bool,
 }
-
-/// The metavariable an item's modifiers are bound to in the form compiled
-/// with [`Modifiers::sentinel`]. Reserved, like [`QUALIFIER`].
-pub const MODIFIERS: &str = "COLAB_MODS";
 
 /// Macro calls whose arguments the grammar keeps as an unparsed token
 /// tree (Rust's `assert!(…)`, `vec![…]`), which a pattern would otherwise
@@ -246,115 +221,6 @@ impl Leading {
 /// A user pattern cannot bind it by accident: it is reserved.
 pub const QUALIFIER: &str = "$COLAB_PATH";
 
-/// ast-grep's view of a [`PatternLanguage`].
-#[derive(Clone)]
-struct TsLang {
-    grammar: tree_sitter::Language,
-    expando: char,
-    /// What a deleted match takes with it (not used by ast-grep).
-    leading: Leading,
-    /// Macro calls a match may be inside (not used by ast-grep).
-    macro_contents: Option<MacroContents>,
-    /// How an item's modifiers parse: a pattern's [`Modifiers::sentinel`]
-    /// is the metavariable [`MODIFIERS`].
-    modifiers: Option<Modifiers>,
-    /// Anonymous modifier keywords a rewrite keeps (not used by ast-grep;
-    /// see [`PatternLanguage::modifier_tokens`]).
-    modifier_tokens: &'static [&'static str],
-}
-
-impl Language for TsLang {
-    fn extract_meta_var(&self, source: &str) -> Option<MetaVariable> {
-        if let Some(modifiers) = self.modifiers
-            && source == modifiers.sentinel
-        {
-            return Some(if modifiers.several {
-                MetaVariable::MultiCapture(MODIFIERS.to_string())
-            } else {
-                MetaVariable::Capture(MODIFIERS.to_string(), true)
-            });
-        }
-        // `$$$B;`, a statement holding only a sequence capture, is the
-        // capture: the statements of a body. C++ needs it, since it reads
-        // `void f() { $$$B }` as a brace-initialized declaration and only
-        // `{ $$$B; }` as a function ([`terminate_lone_sequences`]).
-        if let Some(stripped) = source.strip_suffix(';')
-            && let Some(var @ (MetaVariable::MultiCapture(_) | MetaVariable::Multiple)) =
-                meta_variable(stripped.trim_end(), self.expando)
-        {
-            return Some(var);
-        }
-        meta_variable(source, self.expando)
-    }
-
-    fn pre_process_pattern<'q>(&self, query: &'q str) -> Cow<'q, str> {
-        if self.expando == '$' {
-            Cow::Borrowed(query)
-        } else {
-            Cow::Owned(expand(query, self.expando))
-        }
-    }
-
-    fn expando_char(&self) -> char {
-        self.expando
-    }
-
-    fn kind_to_id(&self, kind: &str) -> u16 {
-        self.grammar.id_for_node_kind(kind, true)
-    }
-
-    fn field_to_id(&self, field: &str) -> Option<u16> {
-        self.grammar
-            .field_id_for_name(field)
-            .map(std::num::NonZero::get)
-    }
-
-    fn build_pattern(&self, builder: &PatternBuilder) -> Result<Pattern, PatternError> {
-        builder.build(|src| StrDoc::try_new(src, self.clone()))
-    }
-}
-
-impl LanguageExt for TsLang {
-    fn get_ts_language(&self) -> TSLanguage {
-        self.grammar.clone()
-    }
-}
-
-/// ast-grep's own reading of a metavariable (`$A`, `$_`, `$$$`, `$$$A`,
-/// `$$A`), which is crate-private there and so repeated here for
-/// [`TsLang`]'s `extract_meta_var`, which adds the modifiers sentinel.
-fn meta_variable(src: &str, expando: char) -> Option<MetaVariable> {
-    let valid_first = |c: char| matches!(c, 'A'..='Z' | '_');
-    let valid = |c: char| matches!(c, 'A'..='Z' | '_' | '0'..='9');
-    let ellipsis: String = std::iter::repeat_n(expando, 3).collect();
-    if src == ellipsis {
-        return Some(MetaVariable::Multiple);
-    }
-    if let Some(name) = src.strip_prefix(&ellipsis) {
-        if !name.starts_with(valid_first) || !name.chars().all(valid) {
-            return None;
-        }
-        return Some(if name.starts_with('_') {
-            MetaVariable::Multiple
-        } else {
-            MetaVariable::MultiCapture(name.to_owned())
-        });
-    }
-    let rest = src.strip_prefix(expando)?;
-    let (name, named) = match rest.strip_prefix(expando) {
-        Some(name) => (name, false),
-        None => (rest, true),
-    };
-    if !name.starts_with(valid_first) || !name.chars().all(valid) {
-        return None;
-    }
-    Some(if name.starts_with('_') {
-        MetaVariable::Dropped(named)
-    } else {
-        MetaVariable::Capture(name.to_owned(), named)
-    })
-}
-
 /// One place a pattern matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
@@ -367,88 +233,4 @@ pub struct Found {
     /// Metavariable bindings, sorted by name. A `$$$` capture is the
     /// source text spanning all of its nodes.
     pub captures: Vec<(String, String)>,
-}
-
-/// A compiled structural pattern.
-pub struct StructuralPattern {
-    lang: TsLang,
-    pattern: Pattern,
-    text: String,
-    prefilter: Option<String>,
-    /// The context wrapper the pattern compiled in, if it needed one.
-    context: Option<String>,
-    /// The pattern's syntax tree as matched (see [`syntax_tree`]).
-    tree: String,
-    /// `where` constraints every match must satisfy.
-    checks: Vec<Check>,
-    /// The constraints as written, for display.
-    constraints: Vec<Constraint>,
-    /// `let` values derived from bindings for the template, in order.
-    lets: Vec<Derived>,
-    /// The same pattern compiled in the language's `also` contexts.
-    also: Vec<StructuralPattern>,
-    /// Set on the form compiled with [`QUALIFIER`] before a bare callee:
-    /// a template's own bare call gets the matched path back.
-    qualified: Option<Qualified>,
-    /// Set on the form compiled with a visibility before an item pattern
-    /// written without one: a template for the same item gets it back.
-    visible: Option<compile::Visible>,
-    /// Set on a form with struct fields written shorthand (`text` for
-    /// `text: $T`): the language's shorthand and `(field, metavariable)`
-    /// pairs, so a template's `$T` becomes `text` and `text: text` is
-    /// written back as the shorthand.
-    shorthand: Option<(Shorthand, Vec<(String, String)>)>,
-    /// The pattern was written with a trailing `;` that is not part of
-    /// the node it matches (a TS class field's): a template's trailing
-    /// `;` is dropped too, or the rewrite would double it.
-    loose_semicolon: bool,
-    /// The pattern's named structure, to refuse a match whose node has
-    /// children the pattern does not account for (see [`Shape`]).
-    shape: Shape,
-    /// For a language with [`PatternLanguage::modifier_tokens`]: this form
-    /// matches an item only when exactly this many of its leading children
-    /// are modifiers (see `led_forms`). `None` checks nothing.
-    led: Option<usize>,
-}
-
-impl std::fmt::Debug for StructuralPattern {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StructuralPattern")
-            .field("text", &self.text)
-            .field("prefilter", &self.prefilter)
-            .field("constraints", &self.constraints)
-            .finish()
-    }
-}
-
-impl StructuralPattern {
-    /// The `where` constraints, as written.
-    pub fn constraints(&self) -> &[Constraint] {
-        &self.constraints
-    }
-
-    /// The context wrapper the pattern needed, or `None` if it parsed on
-    /// its own.
-    pub fn context(&self) -> Option<&str> {
-        self.context.as_deref()
-    }
-
-    /// The pattern's syntax tree, as it will be matched: named nodes,
-    /// one per line, metavariables shown with `$`.
-    pub fn tree(&self) -> &str {
-        &self.tree
-    }
-
-    /// The pattern as written.
-    pub fn text(&self) -> &str {
-        &self.text
-    }
-
-    /// The longest literal (a named leaf that is not a metavariable) the
-    /// pattern contains. Leaves are compared by exact text, so a file
-    /// without this literal cannot match — a sound prefilter. `None` when
-    /// the pattern is all metavariables and punctuation.
-    pub fn prefilter(&self) -> Option<&str> {
-        self.prefilter.as_deref()
-    }
 }

@@ -99,6 +99,33 @@ impl Grammar {
         self.fields.get(usize::from(field.0)).map_or("?", |n| n)
     }
 
+    /// The names of the named kinds, sorted, each once: what a "did you
+    /// mean" suggests from.
+    pub fn named_kind_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .kinds
+            .iter()
+            .filter(|(_, named)| *named)
+            .map(|(n, _)| &**n)
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    }
+
+    /// The field names, each once.
+    pub fn field_names(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .fields
+            .iter()
+            .map(|n| &**n)
+            .filter(|n| !n.is_empty())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    }
+
     /// Every kind called `name`: an aliased kind has more than one id.
     pub fn kinds_named(&self, name: &str) -> Vec<Kind> {
         self.kinds
@@ -157,6 +184,8 @@ pub struct Tree {
     /// In document order (a node before its descendants); index 0 is the
     /// root, which spans the whole text.
     nodes: Vec<NodeData>,
+    /// The parser reported an error no node shows.
+    errors: bool,
 }
 
 impl Tree {
@@ -181,11 +210,16 @@ impl Tree {
         self.nodes.is_empty()
     }
 
-    /// Whether any node is an `ERROR` or missing.
+    /// Whether the parse found a syntax error: any node is an `ERROR` or
+    /// missing, or the parser said so ([`Builder::error_seen`]) about one
+    /// it reported no node for (tree-sitter's missing hidden tokens, such
+    /// as the newline Go wants at the end of a file).
     pub fn has_error(&self) -> bool {
-        self.nodes
-            .iter()
-            .any(|n| n.kind == Kind::ERROR || n.flags.missing)
+        self.errors
+            || self
+                .nodes
+                .iter()
+                .any(|n| n.kind == Kind::ERROR || n.flags.missing)
     }
 
     /// Every node, in document order.

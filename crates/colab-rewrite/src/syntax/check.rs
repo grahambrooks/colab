@@ -1,6 +1,6 @@
-//! `where` constraints on colab's own matches: the same tests as
-//! `pattern/check.rs` (the ast-grep engine's), read from
-//! `colab_syntax::pattern::Match` and `colab_syntax::Node`.
+//! `where` constraints on colab's own matches (`colab_syntax::pattern::
+//! Match`): relations (`inside`, `has`, siblings), positions, fields,
+//! regexes, nested patterns, and the semantic and scan-fact tests.
 //!
 //! A match inside a macro's contents is judged as one in the file would be
 //! ([`Frame`]): what encloses it is the contents' own nodes and then the
@@ -225,8 +225,10 @@ impl Check {
                     .into_iter()
                     .any(|k| grammar.kind_is_named(k));
                 if !named {
+                    let hint = colab_core::suggest::closest(kind, grammar.named_kind_names())
+                        .map_or_default(|k| format!(" (did you mean `{k}`?)"));
                     return Err(format!(
-                        "`{var} is {kind}`: the grammar has no node kind `{kind}`"
+                        "`{var} is {kind}`: the grammar has no node kind `{kind}`{hint}; `colab ast` shows the kinds in a snippet"
                     ));
                 }
                 Kind::Is {
@@ -305,7 +307,11 @@ impl Check {
             }
             Test::Field(name) => {
                 if grammar.field(name).is_none() {
-                    return Err(format!("`{constraint}`: the grammar has no field `{name}`"));
+                    let hint = colab_core::suggest::closest(name, grammar.field_names())
+                        .map_or_default(|f| format!(" (did you mean `{f}`?)"));
+                    return Err(format!(
+                        "`{constraint}`: the grammar has no field `{name}`{hint}; `colab ast` shows the fields in a snippet"
+                    ));
                 }
                 Kind::Field(name.clone())
             }

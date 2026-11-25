@@ -1,5 +1,5 @@
-//! Deleting colab's own matches, with what belongs to them, as
-//! `pattern/delete.rs` does for the ast-grep engine: a match alone on its
+//! Deleting colab's own matches, with what belongs to them (the helpers
+//! are `pattern/delete.rs`'s): a match alone on its
 //! line(s) goes with the whole line; an item's doc comments and attributes
 //! go with it; a list element goes with the `,` beside it; a match with no
 //! comma beside it inside a line is left alone.

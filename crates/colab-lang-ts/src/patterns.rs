@@ -43,10 +43,9 @@ pub(crate) fn language() -> PatternLanguage {
             doc_comments: &["/**"],
         },
         macro_contents: None,
-        // No sentinel: the named modifiers (`accessibility_modifier`,
-        // `override_modifier`) are keywords only, so no text can stand for
-        // them, and a decorator is the member's sibling, not its child. A
-        // pattern spells `private` to match a private member.
+        // The modifier keywords (`accessibility_modifier`, `static`, …) are
+        // `modifier_tokens`, left out one by one; a decorator is the
+        // member's sibling, not its child.
         modifiers: None,
         modifier_tokens: MODIFIER_TOKENS,
         // `{ host }` is `{ host: host }`, as in JavaScript.

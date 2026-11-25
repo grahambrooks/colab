@@ -1,5 +1,5 @@
 //! Structural patterns over a [`Tree`]: code with metavariables, matched
-//! node for node, the matcher of colab's own that replaces ast-grep's.
+//! node for node: colab's own matcher (it replaced ast-grep's in 2026-11).
 //!
 //! A pattern is a parsed fragment ([`Pattern::from_node`]): each node whose
 //! text is a metavariable becomes one (`$X` one node, `$$$X` a run of

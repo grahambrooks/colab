@@ -107,6 +107,30 @@ pub struct TreeReport {
     pub prefilter: Option<String>,
 }
 
+/// The printed tree of the node `text` (a pattern) spans when read in
+/// `context` (bare when `None`), metavariables shown with `$`, as the
+/// first form compiled it; without a `;` its node does not hold, as a
+/// loose form compiled it. `None` for a lone metavariable.
+fn pattern_tree(language: &PatternLanguage, text: &str, context: Option<&str>) -> Option<String> {
+    let read = |text: &str| -> Option<String> {
+        let expanded = colab_syntax::pattern::expand(text, language.expando);
+        let (filled, slot) = match context {
+            Some(c) => (
+                c.replacen(PATTERN_SLOT, &expanded, 1),
+                c.find(PATTERN_SLOT)?,
+            ),
+            None => (expanded.clone(), 0),
+        };
+        let mut parser = Parser::new();
+        parser.set_language(&language.grammar).ok()?;
+        let tree = parser.parse(&filled, None)?;
+        let span = trim_span(&filled, slot..slot + expanded.len());
+        let node = deepest_covering(tree.root_node(), &filled, span)?;
+        Some(print_tree(node, &filled, language.expando, false))
+    };
+    read(text).or_else(|| read(text.trim_end().strip_suffix(';')?))
+}
+
 /// The tree for a snippet (`is_pattern == false`) or for `text` compiled
 /// as a pattern exactly as a `<lang>::pattern` rule would compile it.
 pub fn describe(
@@ -115,12 +139,14 @@ pub fn describe(
     is_pattern: bool,
 ) -> Result<TreeReport, String> {
     if is_pattern {
-        let compiled = StructuralPattern::compile(language, text)?;
+        let forms = crate::syntax::compile_forms(language, text)?;
+        let form = &forms.forms[0];
         Ok(TreeReport {
-            tree: compiled.tree().to_string(),
+            tree: pattern_tree(language, text, form.context.as_deref())
+                .unwrap_or_else(|| "(any node)".to_string()),
             has_error: false,
-            context: compiled.context().map(str::to_string),
-            prefilter: compiled.prefilter().map(str::to_string),
+            context: form.context.clone(),
+            prefilter: crate::syntax::prefilter(&forms),
         })
     } else {
         let (tree, has_error) = syntax_tree(&language.grammar, text)?;

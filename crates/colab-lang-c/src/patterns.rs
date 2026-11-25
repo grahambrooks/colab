@@ -9,7 +9,8 @@ use colab_rewrite::pattern::PatternLanguage;
 /// `$` can appear in C identifiers (a GCC extension), so metavariables are
 /// parsed as `µ`.
 ///
-/// ast-grep selects the *first* node of the pattern's kind in a context, so
+/// The pattern compiler refuses a context with an earlier node of the
+/// pattern's kind than the pattern itself, so
 /// a context must not put a node the pattern could be (an `identifier`)
 /// before the slot. The first context, a top-level expression statement,
 /// has nothing before it; the function-body contexts, for statements that
@@ -36,10 +37,8 @@ pub(crate) fn language() -> PatternLanguage {
         },
         macro_contents: None,
         // A node per specifier (`static`, `inline`, `const`,
-        // `__attribute__((…))`), each a child of the item; a GNU attribute
-        // stands for them all.
+        // `__attribute__((…))`), each a child of the item.
         modifiers: Some(colab_rewrite::pattern::Modifiers {
-            sentinel: "__attribute__((colab_mods))",
             kinds: &[
                 "attribute_specifier",
                 "attribute_declaration",
@@ -47,7 +46,6 @@ pub(crate) fn language() -> PatternLanguage {
                 "type_qualifier",
                 "ms_declspec_modifier",
             ],
-            several: true,
         }),
         shorthand_fields: None,
         modifier_tokens: &[],

@@ -226,8 +226,10 @@ paths with uncommitted changes unless `--allow-dirty`.
 
 ### Against ast-grep
 
-colab's patterns are ast-grep's engine (`ast-grep-core`) under colab's
-own walker, prefilter and checks, so the two were compared on the same
+These figures predate colab's own matcher (`colab-syntax`, which
+replaced `ast-grep-core` on 2026-11-25) and are kept as the baseline to
+remeasure against. At the time colab's patterns were ast-grep's engine
+under colab's own walker, prefilter and checks, so the two were compared on the same
 patterns: colab 2026.11.15.8c4a7d1 (`dist` build) and ast-grep 0.51.3
 (Homebrew), on colab's `crates/` (238 files) and on 10,025 `.rs` files
 (458 crates, 4.1M lines) copied from a Cargo registry; Apple M2 Max,

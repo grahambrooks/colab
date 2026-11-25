@@ -40,7 +40,6 @@ pub(crate) fn language() -> PatternLanguage {
         macro_contents: None,
         // A node per keyword, and the attribute list before them.
         modifiers: Some(colab_rewrite::pattern::Modifiers {
-            sentinel: "#[ColabMods]",
             kinds: &[
                 "attribute_list",
                 "visibility_modifier",
@@ -50,7 +49,6 @@ pub(crate) fn language() -> PatternLanguage {
                 "readonly_modifier",
                 "var_modifier",
             ],
-            several: true,
         }),
         shorthand_fields: None,
         modifier_tokens: &[],

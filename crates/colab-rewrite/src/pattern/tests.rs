@@ -1,7 +1,67 @@
 //! The pattern engine's unit tests: compiling, matching, constraints,
-//! rewriting and deleting, across a few grammars.
+//! rewriting and deleting, across a few grammars. Written against the
+//! retired ast-grep engine's `StructuralPattern`; they run on colab's own
+//! matcher through the adapter below, unchanged.
 
 use super::*;
+use colab_syntax::pattern::expand;
+
+impl std::fmt::Debug for StructuralPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "StructuralPattern({:?})", self.text)
+    }
+}
+
+/// The old engine's name and calls, kept for these tests, over the pattern
+/// colab's matcher compiles ([`crate::syntax::RulePattern`]).
+struct StructuralPattern {
+    language: PatternLanguage,
+    text: String,
+    inner: crate::syntax::RulePattern,
+}
+
+impl StructuralPattern {
+    fn compile(language: &PatternLanguage, text: &str) -> Result<Self, String> {
+        Ok(Self {
+            language: language.clone(),
+            text: text.to_string(),
+            inner: crate::syntax::RulePattern::compile(language, text, &[])?,
+        })
+    }
+
+    fn constrain(
+        self,
+        language: &PatternLanguage,
+        constraints: &[Constraint],
+    ) -> Result<Self, String> {
+        let inner = crate::syntax::RulePattern::compile(language, &self.text, constraints)?;
+        Ok(Self { inner, ..self })
+    }
+
+    fn rewrite(&self, source: &str, template: &str) -> String {
+        self.inner.rewrite(source, template)
+    }
+
+    fn find(&self, source: &str) -> Vec<Found> {
+        self.inner.find(source)
+    }
+
+    fn delete(&self, source: &str) -> String {
+        self.inner.delete(source)
+    }
+
+    fn prefilter(&self) -> Option<&str> {
+        self.inner.prefilter()
+    }
+
+    fn tree(&self) -> String {
+        describe(&self.language, &self.text, true).map_or_default(|r| r.tree)
+    }
+
+    fn context(&self) -> Option<String> {
+        describe(&self.language, &self.text, true).ok()?.context
+    }
+}
 
 fn go() -> PatternLanguage {
     PatternLanguage {
@@ -658,8 +718,7 @@ fn a_multi_line_template_follows_tab_indentation() {
 
 #[test]
 fn a_multi_line_template_leaves_no_trailing_whitespace() {
-    // ast-grep re-indents a template's later lines to the match's
-    // column (spaces only; tab-indented Go is left flush-left).
+    // A template's later lines take the match line's indentation.
     let p = StructuralPattern::compile(&python(), "print($$$A)").unwrap();
     let out = p.rewrite("def f():\n    print(1)\n", "print($$$A)\n\nprint(2)");
     assert_eq!(out, "def f():\n    print(1)\n\n    print(2)\n");

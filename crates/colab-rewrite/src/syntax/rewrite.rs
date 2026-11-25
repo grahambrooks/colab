@@ -1,6 +1,5 @@
-//! Rewriting colab's own matches with a template: the same rendering as
-//! `pattern/rewrite.rs` (the ast-grep engine's), with the template filled
-//! by colab rather than by ast-grep's `TemplateFix`.
+//! Rewriting colab's own matches with a template, filled by colab (the
+//! layout helpers are `pattern/rewrite.rs`'s).
 //!
 //! Each match's bindings are rewritten first (nested matches inside them),
 //! then the template is filled with a mark per binding, laid out against
@@ -14,7 +13,7 @@ use colab_syntax::pattern::{Binding, Match, PatternNode};
 
 use super::{Checks, EngineForm, Forms, Frame, Role};
 use crate::pattern::{
-    PatternLanguage, indent_with_tabs, keep_layout, keep_modifier_words, only_metavariables,
+    PatternLanguage, indent_later_lines, keep_layout, keep_modifier_words, only_metavariables,
     qualify_call, root_path, same_but_whitespace, shift_lines, shorthand_template,
     strip_blank_line_indent, tighten, transformable_template,
 };
@@ -392,7 +391,7 @@ impl Rewriter<'_, '_> {
             let filled = fill(template, |n| {
                 values.iter().find(|v| v.name == n).map(|v| v.text.clone())
             });
-            let filled = indent_with_tabs(source, range.start, &filled);
+            let filled = indent_later_lines(source, range.start, &filled);
             return keep_layout(old, &strip_blank_line_indent(&filled));
         }
         let mut skeleton = String::with_capacity(old.len());
@@ -413,7 +412,7 @@ impl Rewriter<'_, '_> {
                 None => Some(v.text.clone()),
             }
         });
-        let marked = indent_with_tabs(source, range.start, &marked);
+        let marked = indent_later_lines(source, range.start, &marked);
         let laid = keep_layout(&skeleton, &strip_blank_line_indent(&marked));
         let indent = |line: &str| line.chars().take_while(|c| c.is_whitespace()).count();
         let line_start = source[..range.start].rfind('\n').map_or(0, |p| p + 1);

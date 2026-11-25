@@ -48,6 +48,11 @@ impl Tree {
         let mut b = Builder::new(text, grammar);
         let mut cursor = tree.walk();
         let root = cursor.node();
+        // The cursor never visits a missing hidden token (Go's final
+        // newline), so take the parser's word for an error.
+        if root.has_error() {
+            b.error_seen();
+        }
         b.start_node(Kind(root.kind_id()), None, flags(root))?;
         if !cursor.goto_first_child() {
             return b.finish();

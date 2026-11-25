@@ -29,11 +29,6 @@ lalrpop_mod!(grammar, "/codemod.rs");
 // lowering a `match` block; this file runs them in order.
 mod includes;
 mod lower;
-/// A match's `let` clauses as the constraints that carry them to a
-/// backend, each step checked: what `build_rule_where` receives beside
-/// the `where`. Public so a pattern engine can be driven with a rule as
-/// the compiler would drive it (`colab-backends/tests/engines.rs`).
-pub use lower::lower_lets;
 mod names;
 mod syntax;
 
@@ -48,35 +43,6 @@ pub use syntax::parse;
 /// **`include` directives.** This entry point has no base path so
 /// `include "..."` raises [`Error::Config`]. Use
 /// [`compile_at_path`] for scripts that may include other files.
-/// The script's `match` items as the compiler hands them to the backends,
-/// before lowering: includes expanded (relative to the working
-/// directory), named patterns and rewriters resolved, scan references
-/// checked. For driving a pattern engine with a rule exactly as `compile`
-/// would (`colab-backends/tests/engines.rs`); `then` stages flattened.
-pub fn resolved_matches(text: &str, backends: &BackendRegistry) -> Result<Vec<crate::ast::Match>> {
-    let command = parse(text)?;
-    let mut seen: HashSet<PathBuf> = HashSet::new();
-    let mut defs = includes::Definitions::default();
-    let entries = includes::expand_includes(command.items, None, &mut seen, &mut defs)?;
-    let mut scans: std::collections::HashMap<String, Vec<String>> = Default::default();
-    let mut out = Vec::new();
-    for entry in entries {
-        match entry {
-            includes::Entry::Match(mut m) => {
-                names::resolve_names(&mut m, &defs, None)?;
-                names::resolve_in(&mut m.constraints, &scans, false)?;
-                out.push(m);
-            }
-            includes::Entry::Scan(scan) => {
-                let (name, vars, _) = names::lower_scan(scan, &defs, backends)?;
-                scans.insert(name, vars);
-            }
-            includes::Entry::Stage => {}
-        }
-    }
-    Ok(out)
-}
-
 pub fn compile(text: &str, backends: &BackendRegistry) -> Result<Refactoring> {
     compile_inner(text, backends, None)
 }

@@ -332,7 +332,8 @@ The repo is a Cargo workspace under `crates/`:
 ```
 crates/
   colab-core/         # Error, walker, CodeTransformer, LanguageBackend, registry, RunReport, render
-  colab-rewrite/      # shared tree-sitter rewriting and the <lang>::pattern engine (ast-grep-core)
+  colab-rewrite/      # shared tree-sitter rewriting and the <lang>::pattern engine
+  colab-syntax/       # colab's own lossless syntax tree and structural matcher
   colab-backends/     # registry(): the one place every backend is registered
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR
   colab-lang-c/       # C backend

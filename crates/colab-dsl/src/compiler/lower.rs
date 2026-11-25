@@ -16,7 +16,7 @@ pub(crate) fn lower_match(m: Match, backends: &BackendRegistry) -> Result<Lowere
 
 /// `let` clauses as the constraints that carry them to the pattern
 /// compiler, each step checked.
-pub fn lower_lets(
+pub(crate) fn lower_lets(
     namespace: &Namespace,
     action: &Action,
     lets: Vec<Let>,

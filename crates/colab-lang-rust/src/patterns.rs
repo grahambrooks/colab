@@ -10,7 +10,8 @@ use colab_rewrite::pattern::PatternLanguage;
 /// variable, so metavariables are parsed as `µ`. Items and `;`-terminated
 /// statements parse on their own.
 ///
-/// ast-grep selects the *first* node of the pattern's kind in a context, so
+/// The pattern compiler refuses a context with an earlier node of the
+/// pattern's kind than the pattern itself, so
 /// an expression is tried first as a top-level statement (nothing before
 /// the slot), then as the tail of a function body.
 pub(crate) fn language() -> PatternLanguage {
@@ -50,9 +51,7 @@ pub(crate) fn language() -> PatternLanguage {
             wrapper: "fn _w() {\n_m(@@PATTERN@@);\n}\n",
         }),
         modifiers: Some(colab_rewrite::pattern::Modifiers {
-            sentinel: "pub(in colab_mods)",
             kinds: &["visibility_modifier"],
-            several: false,
         }),
         shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
         modifier_tokens: &[],

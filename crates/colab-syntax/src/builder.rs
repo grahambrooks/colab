@@ -31,6 +31,7 @@ pub struct Builder {
     nodes: Vec<NodeData>,
     open: Vec<usize>,
     pos: usize,
+    errors: bool,
 }
 
 impl Builder {
@@ -41,7 +42,14 @@ impl Builder {
             nodes: Vec::new(),
             open: Vec::new(),
             pos: 0,
+            errors: false,
         }
+    }
+
+    /// Record that the parse has a syntax error the tree shows no node
+    /// for, so [`Tree::has_error`] still reports it.
+    pub fn error_seen(&mut self) {
+        self.errors = true;
     }
 
     /// The byte offset the next token starts at.
@@ -174,6 +182,7 @@ impl Builder {
             text: self.text,
             grammar: self.grammar,
             nodes: self.nodes,
+            errors: self.errors,
         })
     }
 }

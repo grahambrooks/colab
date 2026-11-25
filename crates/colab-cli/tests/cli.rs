@@ -540,7 +540,7 @@ fn licenses_prints_colabs_and_every_shipped_crates() {
     assert_eq!(output.status.code(), Some(0));
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.starts_with("colab\n\nMIT License"), "{}", &text[..80]);
-    for crate_ in ["tree-sitter ", "ast-grep-core ", "colored ", "serde "] {
+    for crate_ in ["tree-sitter ", "regex ", "colored ", "serde "] {
         assert!(
             text.lines().any(|l| l.starts_with(crate_)),
             "{crate_} is not listed"

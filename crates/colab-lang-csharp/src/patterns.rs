@@ -9,7 +9,8 @@ use colab_rewrite::pattern::PatternLanguage;
 /// `$` starts an interpolated string in C#, so metavariables are parsed
 /// as `µ`.
 ///
-/// ast-grep selects the *first* node of the pattern's kind in a context, so
+/// The pattern compiler refuses a context with an earlier node of the
+/// pattern's kind than the pattern itself, so
 /// an expression is tried first in a top-level `return`, which puts no
 /// identifier before the slot. Then a statement inside a method body (as
 /// written, then with `;` appended), then a class member.
@@ -34,9 +35,7 @@ pub(crate) fn language() -> PatternLanguage {
         macro_contents: None,
         // A `modifier` node per keyword, and the attribute lists before them.
         modifiers: Some(colab_rewrite::pattern::Modifiers {
-            sentinel: "[ColabMods]",
             kinds: &["modifier", "attribute_list"],
-            several: true,
         }),
         shorthand_fields: None,
         modifier_tokens: &[],
