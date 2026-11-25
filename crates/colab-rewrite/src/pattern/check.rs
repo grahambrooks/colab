@@ -584,7 +584,7 @@ fn semantic_span(var: &Var, m: &NodeMatch<'_, StrDoc<TsLang>>) -> Option<std::op
     }
 }
 
-pub(super) fn require_bound(bound: &[Var], var: &Var) -> Result<(), String> {
+pub(crate) fn require_bound(bound: &[Var], var: &Var) -> Result<(), String> {
     match bound.iter().find(|b| b.name == var.name) {
         Some(b) if b.multi == var.multi => Ok(()),
         Some(b) => Err(format!(

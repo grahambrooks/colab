@@ -1,7 +1,7 @@
 //! Bare rules: `match …` items with no `refactor "…" { … }` around them.
 //!
 //! The grammar takes them anywhere a script is read (`-e`, `--script`,
-//! stdin, an `include`, the MCP tools, the `.colab` language server), as
+//! stdin, an `include`, the MCP tools), as
 //! one block named [`NAME`]; the compiler names a bare script file after
 //! the file instead. Parse errors point into the text as written, since
 //! nothing is wrapped around it.

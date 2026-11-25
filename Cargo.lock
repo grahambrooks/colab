@@ -284,6 +284,7 @@ name = "colab-backends"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-dsl",
  "colab-lang-c",
  "colab-lang-cpp",
  "colab-lang-csharp",

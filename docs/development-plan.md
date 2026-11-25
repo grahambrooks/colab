@@ -389,12 +389,19 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    `,` that changes nothing. `colab-backends/tests/engines.rs` runs both
    engines on every `<lang>::pattern` in the conformance matrix and the
    corpus (256 comparisons) and requires the same matched ranges; the
-   one difference left is matching inside Rust macro contents
-   (`pattern/macros.rs`), listed with its reason. Still to do before
-   `StructuralPattern` moves over: macro contents; then the rest of the
-   engine on the new matches (constraints and `Check`, rewriting with
-   `Role`s and absorbed modifiers, delete, the prefilter), each against
-   the same comparison and the corpus. After that, the engine's other
+   one difference left was matching inside Rust macro contents.
+   **Macro contents and `where`, 2026-11-25:** `syntax::find_where`
+   searches a file's tree and the contents of the macro calls the
+   language reads (nested ones too), and filters with
+   `syntax::Checks`, every `where` test of `pattern/check.rs` over the
+   new matches, a macro's matches judged in a `Frame` as the old engine
+   does. The comparison now takes each rule with its constraints from the
+   DSL's parser: 256 comparisons, 81 with `where`, 2 refused by both,
+   none differing. Still to do before `StructuralPattern` moves over:
+   rewriting on the new matches (with `Role`s, absorbed and skipped
+   modifiers, `let`s and rewriters, layout keeping), delete (with
+   attached docs and attributes), and the prefilter; then the switch,
+   with the corpus as the bar. After that, the engine's other
    tree readers (`declarations`, `calls`, rename, generalize), each
    behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a

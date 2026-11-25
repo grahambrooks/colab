@@ -15,6 +15,9 @@ use colab_syntax::{Grammar, Tree};
 
 use crate::pattern::PatternLanguage;
 
+mod check;
+pub use check::{Checks, Enclosing, Frame, Nested, bound};
+
 /// `language`'s kind and field names, built on first use.
 pub fn grammar_of(language: &tree_sitter::Language) -> Arc<Grammar> {
     static GRAMMARS: OnceLock<Mutex<HashMap<tree_sitter::Language, Arc<Grammar>>>> =
@@ -245,29 +248,45 @@ pub struct Found {
 /// would reach into the wrapper is left out, so a rewrite never edits
 /// outside the call. Sorted by position, outer matches first.
 pub fn find(language: &PatternLanguage, forms: &Forms, source: &str) -> Vec<Found> {
+    find_where(language, forms, &Checks::default(), source)
+}
+
+/// [`find`], keeping only the matches every one of `checks` holds for (a
+/// rule's `where`), judged in the file or, for a macro's contents, as if
+/// in the file ([`Frame`]).
+pub fn find_where(
+    language: &PatternLanguage,
+    forms: &Forms,
+    checks: &Checks,
+    source: &str,
+) -> Vec<Found> {
     let Some(tree) = self::tree(&language.grammar, source) else {
         return Vec::new();
     };
-    let mut out = find_in_tree(forms, &tree, false);
-    out.extend(find_in_macros(language, forms, &tree, 0));
+    let mut out = find_in_tree(forms, checks, &tree, None);
+    out.extend(find_in_macros(language, forms, checks, &tree, None, 0));
     out.sort_by_key(|f| (f.range.start, std::cmp::Reverse(f.range.end), f.form));
     out.dedup_by(|a, b| a.range == b.range);
     out
 }
 
-fn find_in_tree(forms: &Forms, tree: &Tree, in_macro: bool) -> Vec<Found> {
-    forms
-        .forms
-        .iter()
-        .enumerate()
-        .flat_map(|(form, f)| {
-            f.pattern.find_all(tree).into_iter().map(move |m| Found {
-                range: m.node.range(),
-                form,
-                in_macro,
-            })
-        })
-        .collect()
+fn find_in_tree(
+    forms: &Forms,
+    checks: &Checks,
+    tree: &Tree,
+    frame: Option<&Frame<'_>>,
+) -> Vec<Found> {
+    let mut out = Vec::new();
+    for (form, f) in forms.forms.iter().enumerate() {
+        let mut found = f.pattern.find_all(tree);
+        checks.retain(&mut found, tree.text(), frame);
+        out.extend(found.into_iter().map(|m| Found {
+            range: m.node.range(),
+            form,
+            in_macro: frame.is_some(),
+        }));
+    }
+    out
 }
 
 /// Macro nesting colab reads into, at most: each level is a re-parse.
@@ -276,7 +295,9 @@ const MACRO_DEPTH: usize = 8;
 fn find_in_macros(
     language: &PatternLanguage,
     forms: &Forms,
+    checks: &Checks,
     tree: &Tree,
+    frame: Option<&Frame<'_>>,
     depth: usize,
 ) -> Vec<Found> {
     let Some(spec) = language.macro_contents else {
@@ -292,6 +313,9 @@ fn find_in_macros(
     let listed = |name: &str| spec.macros.contains(&name) || extra.iter().any(|m| m == name);
     let mut out = Vec::new();
     for call in tree.nodes().filter(|n| n.kind_name() == spec.invocation) {
+        if frame.is_some_and(|f| !f.holds(call)) {
+            continue;
+        }
         let name = call
             .child_by_field(spec.name_field)
             .map(|n| n.text().rsplit("::").next().unwrap_or(n.text()).trim());
@@ -318,9 +342,45 @@ fn find_in_macros(
         if wrapped_tree.has_error() {
             continue;
         }
-        let mut found = find_in_tree(forms, &wrapped_tree, true);
-        found.extend(find_in_macros(language, forms, &wrapped_tree, depth + 1));
         let within = slot..slot + contents.len();
+        // Beyond the contents: this call and its ancestors (within the
+        // enclosing contents, for a nested call), then the enclosing
+        // frame's.
+        let mut outside: Vec<Enclosing<'_>> = std::iter::once(call)
+            .chain(std::iter::successors(
+                call.parent(),
+                colab_syntax::Node::parent,
+            ))
+            .filter(|a| frame.is_none_or(|f| f.holds(*a)))
+            .map(|a| -> Enclosing<'_> { Box::new(move |n: &Nested| n.matches(a)) })
+            .collect();
+        if let Some(f) = frame {
+            outside.extend(
+                f.outside
+                    .iter()
+                    .map(|outer| -> Enclosing<'_> { Box::new(move |n: &Nested| outer(n)) }),
+            );
+        }
+        let base = inner.start;
+        let map: Box<dyn Fn(usize) -> usize + '_> = match frame {
+            Some(f) => Box::new(move |p: usize| (f.map)(p.saturating_sub(slot) + base)),
+            None => Box::new(move |p: usize| p.saturating_sub(slot) + base),
+        };
+        let inner_frame = Frame {
+            contents: within.clone(),
+            outside: &outside,
+            file: frame.map_or(tree.text(), |f| f.file),
+            map,
+        };
+        let mut found = find_in_tree(forms, checks, &wrapped_tree, Some(&inner_frame));
+        found.extend(find_in_macros(
+            language,
+            forms,
+            checks,
+            &wrapped_tree,
+            Some(&inner_frame),
+            depth + 1,
+        ));
         if found.is_empty()
             || found
                 .iter()

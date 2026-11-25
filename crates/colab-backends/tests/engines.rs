@@ -1,18 +1,20 @@
-//! The two pattern engines side by side: every `<lang>::pattern` in the
-//! conformance matrix (`tests/conformance/*.toml`) and the corpus
-//! (`tests/corpus/<lang>/<case>/script`), compiled by the ast-grep engine
+//! The two pattern engines side by side: every `<lang>::pattern` rule in
+//! the conformance matrix (`tests/conformance/*.toml`) and the corpus
+//! (`tests/corpus/<lang>/<case>/script`), read by the DSL's parser with
+//! its `where` constraints, compiled by the ast-grep engine
 //! (`SourceLanguage::compile_pattern`) and by colab's own
-//! (`colab_rewrite::syntax::compile_forms`, every form), and run over the
-//! case's input. The matched ranges must agree, except where an entry in
-//! `KNOWN` says why they differ.
+//! (`colab_rewrite::syntax::compile_forms` + `Checks`), and run over the
+//! case's input. The matched ranges must agree, and a rule one engine
+//! refuses the other must refuse too, except where an entry in `KNOWN`
+//! says why they differ.
 //!
 //! This is the bar for moving `StructuralPattern` onto colab's matcher.
-//! The pattern alone is compared: a rule's `where` narrows both alike.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use colab_core::Operation;
+use colab_core::{Constraint, Operation};
+use colab_dsl::ast::{Command, Item};
 use colab_rewrite::pattern::PatternAction;
 
 fn source_language(lang: &str) -> Option<&'static colab_rewrite::SourceLanguage> {
@@ -35,64 +37,27 @@ fn source_language(lang: &str) -> Option<&'static colab_rewrite::SourceLanguage>
     })
 }
 
-/// Each `match <lang>::pattern <string>` in a script: the language and
-/// the pattern text, its quoting undone (`'…'` and raw strings literal,
-/// `"…"` with JSON's escapes).
-fn patterns(script: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut rest = script;
-    while let Some(at) = rest.find("::pattern") {
-        let head = &rest[..at];
-        let lang: String = head
-            .chars()
-            .rev()
-            .take_while(char::is_ascii_lowercase)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        let after = rest[at + "::pattern".len()..].trim_start();
-        rest = &rest[at + "::pattern".len()..];
-        let is_match = head[..head.len() - lang.len()]
-            .trim_end()
-            .ends_with("match");
-        if !is_match || lang.is_empty() {
-            continue;
-        }
-        let text = if let Some(body) = after.strip_prefix('\'') {
-            body.find('\'').map(|end| body[..end].to_string())
-        } else if let Some(body) = after.strip_prefix('"') {
-            let mut text = String::new();
-            let mut chars = body.chars();
-            let mut closed = false;
-            while let Some(c) = chars.next() {
-                match c {
-                    '"' => {
-                        closed = true;
-                        break;
-                    }
-                    '\\' => match chars.next() {
-                        Some('n') => text.push('\n'),
-                        Some('t') => text.push('\t'),
-                        Some(c @ ('"' | '\\')) => text.push(c),
-                        Some(c) => {
-                            text.push('\\');
-                            text.push(c);
-                        }
-                        None => {}
-                    },
-                    c => text.push(c),
-                }
+/// One `<lang>::pattern` rule: language, pattern, constraints.
+type Rule = (String, String, Vec<Constraint>);
+
+/// Every pattern rule in a script, `then` stages included.
+fn rules(script: &str) -> Vec<Rule> {
+    fn walk(items: &[Item], out: &mut Vec<Rule>) {
+        for item in items {
+            match item {
+                Item::Match(m) if m.namespace.module == "pattern" => out.push((
+                    m.namespace.lang.clone(),
+                    m.match_string.clone(),
+                    m.constraints.clone(),
+                )),
+                Item::Then(items) => walk(items, out),
+                _ => {}
             }
-            closed.then_some(text)
-        } else if let Some(body) = after.strip_prefix("r#\"") {
-            body.find("\"#").map(|end| body[..end].to_string())
-        } else {
-            None
-        };
-        if let Some(text) = text {
-            out.push((lang, text));
         }
+    }
+    let mut out = Vec::new();
+    if let Ok(Command { items, .. }) = colab_dsl::parse(script) {
+        walk(&items, &mut out);
     }
     out
 }
@@ -111,8 +76,8 @@ fn files_under(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// (where, language, pattern, input text) for every comparison.
-fn cases(root: &Path) -> Vec<(String, String, String, String)> {
+/// (where, rule, input text) for every comparison.
+fn cases(root: &Path) -> Vec<(String, Rule, String)> {
     let mut out = Vec::new();
     let mut tomls = Vec::new();
     files_under(&root.join("tests/conformance"), &mut tomls);
@@ -133,8 +98,8 @@ fn cases(root: &Path) -> Vec<(String, String, String, String)> {
                 continue;
             };
             let name = path.file_name().unwrap().to_string_lossy();
-            for (lang, pattern) in patterns(script) {
-                out.push((format!("{name}#{i}"), lang, pattern, input.to_string()));
+            for rule in rules(script) {
+                out.push((format!("{name}#{i}"), rule, input.to_string()));
             }
         }
     }
@@ -150,8 +115,8 @@ fn cases(root: &Path) -> Vec<(String, String, String, String)> {
         let mut inputs = Vec::new();
         files_under(&case.join("input"), &mut inputs);
         inputs.sort();
-        for (lang, pattern) in patterns(&text) {
-            let Some(language) = source_language(&lang) else {
+        for rule in rules(&text) {
+            let Some(language) = source_language(&rule.0) else {
                 continue;
             };
             for input in &inputs {
@@ -161,7 +126,7 @@ fn cases(root: &Path) -> Vec<(String, String, String, String)> {
                     .is_some_and(|e| language.extensions.contains(&e));
                 if let (true, Ok(source)) = (relevant, std::fs::read_to_string(input)) {
                     let shown = input.strip_prefix(root).unwrap_or(input).display();
-                    out.push((shown.to_string(), lang.clone(), pattern.clone(), source));
+                    out.push((shown.to_string(), rule.clone(), source));
                 }
             }
         }
@@ -177,10 +142,10 @@ fn trimmed(source: &str, start: usize, end: usize) -> (usize, usize) {
     (start, start + source[start..end].trim_end().len())
 }
 
-fn old_engine(lang: &str, pattern: &str, source: &str) -> Result<Ranges, String> {
+fn old_engine((lang, pattern, constraints): &Rule, source: &str) -> Result<Ranges, String> {
     let language = source_language(lang).unwrap();
     let op = language
-        .compile_pattern(pattern, PatternAction::Delete, &[])
+        .compile_pattern(pattern, PatternAction::Delete, constraints)
         .map_err(|e| e.to_string())?;
     Ok(op
         .locate(source)
@@ -190,13 +155,17 @@ fn old_engine(lang: &str, pattern: &str, source: &str) -> Result<Ranges, String>
         .collect())
 }
 
-fn new_engine(lang: &str, pattern: &str, source: &str) -> Result<Ranges, String> {
+fn new_engine((lang, pattern, constraints): &Rule, source: &str) -> Result<Ranges, String> {
     let language = (source_language(lang).unwrap().pattern)();
     let forms = colab_rewrite::syntax::compile_forms(&language, pattern)?;
-    Ok(colab_rewrite::syntax::find(&language, &forms, source)
-        .iter()
-        .map(|f| trimmed(source, f.range.start, f.range.end))
-        .collect())
+    let bound = colab_rewrite::syntax::bound(&forms.forms[0].pattern);
+    let checks = colab_rewrite::syntax::Checks::compile(&language, &bound, constraints)?;
+    Ok(
+        colab_rewrite::syntax::find_where(&language, &forms, &checks, source)
+            .iter()
+            .map(|f| trimmed(source, f.range.start, f.range.end))
+            .collect(),
+    )
 }
 
 /// Where the engines may differ, by the place's prefix, and why. Each is
@@ -208,22 +177,21 @@ const KNOWN: &[(&str, &str)] = &[];
 fn both_engines_find_the_same_matches() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut differ = Vec::new();
-    let mut compared = 0;
-    for (place, lang, pattern, source) in cases(&root) {
-        if source_language(&lang).is_none() {
+    let (mut compared, mut constrained, mut refused) = (0, 0, 0);
+    for (place, rule, source) in cases(&root) {
+        if source_language(&rule.0).is_none() {
             continue;
         }
         compared += 1;
-        let (old, new) = (
-            old_engine(&lang, &pattern, &source),
-            new_engine(&lang, &pattern, &source),
-        );
+        if !rule.2.is_empty() {
+            constrained += 1;
+        }
+        // Scan facts and semantic answers come from a run; neither engine
+        // has one here, so both read the same empty sets.
+        let (old, new) = (old_engine(&rule, &source), new_engine(&rule, &source));
         let show = |r: &Ranges| -> Vec<String> {
             r.iter()
-                .map(|&(s, e)| {
-                    let t: String = source[s..e].chars().take(50).collect();
-                    format!("{t:?}")
-                })
+                .map(|&(s, e)| format!("{:?}", source[s..e].chars().take(50).collect::<String>()))
                 .collect()
         };
         let line = match (&old, &new) {
@@ -233,13 +201,32 @@ fn both_engines_find_the_same_matches() {
                 show(&a.difference(b).copied().collect()),
                 show(&b.difference(a).copied().collect())
             ),
-            (Err(_), Err(_)) => continue,
+            (Err(_), Err(_)) => {
+                refused += 1;
+                continue;
+            }
             (Ok(_), Err(e)) => format!("only the new engine refuses it: {e}"),
             (Err(e), Ok(_)) => format!("only the old engine refuses it: {e}"),
         };
-        differ.push((place, format!("{lang}::pattern {pattern:?}: {line}")));
+        let (lang, pattern, constraints) = &rule;
+        let wheres: Vec<String> = constraints.iter().map(ToString::to_string).collect();
+        differ.push((
+            place,
+            format!(
+                "{lang}::pattern {pattern:?} where [{}]: {line}",
+                wheres.join(", ")
+            ),
+        ));
     }
-    eprintln!("{compared} comparisons, {} differ", differ.len());
+    eprintln!(
+        "{compared} comparisons ({constrained} with `where`, {refused} refused by both), {} differ",
+        differ.len()
+    );
+    // Both refusing a rule says nothing about matching: keep it rare.
+    assert!(
+        refused * 20 < compared,
+        "{refused} of {compared} refused by both"
+    );
     assert!(compared > 200, "too few comparisons: {compared}");
     let unexplained: Vec<String> = differ
         .iter()
