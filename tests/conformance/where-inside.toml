@@ -1,0 +1,370 @@
+feature = "Scoped with where inside"
+description = "`where inside '<pattern>'` limits a rewrite to matches within a function, and `where not inside` to those outside it: `log` becomes `trace` in `a` and `info` everywhere else."
+
+[[case]]
+lang = "c"
+script = """
+match c::pattern 'log($A)' where inside 'void a(void) { $$$B }' { replace 'trace($A)' }
+match c::pattern 'log($A)' where not inside 'void a(void) { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+void a(void) {
+    log(1);
+}
+
+void b(void) {
+    log(2);
+}
+'''
+expected = '''
+void a(void) {
+    trace(1);
+}
+
+void b(void) {
+    info(2);
+}
+'''
+
+[[case]]
+lang = "cpp"
+script = """
+match cpp::pattern 'log($A)' where inside 'namespace a { $$$B }' { replace 'trace($A)' }
+match cpp::pattern 'log($A)' where not inside 'namespace a { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+namespace a {
+int x = log(1);
+}
+
+namespace b {
+int y = log(2);
+}
+'''
+expected = '''
+namespace a {
+int x = trace(1);
+}
+
+namespace b {
+int y = info(2);
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = """
+match csharp::pattern 'Log($A)' where inside 'void A() { $$$B }' { replace 'Trace($A)' }
+match csharp::pattern 'Log($A)' where not inside 'void A() { $$$B }' { replace 'Info($A)' }
+"""
+input = '''
+class C {
+    void A() {
+        Log(1);
+    }
+
+    void B() {
+        Log(2);
+    }
+}
+'''
+expected = '''
+class C {
+    void A() {
+        Trace(1);
+    }
+
+    void B() {
+        Info(2);
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+script = """
+match go::pattern 'log($A)' where inside 'func a() { $$$B }' { replace 'trace($A)' }
+match go::pattern 'log($A)' where not inside 'func a() { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+package p
+
+func a() {
+	log(1)
+}
+
+func b() {
+	log(2)
+}
+'''
+expected = '''
+package p
+
+func a() {
+	trace(1)
+}
+
+func b() {
+	info(2)
+}
+'''
+
+[[case]]
+lang = "java"
+script = """
+match java::pattern 'log($A)' where inside 'void a() { $$$B }' { replace 'trace($A)' }
+match java::pattern 'log($A)' where not inside 'void a() { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+class C {
+    void a() {
+        log(1);
+    }
+
+    void b() {
+        log(2);
+    }
+}
+'''
+expected = '''
+class C {
+    void a() {
+        trace(1);
+    }
+
+    void b() {
+        info(2);
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = """
+match js::pattern 'log($A)' where inside 'function a() { $$$B }' { replace 'trace($A)' }
+match js::pattern 'log($A)' where not inside 'function a() { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+function a() {
+  log(1);
+}
+
+function b() {
+  log(2);
+}
+'''
+expected = '''
+function a() {
+  trace(1);
+}
+
+function b() {
+  info(2);
+}
+'''
+
+[[case]]
+lang = "kotlin"
+script = """
+match kotlin::pattern 'log($A)' where inside 'fun a() { $$$B }' { replace 'trace($A)' }
+match kotlin::pattern 'log($A)' where not inside 'fun a() { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+fun a() {
+    log(1)
+}
+
+fun b() {
+    log(2)
+}
+'''
+expected = '''
+fun a() {
+    trace(1)
+}
+
+fun b() {
+    info(2)
+}
+'''
+
+[[case]]
+lang = "php"
+script = """
+match php::pattern 'log($A)' where inside 'function a() { $$$B }' { replace 'trace($A)' }
+match php::pattern 'log($A)' where not inside 'function a() { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+<?php
+function a() {
+    log(1);
+}
+
+function b() {
+    log(2);
+}
+'''
+expected = '''
+<?php
+function a() {
+    trace(1);
+}
+
+function b() {
+    info(2);
+}
+'''
+
+[[case]]
+lang = "python"
+script = """
+match python::pattern 'log($A)' where inside 'def a():
+    $$$B' { replace 'trace($A)' }
+match python::pattern 'log($A)' where not inside 'def a():
+    $$$B' { replace 'info($A)' }
+"""
+input = '''
+def a():
+    log(1)
+
+
+def b():
+    log(2)
+'''
+expected = '''
+def a():
+    trace(1)
+
+
+def b():
+    info(2)
+'''
+
+[[case]]
+lang = "ruby"
+script = """
+match ruby::pattern 'log($A)' where inside 'def a
+  $$$B
+end' { replace 'trace($A)' }
+match ruby::pattern 'log($A)' where not inside 'def a
+  $$$B
+end' { replace 'info($A)' }
+"""
+input = '''
+def a
+  log(1)
+end
+
+def b
+  log(2)
+end
+'''
+expected = '''
+def a
+  trace(1)
+end
+
+def b
+  info(2)
+end
+'''
+
+[[case]]
+lang = "rust"
+script = """
+match rust::pattern 'log($A)' where inside 'fn a() { $$$B }' { replace 'trace($A)' }
+match rust::pattern 'log($A)' where not inside 'fn a() { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+fn a() {
+    log(1);
+}
+
+fn b() {
+    log(2);
+}
+'''
+expected = '''
+fn a() {
+    trace(1);
+}
+
+fn b() {
+    info(2);
+}
+'''
+
+[[case]]
+lang = "swift"
+script = """
+match swift::pattern 'log($A)' where inside 'func a() { $$$B }' { replace 'trace($A)' }
+match swift::pattern 'log($A)' where not inside 'func a() { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+func a() {
+    log(1)
+}
+
+func b() {
+    log(2)
+}
+'''
+expected = '''
+func a() {
+    trace(1)
+}
+
+func b() {
+    info(2)
+}
+'''
+
+[[case]]
+lang = "ts"
+script = """
+match ts::pattern 'log($A)' where inside 'function a(): void { $$$B }' { replace 'trace($A)' }
+match ts::pattern 'log($A)' where not inside 'function a(): void { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+function a(): void {
+  log(1);
+}
+
+function b(): void {
+  log(2);
+}
+'''
+expected = '''
+function a(): void {
+  trace(1);
+}
+
+function b(): void {
+  info(2);
+}
+'''
+
+[[case]]
+lang = "tsx"
+script = """
+match tsx::pattern 'log($A)' where inside 'function a(): void { $$$B }' { replace 'trace($A)' }
+match tsx::pattern 'log($A)' where not inside 'function a(): void { $$$B }' { replace 'info($A)' }
+"""
+input = '''
+function a(): void {
+  log(1);
+}
+
+function b(): void {
+  log(2);
+}
+'''
+expected = '''
+function a(): void {
+  trace(1);
+}
+
+function b(): void {
+  info(2);
+}
+'''

@@ -1,0 +1,108 @@
+feature = "Field shorthand"
+description = "A pattern field `name: $V` also matches the shorthand `name` (a field set from a variable of its name), and a rewrite keeps the shorthand."
+
+[[case]]
+lang = "c"
+na = "C initializers have no shorthand: a designated field is always `.a = a`."
+
+[[case]]
+lang = "cpp"
+na = "C++ initializers have no shorthand: a designated field is always `.a = a`."
+
+[[case]]
+lang = "csharp"
+xfail = "C# sets `shorthand_fields: false`, though an anonymous object's `new { Name }` is the shorthand of `new { Name = Name }`."
+script = "match csharp::pattern 'new { Name = $N, Age = $A }' { replace 'new Person { Name = $N, Age = $A }' }"
+input = '''
+class A {
+    object F(string Name) {
+        return new { Name, Age = 1 };
+    }
+}
+'''
+expected = '''
+class A {
+    object F(string Name) {
+        return new Person { Name, Age = 1 };
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+na = "Go's `T{a}` is a positional field, not a shorthand: a keyed field is always `a: a`."
+
+[[case]]
+lang = "java"
+na = "Java has no struct or object literal with fields."
+
+[[case]]
+lang = "js"
+script = "match js::pattern 'connect({ host: $H, port: $P })' { replace 'open({ host: $H, port: $P })' }"
+input = '''
+connect({ host, port: 1 });
+'''
+expected = '''
+open({ host, port: 1 });
+'''
+
+[[case]]
+lang = "kotlin"
+na = "Kotlin has no object literal with fields; named arguments have no shorthand."
+
+[[case]]
+lang = "php"
+na = "PHP arrays have no shorthand: a key is always `'a' => $a`."
+
+[[case]]
+lang = "python"
+na = "Python's `{a}` is a set, not a dict with a shorthand key."
+
+[[case]]
+lang = "ruby"
+xfail = "Ruby sets `shorthand_fields: false`, though Ruby 3.1's `{ x:, y: }` is the shorthand of `{ x: x, y: y }`."
+script = "match ruby::pattern 'connect(host: $H, port: $P)' { replace 'open(host: $H, port: $P)' }"
+input = '''
+connect(host:, port: 1)
+'''
+expected = '''
+open(host:, port: 1)
+'''
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'Conn { host: $H, port: $P }' { replace 'Link { host: $H, port: $P }' }"
+input = '''
+fn f(host: String) -> Conn {
+    Conn { host, port: 1 }
+}
+'''
+expected = '''
+fn f(host: String) -> Conn {
+    Link { host, port: 1 }
+}
+'''
+
+[[case]]
+lang = "swift"
+na = "Swift has no struct literal with fields; initializer arguments have no shorthand."
+
+[[case]]
+lang = "ts"
+script = "match ts::pattern 'connect({ host: $H, port: $P })' { replace 'open({ host: $H, port: $P })' }"
+input = '''
+connect({ host, port: 1 });
+'''
+expected = '''
+open({ host, port: 1 });
+'''
+
+[[case]]
+lang = "tsx"
+script = "match tsx::pattern 'connect({ host: $H, port: $P })' { replace 'open({ host: $H, port: $P })' }"
+input = '''
+connect({ host, port: 1 });
+'''
+expected = '''
+open({ host, port: 1 });
+'''

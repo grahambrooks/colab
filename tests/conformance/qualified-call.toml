@@ -1,0 +1,90 @@
+feature = "A qualified call matched bare"
+description = "A bare pattern `old($A)` also matches a call through a namespace path (`m::old(1)`), and a rewrite keeps the path. Where a qualifier is spelled like member access (`m.old`), it cannot be told from a method call, so a bare pattern rightly leaves it alone."
+
+[[case]]
+lang = "c"
+na = "C has no namespaces: `m.old(1)` calls a function pointer held in a struct field."
+
+[[case]]
+lang = "cpp"
+xfail = "C++ sets no `qualified_calls`: `m::old(1)`'s callee is a `qualified_identifier`, which the identifier `old` in the pattern does not match."
+script = "match cpp::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+void f() {
+    m::old(1);
+}
+'''
+expected = '''
+void f() {
+    m::next(1);
+}
+'''
+
+[[case]]
+lang = "csharp"
+na = "`M.Old(1)` is a `member_access_expression`, the same as a call on a value; spell the qualifier (`M.Old($A)`) to match it."
+
+[[case]]
+lang = "go"
+na = "a package qualifier `m.old(1)` is a `selector_expression`, the same as a field or method; spell it (`m.old($A)`) to match it."
+
+[[case]]
+lang = "java"
+na = "`M.old(1)` is a `method_invocation` with an object, the same as a call on a value; spell the qualifier to match it."
+
+[[case]]
+lang = "js"
+na = "`m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it."
+
+[[case]]
+lang = "kotlin"
+na = "`M.old(1)` is a navigation expression, the same as a call on a value; spell the qualifier to match it."
+
+[[case]]
+lang = "php"
+xfail = "PHP sets no `qualified_calls`: `\\M\\old(1)`'s callee is a `qualified_name`, which the `name` `old` in the pattern does not match."
+script = "match php::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+<?php
+\M\old(1);
+'''
+expected = '''
+<?php
+\M\next(1);
+'''
+
+[[case]]
+lang = "python"
+na = "a module qualifier `m.old(1)` is an `attribute`, the same as a method call; spell it (`m.old($A)`) to match it."
+
+[[case]]
+lang = "ruby"
+na = "`M.old(1)` is a `call` with a receiver, the same as a method call on a value; spell the receiver to match it."
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'old($A)' { replace 'new($A)' }"
+input = '''
+fn f() {
+    m::old(1);
+    crate::m::old(2);
+}
+'''
+expected = '''
+fn f() {
+    m::new(1);
+    crate::m::new(2);
+}
+'''
+
+[[case]]
+lang = "swift"
+na = "`M.old(1)` is a navigation expression, the same as a call on a value; spell the qualifier to match it."
+
+[[case]]
+lang = "ts"
+na = "`m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it."
+
+[[case]]
+lang = "tsx"
+na = "`m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it."

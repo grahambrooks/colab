@@ -1,0 +1,245 @@
+feature = "A lone body"
+description = "A function pattern whose body is only `$$$B` matches a function of any body, and a rewrite keeps the body as it was."
+
+[[case]]
+lang = "c"
+script = "match c::pattern 'void old(void) { $$$B }' { replace 'void next(void) { $$$B }' }"
+input = '''
+void old(void) {
+    a();
+    b();
+}
+'''
+expected = '''
+void next(void) {
+    a();
+    b();
+}
+'''
+
+[[case]]
+lang = "cpp"
+xfail = "refused: tree-sitter-cpp reads `void old() { $$$B }` as a declaration with a brace initializer in every pattern context, so no function_definition pattern compiles."
+script = "match cpp::pattern 'void old() { $$$B }' { replace 'void next() { $$$B }' }"
+input = '''
+void old() {
+    a();
+    b();
+}
+'''
+expected = '''
+void next() {
+    a();
+    b();
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = "match csharp::pattern 'void Old() { $$$B }' { replace 'void New() { $$$B }' }"
+input = '''
+class A {
+    void Old() {
+        X();
+        Y();
+    }
+}
+'''
+expected = '''
+class A {
+    void New() {
+        X();
+        Y();
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+script = "match go::pattern 'func old() { $$$B }' { replace 'func next() { $$$B }' }"
+input = '''
+package p
+
+func old() {
+	a()
+	b()
+}
+'''
+expected = '''
+package p
+
+func next() {
+	a()
+	b()
+}
+'''
+
+[[case]]
+lang = "java"
+script = "match java::pattern 'void old() { $$$B }' { replace 'void next() { $$$B }' }"
+input = '''
+class A {
+    void old() {
+        a();
+        b();
+    }
+}
+'''
+expected = '''
+class A {
+    void next() {
+        a();
+        b();
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = "match js::pattern 'function old() { $$$B }' { replace 'function next() { $$$B }' }"
+input = '''
+function old() {
+  a();
+  b();
+}
+'''
+expected = '''
+function next() {
+  a();
+  b();
+}
+'''
+
+[[case]]
+lang = "kotlin"
+script = "match kotlin::pattern 'fun old() { $$$B }' { replace 'fun next() { $$$B }' }"
+input = '''
+fun old() {
+    a()
+    b()
+}
+'''
+expected = '''
+fun next() {
+    a()
+    b()
+}
+'''
+
+[[case]]
+lang = "php"
+script = "match php::pattern 'function old() { $$$B }' { replace 'function next() { $$$B }' }"
+input = '''
+<?php
+function old() {
+    a();
+    b();
+}
+'''
+expected = '''
+<?php
+function next() {
+    a();
+    b();
+}
+'''
+
+[[case]]
+lang = "python"
+script = """match python::pattern 'def old():
+    $$$B' { replace 'def new():
+    $$$B' }"""
+input = '''
+def old():
+    a()
+    b()
+'''
+expected = '''
+def new():
+    a()
+    b()
+'''
+
+[[case]]
+lang = "ruby"
+script = """match ruby::pattern 'def old
+  $$$B
+end' { replace 'def new_one
+  $$$B
+end' }"""
+input = '''
+def old
+  a
+  b
+end
+'''
+expected = '''
+def new_one
+  a
+  b
+end
+'''
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'fn old() { $$$B }' { replace 'fn new() { $$$B }' }"
+input = '''
+fn old() {
+    a();
+    b();
+}
+'''
+expected = '''
+fn new() {
+    a();
+    b();
+}
+'''
+
+[[case]]
+lang = "swift"
+script = "match swift::pattern 'func old() { $$$B }' { replace 'func next() { $$$B }' }"
+input = '''
+func old() {
+    a()
+    b()
+}
+'''
+expected = '''
+func next() {
+    a()
+    b()
+}
+'''
+
+[[case]]
+lang = "ts"
+script = "match ts::pattern 'function old(): void { $$$B }' { replace 'function next(): void { $$$B }' }"
+input = '''
+function old(): void {
+  a();
+  b();
+}
+'''
+expected = '''
+function next(): void {
+  a();
+  b();
+}
+'''
+
+[[case]]
+lang = "tsx"
+script = "match tsx::pattern 'function old(): void { $$$B }' { replace 'function next(): void { $$$B }' }"
+input = '''
+function old(): void {
+  a();
+  b();
+}
+'''
+expected = '''
+function next(): void {
+  a();
+  b();
+}
+'''

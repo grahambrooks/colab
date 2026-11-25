@@ -1,0 +1,270 @@
+feature = "A symbol renamed"
+description = "`match <lang>::symbol \"count\" { replace \"total\" }` renames every identifier `count` and leaves the word in comments and strings alone."
+
+[[case]]
+lang = "c"
+script = 'match c::symbol "count" { replace "total" }'
+input = '''
+int count = 0;
+// count stays
+void f(void) {
+    count += 1;
+    puts("count");
+}
+'''
+expected = '''
+int total = 0;
+// count stays
+void f(void) {
+    total += 1;
+    puts("count");
+}
+'''
+
+[[case]]
+lang = "cpp"
+script = 'match cpp::symbol "count" { replace "total" }'
+input = '''
+int count = 0;
+// count stays
+void f() {
+    count += 1;
+    puts("count");
+}
+'''
+expected = '''
+int total = 0;
+// count stays
+void f() {
+    total += 1;
+    puts("count");
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = 'match csharp::symbol "count" { replace "total" }'
+input = '''
+class C {
+    int count = 0;
+    // count stays
+    void F() {
+        count += 1;
+        Log("count");
+    }
+}
+'''
+expected = '''
+class C {
+    int total = 0;
+    // count stays
+    void F() {
+        total += 1;
+        Log("count");
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+script = 'match go::symbol "count" { replace "total" }'
+input = '''
+package p
+
+var count = 0
+
+// count stays
+func f() {
+	count++
+	println("count")
+}
+'''
+expected = '''
+package p
+
+var total = 0
+
+// count stays
+func f() {
+	total++
+	println("count")
+}
+'''
+
+[[case]]
+lang = "java"
+script = 'match java::symbol "count" { replace "total" }'
+input = '''
+class C {
+    int count = 0;
+    // count stays
+    void f() {
+        count += 1;
+        log("count");
+    }
+}
+'''
+expected = '''
+class C {
+    int total = 0;
+    // count stays
+    void f() {
+        total += 1;
+        log("count");
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = 'match js::symbol "count" { replace "total" }'
+input = '''
+let count = 0;
+// count stays
+count += 1;
+log("count");
+'''
+expected = '''
+let total = 0;
+// count stays
+total += 1;
+log("count");
+'''
+
+[[case]]
+lang = "kotlin"
+script = 'match kotlin::symbol "count" { replace "total" }'
+input = '''
+var count = 0
+// count stays
+fun f() {
+    count += 1
+    log("count")
+}
+'''
+expected = '''
+var total = 0
+// count stays
+fun f() {
+    total += 1
+    log("count")
+}
+'''
+
+[[case]]
+lang = "php"
+script = 'match php::symbol "count" { replace "total" }'
+input = '''
+<?php
+$count = 0;
+// count stays
+$count += 1;
+echo "count";
+'''
+expected = '''
+<?php
+$total = 0;
+// count stays
+$total += 1;
+echo "count";
+'''
+
+[[case]]
+lang = "python"
+script = 'match python::symbol "count" { replace "total" }'
+input = '''
+count = 0
+# count stays
+count += 1
+print("count")
+'''
+expected = '''
+total = 0
+# count stays
+total += 1
+print("count")
+'''
+
+[[case]]
+lang = "ruby"
+script = 'match ruby::symbol "count" { replace "total" }'
+input = '''
+count = 0
+# count stays
+count += 1
+puts "count"
+'''
+expected = '''
+total = 0
+# count stays
+total += 1
+puts "count"
+'''
+
+[[case]]
+lang = "rust"
+script = 'match rust::symbol "count" { replace "total" }'
+input = '''
+fn f() {
+    let mut count = 0;
+    // count stays
+    count += 1;
+    log("count");
+}
+'''
+expected = '''
+fn f() {
+    let mut total = 0;
+    // count stays
+    total += 1;
+    log("count");
+}
+'''
+
+[[case]]
+lang = "swift"
+script = 'match swift::symbol "count" { replace "total" }'
+input = '''
+var count = 0
+// count stays
+count += 1
+print("count")
+'''
+expected = '''
+var total = 0
+// count stays
+total += 1
+print("count")
+'''
+
+[[case]]
+lang = "ts"
+script = 'match ts::symbol "count" { replace "total" }'
+input = '''
+let count: number = 0;
+// count stays
+count += 1;
+log("count");
+'''
+expected = '''
+let total: number = 0;
+// count stays
+total += 1;
+log("count");
+'''
+
+[[case]]
+lang = "tsx"
+script = 'match tsx::symbol "count" { replace "total" }'
+input = '''
+let count: number = 0;
+// count stays
+count += 1;
+log("count");
+'''
+expected = '''
+let total: number = 0;
+// count stays
+total += 1;
+log("count");
+'''

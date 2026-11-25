@@ -1,0 +1,186 @@
+feature = "An import moved"
+description = "The language's import module (`include`, `using`, `import`, `use`, `require`) points an import at another module and leaves the others alone."
+
+[[case]]
+lang = "c"
+script = 'match c::include "old.h" { replace "new.h" }'
+input = '''
+#include <stdio.h>
+#include "old.h"
+'''
+expected = '''
+#include <stdio.h>
+#include "new.h"
+'''
+
+[[case]]
+lang = "cpp"
+script = 'match cpp::include "old.hpp" { replace "new.hpp" }'
+input = '''
+#include <vector>
+#include "old.hpp"
+'''
+expected = '''
+#include <vector>
+#include "new.hpp"
+'''
+
+[[case]]
+lang = "csharp"
+script = 'match csharp::using "Old.Tools" { replace "New.Tools" }'
+input = '''
+using System;
+using Old.Tools;
+'''
+expected = '''
+using System;
+using New.Tools;
+'''
+
+[[case]]
+lang = "go"
+script = 'match go::import "example.com/old" { replace "example.com/new" }'
+input = '''
+package p
+
+import (
+	"fmt"
+	"example.com/old"
+)
+'''
+expected = '''
+package p
+
+import (
+	"fmt"
+	"example.com/new"
+)
+'''
+
+[[case]]
+lang = "java"
+script = 'match java::import "com.old.Tool" { replace "com.next.Tool" }'
+input = '''
+import java.util.List;
+import com.old.Tool;
+
+class C {}
+'''
+expected = '''
+import java.util.List;
+import com.next.Tool;
+
+class C {}
+'''
+
+[[case]]
+lang = "js"
+script = 'match js::import "./old" { replace "./new" }'
+input = '''
+import { a } from "./old";
+import b from "./keep";
+'''
+expected = '''
+import { a } from "./new";
+import b from "./keep";
+'''
+
+[[case]]
+lang = "kotlin"
+script = 'match kotlin::import "com.old.Tool" { replace "com.next.Tool" }'
+input = '''
+import kotlin.math.max
+import com.old.Tool
+'''
+expected = '''
+import kotlin.math.max
+import com.next.Tool
+'''
+
+[[case]]
+lang = "php"
+script = '''match php::use 'Old\Tool' { replace 'Next\Tool' }'''
+input = '''
+<?php
+use Keep\Other;
+use Old\Tool;
+'''
+expected = '''
+<?php
+use Keep\Other;
+use Next\Tool;
+'''
+
+[[case]]
+lang = "python"
+script = 'match python::import "old" { replace "new" }'
+input = '''
+import os
+import old
+from old import thing
+'''
+expected = '''
+import os
+import new
+from new import thing
+'''
+
+[[case]]
+lang = "ruby"
+script = 'match ruby::require "old" { replace "new" }'
+input = '''
+require "json"
+require "old"
+'''
+expected = '''
+require "json"
+require "new"
+'''
+
+[[case]]
+lang = "rust"
+script = 'match rust::use "old::Tool" { replace "new::Tool" }'
+input = '''
+use std::fmt;
+use old::Tool;
+'''
+expected = '''
+use std::fmt;
+use new::Tool;
+'''
+
+[[case]]
+lang = "swift"
+script = 'match swift::import "OldKit" { replace "NewKit" }'
+input = '''
+import Foundation
+import OldKit
+'''
+expected = '''
+import Foundation
+import NewKit
+'''
+
+[[case]]
+lang = "ts"
+script = 'match ts::import "./old" { replace "./new" }'
+input = '''
+import { a } from "./old";
+import b from "./keep";
+'''
+expected = '''
+import { a } from "./new";
+import b from "./keep";
+'''
+
+[[case]]
+lang = "tsx"
+script = 'match tsx::import "./old" { replace "./new" }'
+input = '''
+import { a } from "./old";
+import b from "./keep";
+'''
+expected = '''
+import { a } from "./new";
+import b from "./keep";
+'''

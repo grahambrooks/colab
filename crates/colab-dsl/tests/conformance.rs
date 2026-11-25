@@ -25,6 +25,20 @@
 //! expected = "…"
 //! ```
 //!
+//! A generalize case has `before` and `after` instead of `script`: one
+//! hand-made edit. The language's `LanguageBackend::generalize` learns
+//! rules from it, and each is applied in turn as a `pattern` `replace` to
+//! `input`, which must give `expected`:
+//!
+//! ```toml
+//! [[case]]
+//! lang = "go"
+//! before = "assert.Equal(t, want, got)"
+//! after = "require.Equal(t, want, got)"
+//! input = "…another call of assert.Equal…"
+//! expected = "…the same call of require.Equal…"
+//! ```
+//!
 //! A case passes when the script turns `input` into `expected` and a
 //! second run changes nothing. An `xfail` case is a known gap: it must
 //! still fail (a fix that makes it pass fails the test until the `xfail`
@@ -90,9 +104,13 @@ fn string(table: &Table, key: &str) -> Option<String> {
 
 /// Run one case: `Ok(())` when it does what it says, else why not.
 fn run_case(lang: &str, case: &Table) -> Result<(), String> {
-    let script = string(case, "script").ok_or("no `script`")?;
     let input = string(case, "input").ok_or("no `input`")?;
     let expected = string(case, "expected").ok_or("no `expected`")?;
+    if let Some(before) = string(case, "before") {
+        let after = string(case, "after").ok_or("`before` with no `after`")?;
+        return run_generalized(lang, &before, &after, &input, &expected);
+    }
+    let script = string(case, "script").ok_or("no `script` (nor `before`/`after`)")?;
     let path = string(case, "path").map_or_else(
         || {
             LANGUAGES
@@ -114,6 +132,64 @@ fn run_case(lang: &str, case: &Table) -> Result<(), String> {
     let second = refactoring.apply_at(&path, &first).output;
     if second != first {
         return Err(format!("not idempotent: a second run gives\n{second}"));
+    }
+    Ok(())
+}
+
+/// A generalize case: the rules `lang`'s backend learns from the edit
+/// `before` → `after`, each applied as a `pattern` `replace` in turn, must
+/// turn `input` into `expected`, and change nothing on a second pass.
+fn run_generalized(
+    lang: &str,
+    before: &str,
+    after: &str,
+    input: &str,
+    expected: &str,
+) -> Result<(), String> {
+    let registry = colab_backends::registry();
+    let backend = registry
+        .get(lang)
+        .ok_or_else(|| format!("no backend `{lang}`"))?;
+    let rules = backend
+        .generalize(before, after)
+        .map_err(|e| format!("generalize: {e}"))?;
+    if rules.is_empty() {
+        return Err("generalize learned no rule".into());
+    }
+    let mut ops = Vec::new();
+    for rule in &rules {
+        let op = backend
+            .build_rule(
+                "pattern",
+                colab_core::RuleSpec::Replace {
+                    target: rule.pattern.clone(),
+                    replacement: rule.template.clone(),
+                },
+            )
+            .map_err(|e| format!("rule `{}` → `{}`: {e}", rule.pattern, rule.template))?;
+        ops.push(op);
+    }
+    let learned = || {
+        rules
+            .iter()
+            .map(|r| format!("`{}` → `{}`", r.pattern, r.template))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let run = |text: &str| ops.iter().fold(text.to_string(), |t, op| op.apply(&t));
+    let first = run(input);
+    if first != expected {
+        return Err(format!(
+            "learned {}; output differs\n--- expected\n{expected}--- got\n{first}",
+            learned()
+        ));
+    }
+    let second = run(&first);
+    if second != first {
+        return Err(format!(
+            "learned {}; not idempotent: a second run gives\n{second}",
+            learned()
+        ));
     }
     Ok(())
 }

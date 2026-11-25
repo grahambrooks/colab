@@ -9,13 +9,145 @@ in that language and checks the output and a second, unchanged run.
 
 | Feature | c | cpp | csharp | go | java | js | kotlin | php | python | ruby | rust | swift | ts | tsx |
 | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| [A call replaced by name](#a-call-replaced-by-name) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A call rewritten](#a-call-rewritten) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Held back by colab:ignore](#held-back-by-colabignore) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A deleted item takes its docs](#a-deleted-item-takes-its-docs) | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| [Field shorthand](#field-shorthand) | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a | ❌ | ✅ | n/a | ✅ | ✅ |
+| [Generalized from an edit](#generalized-from-an-edit) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| [An import moved](#an-import-moved) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A lone body](#a-lone-body) | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Modifiers left out](#modifiers-left-out) | ❌ | ❌ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ | ✅ | ✅ | ✅ |
+| [A statement deleted](#a-statement-deleted) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A qualified call matched bare](#a-qualified-call-matched-bare) | n/a | ❌ | n/a | n/a | n/a | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a |
+| [A symbol renamed](#a-symbol-renamed) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Scoped with where inside](#scoped-with-where-inside) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A binding tested with where matches](#a-binding-tested-with-where-matches) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-14 working, 0 known gaps, 0 not applicable, 0 without a case.
+161 working, 13 known gaps, 22 not applicable, 0 without a case.
+
+## A call replaced by name
+
+`match <lang>::call "old" { replace_call "next($args)" }` rewrites each call of `old` with the template, `$args` its argument list; a mention that is not a call stays.
+
+Cases: [`tests/conformance/call-module.toml`](../tests/conformance/call-module.toml).
 
 ## A call rewritten
 
 `old($A, $B)` → `new($B, $A)`: a pattern binds a call's arguments, and the template moves them.
 
 Cases: [`tests/conformance/call-rewrite.toml`](../tests/conformance/call-rewrite.toml).
+
+## Held back by colab:ignore
+
+A `colab:ignore` comment, on the line above a match or trailing it, keeps the rule off that line; the other matches change.
+
+Cases: [`tests/conformance/colab-ignore.toml`](../tests/conformance/colab-ignore.toml).
+
+## A deleted item takes its docs
+
+Deleting an item takes the doc comment and attributes (or decorators) directly above it, so nothing is left documenting nothing; the item after it stays as it was.
+
+Cases: [`tests/conformance/delete-takes-docs.toml`](../tests/conformance/delete-takes-docs.toml).
+
+- ❌ **c**: C sets `Leading::NONE`: a `/** … */` comment above a function is not taken with it.
+- ❌ **cpp**: no function pattern compiles in C++ (see A lone body), so none can be deleted with its docs.
+- ❌ **go**: Go sets `Leading::NONE`: its doc comments are plain `//` lines, which `Leading` never takes (a plain comment may be about the code around it).
+- ❌ **kotlin**: the match of a modifier-relaxed form starts after the function's `modifiers` node (the annotation), so a delete leaves `@Deprecated(…)` and the `/** … */` above it behind.
+- ❌ **ruby**: Ruby sets `Leading::NONE`: its doc comments are plain `#` lines, which `Leading` never takes.
+
+## Field shorthand
+
+A pattern field `name: $V` also matches the shorthand `name` (a field set from a variable of its name), and a rewrite keeps the shorthand.
+
+Cases: [`tests/conformance/field-shorthand.toml`](../tests/conformance/field-shorthand.toml).
+
+- n/a **c**: C initializers have no shorthand: a designated field is always `.a = a`.
+- n/a **cpp**: C++ initializers have no shorthand: a designated field is always `.a = a`.
+- ❌ **csharp**: C# sets `shorthand_fields: false`, though an anonymous object's `new { Name }` is the shorthand of `new { Name = Name }`.
+- n/a **go**: Go's `T{a}` is a positional field, not a shorthand: a keyed field is always `a: a`.
+- n/a **java**: Java has no struct or object literal with fields.
+- n/a **kotlin**: Kotlin has no object literal with fields; named arguments have no shorthand.
+- n/a **php**: PHP arrays have no shorthand: a key is always `'a' => $a`.
+- n/a **python**: Python's `{a}` is a set, not a dict with a shorthand key.
+- ❌ **ruby**: Ruby sets `shorthand_fields: false`, though Ruby 3.1's `{ x:, y: }` is the shorthand of `{ x: x, y: y }`.
+- n/a **swift**: Swift has no struct literal with fields; initializer arguments have no shorthand.
+
+## Generalized from an edit
+
+`colab.generalize` learns rules from one hand-made edit, `log(ctx, "a")` → `log("a")`, and they make the same change at another call: the dropped and the carried argument become metavariables, the callee stays literal.
+
+Cases: [`tests/conformance/generalize.toml`](../tests/conformance/generalize.toml).
+
+- ❌ **swift**: generalize takes the smallest node spanning the change, which in Swift is `value_arguments` (inside `call_suffix`), not the `call_expression`: it learns `(ctx, $A)` → `($A)`, which loses the callee, keeps the dropped `ctx` literal, and matches no call.
+
+## An import moved
+
+The language's import module (`include`, `using`, `import`, `use`, `require`) points an import at another module and leaves the others alone.
+
+Cases: [`tests/conformance/import-moved.toml`](../tests/conformance/import-moved.toml).
+
+## A lone body
+
+A function pattern whose body is only `$$$B` matches a function of any body, and a rewrite keeps the body as it was.
+
+Cases: [`tests/conformance/lone-body.toml`](../tests/conformance/lone-body.toml).
+
+- ❌ **cpp**: refused: tree-sitter-cpp reads `void old() { $$$B }` as a declaration with a brace initializer in every pattern context, so no function_definition pattern compiles.
+
+## Modifiers left out
+
+An item pattern that spells no modifiers matches an item with any (`public`, `static`, `pub`, …), and a rewrite keeps them.
+
+Cases: [`tests/conformance/modifiers.toml`](../tests/conformance/modifiers.toml).
+
+- ❌ **c**: C sets no `PatternLanguage::modifiers`: `static` is a `storage_class_specifier` child of the `function_definition` the pattern does not account for, so `Shape` refuses the match.
+- ❌ **cpp**: no function pattern compiles in C++ (see A lone body), so none can leave out `static` either.
+- n/a **go**: Go has no item modifiers: visibility is the name's first letter.
+- n/a **python**: Python items have no modifiers; decorators are statements of their own, kept as written.
+- n/a **ruby**: Ruby has no item modifiers: `private` is a method call, not part of the `def`.
+
+## A statement deleted
+
+`match <lang>::pattern 'debug($A)' { delete }`: a call that is a statement of its own goes, and its line with it.
+
+Cases: [`tests/conformance/pattern-delete.toml`](../tests/conformance/pattern-delete.toml).
+
+## A qualified call matched bare
+
+A bare pattern `old($A)` also matches a call through a namespace path (`m::old(1)`), and a rewrite keeps the path. Where a qualifier is spelled like member access (`m.old`), it cannot be told from a method call, so a bare pattern rightly leaves it alone.
+
+Cases: [`tests/conformance/qualified-call.toml`](../tests/conformance/qualified-call.toml).
+
+- n/a **c**: C has no namespaces: `m.old(1)` calls a function pointer held in a struct field.
+- ❌ **cpp**: C++ sets no `qualified_calls`: `m::old(1)`'s callee is a `qualified_identifier`, which the identifier `old` in the pattern does not match.
+- n/a **csharp**: `M.Old(1)` is a `member_access_expression`, the same as a call on a value; spell the qualifier (`M.Old($A)`) to match it.
+- n/a **go**: a package qualifier `m.old(1)` is a `selector_expression`, the same as a field or method; spell it (`m.old($A)`) to match it.
+- n/a **java**: `M.old(1)` is a `method_invocation` with an object, the same as a call on a value; spell the qualifier to match it.
+- n/a **js**: `m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it.
+- n/a **kotlin**: `M.old(1)` is a navigation expression, the same as a call on a value; spell the qualifier to match it.
+- ❌ **php**: PHP sets no `qualified_calls`: `\M\old(1)`'s callee is a `qualified_name`, which the `name` `old` in the pattern does not match.
+- n/a **python**: a module qualifier `m.old(1)` is an `attribute`, the same as a method call; spell it (`m.old($A)`) to match it.
+- n/a **ruby**: `M.old(1)` is a `call` with a receiver, the same as a method call on a value; spell the receiver to match it.
+- n/a **swift**: `M.old(1)` is a navigation expression, the same as a call on a value; spell the qualifier to match it.
+- n/a **ts**: `m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it.
+- n/a **tsx**: `m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it.
+
+## A symbol renamed
+
+`match <lang>::symbol "count" { replace "total" }` renames every identifier `count` and leaves the word in comments and strings alone.
+
+Cases: [`tests/conformance/symbol-rename.toml`](../tests/conformance/symbol-rename.toml).
+
+## Scoped with where inside
+
+`where inside '<pattern>'` limits a rewrite to matches within a function, and `where not inside` to those outside it: `log` becomes `trace` in `a` and `info` everywhere else.
+
+Cases: [`tests/conformance/where-inside.toml`](../tests/conformance/where-inside.toml).
+
+## A binding tested with where matches
+
+`where $A matches /tmp/` keeps only the matches whose binding's text the regex finds: `old("tmp")` is rewritten, `old("keep")` is not.
+
+Cases: [`tests/conformance/where-matches.toml`](../tests/conformance/where-matches.toml).
 

@@ -1,0 +1,224 @@
+feature = "A statement deleted"
+description = "`match <lang>::pattern 'debug($A)' { delete }`: a call that is a statement of its own goes, and its line with it."
+
+[[case]]
+lang = "c"
+script = "match c::pattern 'debug($A)' { delete }"
+input = '''
+void f(void) {
+    debug(1);
+    run();
+}
+'''
+expected = '''
+void f(void) {
+    run();
+}
+'''
+
+[[case]]
+lang = "cpp"
+script = "match cpp::pattern 'debug($A)' { delete }"
+input = '''
+void f() {
+    debug(1);
+    run();
+}
+'''
+expected = '''
+void f() {
+    run();
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = "match csharp::pattern 'Debug($A)' { delete }"
+input = '''
+class A {
+    void F() {
+        Debug(1);
+        Run();
+    }
+}
+'''
+expected = '''
+class A {
+    void F() {
+        Run();
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+script = "match go::pattern 'debug($A)' { delete }"
+input = '''
+package p
+
+func f() {
+	debug(1)
+	run()
+}
+'''
+expected = '''
+package p
+
+func f() {
+	run()
+}
+'''
+
+[[case]]
+lang = "java"
+script = "match java::pattern 'debug($A)' { delete }"
+input = '''
+class A {
+    void f() {
+        debug(1);
+        run();
+    }
+}
+'''
+expected = '''
+class A {
+    void f() {
+        run();
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = "match js::pattern 'debug($A)' { delete }"
+input = '''
+function f() {
+  debug(1);
+  run();
+}
+'''
+expected = '''
+function f() {
+  run();
+}
+'''
+
+[[case]]
+lang = "kotlin"
+script = "match kotlin::pattern 'debug($A)' { delete }"
+input = '''
+fun f() {
+    debug(1)
+    run()
+}
+'''
+expected = '''
+fun f() {
+    run()
+}
+'''
+
+[[case]]
+lang = "php"
+script = "match php::pattern 'debug($A)' { delete }"
+input = '''
+<?php
+function f() {
+    debug(1);
+    run();
+}
+'''
+expected = '''
+<?php
+function f() {
+    run();
+}
+'''
+
+[[case]]
+lang = "python"
+script = "match python::pattern 'debug($A)' { delete }"
+input = '''
+def f():
+    debug(1)
+    run()
+'''
+expected = '''
+def f():
+    run()
+'''
+
+[[case]]
+lang = "ruby"
+script = "match ruby::pattern 'debug($A)' { delete }"
+input = '''
+def f
+  debug(1)
+  run
+end
+'''
+expected = '''
+def f
+  run
+end
+'''
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'debug($A)' { delete }"
+input = '''
+fn f() {
+    debug(1);
+    run();
+}
+'''
+expected = '''
+fn f() {
+    run();
+}
+'''
+
+[[case]]
+lang = "swift"
+script = "match swift::pattern 'debug($A)' { delete }"
+input = '''
+func f() {
+    debug(1)
+    run()
+}
+'''
+expected = '''
+func f() {
+    run()
+}
+'''
+
+[[case]]
+lang = "ts"
+script = "match ts::pattern 'debug($A)' { delete }"
+input = '''
+function f(): void {
+  debug(1);
+  run();
+}
+'''
+expected = '''
+function f(): void {
+  run();
+}
+'''
+
+[[case]]
+lang = "tsx"
+script = "match tsx::pattern 'debug($A)' { delete }"
+input = '''
+function f(): void {
+  debug(1);
+  run();
+}
+'''
+expected = '''
+function f(): void {
+  run();
+}
+'''

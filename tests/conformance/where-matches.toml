@@ -1,0 +1,216 @@
+feature = "A binding tested with where matches"
+description = "`where $A matches /tmp/` keeps only the matches whose binding's text the regex finds: `old(\"tmp\")` is rewritten, `old(\"keep\")` is not."
+
+[[case]]
+lang = "c"
+script = "match c::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+void f(void) {
+    old("tmp");
+    old("keep");
+}
+'''
+expected = '''
+void f(void) {
+    next("tmp");
+    old("keep");
+}
+'''
+
+[[case]]
+lang = "cpp"
+script = "match cpp::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+void f() {
+    old("tmp");
+    old("keep");
+}
+'''
+expected = '''
+void f() {
+    next("tmp");
+    old("keep");
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = "match csharp::pattern 'Old($A)' where $A matches /tmp/ { replace 'Next($A)' }"
+input = '''
+class C {
+    void F() {
+        Old("tmp");
+        Old("keep");
+    }
+}
+'''
+expected = '''
+class C {
+    void F() {
+        Next("tmp");
+        Old("keep");
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+script = "match go::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+package p
+
+func f() {
+	old("tmp")
+	old("keep")
+}
+'''
+expected = '''
+package p
+
+func f() {
+	next("tmp")
+	old("keep")
+}
+'''
+
+[[case]]
+lang = "java"
+script = "match java::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+class C {
+    void f() {
+        old("tmp");
+        old("keep");
+    }
+}
+'''
+expected = '''
+class C {
+    void f() {
+        next("tmp");
+        old("keep");
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = "match js::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+old("tmp");
+old("keep");
+'''
+expected = '''
+next("tmp");
+old("keep");
+'''
+
+[[case]]
+lang = "kotlin"
+script = "match kotlin::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+fun f() {
+    old("tmp")
+    old("keep")
+}
+'''
+expected = '''
+fun f() {
+    next("tmp")
+    old("keep")
+}
+'''
+
+[[case]]
+lang = "php"
+script = "match php::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+<?php
+old("tmp");
+old("keep");
+'''
+expected = '''
+<?php
+next("tmp");
+old("keep");
+'''
+
+[[case]]
+lang = "python"
+script = "match python::pattern 'old($A)' where $A matches /tmp/ { replace 'new($A)' }"
+input = '''
+old("tmp")
+old("keep")
+'''
+expected = '''
+new("tmp")
+old("keep")
+'''
+
+[[case]]
+lang = "ruby"
+script = "match ruby::pattern 'old($A)' where $A matches /tmp/ { replace 'new_one($A)' }"
+input = '''
+old("tmp")
+old("keep")
+'''
+expected = '''
+new_one("tmp")
+old("keep")
+'''
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'old($A)' where $A matches /tmp/ { replace 'new($A)' }"
+input = '''
+fn f() {
+    old("tmp");
+    old("keep");
+}
+'''
+expected = '''
+fn f() {
+    new("tmp");
+    old("keep");
+}
+'''
+
+[[case]]
+lang = "swift"
+script = "match swift::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+func f() {
+    old("tmp")
+    old("keep")
+}
+'''
+expected = '''
+func f() {
+    next("tmp")
+    old("keep")
+}
+'''
+
+[[case]]
+lang = "ts"
+script = "match ts::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+old("tmp");
+old("keep");
+'''
+expected = '''
+next("tmp");
+old("keep");
+'''
+
+[[case]]
+lang = "tsx"
+script = "match tsx::pattern 'old($A)' where $A matches /tmp/ { replace 'next($A)' }"
+input = '''
+old("tmp");
+old("keep");
+'''
+expected = '''
+next("tmp");
+old("keep");
+'''

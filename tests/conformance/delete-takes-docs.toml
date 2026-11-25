@@ -1,0 +1,209 @@
+feature = "A deleted item takes its docs"
+description = "Deleting an item takes the doc comment and attributes (or decorators) directly above it, so nothing is left documenting nothing; the item after it stays as it was."
+
+[[case]]
+lang = "c"
+xfail = "C sets `Leading::NONE`: a `/** … */` comment above a function is not taken with it."
+script = "match c::pattern 'void old(void) { $$$B }' { delete }"
+input = '''
+/** Old docs. */
+void old(void) {}
+void keep(void) {}
+'''
+expected = '''
+void keep(void) {}
+'''
+
+[[case]]
+lang = "cpp"
+xfail = "no function pattern compiles in C++ (see A lone body), so none can be deleted with its docs."
+script = "match cpp::pattern 'void old() { $$$B }' { delete }"
+input = '''
+/** Old docs. */
+void old() {}
+void keep() {}
+'''
+expected = '''
+void keep() {}
+'''
+
+[[case]]
+lang = "csharp"
+script = "match csharp::pattern 'void Old() { $$$B }' { delete }"
+input = '''
+class C {
+    /// <summary>Old docs.</summary>
+    [Obsolete]
+    void Old() {}
+    void Keep() {}
+}
+'''
+expected = '''
+class C {
+    void Keep() {}
+}
+'''
+
+[[case]]
+lang = "go"
+xfail = "Go sets `Leading::NONE`: its doc comments are plain `//` lines, which `Leading` never takes (a plain comment may be about the code around it)."
+script = "match go::pattern 'func old() { $$$B }' { delete }"
+input = '''
+package p
+
+// old does things.
+func old() {}
+func keep() {}
+'''
+expected = '''
+package p
+
+func keep() {}
+'''
+
+[[case]]
+lang = "java"
+script = "match java::pattern 'void old() { $$$B }' { delete }"
+input = '''
+class C {
+    /** Old docs. */
+    @Deprecated
+    void old() {}
+    void keep() {}
+}
+'''
+expected = '''
+class C {
+    void keep() {}
+}
+'''
+
+[[case]]
+lang = "js"
+script = "match js::pattern 'function old() { $$$B }' { delete }"
+input = '''
+/** Old docs. */
+function old() {}
+function keep() {}
+'''
+expected = '''
+function keep() {}
+'''
+
+[[case]]
+lang = "kotlin"
+xfail = "the match of a modifier-relaxed form starts after the function's `modifiers` node (the annotation), so a delete leaves `@Deprecated(…)` and the `/** … */` above it behind."
+script = "match kotlin::pattern 'fun old() { $$$B }' { delete }"
+input = '''
+/** Old docs. */
+@Deprecated("gone")
+fun old() {}
+fun keep() {}
+'''
+expected = '''
+fun keep() {}
+'''
+
+[[case]]
+lang = "php"
+script = "match php::pattern 'function old() { $$$B }' { delete }"
+input = '''
+<?php
+/** Old docs. */
+function old() {}
+function keep() {}
+'''
+expected = '''
+<?php
+function keep() {}
+'''
+
+[[case]]
+lang = "python"
+script = """match python::pattern 'def old():
+    $$$B' { delete }"""
+input = '''
+@cached
+def old():
+    pass
+def keep():
+    pass
+'''
+expected = '''
+def keep():
+    pass
+'''
+
+[[case]]
+lang = "ruby"
+xfail = "Ruby sets `Leading::NONE`: its doc comments are plain `#` lines, which `Leading` never takes."
+script = """match ruby::pattern 'def old
+  $$$B
+end' { delete }"""
+input = '''
+# Old docs.
+def old
+  run
+end
+def keep
+end
+'''
+expected = '''
+def keep
+end
+'''
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'fn old() { $$$B }' { delete }"
+input = '''
+/// Old docs.
+#[inline]
+fn old() {}
+fn keep() {}
+'''
+expected = '''
+fn keep() {}
+'''
+
+[[case]]
+lang = "swift"
+script = "match swift::pattern 'func old() { $$$B }' { delete }"
+input = '''
+/// Old docs.
+@available(*, deprecated)
+func old() {}
+func keep() {}
+'''
+expected = '''
+func keep() {}
+'''
+
+[[case]]
+lang = "ts"
+script = "match ts::pattern 'old(): void { $$$B }' { delete }"
+input = '''
+class C {
+  /** Old docs. */
+  @log
+  old(): void {}
+  keep(): void {}
+}
+'''
+expected = '''
+class C {
+  keep(): void {}
+}
+'''
+
+[[case]]
+lang = "tsx"
+script = "match tsx::pattern 'function old(): void { $$$B }' { delete }"
+input = '''
+/** Old docs. */
+function old(): void {}
+function keep(): void {}
+'''
+expected = '''
+function keep(): void {}
+'''

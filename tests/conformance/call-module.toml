@@ -1,0 +1,216 @@
+feature = "A call replaced by name"
+description = "`match <lang>::call \"old\" { replace_call \"next($args)\" }` rewrites each call of `old` with the template, `$args` its argument list; a mention that is not a call stays."
+
+[[case]]
+lang = "c"
+script = 'match c::call "old" { replace_call "next($args)" }'
+input = '''
+void f(void) {
+    old(1, 2);
+    int (*p)(int, int) = old;
+}
+'''
+expected = '''
+void f(void) {
+    next(1, 2);
+    int (*p)(int, int) = old;
+}
+'''
+
+[[case]]
+lang = "cpp"
+script = 'match cpp::call "old" { replace_call "next($args)" }'
+input = '''
+void f() {
+    old(1, 2);
+    auto p = old;
+}
+'''
+expected = '''
+void f() {
+    next(1, 2);
+    auto p = old;
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = 'match csharp::call "Old" { replace_call "Next($args)" }'
+input = '''
+class C {
+    void F() {
+        Old(1, 2);
+        var p = (Action<int, int>)Old;
+    }
+}
+'''
+expected = '''
+class C {
+    void F() {
+        Next(1, 2);
+        var p = (Action<int, int>)Old;
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+script = 'match go::call "old" { replace_call "next($args)" }'
+input = '''
+package p
+
+func f() {
+	old(1, 2)
+	g := old
+}
+'''
+expected = '''
+package p
+
+func f() {
+	next(1, 2)
+	g := old
+}
+'''
+
+[[case]]
+lang = "java"
+script = 'match java::call "old" { replace_call "next($args)" }'
+input = '''
+class C {
+    void f() {
+        old(1, 2);
+        Runnable r = this::old;
+    }
+}
+'''
+expected = '''
+class C {
+    void f() {
+        next(1, 2);
+        Runnable r = this::old;
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = 'match js::call "old" { replace_call "next($args)" }'
+input = '''
+old(1, 2);
+const g = old;
+'''
+expected = '''
+next(1, 2);
+const g = old;
+'''
+
+[[case]]
+lang = "kotlin"
+script = 'match kotlin::call "old" { replace_call "next($args)" }'
+input = '''
+fun f() {
+    old(1, 2)
+    val g = ::old
+}
+'''
+expected = '''
+fun f() {
+    next(1, 2)
+    val g = ::old
+}
+'''
+
+[[case]]
+lang = "php"
+script = 'match php::call "old" { replace_call "next($args)" }'
+input = '''
+<?php
+old(1, 2);
+$g = 'old';
+'''
+expected = '''
+<?php
+next(1, 2);
+$g = 'old';
+'''
+
+[[case]]
+lang = "python"
+script = 'match python::call "old" { replace_call "new($args)" }'
+input = '''
+old(1, 2)
+g = old
+'''
+expected = '''
+new(1, 2)
+g = old
+'''
+
+[[case]]
+lang = "ruby"
+script = 'match ruby::call "old" { replace_call "new_one($args)" }'
+input = '''
+old(1, 2)
+g = method(:old)
+'''
+expected = '''
+new_one(1, 2)
+g = method(:old)
+'''
+
+[[case]]
+lang = "rust"
+script = 'match rust::call "old" { replace_call "new($args)" }'
+input = '''
+fn f() {
+    old(1, 2);
+    let g = old;
+}
+'''
+expected = '''
+fn f() {
+    new(1, 2);
+    let g = old;
+}
+'''
+
+[[case]]
+lang = "swift"
+script = 'match swift::call "old" { replace_call "next($args)" }'
+input = '''
+func f() {
+    old(1, 2)
+    let g = old
+}
+'''
+expected = '''
+func f() {
+    next(1, 2)
+    let g = old
+}
+'''
+
+[[case]]
+lang = "ts"
+script = 'match ts::call "old" { replace_call "next($args)" }'
+input = '''
+old(1, 2);
+const g = old;
+'''
+expected = '''
+next(1, 2);
+const g = old;
+'''
+
+[[case]]
+lang = "tsx"
+script = 'match tsx::call "old" { replace_call "next($args)" }'
+input = '''
+old(1, 2);
+const g = old;
+'''
+expected = '''
+next(1, 2);
+const g = old;
+'''

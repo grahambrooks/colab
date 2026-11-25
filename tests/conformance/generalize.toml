@@ -1,0 +1,203 @@
+feature = "Generalized from an edit"
+description = "`colab.generalize` learns rules from one hand-made edit, `log(ctx, \"a\")` → `log(\"a\")`, and they make the same change at another call: the dropped and the carried argument become metavariables, the callee stays literal."
+
+[[case]]
+lang = "c"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+void f(void) {
+    log(other, "b");
+}
+'''
+expected = '''
+void f(void) {
+    log("b");
+}
+'''
+
+[[case]]
+lang = "cpp"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+void f() {
+    log(other, "b");
+}
+'''
+expected = '''
+void f() {
+    log("b");
+}
+'''
+
+[[case]]
+lang = "csharp"
+before = 'Log(ctx, "a")'
+after = 'Log("a")'
+input = '''
+class C {
+    void F() {
+        Log(other, "b");
+    }
+}
+'''
+expected = '''
+class C {
+    void F() {
+        Log("b");
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+package p
+
+func f() {
+	log(other, "b")
+}
+'''
+expected = '''
+package p
+
+func f() {
+	log("b")
+}
+'''
+
+[[case]]
+lang = "java"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+class C {
+    void f() {
+        log(other, "b");
+    }
+}
+'''
+expected = '''
+class C {
+    void f() {
+        log("b");
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+log(other, "b");
+'''
+expected = '''
+log("b");
+'''
+
+[[case]]
+lang = "kotlin"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+fun f() {
+    log(other, "b")
+}
+'''
+expected = '''
+fun f() {
+    log("b")
+}
+'''
+
+[[case]]
+lang = "php"
+before = 'log($ctx, "a")'
+after = 'log("a")'
+input = '''
+<?php
+log($other, "b");
+'''
+expected = '''
+<?php
+log("b");
+'''
+
+[[case]]
+lang = "python"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+log(other, "b")
+'''
+expected = '''
+log("b")
+'''
+
+[[case]]
+lang = "ruby"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+log(other, "b")
+'''
+expected = '''
+log("b")
+'''
+
+[[case]]
+lang = "rust"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+fn f() {
+    log(other, "b");
+}
+'''
+expected = '''
+fn f() {
+    log("b");
+}
+'''
+
+[[case]]
+lang = "swift"
+xfail = "generalize takes the smallest node spanning the change, which in Swift is `value_arguments` (inside `call_suffix`), not the `call_expression`: it learns `(ctx, $A)` → `($A)`, which loses the callee, keeps the dropped `ctx` literal, and matches no call."
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+func f() {
+    log(other, "b")
+}
+'''
+expected = '''
+func f() {
+    log("b")
+}
+'''
+
+[[case]]
+lang = "ts"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+log(other, "b");
+'''
+expected = '''
+log("b");
+'''
+
+[[case]]
+lang = "tsx"
+before = 'log(ctx, "a")'
+after = 'log("a")'
+input = '''
+log(other, "b");
+'''
+expected = '''
+log("b");
+'''

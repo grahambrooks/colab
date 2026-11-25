@@ -3036,6 +3036,14 @@ right for your codebase. The same data is queryable at runtime via
 and [`colab list-rules <lang>`](./cli.md#colab-list-rules-lang) — this page is
 just the readable form.
 
+This page lists what each backend offers. Whether a feature *works* the
+same in every language (a lone `$$$B` body, modifiers left out of a
+pattern, a deleted item taking its docs, `colab:ignore`, generalizing an
+edit, …) is in [`conformance.md`](./conformance.md): a feature ×
+language matrix that a test generates by running a case in each of the
+14 source languages. Each known gap there comes with a one-line
+diagnosis.
+
 ## At a glance
 
 | Namespace | `replace` | `delete` | `ensure` | `replace_call` | `set` | `insert` | `create` | Applies to |

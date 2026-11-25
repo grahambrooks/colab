@@ -1,0 +1,272 @@
+feature = "Held back by colab:ignore"
+description = "A `colab:ignore` comment, on the line above a match or trailing it, keeps the rule off that line; the other matches change."
+
+[[case]]
+lang = "c"
+script = "match c::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+void f(void) {
+    old(1);
+    // colab:ignore
+    old(2);
+    old(3); // colab:ignore
+}
+'''
+expected = '''
+void f(void) {
+    next(1);
+    // colab:ignore
+    old(2);
+    old(3); // colab:ignore
+}
+'''
+
+[[case]]
+lang = "cpp"
+script = "match cpp::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+void f() {
+    old(1);
+    // colab:ignore
+    old(2);
+    old(3); // colab:ignore
+}
+'''
+expected = '''
+void f() {
+    next(1);
+    // colab:ignore
+    old(2);
+    old(3); // colab:ignore
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = "match csharp::pattern 'Old($A)' { replace 'Next($A)' }"
+input = '''
+class C {
+    void F() {
+        Old(1);
+        // colab:ignore
+        Old(2);
+        Old(3); // colab:ignore
+    }
+}
+'''
+expected = '''
+class C {
+    void F() {
+        Next(1);
+        // colab:ignore
+        Old(2);
+        Old(3); // colab:ignore
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+script = "match go::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+package p
+
+func f() {
+	old(1)
+	// colab:ignore
+	old(2)
+	old(3) // colab:ignore
+}
+'''
+expected = '''
+package p
+
+func f() {
+	next(1)
+	// colab:ignore
+	old(2)
+	old(3) // colab:ignore
+}
+'''
+
+[[case]]
+lang = "java"
+script = "match java::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+class C {
+    void f() {
+        old(1);
+        // colab:ignore
+        old(2);
+        old(3); // colab:ignore
+    }
+}
+'''
+expected = '''
+class C {
+    void f() {
+        next(1);
+        // colab:ignore
+        old(2);
+        old(3); // colab:ignore
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = "match js::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+old(1);
+// colab:ignore
+old(2);
+old(3); // colab:ignore
+'''
+expected = '''
+next(1);
+// colab:ignore
+old(2);
+old(3); // colab:ignore
+'''
+
+[[case]]
+lang = "kotlin"
+script = "match kotlin::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+fun f() {
+    old(1)
+    // colab:ignore
+    old(2)
+    old(3) // colab:ignore
+}
+'''
+expected = '''
+fun f() {
+    next(1)
+    // colab:ignore
+    old(2)
+    old(3) // colab:ignore
+}
+'''
+
+[[case]]
+lang = "php"
+script = "match php::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+<?php
+old(1);
+// colab:ignore
+old(2);
+old(3); // colab:ignore
+'''
+expected = '''
+<?php
+next(1);
+// colab:ignore
+old(2);
+old(3); // colab:ignore
+'''
+
+[[case]]
+lang = "python"
+script = "match python::pattern 'old($A)' { replace 'new($A)' }"
+input = '''
+old(1)
+# colab:ignore
+old(2)
+old(3) # colab:ignore
+'''
+expected = '''
+new(1)
+# colab:ignore
+old(2)
+old(3) # colab:ignore
+'''
+
+[[case]]
+lang = "ruby"
+script = "match ruby::pattern 'old($A)' { replace 'new_one($A)' }"
+input = '''
+old(1)
+# colab:ignore
+old(2)
+old(3) # colab:ignore
+'''
+expected = '''
+new_one(1)
+# colab:ignore
+old(2)
+old(3) # colab:ignore
+'''
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'old($A)' { replace 'new($A)' }"
+input = '''
+fn f() {
+    old(1);
+    // colab:ignore
+    old(2);
+    old(3); // colab:ignore
+}
+'''
+expected = '''
+fn f() {
+    new(1);
+    // colab:ignore
+    old(2);
+    old(3); // colab:ignore
+}
+'''
+
+[[case]]
+lang = "swift"
+script = "match swift::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+func f() {
+    old(1)
+    // colab:ignore
+    old(2)
+    old(3) // colab:ignore
+}
+'''
+expected = '''
+func f() {
+    next(1)
+    // colab:ignore
+    old(2)
+    old(3) // colab:ignore
+}
+'''
+
+[[case]]
+lang = "ts"
+script = "match ts::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+old(1);
+// colab:ignore
+old(2);
+old(3); // colab:ignore
+'''
+expected = '''
+next(1);
+// colab:ignore
+old(2);
+old(3); // colab:ignore
+'''
+
+[[case]]
+lang = "tsx"
+script = "match tsx::pattern 'old($A)' { replace 'next($A)' }"
+input = '''
+old(1);
+// colab:ignore
+old(2);
+old(3); // colab:ignore
+'''
+expected = '''
+next(1);
+// colab:ignore
+old(2);
+old(3); // colab:ignore
+'''

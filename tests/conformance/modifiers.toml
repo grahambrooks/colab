@@ -1,0 +1,196 @@
+feature = "Modifiers left out"
+description = "An item pattern that spells no modifiers matches an item with any (`public`, `static`, `pub`, …), and a rewrite keeps them."
+
+[[case]]
+lang = "c"
+xfail = "C sets no `PatternLanguage::modifiers`: `static` is a `storage_class_specifier` child of the `function_definition` the pattern does not account for, so `Shape` refuses the match."
+script = "match c::pattern 'void old(void) { $$$B }' { replace 'void next(void) { $$$B }' }"
+input = '''
+static void old(void) {
+    a();
+}
+'''
+expected = '''
+static void next(void) {
+    a();
+}
+'''
+
+[[case]]
+lang = "cpp"
+xfail = "no function pattern compiles in C++ (see A lone body), so none can leave out `static` either."
+script = "match cpp::pattern 'void old() { $$$B }' { replace 'void next() { $$$B }' }"
+input = '''
+static void old() {
+    a();
+}
+'''
+expected = '''
+static void next() {
+    a();
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = "match csharp::pattern 'void Old() { $$$B }' { replace 'void New() { $$$B }' }"
+input = '''
+class A {
+    public static void Old() {
+        X();
+    }
+}
+'''
+expected = '''
+class A {
+    public static void New() {
+        X();
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+na = "Go has no item modifiers: visibility is the name's first letter."
+
+[[case]]
+lang = "java"
+script = "match java::pattern 'void old() { $$$B }' { replace 'void next() { $$$B }' }"
+input = '''
+class A {
+    public static void old() {
+        a();
+    }
+}
+'''
+expected = '''
+class A {
+    public static void next() {
+        a();
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = "match js::pattern 'old() { $$$B }' { replace 'next() { $$$B }' }"
+input = '''
+class A {
+  static async old() {
+    a();
+  }
+}
+'''
+expected = '''
+class A {
+  static async next() {
+    a();
+  }
+}
+'''
+
+[[case]]
+lang = "kotlin"
+script = "match kotlin::pattern 'fun old() { $$$B }' { replace 'fun next() { $$$B }' }"
+input = '''
+private fun old() {
+    a()
+}
+'''
+expected = '''
+private fun next() {
+    a()
+}
+'''
+
+[[case]]
+lang = "php"
+script = "match php::pattern 'function old() { $$$B }' { replace 'function next() { $$$B }' }"
+input = '''
+<?php
+class A {
+    public static function old() {
+        a();
+    }
+}
+'''
+expected = '''
+<?php
+class A {
+    public static function next() {
+        a();
+    }
+}
+'''
+
+[[case]]
+lang = "python"
+na = "Python items have no modifiers; decorators are statements of their own, kept as written."
+
+[[case]]
+lang = "ruby"
+na = "Ruby has no item modifiers: `private` is a method call, not part of the `def`."
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'fn old() { $$$B }' { replace 'fn new() { $$$B }' }"
+input = '''
+pub(crate) fn old() {
+    a();
+}
+'''
+expected = '''
+pub(crate) fn new() {
+    a();
+}
+'''
+
+[[case]]
+lang = "swift"
+script = "match swift::pattern 'func old() { $$$B }' { replace 'func next() { $$$B }' }"
+input = '''
+public func old() {
+    a()
+}
+'''
+expected = '''
+public func next() {
+    a()
+}
+'''
+
+[[case]]
+lang = "ts"
+script = "match ts::pattern 'old(): void { $$$B }' { replace 'next(): void { $$$B }' }"
+input = '''
+class A {
+  private static old(): void {
+    a();
+  }
+}
+'''
+expected = '''
+class A {
+  private static next(): void {
+    a();
+  }
+}
+'''
+
+[[case]]
+lang = "tsx"
+script = "match tsx::pattern 'old(): void { $$$B }' { replace 'next(): void { $$$B }' }"
+input = '''
+class A {
+  private static old(): void {
+    a();
+  }
+}
+'''
+expected = '''
+class A {
+  private static next(): void {
+    a();
+  }
+}
+'''
