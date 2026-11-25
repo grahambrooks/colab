@@ -193,24 +193,16 @@ fn old_engine(lang: &str, pattern: &str, source: &str) -> Result<Ranges, String>
 fn new_engine(lang: &str, pattern: &str, source: &str) -> Result<Ranges, String> {
     let language = (source_language(lang).unwrap().pattern)();
     let forms = colab_rewrite::syntax::compile_forms(&language, pattern)?;
-    let tree = colab_rewrite::syntax::tree(&language.grammar, source)
-        .ok_or_else(|| "the input does not parse".to_string())?;
-    Ok(forms
-        .forms
+    Ok(colab_rewrite::syntax::find(&language, &forms, source)
         .iter()
-        .flat_map(|f| f.pattern.find_all(&tree))
-        .map(|m| trimmed(source, m.node.start(), m.node.end()))
+        .map(|f| trimmed(source, f.range.start, f.range.end))
         .collect())
 }
 
 /// Where the engines may differ, by the place's prefix, and why. Each is
 /// work left before the switch; a known difference that stops differing
 /// fails the test, so the list stays true.
-const KNOWN: &[(&str, &str)] = &[(
-    "tests/corpus/rust/pattern_macro_contents/",
-    "matches inside a macro's token tree (`pattern/macros.rs`) are not yet \
-     found by colab's matcher",
-)];
+const KNOWN: &[(&str, &str)] = &[];
 
 #[test]
 fn both_engines_find_the_same_matches() {

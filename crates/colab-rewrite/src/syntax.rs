@@ -227,6 +227,116 @@ pub fn compile_forms(language: &PatternLanguage, text: &str) -> Result<Forms, St
     Ok(Forms { forms, tolerant })
 }
 
+/// A match of a form, as a span of the file it was found in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub range: std::ops::Range<usize>,
+    /// The form that matched (an index into [`Forms::forms`]).
+    pub form: usize,
+    /// It was found inside a macro call's contents.
+    pub in_macro: bool,
+}
+
+/// Every match of `forms` in `source`: in its tree, then inside the
+/// contents of the macro calls the language reads (Rust's `assert!(…)`,
+/// `vec![…]`, a project's own from `colab.toml`), each re-parsed in the
+/// language's macro wrapper and its matches mapped back, as
+/// `pattern/macros.rs` does for the ast-grep engine. A macro whose matches
+/// would reach into the wrapper is left out, so a rewrite never edits
+/// outside the call. Sorted by position, outer matches first.
+pub fn find(language: &PatternLanguage, forms: &Forms, source: &str) -> Vec<Found> {
+    let Some(tree) = self::tree(&language.grammar, source) else {
+        return Vec::new();
+    };
+    let mut out = find_in_tree(forms, &tree, false);
+    out.extend(find_in_macros(language, forms, &tree, 0));
+    out.sort_by_key(|f| (f.range.start, std::cmp::Reverse(f.range.end), f.form));
+    out.dedup_by(|a, b| a.range == b.range);
+    out
+}
+
+fn find_in_tree(forms: &Forms, tree: &Tree, in_macro: bool) -> Vec<Found> {
+    forms
+        .forms
+        .iter()
+        .enumerate()
+        .flat_map(|(form, f)| {
+            f.pattern.find_all(tree).into_iter().map(move |m| Found {
+                range: m.node.range(),
+                form,
+                in_macro,
+            })
+        })
+        .collect()
+}
+
+/// Macro nesting colab reads into, at most: each level is a re-parse.
+const MACRO_DEPTH: usize = 8;
+
+fn find_in_macros(
+    language: &PatternLanguage,
+    forms: &Forms,
+    tree: &Tree,
+    depth: usize,
+) -> Vec<Found> {
+    let Some(spec) = language.macro_contents else {
+        return Vec::new();
+    };
+    let Some(slot) = spec.wrapper.find(crate::pattern::PATTERN_SLOT) else {
+        return Vec::new();
+    };
+    if depth >= MACRO_DEPTH {
+        return Vec::new();
+    }
+    let extra = colab_core::run::Run::current().map_or_else(Vec::new, |run| run.macros());
+    let listed = |name: &str| spec.macros.contains(&name) || extra.iter().any(|m| m == name);
+    let mut out = Vec::new();
+    for call in tree.nodes().filter(|n| n.kind_name() == spec.invocation) {
+        let name = call
+            .child_by_field(spec.name_field)
+            .map(|n| n.text().rsplit("::").next().unwrap_or(n.text()).trim());
+        if !name.is_some_and(listed) {
+            continue;
+        }
+        let Some(body) = call
+            .children()
+            .filter(colab_syntax::Node::is_named)
+            .last()
+            .filter(|b| b.kind_name() == spec.body && b.range().len() >= 2)
+        else {
+            continue;
+        };
+        // Inside the delimiters: `(`…`)`, `[`…`]`, `{`…`}`.
+        let inner = body.start() + 1..body.end() - 1;
+        let contents = &tree.text()[inner.clone()];
+        let wrapped = spec
+            .wrapper
+            .replacen(crate::pattern::PATTERN_SLOT, contents, 1);
+        let Some(wrapped_tree) = self::tree(&language.grammar, &wrapped) else {
+            continue;
+        };
+        if wrapped_tree.has_error() {
+            continue;
+        }
+        let mut found = find_in_tree(forms, &wrapped_tree, true);
+        found.extend(find_in_macros(language, forms, &wrapped_tree, depth + 1));
+        let within = slot..slot + contents.len();
+        if found.is_empty()
+            || found
+                .iter()
+                .any(|f| f.range.start < within.start || f.range.end > within.end)
+        {
+            continue;
+        }
+        out.extend(found.into_iter().map(|f| Found {
+            range: f.range.start - slot + inner.start..f.range.end - slot + inner.start,
+            in_macro: true,
+            ..f
+        }));
+    }
+    out
+}
+
 /// `text` compiled as a pattern for `language` by colab's own matcher:
 /// bare or in the language's contexts, with every other reading as a form.
 pub fn compile_fragment(language: &PatternLanguage, text: &str) -> Result<Compiled, String> {
