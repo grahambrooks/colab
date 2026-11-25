@@ -21,7 +21,9 @@ static ALSO: [&str; 5] = [
 
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_typescript::LANGUAGE_TSX.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(
+            tree_sitter_typescript::LANGUAGE_TSX.into(),
+        ),
         also: &ALSO,
         ..colab_lang_ts::pattern_language()
     }

@@ -11,7 +11,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// body, a class member, then a `when` entry (`1 -> $E`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_kotlin_ng::LANGUAGE.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_kotlin_ng::LANGUAGE.into()),
         expando: 'µ',
         contexts: &[
             "fun f() {\n@@PATTERN@@\n}\n",
@@ -37,7 +37,6 @@ pub(crate) fn language() -> PatternLanguage {
         }),
         shorthand_fields: None,
         modifier_tokens: &[],
-        parser: None,
     }
 }
 

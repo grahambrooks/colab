@@ -23,7 +23,9 @@ pub const ALSO: [&str; 4] = [
 
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        ),
         expando: '$',
         contexts: &[
             "class C {\n@@PATTERN@@\n}\n",
@@ -50,7 +52,6 @@ pub(crate) fn language() -> PatternLanguage {
         modifier_tokens: MODIFIER_TOKENS,
         // `{ host }` is `{ host: host }`, as in JavaScript.
         shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
-        parser: None,
     }
 }
 

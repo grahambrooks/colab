@@ -16,7 +16,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// the slot), then as the tail of a function body.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_rust::LANGUAGE.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_rust::LANGUAGE.into()),
         expando: 'µ',
         // The next two let a struct field (`pub conflicts: $T`) and a
         // struct-literal field (`conflicts: $C`) be patterns, e.g. in
@@ -55,7 +55,6 @@ pub(crate) fn language() -> PatternLanguage {
         }),
         shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
         modifier_tokens: &[],
-        parser: None,
     }
 }
 
@@ -63,12 +62,10 @@ pub(crate) fn language() -> PatternLanguage {
 /// of the move off tree-sitter: the same contexts and macros, its kind
 /// names, and its attributes and visibility, which are the item's own
 /// children there (tree-sitter's `attribute_item` is the item's sibling),
-/// left out of a pattern as a modifier is. Not yet what `rust::pattern`
-/// runs on: `colab-backends/tests/rust_parser.rs` measures the distance.
-/// Attached docs and separators are still judged on tree-sitter's tree,
-/// and a rewrite still replaces the whole item node, so it loses the doc
-/// comments and the layout of the attributes it keeps (next to fix: start
-/// the edit at the first child the pattern covers).
+/// left out of a pattern as a modifier is; a rewrite leaves the item's
+/// doc comments and those attributes where they are. Not yet what
+/// `rust::pattern` runs on: `colab-backends/tests/rust_parser.rs`
+/// measures the distance.
 pub fn on_rust_analyzer() -> PatternLanguage {
     let base = language();
     PatternLanguage {
@@ -85,7 +82,11 @@ pub fn on_rust_analyzer() -> PatternLanguage {
         // An attribute is left out whatever else the pattern spells, as
         // tree-sitter's sibling `attribute_item` is never seen.
         modifier_tokens: &["attr"],
-        parser: Some(&colab_parse_rust::PARSER),
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &["attr"],
+            ..base.leading
+        },
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_rust::PARSER),
         ..base
     }
 }
@@ -152,6 +153,22 @@ mod tests {
         let documented = "/// A span.\n#[must_use = \"ends when dropped\"]\npub struct Span(Option<SpanData>);\n";
         assert_eq!(ra_find("pub struct $S($$$F);", documented).len(), 1);
         assert_eq!(ra_find("mod $M { $$$B }", src).len(), 1);
+        // A rewrite keeps the attributes and docs the pattern left out.
+        let language = super::on_rust_analyzer();
+        let forms =
+            colab_rewrite::syntax::compile_forms(&language, "pub struct $S($$$F);").unwrap();
+        let rewritten = colab_rewrite::syntax::rewrite(
+            &language,
+            &forms,
+            &colab_rewrite::syntax::Checks::default(),
+            &colab_rewrite::syntax::Lets::default(),
+            documented,
+            "pub(crate) struct $S($$$F);",
+        );
+        assert_eq!(
+            rewritten,
+            "/// A span.\n#[must_use = \"ends when dropped\"]\npub(crate) struct Span(Option<SpanData>);\n"
+        );
         assert_eq!(
             ra_find("$X.unwrap()", "fn f() { assert!(a.unwrap()); }\n"),
             ["a.unwrap()"]

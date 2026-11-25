@@ -12,7 +12,7 @@ use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 /// case (`case $X: $$$B`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_javascript::LANGUAGE.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_javascript::LANGUAGE.into()),
         expando: '$',
         contexts: &[
             "class C {\n@@PATTERN@@\n}\n",
@@ -32,7 +32,6 @@ pub(crate) fn language() -> PatternLanguage {
         shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
         // A method's modifiers are anonymous tokens: kept by a rewrite.
         modifier_tokens: &["static", "async", "get", "set", "*", "accessor"],
-        parser: None,
     }
 }
 

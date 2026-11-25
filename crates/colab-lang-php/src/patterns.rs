@@ -20,7 +20,9 @@ use colab_rewrite::pattern::PatternLanguage;
 /// `echo` prints (`$A, "\n"`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(
+            tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
+        ),
         expando: 'µ',
         contexts: &[
             "@@PATTERN@@;",
@@ -52,7 +54,6 @@ pub(crate) fn language() -> PatternLanguage {
         }),
         shorthand_fields: None,
         modifier_tokens: &[],
-        parser: None,
     }
 }
 

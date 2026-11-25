@@ -1,49 +1,76 @@
 //! Deleting a match, with what belongs to it: its whole line when it
 //! stands alone, its doc comments and attributes ([`Leading`]), or the
-//! `,` beside it in a list.
+//! `,` beside it in a list. Judged on colab's own tree, whichever parser
+//! made it.
 
 use super::*;
+use colab_syntax::{Node, Tree};
+
+/// The widest node over exactly `start..end`: the item, not its first
+/// token; an argument, not its inner expression.
+fn widest(tree: &Tree, start: usize, end: usize) -> Option<Node<'_>> {
+    let mut node = tree.root().covering(start..end)?;
+    while let Some(parent) = node.parent() {
+        if parent.range() != node.range() {
+            break;
+        }
+        node = parent;
+    }
+    Some(node)
+}
+
+/// `node`'s siblings before (or after) it, trivia passed over.
+fn prev(node: Node<'_>) -> Option<Node<'_>> {
+    std::iter::successors(node.prev_sibling(), Node::prev_sibling).find(|n| !n.is_trivia())
+}
+
+fn next(node: Node<'_>) -> Option<Node<'_>> {
+    std::iter::successors(node.next_sibling(), Node::next_sibling).find(|n| !n.is_trivia())
+}
+
+fn prev_named(node: Node<'_>) -> Option<Node<'_>> {
+    std::iter::successors(prev(node), |n| prev(*n)).find(Node::is_named)
+}
+
+fn next_named(node: Node<'_>) -> Option<Node<'_>> {
+    std::iter::successors(next(node), |n| next(*n)).find(Node::is_named)
+}
 
 /// Where the item matched at `start..end` really starts: before the doc
 /// comments and attributes just above it that belong to it ([`Leading`]),
 /// each on its own line(s) with no blank line between it and the next.
+/// (A tree that holds them inside the item, rust-analyzer's, starts the
+/// match there already.)
 pub(crate) fn attached_start(
-    tree: &tree_sitter::Tree,
+    tree: &Tree,
     source: &str,
     start: usize,
     end: usize,
     leading: Leading,
 ) -> usize {
-    let Some(mut node) = tree.root_node().descendant_for_byte_range(start, end) else {
+    let Some(node) = widest(tree, start, end) else {
         return start;
     };
-    // The widest node over exactly the match: the item, not its first token.
-    while let Some(parent) = node.parent() {
-        if parent.byte_range() != node.byte_range() {
-            break;
-        }
-        node = parent;
-    }
     let mut at = start;
     let mut cursor = node;
-    while let Some(prev) = cursor.prev_sibling() {
-        let text = &source[prev.byte_range()];
-        let attached = leading.kinds.contains(&prev.kind())
-            || (prev.is_extra() && leading.doc_comments.iter().any(|p| text.starts_with(p)));
+    while let Some(before) = prev(cursor) {
+        let text = before.text();
+        let attached = leading.kinds.contains(&before.kind_name())
+            || (before.is_extra() && leading.doc_comments.iter().any(|p| text.starts_with(p)));
         // Only up to the next item: whitespace and at most one line break
         // between them, and nothing before it on its first line.
-        let prev_end = prev.start_byte() + text.trim_end().len();
-        let gap = &source[prev_end..at];
-        let line_start = source[..prev.start_byte()].rfind('\n').map_or(0, |p| p + 1);
+        let before_end = before.start() + text.trim_end().len();
+        let gap = &source[before_end..at];
+        let line_start = source[..before.start()].rfind('\n').map_or(0, |p| p + 1);
         if !attached
             || !gap.trim().is_empty()
             || gap.matches('\n').count() > 1
-            || !source[line_start..prev.start_byte()].trim().is_empty()
+            || !source[line_start..before.start()].trim().is_empty()
         {
             break;
         }
-        at = prev.start_byte();
-        cursor = prev;
+        at = before.start();
+        cursor = before;
     }
     at
 }
@@ -71,40 +98,21 @@ pub(crate) fn without_double_blank(source: &str, line_start: usize, line_end: us
 /// it, else from the end of the previous element when a comma precedes,
 /// else the match and a trailing comma alone (`f(a,)`). `None` when no
 /// comma is beside it.
-pub(crate) fn with_separator(
-    tree: &tree_sitter::Tree,
-    start: usize,
-    end: usize,
-) -> Option<(usize, usize)> {
-    let mut node = tree.root_node().descendant_for_byte_range(start, end)?;
-    // The widest node over exactly the match: an argument, not its inner
-    // expression.
-    while let Some(parent) = node.parent() {
-        if parent.byte_range() != node.byte_range() {
-            break;
-        }
-        node = parent;
-    }
-    let is_comma = |n: &tree_sitter::Node<'_>| !n.is_named() && n.kind() == ",";
-    let next = node.next_sibling().filter(is_comma);
-    let prev = node.prev_sibling().filter(is_comma);
-    match (next, prev) {
-        (Some(next), _) => match next.next_named_sibling() {
-            Some(element) => Some((node.start_byte(), element.start_byte())),
-            None => match prev {
-                Some(prev) => Some((
-                    prev.prev_named_sibling()
-                        .map_or(prev.start_byte(), |e| e.end_byte()),
-                    node.end_byte(),
-                )),
-                None => Some((node.start_byte(), next.end_byte())),
+pub(crate) fn with_separator(tree: &Tree, start: usize, end: usize) -> Option<(usize, usize)> {
+    let node = widest(tree, start, end)?;
+    let is_comma = |n: &Node<'_>| !n.is_named() && n.text() == ",";
+    let after = next(node).filter(is_comma);
+    let before = prev(node).filter(is_comma);
+    let from_previous = |comma: Node<'_>| prev_named(comma).map_or(comma.start(), |e| e.end());
+    match (after, before) {
+        (Some(after), _) => match next_named(after) {
+            Some(element) => Some((node.start(), element.start())),
+            None => match before {
+                Some(before) => Some((from_previous(before), node.end())),
+                None => Some((node.start(), after.end())),
             },
         },
-        (None, Some(prev)) => Some((
-            prev.prev_named_sibling()
-                .map_or(prev.start_byte(), |e| e.end_byte()),
-            node.end_byte(),
-        )),
+        (None, Some(before)) => Some((from_previous(before), node.end())),
         (None, None) => None,
     }
 }

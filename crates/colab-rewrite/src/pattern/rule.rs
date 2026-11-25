@@ -168,7 +168,10 @@ impl PatternRule {
         let (Some(q), PatternAction::Replace(template)) = (self.qualifiers, &self.action) else {
             return Vec::new();
         };
-        let grammar = &self.pattern.language().grammar;
+        // The qualifier languages (Go, Python, JS) parse with tree-sitter.
+        let Some(grammar) = self.pattern.language().syntax.tree_sitter() else {
+            return Vec::new();
+        };
         let (Ok(old), Ok(new)) = (parse_clean(grammar, before), parse_clean(grammar, after)) else {
             return Vec::new();
         };

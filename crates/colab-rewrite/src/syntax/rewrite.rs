@@ -183,6 +183,8 @@ struct Rewriter<'a, 't> {
     /// its first `(` or `{`), for a template that leaves some out; `None`
     /// without any, or for a template that only unwraps.
     keep: Option<(&'static [&'static str], &'a str)>,
+    /// The kinds that belong to the item after them ([`crate::pattern::Leading`]).
+    leading: &'static [&'static str],
     lets: &'a [Derived],
     /// The rewriter of each `let` with a `rewrite` step, by position: one
     /// per form its patterns compiled to (empty without one).
@@ -327,11 +329,23 @@ impl Rewriter<'_, '_> {
         }
         let tight = tighten(self.template, &empty);
         let template = tight.as_deref().unwrap_or(self.template);
-        let start = m.node.start();
+        // A node that holds its own doc comments and the attributes the
+        // pattern left out (rust-analyzer's items) keeps them where they
+        // are: the edit starts after them, as it does where they are the
+        // item's siblings (tree-sitter's).
+        let start = m
+            .node
+            .children()
+            .filter(|c| !c.is_trivia())
+            .find(|c| {
+                !(c.is_extra() || (self.leading.contains(&c.kind_name()) && m.absorbed.contains(c)))
+            })
+            .map_or(m.node.start(), |c| c.start());
         // A node that owns the newline ending it keeps that newline.
         let end = start + source[start..m.node.end()].trim_end().len();
         let text = self.lay_out(template, &values, start..end);
-        let text = match (self.gives_back, m.absorbed.first(), m.absorbed.last()) {
+        let absorbed: Vec<_> = m.absorbed.iter().filter(|a| a.start() >= start).collect();
+        let text = match (self.gives_back, absorbed.first(), absorbed.last()) {
             (true, Some(first), Some(last)) => {
                 // Through the space after the last one, up to what follows.
                 let next =
@@ -348,7 +362,7 @@ impl Rewriter<'_, '_> {
                 let mods: Vec<&str> = m
                     .node
                     .children()
-                    .filter(|c| !c.is_trivia() && !c.is_extra())
+                    .filter(|c| !c.is_trivia() && !c.is_extra() && c.start() >= start)
                     .take_while(|c| kinds.contains(&c.kind_name()))
                     .map(|c| c.text())
                     .collect();
@@ -570,6 +584,7 @@ fn edits(
                     template,
                     gives_back: false,
                     keep: None,
+                    leading: language.leading.kinds,
                     lets: &[],
                     subs: &[],
                 })
@@ -583,6 +598,7 @@ fn edits(
         template: &filled,
         gives_back: gives_back(language, form, &written),
         keep: kept_modifiers(language, &written, pattern_text),
+        leading: language.leading.kinds,
         lets: &lets.0,
         subs: &subs,
     };
@@ -596,13 +612,10 @@ fn edits(
     // attributes with it, as a delete does; a macro's contents have none.
     let leading = language.leading;
     let attaches = !(leading.kinds.is_empty() && leading.doc_comments.is_empty());
-    if attaches
-        && frame.is_none()
-        && only_metavariables(&written)
-        && let Some(ts) = crate::parse_cache::parse(&language.grammar, source)
-    {
+    if attaches && frame.is_none() && only_metavariables(&written) {
         for edit in &mut edits {
-            let start = crate::pattern::attached_start(&ts, source, edit.start, edit.end, leading);
+            let start =
+                crate::pattern::attached_start(&tree, source, edit.start, edit.end, leading);
             edit.start = edit.start.min(start);
         }
     }

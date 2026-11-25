@@ -20,9 +20,14 @@
 use std::ops::Range;
 
 use colab_core::Generalized;
-use tree_sitter::{Node, Parser, Tree};
+use colab_syntax::{Node, Tree};
 
 use crate::pattern::{PATTERN_SLOT, PatternLanguage};
+
+/// The next named sibling of `node`, trivia passed over.
+fn next_named(node: Node<'_>) -> Option<Node<'_>> {
+    std::iter::successors(node.next_sibling(), Node::next_sibling).find(Node::is_named)
+}
 
 /// Fields whose node names something: kept literal, and not looked into.
 const NAME_FIELDS: &[&str] = &[
@@ -68,8 +73,8 @@ pub fn generalize(
         // Too little to walk: try the snippets as one unit.
         return generalize_one(language, before, after).map(|g| vec![g]);
     };
-    let items_b = items(tree_b.root_node(), &range_b);
-    let items_a = items(tree_a.root_node(), &range_a);
+    let items_b = items(tree_b.root(), &range_b);
+    let items_a = items(tree_a.root(), &range_a);
     if items_b.len() != items_a.len() || items_b.is_empty() {
         return generalize_one(language, before, after).map(|g| vec![g]);
     }
@@ -79,14 +84,14 @@ pub fn generalize(
     }
     // Each unit generalized; one that finds nothing to vary is lifted to
     // its parent, inside the snippet, and tried again.
-    let within = |n: Node<'_>, r: &Range<usize>| r.start <= n.start_byte() && n.end_byte() <= r.end;
+    let within = |n: Node<'_>, r: &Range<usize>| r.start <= n.start() && n.end() <= r.end;
     let mut rules: Vec<(Range<usize>, Generalized)> = Vec::new();
     let mut last_error = None;
     for (mut b, mut a) in units {
         loop {
-            match generalize_one(language, &src_b[b.byte_range()], &src_a[a.byte_range()]) {
+            match generalize_one(language, &src_b[b.range()], &src_a[a.range()]) {
                 Ok(g) => {
-                    rules.push((b.byte_range(), g));
+                    rules.push((b.range(), g));
                     break;
                 }
                 Err(e) => {
@@ -165,19 +170,18 @@ fn items<'t>(root: Node<'t>, range: &Range<usize>) -> Vec<Node<'t>> {
     let Some(node) = node_spanning(root, range) else {
         return Vec::new();
     };
-    if node.byte_range() == *range {
+    if node.range() == *range {
         return vec![node];
     }
-    let mut cursor = node.walk();
-    node.named_children(&mut cursor)
-        .filter(|c| range.start <= c.start_byte() && c.end_byte() <= range.end && !c.is_extra())
+    node.named_children()
+        .filter(|c| range.start <= c.start() && c.end() <= range.end && !c.is_extra())
         .collect()
 }
 
 /// Whether `node` is a list of others (an argument or parameter list): never
 /// a unit or a value on its own, only what holds them.
 fn is_list(node: &Node<'_>) -> bool {
-    let kind = node.kind();
+    let kind = node.kind_name();
     kind.ends_with("arguments")
         || kind.ends_with("argument_list")
         || kind.ends_with("parameters")
@@ -211,20 +215,13 @@ fn unit<'t>(mut b: Node<'t>, mut a: Node<'t>) -> (Node<'t>, Node<'t>) {
 
 /// The field `node` sits in under its parent, if any.
 fn field_of<'t>(node: &Node<'t>) -> Option<&'t str> {
-    let parent = node.parent()?;
-    let mut cursor = parent.walk();
-    for (i, child) in parent.children(&mut cursor).enumerate() {
-        if child.id() == node.id() {
-            return parent.field_name_for_child(u32::try_from(i).ok()?);
-        }
-    }
-    None
+    node.field_name()
 }
 
 /// An import declaration: Rust's `use`, Go's / Java's / JS's `import`, C's
 /// `#include`, PHP's `use`.
 fn is_import(node: &Node<'_>) -> bool {
-    let kind = node.kind();
+    let kind = node.kind_name();
     kind == "use_declaration"
         || kind.starts_with("import")
         || kind.contains("include")
@@ -243,18 +240,16 @@ fn differing<'t>(
     src_a: &str,
     out: &mut Vec<(Node<'t>, Node<'t>)>,
 ) {
-    if src_b[b.byte_range()] == src_a[a.byte_range()] {
+    if src_b[b.range()] == src_a[a.range()] {
         return;
     }
-    let (nb, na) = (b.named_child_count(), a.named_child_count());
-    if b.kind() == a.kind() && nb == na && nb > 0 {
-        let mut cb = b.walk();
-        let mut ca = a.walk();
-        let kids_b: Vec<Node<'t>> = b.named_children(&mut cb).collect();
-        let kids_a: Vec<Node<'t>> = a.named_children(&mut ca).collect();
+    let (nb, na) = (b.named_children().count(), a.named_children().count());
+    if b.kind_name() == a.kind_name() && nb == na && nb > 0 {
+        let kids_b: Vec<Node<'t>> = b.named_children().collect();
+        let kids_a: Vec<Node<'t>> = a.named_children().collect();
         let before = out.len();
         for (kb, ka) in kids_b.iter().zip(&kids_a) {
-            if kb.named_child_count() == 0 && src_b[kb.byte_range()] != src_a[ka.byte_range()] {
+            if kb.named_children().count() == 0 && src_b[kb.range()] != src_a[ka.range()] {
                 // A leaf changed: the unit is this node, around it.
                 out.truncate(before);
                 out.push(unit(b, a));
@@ -289,7 +284,7 @@ fn generalize_one(
          contexts; give a whole expression, statement or item"
             .to_string()
     })?;
-    let Some(node) = node_spanning(tree.root_node(), &range) else {
+    let Some(node) = node_spanning(tree.root(), &range) else {
         return Err(
             "`before` is not one syntax node; give one expression, statement or item".into(),
         );
@@ -297,15 +292,13 @@ fn generalize_one(
 
     // The subtrees to abstract, by range in `source`.
     let mut cut: Vec<Range<usize>> = Vec::new();
-    if node.byte_range() != range {
+    if node.range() != range {
         return Err(
             "`before` is not one syntax node; give one expression, statement or item".into(),
         );
     }
-    let mut cursor = node.walk();
-    for (i, child) in node.children(&mut cursor).enumerate() {
-        let field = node.field_name_for_child(u32::try_from(i).unwrap_or(u32::MAX));
-        collect(child, field, &node, &source, after, &mut cut);
+    for child in node.children() {
+        collect(child, child.field_name(), &node, &source, after, &mut cut);
     }
 
     // One metavariable per distinct text, in order.
@@ -379,10 +372,10 @@ fn collect(
     if field.is_some_and(|f| NAME_FIELDS.contains(&f)) || unnamed_callee(&node, field, parent) {
         return;
     }
-    let text = &source[node.byte_range()];
+    let text = &source[node.range()];
     // A string's inside is not a node a metavariable can stand for (`"$A"`
     // is a literal), and neither is an escape in one (`\n`).
-    let kind = node.kind();
+    let kind = node.kind_name();
     if kind.ends_with("content") || kind.ends_with("fragment") || kind.contains("escape") {
         return;
     }
@@ -393,20 +386,18 @@ fn collect(
     let shared = !is_list(&node)
         && text.chars().any(char::is_alphanumeric)
         && !token_positions(after, text).is_empty();
-    let argument = !is_list(&node) && parent.kind().contains("argument");
+    let argument = !is_list(&node) && parent.kind_name().contains("argument");
     if shared || argument {
-        cut.push(node.byte_range());
+        cut.push(node.range());
         return;
     }
     // A string is one value: its quotes (Python's named `string_start`)
     // and pieces are not values of their own to carry over.
-    if node.kind().contains("string") {
+    if node.kind_name().contains("string") {
         return;
     }
-    let mut cursor = node.walk();
-    for (i, child) in node.children(&mut cursor).enumerate() {
-        let field = node.field_name_for_child(u32::try_from(i).unwrap_or(u32::MAX));
-        collect(child, field, &node, source, after, cut);
+    for child in node.children() {
+        collect(child, child.field_name(), &node, source, after, cut);
     }
 }
 
@@ -415,16 +406,16 @@ fn collect(
 /// call's arguments. Kept literal like a named one, or `Random(42)` would
 /// generalize to `$A($B)`, every call there is.
 fn unnamed_callee(node: &Node<'_>, field: Option<&str>, parent: &Node<'_>) -> bool {
-    let kind = parent.kind();
+    let kind = parent.kind_name();
     if field.is_some() || !(kind.contains("call") || kind.contains("invocation")) {
         return false;
     }
-    let mut sibling = node.next_named_sibling();
+    let mut sibling = next_named(*node);
     while let Some(s) = sibling {
         if is_list(&s) {
             return true;
         }
-        sibling = s.next_named_sibling();
+        sibling = next_named(s);
     }
     false
 }
@@ -487,15 +478,13 @@ fn fill_template(after: &str, bindings: &[(String, String)]) -> String {
 /// `text` parsed on its own or in the first pattern context that reads it
 /// without errors: the tree, the source parsed, and where `text` is in it.
 fn locate(language: &PatternLanguage, text: &str) -> Option<(Tree, String, Range<usize>)> {
-    let mut parser = Parser::new();
-    parser.set_language(&language.grammar).ok()?;
     std::iter::once(PATTERN_SLOT)
         .chain(language.contexts.iter().copied())
         .find_map(|context| {
             let start = context.find(PATTERN_SLOT)?;
             let source = context.replacen(PATTERN_SLOT, text, 1);
-            let tree = parser.parse(&source, None)?;
-            (!tree.root_node().has_error()).then(|| (tree, source, start..start + text.len()))
+            let tree = crate::syntax::fragment_tree(language, &source)?;
+            (!tree.has_error()).then(|| (tree, source, start..start + text.len()))
         })
 }
 
@@ -504,18 +493,16 @@ fn locate(language: &PatternLanguage, text: &str) -> Option<(Tree, String, Range
 fn node_spanning<'t>(root: Node<'t>, range: &Range<usize>) -> Option<Node<'t>> {
     let mut node = root;
     loop {
-        if node.byte_range() == *range && node.is_named() {
+        if node.range() == *range && node.is_named() {
             return Some(node);
         }
-        let mut cursor = node.walk();
         let inner = node
-            .named_children(&mut cursor)
-            .find(|c| c.start_byte() <= range.start && range.end <= c.end_byte());
+            .named_children()
+            .find(|c| c.start() <= range.start && range.end <= c.end());
         match inner {
             Some(child) => node = child,
             None => {
-                return (node.byte_range() != root.byte_range() || root.byte_range() == *range)
-                    .then_some(node);
+                return (node.range() != root.range() || root.range() == *range).then_some(node);
             }
         }
     }

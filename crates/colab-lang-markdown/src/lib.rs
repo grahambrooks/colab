@@ -344,7 +344,7 @@ impl LanguageBackend for MarkdownBackend {
             ));
         };
         let (tree, has_error) =
-            colab_rewrite::pattern::syntax_tree(&tree_sitter_md::LANGUAGE.into(), text)
+            colab_rewrite::pattern::grammar_tree(&tree_sitter_md::LANGUAGE.into(), text)
                 .map_err(|e| colab_core::Error::UnsupportedOperation(format!("markdown: {e}")))?;
         Ok(colab_core::SyntaxTree {
             tree,

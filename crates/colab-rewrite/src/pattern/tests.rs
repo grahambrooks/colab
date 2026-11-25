@@ -65,7 +65,7 @@ impl StructuralPattern {
 
 fn go() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_go::LANGUAGE.into(),
+        syntax: Syntax::TreeSitter(tree_sitter_go::LANGUAGE.into()),
         expando: 'µ',
         contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
         also: &[],
@@ -75,13 +75,12 @@ fn go() -> PatternLanguage {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
-        parser: None,
     }
 }
 
 fn python() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_python::LANGUAGE.into(),
+        syntax: Syntax::TreeSitter(tree_sitter_python::LANGUAGE.into()),
         expando: 'µ',
         contexts: &[],
         also: &["def _(x: @@PATTERN@@): pass\n"],
@@ -91,7 +90,6 @@ fn python() -> PatternLanguage {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
-        parser: None,
     }
 }
 
@@ -627,7 +625,7 @@ fn an_unknown_kind_or_bad_regex_fails_at_compile_time() {
 
 fn rust() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_rust::LANGUAGE.into(),
+        syntax: Syntax::TreeSitter(tree_sitter_rust::LANGUAGE.into()),
         expando: 'µ',
         contexts: &["fn f() { @@PATTERN@@ }"],
         also: &[],
@@ -637,7 +635,6 @@ fn rust() -> PatternLanguage {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
-        parser: None,
     }
 }
 
@@ -699,7 +696,7 @@ fn an_also_context_matches_the_same_text_parsed_another_way() {
 #[test]
 fn a_multi_line_template_follows_tab_indentation() {
     let go = PatternLanguage {
-        grammar: tree_sitter_go::LANGUAGE.into(),
+        syntax: Syntax::TreeSitter(tree_sitter_go::LANGUAGE.into()),
         expando: 'µ',
         contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
         also: &[],
@@ -709,7 +706,6 @@ fn a_multi_line_template_follows_tab_indentation() {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
-        parser: None,
     };
     let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();
     let src = "package p\n\nfunc f() {\n\tif x {\n\t\tlog.Print(a)\n\t}\n}\n";
@@ -980,11 +976,10 @@ fn pattern_tree_shows_metavariables_and_the_context_used() {
 
 #[test]
 fn syntax_tree_reports_errors() {
-    let grammar: tree_sitter::Language = tree_sitter_go::LANGUAGE.into();
-    let (tree, has_error) = syntax_tree(&grammar, "package p\nfunc f() { x( }\n").unwrap();
+    let (tree, has_error) = syntax_tree(&go(), "package p\nfunc f() { x( }\n").unwrap();
     assert!(has_error);
     assert!(tree.contains("ERROR") || tree.contains("MISSING"), "{tree}");
-    let (_, has_error) = syntax_tree(&grammar, "package p\n").unwrap();
+    let (_, has_error) = syntax_tree(&go(), "package p\n").unwrap();
     assert!(!has_error);
 }
 

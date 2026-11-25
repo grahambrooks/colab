@@ -1,8 +1,6 @@
-//! Parsing helpers on tree-sitter trees: a clean parse (the qualifier
-//! check), and the node a pattern's text spans in its context (`colab
-//! ast`'s printed tree).
-
-use super::*;
+//! Parsing helpers: a clean tree-sitter parse (the qualifier check), and
+//! the node a pattern's text spans in its context (`colab ast`'s printed
+//! tree, on colab's own tree).
 
 pub(super) fn parse_clean(
     grammar: &tree_sitter::Language,
@@ -26,29 +24,30 @@ pub(super) fn trim_span(text: &str, span: std::ops::Range<usize>) -> std::ops::R
 
 /// The deepest named node whose byte range is exactly `span`.
 pub(super) fn deepest_covering<'t>(
-    root: Node<'t>,
+    root: colab_syntax::Node<'t>,
     text: &str,
     span: std::ops::Range<usize>,
-) -> Option<Node<'t>> {
-    let mut node = root.named_descendant_for_byte_range(span.start, span.end)?;
+) -> Option<colab_syntax::Node<'t>> {
+    let mut node = root.covering(span.clone())?;
+    while !node.is_named() {
+        node = node.parent()?;
+    }
     // A node may take the whitespace after it into its range (Go's
     // `expression_case` ends at the newline that terminates it); past the
     // pattern there must be nothing else.
-    let trailing_space = node.start_byte() == span.start
-        && node.end_byte() > span.end
+    let trailing_space = node.start() == span.start
+        && node.end() > span.end
         && text
-            .get(span.end..node.end_byte())
+            .get(span.end..node.end())
             .is_some_and(|t| t.trim().is_empty());
-    if node.byte_range() != span && !trailing_space {
+    if node.range() != span && !trailing_space {
         return None;
     }
-    let span = node.byte_range();
+    let span = node.range();
     // Descend through single-child wrappers that cover the same span
     // (`expression_statement` → `call_expression`).
     loop {
-        let child = node
-            .named_children(&mut node.walk())
-            .find(|c| c.byte_range() == span);
+        let child = node.named_children().find(|c| c.range() == span);
         match child {
             Some(c) => node = c,
             None => return Some(node),

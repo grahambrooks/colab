@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use colab_syntax::fragment::{self, Compiled, Fragments};
 use colab_syntax::{Grammar, Tree};
 
-use crate::pattern::PatternLanguage;
+use crate::pattern::{PatternLanguage, Syntax};
 
 mod check;
 mod delete;
@@ -41,20 +41,34 @@ pub fn grammar_of(language: &tree_sitter::Language) -> Arc<Grammar> {
 }
 
 /// `source` as a colab tree for `language`: by its own parser when it has
-/// one ([`PatternLanguage::parser`]), else by tree-sitter ([`tree`]).
+/// one ([`Syntax::Own`]), else by tree-sitter ([`tree`]).
 pub fn source_tree(language: &PatternLanguage, source: &str) -> Option<Tree> {
-    match language.parser {
-        Some(parser) => Some(parser.parse(source)),
-        None => tree(&language.grammar, source),
+    match &language.syntax {
+        Syntax::Own(parser) => Some(parser.parse(source)),
+        Syntax::TreeSitter(grammar) => tree(grammar, source),
+    }
+}
+
+/// [`source_tree`] for a fragment, whose parse is never reused, so it
+/// skips the shared cache.
+pub fn fragment_tree(language: &PatternLanguage, text: &str) -> Option<Tree> {
+    match &language.syntax {
+        Syntax::Own(parser) => Some(parser.parse(text)),
+        Syntax::TreeSitter(grammar) => {
+            let mut parser = tree_sitter::Parser::new();
+            parser.set_language(grammar).ok()?;
+            let parsed = parser.parse(text, None)?;
+            Tree::from_tree_sitter(&parsed, text, grammar_of(grammar)).ok()
+        }
     }
 }
 
 /// The kind and field names of `language`'s trees: its own parser's, or
 /// tree-sitter's.
 pub fn grammar_for(language: &PatternLanguage) -> Arc<Grammar> {
-    match language.parser {
-        Some(parser) => parser.grammar(),
-        None => grammar_of(&language.grammar),
+    match &language.syntax {
+        Syntax::Own(parser) => parser.grammar(),
+        Syntax::TreeSitter(grammar) => grammar_of(grammar),
     }
 }
 
@@ -592,15 +606,6 @@ pub fn compile_fragment(language: &PatternLanguage, text: &str) -> Result<Compil
         contexts: language.contexts,
         also: language.also,
     };
-    // A fragment's parse is never reused, so it skips the shared cache.
-    let parse = |filled: &str| {
-        if let Some(own) = language.parser {
-            return Some(own.parse(filled));
-        }
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&language.grammar).ok()?;
-        let parsed = parser.parse(filled, None)?;
-        Tree::from_tree_sitter(&parsed, filled, grammar_for(language)).ok()
-    };
+    let parse = |filled: &str| fragment_tree(language, filled);
     fragment::compile(text, &lang, &parse)
 }

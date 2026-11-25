@@ -11,7 +11,7 @@ use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 /// is a function body, for a single-line statement that needs one.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_python::LANGUAGE.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_python::LANGUAGE.into()),
         expando: 'µ',
         contexts: &["def _():\n    @@PATTERN@@\n"],
         // In an annotation `Optional[str]` is a `generic_type`, not the
@@ -34,7 +34,6 @@ pub(crate) fn language() -> PatternLanguage {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
-        parser: None,
     }
 }
 

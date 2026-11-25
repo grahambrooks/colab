@@ -25,7 +25,6 @@ fn delete_in(
     let Some(tree) = super::source_tree(language, source) else {
         return source.to_string();
     };
-    let ts = crate::parse_cache::parse(&language.grammar, source);
     let leading = language.leading;
     let attaches = !(leading.kinds.is_empty() && leading.doc_comments.is_empty());
     let mut spans: Vec<(usize, usize)> = Vec::new();
@@ -34,9 +33,10 @@ fn delete_in(
         let (start, end) = (found.range.start, found.range.end);
         let end = start + source[start..end].trim_end().len();
         // An item's doc comments and attributes go with it.
-        let first = match (&ts, attaches) {
-            (Some(t), true) => attached_start(t, source, start, end, leading),
-            _ => start,
+        let first = if attaches {
+            attached_start(&tree, source, start, end, leading)
+        } else {
+            start
         };
         let (line_start, line_end) = line_span(source, first, end);
         let before = &source[line_start..first];
@@ -54,7 +54,7 @@ fn delete_in(
             ));
             continue;
         }
-        if let Some(span) = ts.as_ref().and_then(|t| with_separator(t, start, end)) {
+        if let Some(span) = with_separator(&tree, start, end) {
             spans.push(span);
         }
     }

@@ -19,7 +19,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// a bare name is never also read as a parameter's type.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_c::LANGUAGE.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_c::LANGUAGE.into()),
         expando: 'µ',
         contexts: &[
             "@@PATTERN@@;",
@@ -49,7 +49,6 @@ pub(crate) fn language() -> PatternLanguage {
         }),
         shorthand_fields: None,
         modifier_tokens: &[],
-        parser: None,
     }
 }
 

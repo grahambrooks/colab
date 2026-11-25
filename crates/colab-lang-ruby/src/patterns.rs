@@ -11,7 +11,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// body and a class body, for fragments that need one.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        grammar: tree_sitter_ruby::LANGUAGE.into(),
+        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_ruby::LANGUAGE.into()),
         expando: 'µ',
         contexts: &["def _\n@@PATTERN@@\nend\n", "class C\n@@PATTERN@@\nend\n"],
         also: &[],
@@ -27,7 +27,6 @@ pub(crate) fn language() -> PatternLanguage {
         // Ruby 3.1: `f(host:)` and `{ host: }` pass `host: host`.
         shorthand_fields: Some(colab_rewrite::pattern::Shorthand::RUBY),
         modifier_tokens: &[],
-        parser: None,
     }
 }
 

@@ -29,7 +29,6 @@
 use std::fmt::Write as _;
 
 use colab_core::{Constraint, LanguageBackend, Operation, RuleSpec, Test, Var};
-use tree_sitter::{Node, Parser};
 
 mod compile;
 use compile::*;
@@ -57,11 +56,32 @@ mod tests;
 /// `"package p\nfunc _() {\n\t@@PATTERN@@\n}"` for Go statements.
 pub const PATTERN_SLOT: &str = "@@PATTERN@@";
 
+/// What parses a language: a tree-sitter grammar, or a parser of colab's
+/// own (step 3 of the move off tree-sitter, one language at a time).
+/// Kinds, fields and the rest of a [`PatternLanguage`] are its trees'.
+#[derive(Clone)]
+pub enum Syntax {
+    TreeSitter(tree_sitter::Language),
+    Own(&'static dyn colab_syntax::SourceParser),
+}
+
+impl Syntax {
+    /// The tree-sitter grammar, for what still reads tree-sitter's tree
+    /// (a backend's own modules, the qualifier check); `None` for an own
+    /// parser.
+    pub fn tree_sitter(&self) -> Option<&tree_sitter::Language> {
+        match self {
+            Self::TreeSitter(grammar) => Some(grammar),
+            Self::Own(_) => None,
+        }
+    }
+}
+
 /// What a backend supplies to make `<lang>::pattern` work.
 #[derive(Clone)]
 pub struct PatternLanguage {
-    /// The backend's tree-sitter grammar.
-    pub grammar: tree_sitter::Language,
+    /// What parses the language.
+    pub syntax: Syntax,
     /// The character `$` is rewritten to before the pattern is parsed,
     /// for grammars in which `$` cannot start an identifier (Go, Python,
     /// Rust, …). Use `'$'` where it can (JavaScript, Java).
@@ -109,12 +129,6 @@ pub struct PatternLanguage {
     /// does not spell, so `f2() {}` gives `static async f2() {}`, not
     /// `f2() {}`. Empty where modifiers are named nodes.
     pub modifier_tokens: &'static [&'static str],
-    /// A parser of colab's own for the language, read in place of
-    /// `grammar` by the pattern engine (`crate::syntax::source_tree`):
-    /// step 3 of the move off tree-sitter, one language at a time. `None`
-    /// parses with tree-sitter. Kinds, fields and context wrappers are
-    /// then the parser's (`colab_parse_rust`'s for Rust).
-    pub parser: Option<&'static dyn colab_syntax::SourceParser>,
 }
 
 /// An item's modifiers — visibility, `static`, annotations: Rust's `pub`,

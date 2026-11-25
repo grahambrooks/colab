@@ -134,11 +134,12 @@ impl SourceLanguage {
                 .is_some_and(|name| self.file_names.contains(&name))
     }
 
-    /// `source`'s syntax tree, through the shared parse cache: a text the
-    /// rules before have already parsed is not parsed again. `None` if
-    /// tree-sitter cannot parse.
+    /// `source`'s tree-sitter tree, through the shared parse cache: a text
+    /// the rules before have already parsed is not parsed again. `None` if
+    /// tree-sitter cannot parse, or the language has a parser of its own
+    /// (whose modules read [`crate::syntax::source_tree`]).
     pub fn parse(&self, source: &str) -> Option<Tree> {
-        crate::parse_cache::parse(&(self.pattern)().grammar, source)
+        crate::parse_cache::parse((self.pattern)().syntax.tree_sitter()?, source)
     }
 
     /// `source` with every identifier `from` renamed to `to`
@@ -250,7 +251,10 @@ impl SourceLanguage {
 
     /// For `LanguageBackend::declarations`.
     pub fn declarations(&self, source: &str) -> Vec<Declaration> {
-        crate::declarations(&(self.pattern)().grammar, source)
+        match (self.pattern)().syntax.tree_sitter() {
+            Some(grammar) => crate::declarations(grammar, source),
+            None => Vec::new(),
+        }
     }
 
     /// For `LanguageBackend::syntax_tree` (`colab ast`).
