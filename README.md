@@ -86,7 +86,6 @@ At runtime, ask the binary directly:
 colab schema           # full JSON capability schema
 colab list-languages   # backends registered in this build
 colab list-rules go    # modules and actions for one backend
-colab server           # LSP for .colab files: diagnostics, hover, completion, code actions
 colab mcp              # MCP server: 20 tools (preview, apply, find, ast, test_rule, rename, outline, …)
 ```
 

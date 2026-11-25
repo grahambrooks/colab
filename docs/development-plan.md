@@ -101,8 +101,8 @@ by severity; struck through when done.
 
 | Rank | Finding | Where, and what to do |
 | ---- | ------- | --------------------- |
-| 1 | **A cloned repo's `colab.toml` runs commands through a git pack.** `[[packs]] git` / `rev` reach `git fetch` as positional arguments with no `--` and no validation, so `--upload-pack=<cmd>` runs `<cmd>` (reproduced). `hook post-edit` compiles packs, so with the hook installed an agent editing any file in a malicious clone triggers it, with no prompt; so do `fix --check` in CI on a PR and `fleet`. | `git_packs.rs:115`, `config.rs:200`. Refuse a url or rev that starts with `-`, put `--` before the url, allow only https / ssh / file urls (`-c protocol.allow=user`), revs as hex or tag characters; `hook post-edit` uses cached packs only. |
-| 2 | **A repo's `colab.toml` commands run in modes that look read-only.** `[formatters]` and `[run] check` run through `sh -c`, including under `fix --check` when the file sets `tidy = true`, and in every repo of a `fleet` with `run = fix`. | `tidy.rs:93`, `refactor.rs:366,381,401`, `fleet.rs:413`. Run them only for trusted roots (an opt-in list in `~/.config/colab`, or `--trust-config`); never under `--check` / `--dry-run`. Needs a decision. |
+| 1 | **A cloned repo's `colab.toml` runs commands through a git pack.** `[[packs]] git` / `rev` reach `git fetch` as positional arguments with no `--` and no validation, so `--upload-pack=<cmd>` runs `<cmd>` (reproduced). `hook post-edit` compiles packs, so with the hook installed an agent editing any file in a malicious clone triggers it, with no prompt; so do `fix --check` in CI on a PR and `fleet`. | `git_packs.rs:115`, `config.rs:200`. Refuse a url or rev that starts with `-`, put `--` before the url, allow only https / ssh / file urls (`-c protocol.allow=user`), revs as hex or tag characters; `hook post-edit` uses cached packs only. With `colab.toml` trusted (rank 2's decision) this is no longer a privilege boundary, since the same file may name any formatter; it stays worth fixing as input validation, cheaply, so a typo in `rev` is an error rather than a git option, and so the hook does no network fetch behind an edit. |
+| 2 | **A repo's `colab.toml` commands run in modes that look read-only.** `[formatters]` and `[run] check` run through `sh -c`, including under `fix --check` when the file sets `tidy = true`, and in every repo of a `fleet` with `run = fix`. | `tidy.rs:93`, `refactor.rs:366,381,401`, `fleet.rs:413`. **Decided 2026-11-25: a repository's `colab.toml` is trusted**, as its `Makefile`, `build.rs` or CI config is: running colab in a checkout means trusting that checkout. No trust list or flag. What stays worth doing is making it visible: the docs say plainly that `colab.toml` commands run, including under `--check`, and `fleet` over repositories the operator does not own should say so in its manifest docs. |
 | 3 | ~~**Text lost beside a syntax error.**~~ | Done 2026-11-25 (`982e9f5`): ast-grep passes over an `ERROR` node like any unnamed child, so `old($A)` matched `old(x :: y)` and the rewrite dropped `:: y`, and a `js::` rule over a `.ts` file turned `old(x as any)` into `neu(any)`. A match is now kept only when every error inside it lies within a capture (`find.rs::errors_captured`). |
 | 4 | **`create` paths can leave the workspace.** `create "../x"` wrote above the run's root; the check reads the template before captures fill it. | `pattern/rule.rs:262,291`. Check the filled path; refuse one that does not stay under the run base. |
 | 5 | **Nothing confines where MCP tools and server edits write.** Any `cwd` and paths are accepted, and a language server's `WorkspaceEdit` may name any `file://` uri. MCP tools are often auto-approved where Bash is not. | `colab-mcp/src/args.rs:23`, `colab-lsp-client/src/edit.rs`. Refuse writes outside the MCP roots (or the server's start directory), and server edits outside the project root unless `--allow-outside`. |
@@ -182,7 +182,14 @@ server is already a synchronous JSON-RPC loop, and the client's transport
 already frames Content-Length messages, so the server can run on that
 transport synchronously and drop all 45. With rules now writable as JSON,
 whether `.colab` editor support is worth keeping at all is a fair
-question.
+question. **Decided 2026-11-25: dropped.** Refactoring is done by agents,
+which write rules through MCP (or as scripts they run), not by people
+editing `.colab` files in an editor, so a language server for them earns
+nothing. `colab server`, its module and its test are gone, and with them
+`tower-lsp-server`, `tokio`, and the `futures` / `tower` dev-dependencies:
+142 run-time crates became 101. The per-rule checks the editor showed
+are still `colab_dsl::check`, which the corpus harness uses; agents get
+the same compile errors and warnings from `colab.lint_script`.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would
@@ -320,10 +327,11 @@ agents fall back to `text::literal`. A sound design:
   who calls a function, what implements an interface — are *asked* of
   the language's own server (`type`, `resolves`, `calls`, `called_by`,
   `implements`; `colab rename`, `references`, `calls`, `implementations`).
-- A colab-specific refactoring UI or editor extension. Preview, per-rule
-  apply and undo are `colab server` code actions (see
-  [`colab server`](cli.md#colab-server)), so any LSP editor shows them in
-  its own refactor preview.
+- A colab-specific refactoring UI or editor extension, or a language
+  server for `.colab` files: agents write the rules (as JSON through MCP
+  more often than as scripts), and preview, per-rule apply and undo are
+  `colab refactor --format diff`, `colab review` and `colab undo`.
+  `colab server` was removed on 2026-11-25 for this reason.
 - Merging rules' edits with each other. Rules in one script are ordered
   and sequential, each seeing the previous one's output, so there is
   nothing to merge between them. (A file that changed on disk while a

@@ -377,8 +377,7 @@ values) and the run's counts (`colab.files.visited` / `scanned` /
 and inside it `compile`, `walk`, `prepare writes`, `write`, and a client
 span per language-server request (`lsp textDocument/hover`, `lsp start`,
 with `rpc.method` and the server's program name). `colab mcp` reports a
-trace per tool call (`colab mcp colab.preview`), `colab server` one per
-walk. Paths, file contents, script text, rule text and argument values
+trace per tool call (`colab mcp colab.preview`). Paths, file contents, script text, rule text and argument values
 never leave the process. The resource carries `service.name` (`colab`),
 `service.version`, and `vcs.repository.name` — the repository's
 directory *name*, not its path.
@@ -428,8 +427,7 @@ an `https://` endpoint turns export off (use a local collector to
 forward). An export that cannot be made — nothing listening, a timeout,
 an error answer — is dropped (`RUST_LOG=debug` says so) and never
 changes a command's output or exit code. A one-shot command exports as
-it ends, within the timeout; `colab mcp`, `colab server` and
-`colab lsp-daemon` export from a background thread, so no response waits
+it ends, within the timeout; `colab mcp` and `colab lsp-daemon` export from a background thread, so no response waits
 on the collector.
 
 **With habit.** `habit setup claude-code` puts
@@ -442,8 +440,7 @@ colab labels each trace in habit's terms, which other collectors ignore:
 a command's resource carries `habit.kind=command` and its root span
 `habit.subcommand` and `habit.flags`, so habit stores a `command` record
 (tool, subcommand, version, exit code, success, duration, flag names,
-repo); an MCP tool call's carries `habit.kind=mcp`; a `colab server` walk
-is a plain `span`. A `habit.kind` set in `OTEL_RESOURCE_ATTRIBUTES` wins.
+repo); an MCP tool call's carries `habit.kind=mcp`. A `habit.kind` set in `OTEL_RESOURCE_ATTRIBUTES` wins.
 habit counts the child spans but does not store them; `habit status`
 shows the records arriving.
 

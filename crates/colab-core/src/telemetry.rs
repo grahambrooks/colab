@@ -1,5 +1,5 @@
 //! Traces of colab's own work, in OpenTelemetry's model: a trace per
-//! command (or per MCP tool call, or per `colab server` walk), its spans
+//! command (or per MCP tool call), its spans
 //! the steps inside it — compiling the script, walking the tree, writing,
 //! each language-server request.
 //!

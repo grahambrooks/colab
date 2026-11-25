@@ -23,7 +23,6 @@ body:
         - colab refactor / find / fix (a script or pack)
         - colab rename / mv / action / references / safe-delete / edit (a language server)
         - colab mcp (the MCP server)
-        - colab server (the .colab editor support)
         - colab agent / hook (agent install, post-edit hook)
         - colab fleet / test / review / other command
         - Install or release archive

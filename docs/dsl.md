@@ -279,7 +279,7 @@ equivalent `script`, to save as a `.colab` file once the rules work.
 
 Scripts are `.colab` files. The older `.codemod` extension is still
 accepted everywhere a script is looked for (`--script`, `include`,
-`colab.toml` packs, `colab pack list`, `colab test`, `colab server`), with
+`colab.toml` packs, `colab pack list`, `colab test`), with
 a warning; rename such scripts to `.colab`.
 
 A script can pull in match clauses from another `.colab` file by
@@ -482,9 +482,8 @@ How it matches:
   argument is a pattern, `html!` and `sqlx::query!` are their own
   languages. A project adds its own expression macros in `colab.toml`
   (`[patterns] macros = ["my_assert", "check"]`, names without `!`),
-  read by `refactor`, `find`, `fix`, the MCP tools (from the
-  `colab.toml` at or above `cwd`) and `colab server`'s workspace edits
-  (from the one at or above the script).
+  read by `refactor`, `find`, `fix` and the MCP tools (from the
+  `colab.toml` at or above `cwd`).
   `where` tests judge a match in a macro as one in your file: `inside`
   sees the contents' own nodes, then the macro call and the code around
   it (`where inside 'fn t($$$A) { $$$B }'`, `where directly inside

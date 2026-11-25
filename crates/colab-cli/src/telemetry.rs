@@ -75,10 +75,7 @@ pub(crate) fn init(background: bool) {
 /// Whether `argv` runs a long-running command, which gets no root span of
 /// its own and exports in the background.
 pub(crate) fn long_running(argv: &[String]) -> bool {
-    matches!(
-        argv.get(1).map(String::as_str),
-        Some("server" | "mcp" | "lsp-daemon")
-    )
+    matches!(argv.get(1).map(String::as_str), Some("mcp" | "lsp-daemon"))
 }
 
 /// The `[telemetry]` table of the user's config file.
@@ -434,8 +431,8 @@ impl telemetry::Exporter for OtlpHttp {
 }
 
 /// What a trace is to habit, by its root (`habit.kind` on the resource):
-/// a CLI run is a `command`, an MCP tool call `mcp`; anything else (a
-/// `colab server` walk) is a plain span. Other collectors ignore it.
+/// a CLI run is a `command`, an MCP tool call `mcp`; anything else is a
+/// plain span. Other collectors ignore it.
 fn habit_kind(trace: &[SpanData]) -> Option<&'static str> {
     let root = trace.iter().find(|s| s.parent.is_none())?;
     let has = |key: &str| root.attributes.iter().any(|(k, _)| k == key);
@@ -673,7 +670,7 @@ mod tests {
     fn long_running_commands_export_in_the_background() {
         let argv = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
         assert!(long_running(&argv(&["colab", "mcp"])));
-        assert!(long_running(&argv(&["colab", "server"])));
+        assert!(long_running(&argv(&["colab", "lsp-daemon"])));
         assert!(!long_running(&argv(&["colab", "find"])));
         // The background exporter returns at once, even with nothing listening.
         let otlp = configured(&[

@@ -19,7 +19,6 @@ mod git;
 mod git_packs;
 mod help_json;
 mod hook;
-mod language_server;
 mod lsp_commands;
 mod markdown;
 mod pack_test;

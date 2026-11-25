@@ -46,8 +46,7 @@
 //!
 //! JSON-RPC 2.0 over stdio using MCP's stdio transport: one JSON
 //! message per line, newline-delimited, with no embedded newlines.
-//! (The LSP `colab server` keeps LSP's `Content-Length` framing; that is
-//! tower-lsp in colab-cli, not this crate.) A line that is not valid
+//! A line that is not valid
 //! JSON gets a `-32700 parse error` response and the server keeps
 //! reading. The supported methods are:
 //!

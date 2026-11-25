@@ -24,7 +24,6 @@ use colab_dsl::pipeline::{Source, semantic_failure};
 
 use crate::discover;
 use crate::format::{self, ExecMode, Format};
-use crate::language_server;
 
 mod mv_section;
 use mv_section::*;
@@ -81,9 +80,8 @@ search and debug patterns. `colab rename` / `mv` / `action` /
 `references` / `safe-delete` delegate to the language's own server;
 `colab outline` / `section` / `links` read Markdown. `colab schema` /
 `list-languages` / `list-rules <lang>` describe the capabilities,
-`colab explain` prints a parsed script as JSON, `colab server` is the
-LSP for .colab files, and `colab mcp` the Model Context Protocol
-server.
+`colab explain` prints a parsed script as JSON, and `colab mcp` is the
+Model Context Protocol server.
 
 Exit codes:
    0   Success (no changes needed, or --write succeeded).
@@ -115,8 +113,6 @@ enum Commands {
     /// Run the packs `colab.toml` declares, as one run, with its `[run]`
     /// settings: `colab fix --check` in CI, `colab fix` to apply.
     Fix(FixArgs),
-    /// Start the colab language server over stdio.
-    Server(ServerArgs),
     /// Start the colab MCP server (Model Context Protocol) over stdio.
     Mcp,
     /// Print the JSON capability schema for every registered backend.
@@ -332,13 +328,6 @@ enum PackCommand {
     /// List the packs built into colab (`colab.toml`: `pack = "<name>"`)
     /// and those in `<repo>/.colab/packs/` and `~/.colab/packs/`.
     List,
-}
-
-#[derive(Parser, Debug)]
-struct ServerArgs {
-    /// Reserved for future TCP transport; currently informational only.
-    #[arg(long, default_value_t = 8080)]
-    port: u16,
 }
 
 /// Output and write flags shared by the commands that apply a language
@@ -652,18 +641,6 @@ fn dispatch() -> Result<u8> {
         Some(Commands::Hook(args)) => crate::hook::run(args, &default_backends()),
         Some(Commands::Agent(args)) => crate::agent::run(args),
         Some(Commands::Edit(args)) => crate::symbol_edit::run(args, &default_backends()),
-        Some(Commands::Server(server_args)) => {
-            info!("Starting language server (port hint: {})", server_args.port);
-            // The only async command. Multi-threaded: the server runs
-            // walks under `block_in_place`, which a current-thread
-            // runtime does not allow.
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(io_to_error)?
-                .block_on(language_server::run(default_backends()));
-            Ok(0)
-        }
         Some(Commands::Mcp) => {
             info!("Starting MCP server on stdio");
             colab_mcp::run_with(default_backends(), &crate::markdown::BinaryTools).map_err(

@@ -88,13 +88,11 @@ tree-sitter-rust = "0.24"
 tree-sitter-swift = "0.7.4"
 tree-sitter-typescript = "0.23.2"
 toml_edit = "0.25"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "io-std", "sync"] }
 log = "0.4"
 env_logger = "0.11.12"
 colored = "3.1.1"
 lalrpop = "0.23.2"
 lalrpop-util = { version = "0.23.2", features = ["lexer", "unicode"] }
-tower-lsp-server = "0.23.0"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -3,7 +3,7 @@
 The `colab` binary ships its operations as subcommands: `refactor`,
 `fix`, `review`, `find`, `rename`, `mv`, `action`, `references`, `safe-delete`,
 `ast`, `outline`, `section`, `mv-section`, `links`, `explain`, `schema`,
-`list-languages`, `list-rules`, `pack`, `undo`, `server`, `mcp` and
+`list-languages`, `list-rules`, `pack`, `undo`, `mcp` and
 `lsp-daemon`. Output goes to stdout (one stream
 per invocation); progress and error logging go to stderr so
 JSON / diff pipelines stay clean.
@@ -397,7 +397,7 @@ tidy = true                           # organize imports and format the changed 
 go = "gofmt"                          # reads the file on stdin, writes it on stdout
 ts = "prettier --stdin-filepath {path}"
 
-[patterns]                            # read by refactor, find, fix, the MCP tools and colab server too
+[patterns]                            # read by refactor, find, fix and the MCP tools
 macros = ["my_assert", "check"]       # Rust expression macros whose contents patterns read, as assert!'s
 
 [[packs]]
@@ -1299,59 +1299,6 @@ for `delete` / `ensure`), so a consumer handles one shape rather than
 two. `scope` carries any [`in "<glob>"`](./dsl.md#path-scope-in-glob)
 clause.
 
-### `colab server`
-
-Start the colab Language Server on stdio, for editing `.colab` files:
-
-- **Diagnostics, per rule.** Every open / change lowers each `match`
-  block on its own, so every bad rule — an unknown module, an action the
-  module lacks, a `pattern` that is not valid code — is underlined where
-  it is written, with the exit code (2 / 3) in the diagnostic `code`. A
-  syntax error is reported alone, at its token; `include` problems land
-  on the first `include`. A rule that compiles but would rewrite its own
-  output on every run is underlined as a warning.
-- **Hover.** On `<lang>::<module>`: the module's description and every
-  action it supports. On an action keyword: what it does *for that
-  rule's module* — or that the module has no such action.
-- **Code actions: preview, apply, undo.** On any rule of a script that
-  compiles, for that rule and for the whole script:
-  - *colab: preview `<rule>` across the workspace* — offered when the
-    client takes change annotations
-    (`workspace.workspaceEdit.changeAnnotationSupport` with
-    `documentChanges`). The edit's hunks are annotated with the rules
-    that made them, each marked `needsConfirmation`, so the editor opens
-    its refactor preview grouped by rule and applies only the hunks and
-    files kept there.
-  - *colab: apply `<rule>` to the workspace* — when the client applies
-    server-sent edits (`workspace.applyEdit`), a `colab.apply` command:
-    the server computes the edit, sends `workspace/applyEdit`, and keeps
-    what it changed. Otherwise the action carries the edit itself.
-  - *colab: undo applying `<rule>`* — after a `colab.apply`, the
-    `colab.undo` command puts the newest applied run back (up to ten
-    deep). Each file is three-way merged — the file now, the file before
-    the run, based on the file as the run left it — so edits made since
-    survive when they do not overlap the run's; a file whose later edits
-    do is left alone and named in a message.
-
-  Edits are minimal line hunks under the workspace roots, computed on
-  `codeAction/resolve` (up front for clients without lazy resolution).
-  While a walk runs, a client that shows server-initiated progress
-  (`window.workDoneProgress`) sees `colab: <script>` with the files
-  scanned so far, every 25 files.
-- **Go to definition** on an `include "<path>"` opens that script,
-  resolved as the compiler resolves it (against the including file's
-  directory); nothing happens when the file does not exist.
-- **Completion** for namespaces, modules, and actions. Sourced from
-  the same registry as `colab list-rules`, so anything new the
-  binary advertises is offered immediately.
-
-```sh
-colab server
-```
-
-`--port <N>` is reserved for a future TCP transport; currently
-informational.
-
 ### `colab mcp`
 
 Start the Model Context Protocol server on stdio. Wraps the same
@@ -1411,7 +1358,7 @@ method, `-32602` for an unknown tool or missing or mistyped arguments.
 
 Wire format: JSON-RPC 2.0 over stdio using MCP's stdio transport:
 one JSON message per line, newline-delimited (no `Content-Length`
-headers; those are only for the LSP `colab server`). Methods supported: `initialize`,
+headers). Methods supported: `initialize`,
 `initialized` (notification), `tools/list`, `tools/call`. Exiting
 the client (closing stdin or sending an `exit` notification) shuts
 the server down cleanly.
