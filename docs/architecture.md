@@ -575,6 +575,8 @@ end-to-end corpus     crates/colab-dsl/tests/corpus.rs +
                       rules.expected,find.expected}
 cross-backend         crates/colab-backends/tests/contracts.rs,
                       docs_match_capabilities.rs, skill_matches_capabilities.rs
+property suite        crates/colab-backends/tests/properties.rs +
+                      tests/samples/<lang>/, tests/samples/summary.txt
 LSP client            crates/colab-lsp-client/tests/ (fake_server.rs,
                       kept_server.rs), driven by examples/fake_lsp.rs
 ```
@@ -582,3 +584,35 @@ LSP client            crates/colab-lsp-client/tests/ (fake_server.rs,
 The corpus harness is the canonical "did the new feature break
 anything" test: it walks every case, applies the script, diffs
 against `expected/`, then re-applies and asserts idempotency.
+
+### The property suite
+
+Corpus and conformance cases test what someone thought to write down.
+The property suite tests what real code happens to hold. Each language
+has a sample of about 120–200 lines under `tests/samples/<lang>/`,
+written for this repo and kept idiomatic: classes, modifiers and
+annotations, generics, closures, literals, `match` / `switch`, macros.
+`properties.rs` parses each sample with the backend's grammar and
+chooses nodes deterministically: every k-th expression, statement or
+item in pre-order, at most 40 per file, plus at most 12 calls that have
+a literal argument. Then it checks three invariants:
+
+- **self-match**: the node's own text, compiled as `<lang>::pattern`,
+  matches at that node (or a node spanning it, give or take a `;`);
+- **identity**: `replace` with the same text leaves the file
+  byte-identical;
+- **generalize**: change the call's literal argument (a number plus one,
+  or a string with an `x` added), then `LanguageBackend::generalize`
+  before → after. Applied to the whole file, its rules must change that
+  literal at that site and nothing next to it, and the file must still
+  parse. Other sites may change too.
+
+Not every check is expected to pass. Each one counts as passed, refused
+(the pattern did not compile, or the edit would not generalize) or
+missed, per language. The node kinds that failed are listed too.
+`tests/samples/summary.txt` holds those counts, and the test fails when
+a run's counts differ from it. Any change in what the engine handles
+then shows up in review as a diff of that file. Bless an intended change
+with `COLAB_BLESS=1 cargo test -p colab-backends --test properties`. A
+panic always fails the test. `COLAB_PROPERTIES_VERBOSE=1` prints each
+failing node with its line and text.
