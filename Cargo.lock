@@ -302,6 +302,7 @@ dependencies = [
  "colab-lang-toml",
  "colab-lang-ts",
  "colab-lang-tsx",
+ "colab-syntax",
  "similar",
  "tree-sitter",
  "tree-sitter-c",
@@ -576,6 +577,15 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-go",
  "tree-sitter-python",
+ "tree-sitter-rust",
+]
+
+[[package]]
+name = "colab-syntax"
+version = "2026.11.24"
+dependencies = [
+ "tree-sitter",
+ "tree-sitter-go",
  "tree-sitter-rust",
 ]
 

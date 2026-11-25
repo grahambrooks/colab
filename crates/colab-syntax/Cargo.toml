@@ -1,0 +1,26 @@
+[package]
+name = "colab-syntax"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "colab's own lossless syntax tree: every byte of a file in a token, built by any parser through one builder."
+
+[features]
+# Build trees from tree-sitter parses (`Tree::from_tree_sitter`). Off by
+# default: the tree itself is pure Rust, and a parser of colab's own needs
+# nothing but the builder.
+tree-sitter = ["dep:tree-sitter"]
+
+[dependencies]
+tree-sitter = { workspace = true, optional = true }
+
+[dev-dependencies]
+tree-sitter = { workspace = true }
+tree-sitter-rust = { workspace = true }
+tree-sitter-go = { workspace = true }
+
+[lints]
+workspace = true

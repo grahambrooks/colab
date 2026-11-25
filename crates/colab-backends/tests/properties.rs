@@ -35,26 +35,8 @@ const PER_FILE: usize = 40;
 const CALLS_PER_FILE: usize = 12;
 const NAMES: [&str; 3] = ["self-match", "identity", "generalize"];
 
-/// The grammar each language's samples are parsed with, as its backend does.
-fn grammar(lang: &str) -> tree_sitter::Language {
-    match lang {
-        "c" => tree_sitter_c::LANGUAGE.into(),
-        "cpp" => tree_sitter_cpp::LANGUAGE.into(),
-        "csharp" => tree_sitter_c_sharp::LANGUAGE.into(),
-        "go" => tree_sitter_go::LANGUAGE.into(),
-        "java" => tree_sitter_java::LANGUAGE.into(),
-        "js" => tree_sitter_javascript::LANGUAGE.into(),
-        "kotlin" => tree_sitter_kotlin_ng::LANGUAGE.into(),
-        "php" => tree_sitter_php::LANGUAGE_PHP.into(),
-        "python" => tree_sitter_python::LANGUAGE.into(),
-        "ruby" => tree_sitter_ruby::LANGUAGE.into(),
-        "rust" => tree_sitter_rust::LANGUAGE.into(),
-        "swift" => tree_sitter_swift::LANGUAGE.into(),
-        "ts" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
-        other => panic!("no grammar for {other}"),
-    }
-}
+mod common;
+use common::grammar;
 
 fn parse(lang: &str, source: &str) -> Tree {
     let mut parser = Parser::new();

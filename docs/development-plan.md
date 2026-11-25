@@ -343,7 +343,17 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
 **Order.**
 
 1. `colab-syntax` and the matcher of colab's own, with tree-sitter
-   feeding the tree: needed whichever way the parsers go.
+   feeding the tree: needed whichever way the parsers go. **Started
+   2026-11-25:** the crate holds the tree, its `Builder` and
+   `Tree::from_tree_sitter`; over the repo's 436 source files in all 14
+   languages it equals tree-sitter's tree node for node (kind, field,
+   named flag, range) and rebuilds each file byte for byte
+   (`colab-backends/tests/syntax_tree.rs`). Building it costs about 40%
+   of tree-sitter's parse (84 ms beside 216 ms over those files,
+   release), paid only until a language has its own parser, which emits
+   the tree directly. Next: the matcher over `colab_syntax::Tree`, then
+   the engine's other tree readers (`declarations`, `calls`, rename,
+   delete, generalize), each behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a
    safe-Rust port of the 0.25 runtime, five weeks old; tree-sitter's own
    generator, `tree-sitter-generate`, is already Rust). If colab's
