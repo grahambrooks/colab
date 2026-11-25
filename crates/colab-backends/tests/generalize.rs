@@ -175,6 +175,14 @@ fn a_changed_string_argument_lifts_to_the_call_not_its_argument_list() {
 }
 
 #[test]
+fn a_string_quote_is_not_a_value() {
+    // Python names a string's quotes (`string_start`, `string_end`); the
+    // quote `"` is in `after` too, but it is no value to carry over.
+    let rules = learn("python", r#"Library("Main Street")"#, r#"Library("High Street")"#);
+    assert_eq!(pairs(&rules), [("Library($A)", r#"Library("High Street")"#)]);
+}
+
+#[test]
 fn mistakes_are_explained() {
     let registry = colab_backends::registry();
     let rust = registry.get("rust").unwrap();

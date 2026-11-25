@@ -387,6 +387,11 @@ fn collect(
         cut.push(node.byte_range());
         return;
     }
+    // A string is one value: its quotes (Python's named `string_start`)
+    // and pieces are not values of their own to carry over.
+    if node.kind().contains("string") {
+        return;
+    }
     let mut cursor = node.walk();
     for (i, child) in node.children(&mut cursor).enumerate() {
         let field = node.field_name_for_child(u32::try_from(i).unwrap_or(u32::MAX));

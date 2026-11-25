@@ -11,7 +11,7 @@ java                  40/39/1/0              40/39/1/0                6/6/0/0
 js                    39/38/0/1              39/39/0/0                7/7/0/0
 kotlin                40/38/1/1              40/39/1/0                8/5/1/2
 php                   37/34/3/0              37/34/3/0                5/5/0/0
-python                38/38/0/0              38/38/0/0                9/4/5/0
+python                38/38/0/0              38/38/0/0                9/9/0/0
 ruby                  34/34/0/0              34/34/0/0              11/11/0/0
 rust                  40/37/1/2              40/39/1/0              10/10/0/0
 swift                 36/30/1/5              36/35/1/0                5/2/0/3
@@ -35,7 +35,6 @@ kotlin identity: variable_declaration (refused) ×1
 kotlin generalize: call_expression (missed) ×2, call_expression (refused) ×1
 php self-match: case_statement (refused) ×1, match_conditional_expression (refused) ×1, sequence_expression (refused) ×1
 php identity: case_statement (refused) ×1, match_conditional_expression (refused) ×1, sequence_expression (refused) ×1
-python generalize: call (refused) ×5
 rust self-match: closure_parameters (refused) ×1, ordered_field_declaration_list (missed) ×2
 rust identity: closure_parameters (refused) ×1
 swift self-match: call_suffix (missed) ×3, protocol_function_declaration (refused) ×1, statements (missed) ×2
