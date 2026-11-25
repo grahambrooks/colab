@@ -117,6 +117,22 @@ pub fn suggest_generalize(input: &str, backends: &BackendRegistry) -> Option<Str
     {
         return None;
     }
+    let (lang, file, learned) = learned_rules(input, backends)?;
+    let root = crate::git::Repo::discover(file.parent()?)
+        .map(|repo| repo.top().to_path_buf())
+        .or_else(|| file.parent().map(Path::to_path_buf))?;
+    suggestion(&lang, &root, &learned, backends)
+}
+
+/// The rules worth suggesting for one tool call (an Edit, or each of a
+/// MultiEdit's edits), with the language and file they are for: the edit
+/// generalized, then only the rules anchored on a name and worth a word
+/// ([`worth_suggesting`]). It reads no other file, so a fixed set of edits
+/// gives a fixed answer (`tests/fixtures/edits.jsonl`).
+pub fn learned_rules(
+    input: &str,
+    backends: &BackendRegistry,
+) -> Option<(String, PathBuf, Vec<colab_core::Generalized>)> {
     let call: Value = serde_json::from_str(input).ok()?;
     // An Edit's one change, or each of a MultiEdit's.
     let pair = |edit: &Value| -> Option<(String, String)> {
@@ -148,9 +164,6 @@ pub fn suggest_generalize(input: &str, backends: &BackendRegistry) -> Option<Str
         .filter_map(|(before, after)| backend.generalize(before, after).ok())
         .flatten()
         .collect();
-    let root = crate::git::Repo::discover(file.parent()?)
-        .map(|repo| repo.top().to_path_buf())
-        .or_else(|| file.parent().map(Path::to_path_buf))?;
     // Only a rule anchored on a name is worth a word: `$A + 1` (from
     // `x + 1` → `x + 2`) matches every such sum and is noise.
     let anchored = |g: &colab_core::Generalized| {
@@ -172,9 +185,19 @@ pub fn suggest_generalize(input: &str, backends: &BackendRegistry) -> Option<Str
         .filter(anchored)
         .filter(|g| worth_suggesting(g, backend))
         .collect();
-    if learned.is_empty() {
-        return None;
-    }
+    (!learned.is_empty()).then_some((lang, file, learned))
+}
+
+/// The note for `learned` (rules in `lang`): how many places under `root`
+/// they match, and the rules ready for `colab.apply`; `None` when nothing
+/// else matches.
+fn suggestion(
+    lang: &str,
+    root: &Path,
+    learned: &[colab_core::Generalized],
+    backends: &BackendRegistry,
+) -> Option<String> {
+    let root = root.to_path_buf();
     let script: String = learned
         .iter()
         .map(|g| {
@@ -469,6 +492,47 @@ fn covered(rel: &Path, config: &crate::config::Config) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The hook's decision on real edits, pinned: `tests/fixtures/edits.jsonl`
+    /// holds edits from the 2026-11-24 replay (those it spoke on, and a
+    /// sample it stayed silent on), and `edits.expected` the rules it keeps
+    /// for each, or `-`. A filter change that silences a real repetition or
+    /// lets noise through shows in the diff; `COLAB_BLESS=1` rewrites it.
+    #[test]
+    fn the_hook_decides_the_replayed_edits_as_before() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let backends = colab_backends::registry();
+        let mut out = String::new();
+        let text = std::fs::read_to_string(dir.join("edits.jsonl")).unwrap();
+        for (i, line) in text.lines().enumerate() {
+            let case: Value = serde_json::from_str(line).unwrap();
+            let call = serde_json::json!({"tool_name": "Edit", "tool_input": {
+                "file_path": format!("/fixture/{}", case["file"].as_str().unwrap()),
+                "old_string": case["old_string"], "new_string": case["new_string"],
+            }})
+            .to_string();
+            let _ = write!(out, "{:>2} {}:", i + 1, case["why"].as_str().unwrap());
+            match learned_rules(&call, &backends) {
+                None => out.push_str(" -\n"),
+                Some((_, _, rules)) => {
+                    out.push('\n');
+                    for g in rules {
+                        let _ = writeln!(out, "     {:?} -> {:?}", g.pattern, g.template);
+                    }
+                }
+            }
+        }
+        let expected = dir.join("edits.expected");
+        if std::env::var_os("COLAB_BLESS").is_some() {
+            std::fs::write(&expected, &out).unwrap();
+        }
+        let want = std::fs::read_to_string(&expected)
+            .expect("edits.expected (create it with COLAB_BLESS=1)");
+        assert_eq!(
+            want, out,
+            "the hook decides replayed edits differently (COLAB_BLESS=1 to accept)"
+        );
+    }
 
     #[test]
     fn an_edit_that_matches_elsewhere_is_suggested_as_a_rule() {

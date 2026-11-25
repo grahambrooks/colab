@@ -1,0 +1,60 @@
+ 1 spoke in the 2026-11-24 replay:
+     "colab_core::run::Run::new().enter($A)" -> "call_run(Some(&arguments)).enter($A)"
+ 2 spoke in the 2026-11-24 replay:
+     "colab_core::run::Run::new()\n        .enter($A)" -> "call_run(Some(&arguments)).enter($A)"
+ 3 spoke in the 2026-11-24 replay:
+     "$A.files_changed = $B" -> "$A.set_counts(10, 4, $B)"
+ 4 spoke in the 2026-11-24 replay:
+     "$A.files_visited = $B" -> "$A.set_counts($B, 0, 0)"
+ 5 spoke in the 2026-11-24 replay:
+     "let $A = colab_core::merge::prepare_writes(\n        $B,\n    )?;" -> "let mut $A = colab_core::merge::prepare_writes(\n        changes\n            .iter()\n            .filter(|c| c.changed() && !c.created)\n            .map(|c| (c.path.as_path(), c.before.as_str(), c.after.as_str())),\n    )?;\n    prepare_creations(changes, &mut $A);"
+ 6 spoke in the 2026-11-24 replay:
+     "change_diff($A)" -> "unified_diff(&$A.path, &$A.before, &$A.after)"
+ 7 silent in the 2026-11-24 replay: -
+ 8 silent in the 2026-11-24 replay: -
+ 9 silent in the 2026-11-24 replay: -
+10 silent in the 2026-11-24 replay:
+     "run_script($A, $B, $C, $D)" -> "run_script($A, $B, extra, $C, $D)"
+11 silent in the 2026-11-24 replay: -
+12 silent in the 2026-11-24 replay: -
+13 silent in the 2026-11-24 replay: -
+14 silent in the 2026-11-24 replay: -
+15 silent in the 2026-11-24 replay: -
+16 silent in the 2026-11-24 replay: -
+17 silent in the 2026-11-24 replay: -
+18 silent in the 2026-11-24 replay: -
+19 silent in the 2026-11-24 replay: -
+20 silent in the 2026-11-24 replay: -
+21 silent in the 2026-11-24 replay: -
+22 silent in the 2026-11-24 replay: -
+23 silent in the 2026-11-24 replay: -
+24 silent in the 2026-11-24 replay: -
+25 silent in the 2026-11-24 replay: -
+26 silent in the 2026-11-24 replay: -
+27 silent in the 2026-11-24 replay: -
+28 silent in the 2026-11-24 replay: -
+29 silent in the 2026-11-24 replay: -
+30 silent in the 2026-11-24 replay: -
+31 silent in the 2026-11-24 replay: -
+32 silent in the 2026-11-24 replay: -
+33 silent in the 2026-11-24 replay: -
+34 silent in the 2026-11-24 replay: -
+35 silent in the 2026-11-24 replay: -
+36 silent in the 2026-11-24 replay: -
+37 silent in the 2026-11-24 replay: -
+38 silent in the 2026-11-24 replay: -
+39 silent in the 2026-11-24 replay: -
+40 silent in the 2026-11-24 replay: -
+41 silent in the 2026-11-24 replay:
+     "Source::Walk {\n        targets: if args.paths.is_empty() {\n            vec![PathBuf::from(\".\")]\n        } else {\n            args.paths.clone()\n        },\n        options: WalkOptions {\n            include: args.include.clone(),\n            exclude: args.exclude.clone(),\n            respect_gitignore: !$A.no_ignore,\n            follow_symlinks: false,\n            jobs: resolve_jobs($B),\n        },\n    }" -> "$A.source()?"
+42 silent in the 2026-11-24 replay: -
+43 silent in the 2026-11-24 replay: -
+44 silent in the 2026-11-24 replay: -
+45 silent in the 2026-11-24 replay: -
+46 silent in the 2026-11-24 replay: -
+47 silent in the 2026-11-24 replay: -
+48 silent in the 2026-11-24 replay: -
+49 silent in the 2026-11-24 replay: -
+50 silent in the 2026-11-24 replay: -
+51 silent in the 2026-11-24 replay: -
+52 silent in the 2026-11-24 replay: -
