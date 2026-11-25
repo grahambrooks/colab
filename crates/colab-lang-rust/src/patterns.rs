@@ -54,7 +54,7 @@ pub(crate) fn language() -> PatternLanguage {
             kinds: &["visibility_modifier"],
             several: false,
         }),
-        shorthand_fields: true,
+        shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
         modifier_tokens: &[],
     }
 }
@@ -193,7 +193,11 @@ mod tests {
             "fn f() {\n    a(Write { path: p, text: t, created: false, });\n    b(Write { path, text, created: false, });\n    c(Write { path: p, text, created: false, });\n}\n"
         );
         // A `let`'s type and a parameter are not fields.
-        assert!(super::super::patterns::language().shorthand_fields);
+        assert!(
+            super::super::patterns::language()
+                .shorthand_fields
+                .is_some()
+        );
         let typed = crate::LANG
             .compile_pattern(
                 "let $X: $T = $V;",

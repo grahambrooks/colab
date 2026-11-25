@@ -29,7 +29,7 @@ pub(crate) fn language() -> PatternLanguage {
         },
         macro_contents: None,
         modifiers: None,
-        shorthand_fields: true,
+        shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
         // A method's modifiers are anonymous tokens: kept by a rewrite.
         modifier_tokens: &["static", "async", "get", "set", "*", "accessor"],
     }

@@ -11,7 +11,7 @@ na = "C++ initializers have no shorthand: a designated field is always `.a = a`.
 
 [[case]]
 lang = "csharp"
-xfail = "C# sets `shorthand_fields: false`, though an anonymous object's `new { Name }` is the shorthand of `new { Name = Name }`."
+xfail = "tree-sitter-c-sharp parses an anonymous object as a flat list of names and values: `new { Name, Age = 1 }` is `[Name, Age, 1]`, the same shape as `new { Name = Age, X = 1 }` less a name, so a shorthand form could not tell the fields apart and would make false matches. Needs a grammar with one node per member."
 script = "match csharp::pattern 'new { Name = $N, Age = $A }' { replace 'new Person { Name = $N, Age = $A }' }"
 input = '''
 class A {
@@ -60,7 +60,6 @@ na = "Python's `{a}` is a set, not a dict with a shorthand key."
 
 [[case]]
 lang = "ruby"
-xfail = "Ruby sets `shorthand_fields: false`, though Ruby 3.1's `{ x:, y: }` is the shorthand of `{ x: x, y: y }`."
 script = "match ruby::pattern 'connect(host: $H, port: $P)' { replace 'open(host: $H, port: $P)' }"
 input = '''
 connect(host:, port: 1)

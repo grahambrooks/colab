@@ -147,7 +147,7 @@ which stop a `--write` before it writes. Per-language notes:
 - **JavaScript** patterns are parsed with the JavaScript grammar, so they
   cannot contain TypeScript-only syntax (type annotations), though they
   match inside `.ts` files.
-- **Rust** patterns may be struct fields (`pub conflicts: $T`) and struct-literal fields (`conflicts: $C`), so they work in `where has` / `not has`. A field pattern that could be either (`conflicts: $C`) matches both. Two shapes still do not match: `field: $X` never matches the shorthand `field` (a different node; write a second rule), and `$$$` cannot stand for a struct's field list (spell the fields out).
+- **Rust** patterns may be struct fields (`pub conflicts: $T`) and struct-literal fields (`conflicts: $C`), so they work in `where has` / `not has`. A field pattern that could be either (`conflicts: $C`) matches both. `field: $X` also matches the shorthand `field` (see [Field shorthand](dsl.md#structural-patterns-langpattern)). One shape still does not match: `$$$` cannot stand for a struct's field list (spell the fields out).
 
 Two deliberate gaps:
 

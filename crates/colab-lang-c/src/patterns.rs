@@ -31,8 +31,21 @@ pub(crate) fn language() -> PatternLanguage {
             doc_comments: &["/**", "///"],
         },
         macro_contents: None,
-        modifiers: None,
-        shorthand_fields: false,
+        // A node per specifier (`static`, `inline`, `const`,
+        // `__attribute__((…))`), each a child of the item; a GNU attribute
+        // stands for them all.
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            sentinel: "__attribute__((colab_mods))",
+            kinds: &[
+                "attribute_specifier",
+                "attribute_declaration",
+                "storage_class_specifier",
+                "type_qualifier",
+                "ms_declspec_modifier",
+            ],
+            several: true,
+        }),
+        shorthand_fields: None,
         modifier_tokens: &[],
     }
 }

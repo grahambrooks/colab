@@ -916,7 +916,7 @@ impl StructuralPattern {
         let short = self
             .shorthand
             .as_ref()
-            .map(|fields| shorthand_template(template, fields));
+            .map(|(kind, fields)| shorthand_template(template, fields, *kind));
         let template = short.as_deref().unwrap_or(template);
         let template = if self.loose_semicolon {
             template.trim_end().strip_suffix(';').unwrap_or(template)

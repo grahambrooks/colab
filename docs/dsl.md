@@ -348,14 +348,18 @@ reserved for the matched path. A struct literal of a type named bare
 `crate::walker::FileChange { … }`, and a template that starts with the
 same type keeps the path.
 
-**Field shorthand (Rust, JS).** A field written `name: $VAR` in a struct
-or object literal also matches the shorthand `name` (a field set from a
-variable of its name): `Write { path: $P, text: $T }` finds
-`Write { path, text }` and `Write { path: p, text }` too. A rewrite of a
-shorthand match fills `$VAR` with the name and keeps the shorthand. Only
-a field after `{` or `,` and before `,` or `}` counts, so `let x: $T`
-and parameters are left alone, and a `where` on `$VAR` matches only the
-fields written out.
+**Field shorthand (Rust, JS, TS, Ruby).** A field written `name: $VAR` in a
+struct or object literal also matches the shorthand `name` (a field set
+from a variable of its name): `Write { path: $P, text: $T }` finds
+`Write { path, text }` and `Write { path: p, text }` too. In Ruby the
+shorthand is 3.1's `name:`, in a hash or a call's arguments:
+`connect(host: $H)` finds `connect(host:)`. A rewrite of a shorthand
+match fills `$VAR` with the name and keeps the shorthand. Only a field
+after `{` (Ruby: also `(`) or `,` and before `,` or the closing bracket
+counts, so `let x: $T`, parameters and a Ruby `def`'s required keywords
+are left alone, and a `where` on `$VAR` matches only the fields written
+out. C#'s `new { Name }` is not matched: its grammar cannot tell a
+shorthand member from a value.
 
 **Types (Rust).** A type on its own is a pattern too:
 `HashMap<PathBuf, $V>` matches it in a signature, a `let` annotation or
@@ -489,7 +493,8 @@ How it matches:
   metavariable for it (`if $C { $$$B } else { $$$E }`) to match it.
 - **Modifiers are the exception.** An item pattern written without
   modifiers matches the item with any, in Rust, Java, Kotlin, Swift, C#,
-  PHP, JavaScript and TypeScript: `fn $F($$$A) -> $R { $$$B }` finds `pub(super) fn run(…)`,
+  PHP, JavaScript, TypeScript, C and C++ (`static`, `inline`, `const`,
+  `constexpr`, attributes): `fn $F($$$A) -> $R { $$$B }` finds `pub(super) fn run(…)`,
   `void $F() {}` finds `@Override public static void f() {}`, and
   `function $F() {}` finds `public static function f() {}`. Modifiers
   are visibility, `static`, `final`, `async` and the like, and the

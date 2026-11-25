@@ -13,7 +13,7 @@ fn go() -> PatternLanguage {
         leading: Leading::NONE,
         macro_contents: None,
         modifiers: None,
-        shorthand_fields: false,
+        shorthand_fields: None,
         modifier_tokens: &[],
     }
 }
@@ -28,7 +28,7 @@ fn python() -> PatternLanguage {
         leading: Leading::NONE,
         macro_contents: None,
         modifiers: None,
-        shorthand_fields: false,
+        shorthand_fields: None,
         modifier_tokens: &[],
     }
 }
@@ -555,7 +555,7 @@ fn rust() -> PatternLanguage {
         leading: Leading::NONE,
         macro_contents: None,
         modifiers: None,
-        shorthand_fields: false,
+        shorthand_fields: None,
         modifier_tokens: &[],
     }
 }
@@ -626,7 +626,7 @@ fn a_multi_line_template_follows_tab_indentation() {
         leading: Leading::NONE,
         macro_contents: None,
         modifiers: None,
-        shorthand_fields: false,
+        shorthand_fields: None,
         modifier_tokens: &[],
     };
     let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();

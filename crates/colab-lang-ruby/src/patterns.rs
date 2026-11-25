@@ -24,7 +24,8 @@ pub(crate) fn language() -> PatternLanguage {
         },
         macro_contents: None,
         modifiers: None,
-        shorthand_fields: false,
+        // Ruby 3.1: `f(host:)` and `{ host: }` pass `host: host`.
+        shorthand_fields: Some(colab_rewrite::pattern::Shorthand::RUBY),
         modifier_tokens: &[],
     }
 }
@@ -33,6 +34,27 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_keyword_argument_pattern_also_finds_its_shorthand() {
+        let op = crate::LANG
+            .compile_pattern(
+                "connect(host: $H)",
+                PatternAction::Replace("open(host: $H)".into()),
+                &[],
+            )
+            .unwrap();
+        let src = "connect(host:)\nconnect(host: h)\nx = { host: }\n";
+        let out = op.apply(src);
+        assert_eq!(out, "open(host:)\nopen(host: h)\nx = { host: }\n");
+        assert_eq!(op.apply(&out), out, "idempotent");
+        // A `def`'s `host:` is a required keyword, not `host: host`.
+        let def = crate::LANG
+            .compile_pattern("def f(host: $H)\nend", PatternAction::Delete, &[])
+            .unwrap();
+        let src = "def f(host:)\nend\n";
+        assert_eq!(def.apply(src), src);
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

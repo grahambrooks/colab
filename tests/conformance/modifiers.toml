@@ -3,7 +3,6 @@ description = "An item pattern that spells no modifiers matches an item with any
 
 [[case]]
 lang = "c"
-xfail = "C sets no `PatternLanguage::modifiers`: `static` is a `storage_class_specifier` child of the `function_definition` the pattern does not account for, so `Shape` refuses the match."
 script = "match c::pattern 'void old(void) { $$$B }' { replace 'void next(void) { $$$B }' }"
 input = '''
 static void old(void) {
@@ -18,7 +17,6 @@ static void next(void) {
 
 [[case]]
 lang = "cpp"
-xfail = "no function pattern compiles in C++ (see A lone body), so none can leave out `static` either."
 script = "match cpp::pattern 'void old() { $$$B }' { replace 'void next() { $$$B }' }"
 input = '''
 static void old() {

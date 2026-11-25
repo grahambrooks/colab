@@ -19,7 +19,6 @@ void next(void) {
 
 [[case]]
 lang = "cpp"
-xfail = "refused: tree-sitter-cpp reads `void old() { $$$B }` as a declaration with a brace initializer in every pattern context, so no function_definition pattern compiles."
 script = "match cpp::pattern 'void old() { $$$B }' { replace 'void next() { $$$B }' }"
 input = '''
 void old() {

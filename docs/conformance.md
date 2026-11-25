@@ -12,19 +12,19 @@ in that language and checks the output and a second, unchanged run.
 | [A call replaced by name](#a-call-replaced-by-name) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A call rewritten](#a-call-rewritten) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Held back by colab:ignore](#held-back-by-colabignore) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A deleted item takes its docs](#a-deleted-item-takes-its-docs) | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Field shorthand](#field-shorthand) | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a | ❌ | ✅ | n/a | ✅ | ✅ |
+| [A deleted item takes its docs](#a-deleted-item-takes-its-docs) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Field shorthand](#field-shorthand) | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a | ✅ | ✅ | n/a | ✅ | ✅ |
 | [Generalized from an edit](#generalized-from-an-edit) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [An import moved](#an-import-moved) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A lone body](#a-lone-body) | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Modifiers left out](#modifiers-left-out) | ❌ | ❌ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ | ✅ | ✅ | ✅ |
+| [A lone body](#a-lone-body) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Modifiers left out](#modifiers-left-out) | ✅ | ✅ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ | ✅ | ✅ | ✅ |
 | [A statement deleted](#a-statement-deleted) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A qualified call matched bare](#a-qualified-call-matched-bare) | n/a | ✅ | n/a | n/a | n/a | n/a | n/a | ✅ | n/a | n/a | ✅ | n/a | n/a | n/a |
 | [A symbol renamed](#a-symbol-renamed) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Scoped with where inside](#scoped-with-where-inside) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A binding tested with where matches](#a-binding-tested-with-where-matches) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-167 working, 7 known gaps, 22 not applicable, 0 without a case.
+173 working, 1 known gaps, 22 not applicable, 0 without a case.
 
 ## A call replaced by name
 
@@ -50,9 +50,6 @@ Deleting an item takes the doc comment and attributes (or decorators) directly a
 
 Cases: [`tests/conformance/delete-takes-docs.toml`](../tests/conformance/delete-takes-docs.toml).
 
-- ❌ **cpp**: no function pattern compiles in C++ (see A lone body), so none can be deleted with its docs.
-- ❌ **kotlin**: the match of a modifier-relaxed form starts after the function's `modifiers` node (the annotation), so a delete leaves `@Deprecated(…)` and the `/** … */` above it behind.
-
 ## Field shorthand
 
 A pattern field `name: $V` also matches the shorthand `name` (a field set from a variable of its name), and a rewrite keeps the shorthand.
@@ -61,13 +58,12 @@ Cases: [`tests/conformance/field-shorthand.toml`](../tests/conformance/field-sho
 
 - n/a **c**: C initializers have no shorthand: a designated field is always `.a = a`.
 - n/a **cpp**: C++ initializers have no shorthand: a designated field is always `.a = a`.
-- ❌ **csharp**: C# sets `shorthand_fields: false`, though an anonymous object's `new { Name }` is the shorthand of `new { Name = Name }`.
+- ❌ **csharp**: tree-sitter-c-sharp parses an anonymous object as a flat list of names and values: `new { Name, Age = 1 }` is `[Name, Age, 1]`, the same shape as `new { Name = Age, X = 1 }` less a name, so a shorthand form could not tell the fields apart and would make false matches. Needs a grammar with one node per member.
 - n/a **go**: Go's `T{a}` is a positional field, not a shorthand: a keyed field is always `a: a`.
 - n/a **java**: Java has no struct or object literal with fields.
 - n/a **kotlin**: Kotlin has no object literal with fields; named arguments have no shorthand.
 - n/a **php**: PHP arrays have no shorthand: a key is always `'a' => $a`.
 - n/a **python**: Python's `{a}` is a set, not a dict with a shorthand key.
-- ❌ **ruby**: Ruby sets `shorthand_fields: false`, though Ruby 3.1's `{ x:, y: }` is the shorthand of `{ x: x, y: y }`.
 - n/a **swift**: Swift has no struct literal with fields; initializer arguments have no shorthand.
 
 ## Generalized from an edit
@@ -88,16 +84,12 @@ A function pattern whose body is only `$$$B` matches a function of any body, and
 
 Cases: [`tests/conformance/lone-body.toml`](../tests/conformance/lone-body.toml).
 
-- ❌ **cpp**: refused: tree-sitter-cpp reads `void old() { $$$B }` as a declaration with a brace initializer in every pattern context, so no function_definition pattern compiles.
-
 ## Modifiers left out
 
 An item pattern that spells no modifiers matches an item with any (`public`, `static`, `pub`, …), and a rewrite keeps them.
 
 Cases: [`tests/conformance/modifiers.toml`](../tests/conformance/modifiers.toml).
 
-- ❌ **c**: C sets no `PatternLanguage::modifiers`: `static` is a `storage_class_specifier` child of the `function_definition` the pattern does not account for, so `Shape` refuses the match.
-- ❌ **cpp**: no function pattern compiles in C++ (see A lone body), so none can leave out `static` either.
 - n/a **go**: Go has no item modifiers: visibility is the name's first letter.
 - n/a **python**: Python items have no modifiers; decorators are statements of their own, kept as written.
 - n/a **ruby**: Ruby has no item modifiers: `private` is a method call, not part of the `def`.

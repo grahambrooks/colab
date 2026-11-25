@@ -25,10 +25,29 @@ pub(crate) fn language() -> PatternLanguage {
         also: &[],
         // `ns::f(…)` is a call of `f` named by its namespace.
         qualified_calls: Some("::"),
-        leading: colab_rewrite::pattern::Leading::NONE,
+        // Doxygen comments document the declaration after them.
+        leading: colab_rewrite::pattern::Leading {
+            kinds: &[],
+            doc_comments: &["/**", "///"],
+        },
         macro_contents: None,
-        modifiers: None,
-        shorthand_fields: false,
+        // A node per specifier (`static`, `inline`, `constexpr`, `const`,
+        // `[[nodiscard]]`, `__declspec(…)`), each a child of the item; a
+        // C++11 attribute stands for them all.
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            sentinel: "[[colab::mods]]",
+            kinds: &[
+                "attribute_declaration",
+                "attribute_specifier",
+                "storage_class_specifier",
+                "type_qualifier",
+                "ms_declspec_modifier",
+                "explicit_function_specifier",
+                "virtual",
+            ],
+            several: true,
+        }),
+        shorthand_fields: None,
         modifier_tokens: &[],
     }
 }

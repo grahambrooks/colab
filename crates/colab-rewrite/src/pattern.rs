@@ -100,12 +100,14 @@ pub struct PatternLanguage {
     /// keeps them. `None` where the language has none a pattern would
     /// leave out.
     pub modifiers: Option<Modifiers>,
-    /// Whether a struct or object literal can name a field by itself for
-    /// a variable of the same name (Rust's `S { text }`, JS's `{ text }`):
-    /// a pattern's `text: $T` then also matches `text`, with `$T` bound
-    /// to `text`. `false` where that spelling means something else (Go's
-    /// `T{a}` is positional, Python's `{a}` a set).
-    pub shorthand_fields: bool,
+    /// How a struct or object literal names a field by itself for a
+    /// variable of the same name (Rust's `S { text }`, JS's `{ text }`,
+    /// Ruby's `f(text:)`): a pattern's `text: $T` then also matches the
+    /// shorthand, with `$T` bound to `text`. `None` where that spelling
+    /// means something else (Go's `T{a}` is positional, Python's `{a}` a
+    /// set) or the grammar cannot tell it apart (C#'s `new { A }` and
+    /// `new { A = b }` parse as the same flat list of names).
+    pub shorthand_fields: Option<Shorthand>,
     /// Modifier keywords the grammar keeps as anonymous tokens of the
     /// item (JavaScript's `static`, `async`, `get`). Matching skips
     /// anonymous tokens, so `f() {}` matches `static async f() {}`; a
@@ -181,6 +183,34 @@ pub struct MacroContents {
     pub wrapper: &'static str,
 }
 
+/// A language's field shorthand ([`PatternLanguage::shorthand_fields`]):
+/// `name<separator> $V` written `name<kept>`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Shorthand {
+    /// What the shorthand keeps of `name: value`: nothing (`text`), or
+    /// Ruby's `:` (`text:`).
+    pub kept: &'static str,
+    /// The brackets a field list opens and closes with: `{` `}`, and
+    /// Ruby's call parentheses too.
+    pub open: &'static [char],
+    pub close: &'static [char],
+}
+
+impl Shorthand {
+    /// `{ name: value }` → `{ name }`: Rust's struct literals, JS's objects.
+    pub const BRACES: Self = Self {
+        kept: "",
+        open: &['{'],
+        close: &['}'],
+    };
+    /// `name: value` → `name:` in a hash or a call's arguments (Ruby 3.1).
+    pub const RUBY: Self = Self {
+        kept: ":",
+        open: &['{', '('],
+        close: &['}', ')'],
+    };
+}
+
 /// The nodes just before an item that belong to it, so deleting the item
 /// deletes them too instead of leaving a doc comment documenting nothing.
 ///
@@ -236,6 +266,16 @@ impl Language for TsLang {
             } else {
                 MetaVariable::Capture(MODIFIERS.to_string(), true)
             });
+        }
+        // `$$$B;`, a statement holding only a sequence capture, is the
+        // capture: the statements of a body. C++ needs it, since it reads
+        // `void f() { $$$B }` as a brace-initialized declaration and only
+        // `{ $$$B; }` as a function ([`terminate_lone_sequences`]).
+        if let Some(stripped) = source.strip_suffix(';')
+            && let Some(var @ (MetaVariable::MultiCapture(_) | MetaVariable::Multiple)) =
+                meta_variable(stripped.trim_end(), self.expando)
+        {
+            return Some(var);
         }
         meta_variable(source, self.expando)
     }
@@ -347,9 +387,10 @@ pub struct StructuralPattern {
     /// written without one: a template for the same item gets it back.
     visible: Option<compile::Visible>,
     /// Set on a form with struct fields written shorthand (`text` for
-    /// `text: $T`): `(field, metavariable)` pairs, so a template's `$T`
-    /// becomes `text` and `text: text` is written back as `text`.
-    shorthand: Option<Vec<(String, String)>>,
+    /// `text: $T`): the language's shorthand and `(field, metavariable)`
+    /// pairs, so a template's `$T` becomes `text` and `text: text` is
+    /// written back as the shorthand.
+    shorthand: Option<(Shorthand, Vec<(String, String)>)>,
     /// The pattern was written with a trailing `;` that is not part of
     /// the node it matches (a TS class field's): a template's trailing
     /// `;` is dropped too, or the rewrite would double it.

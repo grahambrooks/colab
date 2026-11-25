@@ -44,7 +44,7 @@ pub(crate) fn language() -> PatternLanguage {
             ],
             several: true,
         }),
-        shorthand_fields: false,
+        shorthand_fields: None,
         modifier_tokens: &[],
     }
 }

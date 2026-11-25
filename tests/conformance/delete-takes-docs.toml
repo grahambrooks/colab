@@ -15,7 +15,6 @@ void keep(void) {}
 
 [[case]]
 lang = "cpp"
-xfail = "no function pattern compiles in C++ (see A lone body), so none can be deleted with its docs."
 script = "match cpp::pattern 'void old() { $$$B }' { delete }"
 input = '''
 /** Old docs. */
@@ -90,7 +89,6 @@ function keep() {}
 
 [[case]]
 lang = "kotlin"
-xfail = "the match of a modifier-relaxed form starts after the function's `modifiers` node (the annotation), so a delete leaves `@Deprecated(…)` and the `/** … */` above it behind."
 script = "match kotlin::pattern 'fun old() { $$$B }' { delete }"
 input = '''
 /** Old docs. */

@@ -20,9 +20,14 @@ pub(crate) fn language() -> PatternLanguage {
         ],
         also: &[],
         qualified_calls: None,
-        // KDoc documents the declaration after it.
+        // KDoc documents the declaration after it. tree-sitter-kotlin reads
+        // an annotation with arguments on its own line before a top-level
+        // `fun` (`@Deprecated("x")`) as an `annotated_expression` sibling,
+        // `@Deprecated` applied to `("x")`, not as the function's
+        // `modifiers`; no expression stands there in Kotlin, so it is the
+        // function's annotation.
         leading: colab_rewrite::pattern::Leading {
-            kinds: &[],
+            kinds: &["annotated_expression"],
             doc_comments: &["/**"],
         },
         macro_contents: None,
@@ -32,7 +37,7 @@ pub(crate) fn language() -> PatternLanguage {
             kinds: &["modifiers"],
             several: false,
         }),
-        shorthand_fields: false,
+        shorthand_fields: None,
         modifier_tokens: &[],
     }
 }

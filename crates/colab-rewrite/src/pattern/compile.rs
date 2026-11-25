@@ -78,12 +78,18 @@ pub(super) fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t 
         .then(|| (format!("{lead}{QUALIFIER}{sep}{body}"), callee))
 }
 
-/// The fields of `text` written `name: $VAR` in a struct-literal place:
-/// right after `{` or `,` and right before `,` or `}` (whitespace aside),
-/// with `$VAR` a single metavariable the pattern names nowhere else. So
-/// `let x: $T = …` and `fn f(a: $T)` never count. Each is `(the bytes
-/// from the name to the end of $VAR, name, VAR)`.
-pub(super) fn shorthand_fields(text: &str) -> Vec<(std::ops::Range<usize>, String, String)> {
+/// The fields of `text` written `name: $VAR` in a field-list place: right
+/// after an opening bracket of `shorthand` or `,` and right before `,` or
+/// a closing one (whitespace aside), with `$VAR` a single metavariable the
+/// pattern names nowhere else. So `let x: $T = …` and (with braces only)
+/// `fn f(a: $T)` never count, nor does a Ruby `def`'s `(a: $T)`, whose
+/// shorthand `a:` is a required keyword, not one set from `a`. Each is
+/// `(the bytes from the name to the end of $VAR, name, VAR)`.
+pub(super) fn shorthand_fields(
+    text: &str,
+    shorthand: Shorthand,
+) -> Vec<(std::ops::Range<usize>, String, String)> {
+    let definition = text.trim_start().starts_with("def ");
     let bytes = text.as_bytes();
     let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
     let mut out = Vec::new();
@@ -100,7 +106,8 @@ pub(super) fn shorthand_fields(text: &str) -> Vec<(std::ops::Range<usize>, Strin
             i += 1;
         }
         let name = &text[start..i];
-        if !(before.ends_with('{') || before.ends_with(',')) {
+        let opened = before.ends_with(shorthand.open) && !(definition && before.ends_with('('));
+        if !(opened || before.ends_with(',')) {
             continue;
         }
         let Some(value) = text[i..].trim_start().strip_prefix(':') else {
@@ -122,7 +129,11 @@ pub(super) fn shorthand_fields(text: &str) -> Vec<(std::ops::Range<usize>, Strin
         let end = text.len() - var.len() + len;
         let next = text[end..].trim_start();
         let once = text.matches(&format!("${var_name}")).count() == 1;
-        if !var_name.is_empty() && once && (next.starts_with(',') || next.starts_with('}')) {
+        if !var_name.is_empty()
+            && once
+            && (next.starts_with(',') || next.starts_with(shorthand.close))
+            && !(definition && next.starts_with(')'))
+        {
             out.push((start..end, name.to_string(), var_name.to_string()));
         }
         i = end;
@@ -132,8 +143,13 @@ pub(super) fn shorthand_fields(text: &str) -> Vec<(std::ops::Range<usize>, Strin
 
 /// A template for a match of a shorthand form (see
 /// [`shorthand_fields`]): each `$VAR` is the field's name, and a field
-/// that ends up `name: name` is written `name`.
-pub(super) fn shorthand_template(template: &str, fields: &[(String, String)]) -> String {
+/// that ends up `name: name` is written as the shorthand (`name`, Ruby's
+/// `name:`).
+pub(super) fn shorthand_template(
+    template: &str,
+    fields: &[(String, String)],
+    shorthand: Shorthand,
+) -> String {
     let mut out = template.to_string();
     for (name, var) in fields {
         let token = format!("${var}");
@@ -152,9 +168,40 @@ pub(super) fn shorthand_template(template: &str, fields: &[(String, String)]) ->
             out.replace_range(start..end, name);
             at = start + name.len();
         }
-        out = out.replace(&format!("{name}: {name}"), name);
+        out = out.replace(
+            &format!("{name}: {name}"),
+            &format!("{name}{}", shorthand.kept),
+        );
     }
     out
+}
+
+/// `text` with a `;` after each sequence capture that is alone in braces
+/// (`{ $$$B }` → `{ $$$B; }`), or `None` when it has none. C++ reads
+/// `void f() { $$$B }` as a declaration with a brace initializer; with the
+/// `;` it is a function, and `$$$B;` is read as the capture itself.
+pub(super) fn terminate_lone_sequences(text: &str) -> Option<String> {
+    let mut out = String::with_capacity(text.len() + 4);
+    let mut rest = text;
+    let mut changed = false;
+    while let Some(at) = rest.find("$$$") {
+        let (head, tail) = rest.split_at(at);
+        out.push_str(head);
+        let len = 3 + tail[3..]
+            .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'))
+            .unwrap_or(tail.len() - 3);
+        let (var, after) = tail.split_at(len);
+        out.push_str(var);
+        if out[..out.len() - var.len()].trim_end().ends_with('{')
+            && after.trim_start().starts_with('}')
+        {
+            out.push(';');
+            changed = true;
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    changed.then_some(out)
 }
 
 /// `qualified` (from [`qualify_call`]) with `sep` before its path, after
@@ -223,8 +270,11 @@ impl Visible {
         }
         let prefixed = format!("{} {trimmed}", self.modifiers.sentinel);
         let sigil = if self.modifiers.several { "$$$" } else { "$" };
-        self.takes_modifiers(&prefixed)
-            .then(|| format!("{sigil}{MODIFIERS} {trimmed}"))
+        // A lone `{ $$$B }` body reads as an item only as `{ $$$B; }` in
+        // C++ (see `terminate_lone_sequences`); the template keeps its text.
+        let reads = self.takes_modifiers(&prefixed)
+            || terminate_lone_sequences(&prefixed).is_some_and(|t| self.takes_modifiers(&t));
+        reads.then(|| format!("{sigil}{MODIFIERS} {trimmed}"))
     }
 
     /// Whether `text`, read as a pattern, starts with modifiers.
@@ -488,6 +538,17 @@ impl Shape {
             let mut cursor = node.walk();
             return Self::Tokens(node.children(&mut cursor).filter(|c| !c.is_extra()).count());
         }
+        // `$$$B;` is the capture, as `TsLang::extract_meta_var` reads it.
+        let text = match text.strip_suffix(';') {
+            Some(stripped)
+                if stripped
+                    .trim_end()
+                    .starts_with(&format!("{expando}{expando}{expando}")) =>
+            {
+                stripped.trim_end()
+            }
+            _ => text,
+        };
         if let Some(rest) = text.strip_prefix(expando) {
             let many = rest.starts_with(expando);
             let name = rest.trim_start_matches(expando);
@@ -690,8 +751,8 @@ impl StructuralPattern {
         // set from a variable of its name: every subset of the fields
         // written `name: $VAR` (up to three; all of them beyond), each a
         // form only when it parses as a different tree.
-        if language.shorthand_fields {
-            let fields = shorthand_fields(text);
+        if let Some(shorthand) = language.shorthand_fields {
+            let fields = shorthand_fields(text, shorthand);
             let subsets: Vec<Vec<usize>> = if fields.len() <= 3 {
                 (1..1usize << fields.len())
                     .map(|bits| (0..fields.len()).filter(|i| bits & (1 << i) != 0).collect())
@@ -703,7 +764,7 @@ impl StructuralPattern {
                 let mut alt_text = text.to_string();
                 for &i in subset.iter().rev() {
                     let (range, name, _) = &fields[i];
-                    alt_text.replace_range(range.clone(), name);
+                    alt_text.replace_range(range.clone(), &format!("{name}{}", shorthand.kept));
                 }
                 if let Ok(mut alt) = Self::compile_one(language, &alt_text, true)
                     && alt.tree != primary.tree
@@ -711,12 +772,13 @@ impl StructuralPattern {
                     // Only `: $VAR`s were taken out, so the pattern's
                     // literals are all still there.
                     alt.prefilter.clone_from(&primary.prefilter);
-                    alt.shorthand = Some(
+                    alt.shorthand = Some((
+                        shorthand,
                         subset
                             .iter()
                             .map(|&i| (fields[i].1.clone(), fields[i].2.clone()))
                             .collect(),
-                    );
+                    ));
                     primary.also.push(alt);
                 }
             }
@@ -773,12 +835,24 @@ impl StructuralPattern {
             });
         let (mut primary, tolerant) = match compiled {
             Ok(compiled) => compiled,
-            Err(e) => language
-                .also
-                .iter()
-                .find_map(|context| alt_in(context).ok())
-                .map(|p| (p, false))
-                .ok_or(e)?,
+            Err(e) => {
+                if let Some(p) = language
+                    .also
+                    .iter()
+                    .find_map(|context| alt_in(context).ok())
+                {
+                    (p, false)
+                } else if let Some(terminated) = terminate_lone_sequences(text)
+                    && let Ok(mut p) = Self::readings(language, &terminated)
+                {
+                    // `{ $$$B; }` read in place of `{ $$$B }` (C++); the
+                    // `$$$B;` statement is the capture (`TsLang`).
+                    p.text = text.to_string();
+                    return Ok(p);
+                } else {
+                    return Err(e);
+                }
+            }
         };
         for context in language.also {
             if let Ok(alt) = alt_in(context)
