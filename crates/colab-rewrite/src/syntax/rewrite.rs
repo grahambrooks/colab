@@ -12,7 +12,7 @@
 
 use colab_syntax::pattern::{Binding, Match, PatternNode};
 
-use super::{Checks, EngineForm, Forms, Role};
+use super::{Checks, EngineForm, Forms, Frame, Role};
 use crate::pattern::{
     PatternLanguage, indent_with_tabs, keep_layout, only_metavariables, qualify_call, root_path,
     same_but_whitespace, shift_lines, shorthand_template, strip_blank_line_indent, tighten,
@@ -66,8 +66,109 @@ fn requalify(template: &str, separator: &str, callee: &str, rooted: bool) -> Opt
 struct Value {
     name: String,
     text: String,
-    /// The binding's span in the source; `None` for an empty sequence.
+    /// The binding's span in the source (for a `let`'s value, that of the
+    /// capture it derives from, whose line its later lines move with);
+    /// `None` for an empty sequence.
     span: Option<std::ops::Range<usize>>,
+    /// `span` is this value's own text, not a `let`'s source.
+    own: bool,
+}
+
+/// One compiled `let`: `var` is `from`'s text through `steps`, after a
+/// first `rewrite(…)` step's rewriters, each a pattern's forms and its
+/// template, rewrote the code `from` binds.
+struct Derived {
+    var: String,
+    from: String,
+    rewriters: Vec<(Forms, String)>,
+    steps: Vec<crate::derive::Step>,
+}
+
+impl Derived {
+    fn apply(&self, text: &str) -> String {
+        self.steps
+            .iter()
+            .fold(text.to_string(), |text, step| step.apply(&text))
+    }
+}
+
+/// A rule's `let`s (`colab_core::Test::Let` constraints), in order.
+#[derive(Default)]
+pub struct Lets(Vec<Derived>);
+
+impl Lets {
+    /// The `let`s among `constraints`, for a pattern binding `bound`. Each
+    /// derives from a metavariable the pattern binds or an earlier `let`,
+    /// and names a new `$VAR`, written with one `$`: it holds text, not
+    /// nodes.
+    pub fn compile(
+        language: &PatternLanguage,
+        bound: &[colab_core::Var],
+        constraints: &[colab_core::Constraint],
+    ) -> Result<Self, String> {
+        let mut out: Vec<Derived> = Vec::new();
+        for c in constraints {
+            let colab_core::Test::Let { var, from, steps } = &c.test else {
+                continue;
+            };
+            if var.multi {
+                return Err(format!(
+                    "`{c}`: a `let` holds text, so it is named with one `$`: `${}`",
+                    var.name
+                ));
+            }
+            if let Some(b) = bound.iter().find(|b| b.name == var.name) {
+                return Err(format!(
+                    "`{c}`: the pattern already binds `{b}`; name the derived value something else"
+                ));
+            }
+            if out.iter().any(|d| d.var == var.name) {
+                return Err(format!("`{c}`: `{var}` is already a `let`"));
+            }
+            let earlier = !from.multi && out.iter().any(|d| d.var == from.name);
+            if !earlier {
+                crate::pattern::require_bound(bound, from).map_err(|e| format!("`{c}`: {e}"))?;
+            }
+            let (rewriters, rest) = match steps.split_first() {
+                Some((colab_core::Transform::Rewrite(list), rest)) => {
+                    if earlier {
+                        return Err(format!(
+                            "`{c}`: a rewriter works on the code a metavariable binds, so `rewrite` takes `{from}` from the pattern, not from a `let`"
+                        ));
+                    }
+                    let compiled = list
+                        .iter()
+                        .map(|r| {
+                            crate::pattern::unbound_in_template(&r.pattern, &r.template, &[])
+                                .and_then(|()| super::compile_forms(language, &r.pattern))
+                                .map(|forms| (forms, r.template.clone()))
+                                .map_err(|e| format!("`rewriter {}`: {e}", r.name))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    (compiled, rest)
+                }
+                _ => (Vec::new(), steps.as_slice()),
+            };
+            if let Some(late) = rest
+                .iter()
+                .find(|s| matches!(s, colab_core::Transform::Rewrite(_)))
+            {
+                return Err(format!(
+                    "`{c}`: `{late}` must be the first step: a rewriter works on the code, not on text another step made"
+                ));
+            }
+            out.push(Derived {
+                var: var.name.clone(),
+                from: from.name.clone(),
+                rewriters,
+                steps: rest
+                    .iter()
+                    .map(crate::derive::Step::compile)
+                    .collect::<Result<_, _>>()?,
+            });
+        }
+        Ok(Self(out))
+    }
 }
 
 struct Rewriter<'a, 't> {
@@ -79,6 +180,48 @@ struct Rewriter<'a, 't> {
     /// Whether a match's absorbed modifiers go back in front of the
     /// template's text.
     gives_back: bool,
+    lets: &'a [Derived],
+    /// The rewriter of each `let` with a `rewrite` step, by position: one
+    /// per form its patterns compiled to (empty without one).
+    subs: &'a [Vec<Rewriter<'a, 't>>],
+}
+
+/// `matches`' ranges in the order [`Rewriter::outermost`] sweeps.
+fn order_of(matches: &[Match<'_>]) -> Vec<(std::ops::Range<usize>, usize)> {
+    let mut order: Vec<_> = matches
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.node.range(), i))
+        .collect();
+    order.sort_by_key(|(r, i)| (r.start, std::cmp::Reverse(r.end), *i));
+    order
+}
+
+/// `source[span]` with every outermost match of any of `forms` (one
+/// rewriter's patterns) rewritten, the text between kept; of two
+/// overlapping edits the outer one is made.
+fn rewrite_with(forms: &[Rewriter<'_, '_>], source: &str, span: std::ops::Range<usize>) -> String {
+    let mut edits: Vec<Edit> = forms
+        .iter()
+        .flat_map(|form| {
+            form.outermost(span.clone(), None)
+                .into_iter()
+                .map(|i| form.render(i))
+        })
+        .collect();
+    edits.sort_by_key(|e| (e.start, std::cmp::Reverse(e.end)));
+    let mut out = String::new();
+    let mut at = span.start;
+    for edit in edits {
+        if edit.start < at {
+            continue;
+        }
+        out.push_str(&source[at..edit.start]);
+        out.push_str(&edit.text);
+        at = edit.end;
+    }
+    out.push_str(&source[at..span.end]);
+    out
 }
 
 impl Rewriter<'_, '_> {
@@ -144,15 +287,41 @@ impl Rewriter<'_, '_> {
                     name: name.clone(),
                     text,
                     span,
+                    own: true,
                 }
             })
             .collect();
         // A sequence that matched nothing leaves no gap behind it.
-        let empty: Vec<&str> = values
+        let empty: Vec<String> = values
             .iter()
             .filter(|v| v.span.is_none())
-            .map(|v| v.name.as_str())
+            .map(|v| v.name.clone())
             .collect();
+        let empty: Vec<&str> = empty.iter().map(String::as_str).collect();
+        // Each `let`'s value, laid out with the capture it comes from.
+        let mut values = values;
+        for (k, derived) in self.lets.iter().enumerate() {
+            let Some(base) = values.iter().find(|v| v.name == derived.from) else {
+                continue;
+            };
+            let own_span = values
+                .iter()
+                .find(|v| v.own && v.name == derived.from)
+                .and_then(|v| v.span.clone());
+            let start = match (self.subs.get(k), &own_span) {
+                (Some(forms), Some(span)) if !forms.is_empty() => {
+                    rewrite_with(forms, source, span.clone())
+                }
+                _ => base.text.clone(),
+            };
+            let value = Value {
+                name: derived.var.clone(),
+                text: derived.apply(&start),
+                span: base.span.clone(),
+                own: false,
+            };
+            values.push(value);
+        }
         let tight = tighten(self.template, &empty);
         let template = tight.as_deref().unwrap_or(self.template);
         let start = m.node.start();
@@ -189,9 +358,10 @@ impl Rewriter<'_, '_> {
             .iter()
             .enumerate()
             .filter(|(_, v)| {
-                v.span
-                    .as_ref()
-                    .is_some_and(|s| s.start >= range.start && s.end <= range.end)
+                v.own
+                    && v.span
+                        .as_ref()
+                        .is_some_and(|s| s.start >= range.start && s.end <= range.end)
             })
             .collect();
         inside.sort_by_key(|(_, v)| v.span.as_ref().map_or(0, |s| s.start));
@@ -216,13 +386,13 @@ impl Rewriter<'_, '_> {
             at = span.end;
         }
         skeleton.push_str(&source[at..range.end]);
-        // An empty sequence is no text at all; a binding with a span is
-        // its mark.
+        // A value with a span is its mark; one without (an empty sequence,
+        // or a `let` of one) is its text.
         let marked = fill(template, |n| {
             let (k, v) = values.iter().enumerate().find(|(_, v)| v.name == n)?;
             match v.span {
                 Some(_) => mark(k).map(String::from),
-                None => Some(String::new()),
+                None => Some(v.text.clone()),
             }
         });
         let marked = indent_with_tabs(source, range.start, &marked);
@@ -309,31 +479,65 @@ fn edits(
     language: &PatternLanguage,
     form: &EngineForm,
     checks: &Checks,
+    lets: &Lets,
     source: &str,
     template: &str,
+    frame: Option<&Frame<'_>>,
 ) -> Vec<Edit> {
     let Some(tree) = super::tree(&language.grammar, source) else {
         return Vec::new();
     };
     let mut matches = form.pattern.find_all(&tree);
-    checks.retain(&mut matches, source, None);
+    checks.retain(&mut matches, source, frame);
     if matches.is_empty() {
         return Vec::new();
     }
     let written = template_for(form, language, template);
     let (filled, _) = transformable_template(&written);
-    let mut order: Vec<(std::ops::Range<usize>, usize)> = matches
+    // Each `let`'s rewriters: for every form of each, its template and its
+    // matches in this source; one list per `let`, empty without one.
+    let parts: Vec<Vec<(String, Vec<Match<'_>>)>> = lets
+        .0
         .iter()
-        .enumerate()
-        .map(|(i, m)| (m.node.range(), i))
+        .map(|d| {
+            d.rewriters
+                .iter()
+                .flat_map(|(forms, template)| {
+                    let (template, _) = transformable_template(template);
+                    let tree = &tree;
+                    forms
+                        .forms
+                        .iter()
+                        .map(move |f| (template.clone(), f.pattern.find_all(tree)))
+                })
+                .collect()
+        })
         .collect();
-    order.sort_by_key(|(r, i)| (r.start, std::cmp::Reverse(r.end), *i));
+    let subs: Vec<Vec<Rewriter<'_, '_>>> = parts
+        .iter()
+        .map(|forms| {
+            forms
+                .iter()
+                .map(|(template, matches)| Rewriter {
+                    source,
+                    matches,
+                    order: order_of(matches),
+                    template,
+                    gives_back: false,
+                    lets: &[],
+                    subs: &[],
+                })
+                .collect()
+        })
+        .collect();
     let rewriter = Rewriter {
         source,
         matches: &matches,
-        order,
+        order: order_of(&matches),
         template: &filled,
         gives_back: gives_back(language, form, &written),
+        lets: &lets.0,
+        subs: &subs,
     };
     let mut edits: Vec<Edit> = rewriter
         .outermost(0..source.len(), None)
@@ -342,10 +546,11 @@ fn edits(
         .filter(|e| !same_but_whitespace(&source[e.start..e.end], &e.text))
         .collect();
     // A template that only unwraps the match takes its attached docs and
-    // attributes with it, as a delete does.
+    // attributes with it, as a delete does; a macro's contents have none.
     let leading = language.leading;
     let attaches = !(leading.kinds.is_empty() && leading.doc_comments.is_empty());
     if attaches
+        && frame.is_none()
         && only_metavariables(&written)
         && let Some(ts) = crate::parse_cache::parse(&language.grammar, source)
     {
@@ -357,23 +562,64 @@ fn edits(
     edits
 }
 
-/// Every match of `forms` that `checks` holds for in `source`, replaced by
-/// `template`: each form in turn over the text the one before left, its
-/// matches' bindings rewritten first so one pass reaches the fixed point.
-pub fn rewrite(
+/// [`rewrite`] of `source` judged in `frame` (a macro's contents) at macro
+/// nesting `depth`: each form in turn, then the macro calls in the text,
+/// whose contents its tree cannot see into. A frame stays as the contents
+/// were read, so a later form's semantic question in a macro asks about
+/// the position before an earlier form's edit there.
+#[allow(clippy::too_many_arguments)] // the recursion's state, not an API
+fn rewrite_in(
     language: &PatternLanguage,
     forms: &Forms,
     checks: &Checks,
+    lets: &Lets,
     source: &str,
     template: &str,
+    frame: Option<&Frame<'_>>,
+    depth: usize,
 ) -> String {
     let mut text = source.to_string();
     for form in &forms.forms {
-        let made = edits(language, form, checks, &text, template);
+        let made = edits(language, form, checks, lets, &text, template, frame);
         if !made.is_empty() {
             text = apply_edits(&text, made);
         }
     }
+    super::edit_macros(
+        language,
+        forms,
+        checks,
+        &text,
+        frame,
+        depth,
+        |wrapped, inner, d| {
+            rewrite_in(
+                language,
+                forms,
+                checks,
+                lets,
+                wrapped,
+                template,
+                Some(inner),
+                d,
+            )
+        },
+    )
+}
+
+/// Every match of `forms` that `checks` holds for in `source`, replaced by
+/// `template`: each form in turn over the text the one before left, its
+/// matches' bindings rewritten first so one pass reaches the fixed point,
+/// then inside the macro calls the language reads.
+pub fn rewrite(
+    language: &PatternLanguage,
+    forms: &Forms,
+    checks: &Checks,
+    lets: &Lets,
+    source: &str,
+    template: &str,
+) -> String {
+    let text = rewrite_in(language, forms, checks, lets, source, template, None, 0);
     // A rewrite that leaves code which parsed unparseable is not made (the
     // rule explains why it changed nothing).
     let breaks = |t: &str| super::tree(&language.grammar, t).is_none_or(|t| t.has_error());

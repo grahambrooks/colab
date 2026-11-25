@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use colab_core::{Constraint, Operation};
-use colab_dsl::ast::{Command, Item};
+use colab_dsl::ast::Item;
 use colab_rewrite::pattern::PatternAction;
 
 fn source_language(lang: &str) -> Option<&'static colab_rewrite::SourceLanguage> {
@@ -37,25 +37,42 @@ fn source_language(lang: &str) -> Option<&'static colab_rewrite::SourceLanguage>
     })
 }
 
-/// One `<lang>::pattern` rule: language, pattern, constraints, and its
-/// `replace` template when it has one and no `let`s (whose lowering is
-/// the DSL compiler's own).
+/// One `<lang>::pattern` rule: language, pattern, constraints (its `let`s
+/// lowered by the DSL compiler's `lower_lets`, as `build_rule_where` gets
+/// them), and its `replace` template when it has one.
 type Rule = (String, String, Vec<Constraint>, Option<String>);
 
-/// Every pattern rule in a script, `then` stages included.
+/// Every pattern rule in a script, `then` stages included, as the
+/// compiler hands it to a backend: named patterns and rewriters resolved.
 fn rules(script: &str) -> Vec<Rule> {
+    let registry = colab_backends::registry();
+    let Ok(matches) = colab_dsl::compiler::resolved_matches(script, &registry) else {
+        return Vec::new();
+    };
+    let items: Vec<Item> = matches.into_iter().map(Item::Match).collect();
     fn walk(items: &[Item], out: &mut Vec<Rule>) {
         for item in items {
             match item {
                 Item::Match(m) if m.namespace.module == "pattern" => {
-                    let template = match (&m.action, m.lets.is_empty()) {
-                        (colab_dsl::ast::Action::Replace(t), true) => Some(t.clone()),
+                    let template = match &m.action {
+                        colab_dsl::ast::Action::Replace(t) => Some(t.clone()),
                         _ => None,
                     };
+                    let mut constraints = m.constraints.clone();
+                    if !m.lets.is_empty() {
+                        match colab_dsl::compiler::lower_lets(
+                            &m.namespace,
+                            &m.action,
+                            m.lets.clone(),
+                        ) {
+                            Ok(lets) => constraints.extend(lets),
+                            Err(_) => continue,
+                        }
+                    }
                     out.push((
                         m.namespace.lang.clone(),
                         m.match_string.clone(),
-                        m.constraints.clone(),
+                        constraints,
                         template,
                     ));
                 }
@@ -65,9 +82,7 @@ fn rules(script: &str) -> Vec<Rule> {
         }
     }
     let mut out = Vec::new();
-    if let Ok(Command { items, .. }) = colab_dsl::parse(script) {
-        walk(&items, &mut out);
-    }
+    walk(&items, &mut out);
     out
 }
 
@@ -151,8 +166,19 @@ fn trimmed(source: &str, start: usize, end: usize) -> (usize, usize) {
     (start, start + source[start..end].trim_end().len())
 }
 
+/// A rule's constraints for finding: its `let`s derive text for a
+/// `replace` and narrow nothing (and a `delete` refuses them).
+fn narrowing(constraints: &[Constraint]) -> Vec<Constraint> {
+    constraints
+        .iter()
+        .filter(|c| !matches!(c.test, colab_core::Test::Let { .. }))
+        .cloned()
+        .collect()
+}
+
 fn old_engine((lang, pattern, constraints, _): &Rule, source: &str) -> Result<Ranges, String> {
     let language = source_language(lang).unwrap();
+    let constraints = &narrowing(constraints);
     let op = language
         .compile_pattern(pattern, PatternAction::Delete, constraints)
         .map_err(|e| e.to_string())?;
@@ -165,6 +191,7 @@ fn old_engine((lang, pattern, constraints, _): &Rule, source: &str) -> Result<Ra
 }
 
 fn new_engine((lang, pattern, constraints, _): &Rule, source: &str) -> Result<Ranges, String> {
+    let constraints = &narrowing(constraints);
     let language = (source_language(lang).unwrap().pattern)();
     let forms = colab_rewrite::syntax::compile_forms(&language, pattern)?;
     let bound = colab_rewrite::syntax::bound(&forms.forms[0].pattern);
@@ -257,16 +284,12 @@ fn both_engines_find_the_same_matches() {
 
 /// Where the rewrites may differ, by the place's prefix, and why; kept
 /// true as `KNOWN` is.
-const KNOWN_REWRITES: &[(&str, &str)] = &[(
-    "tests/corpus/rust/pattern_macro_contents/",
-    "rewriting inside a macro's token tree (`pattern/macros.rs::edit_macros`) \
-     is not yet done on colab's matcher",
-)];
+const KNOWN_REWRITES: &[(&str, &str)] = &[];
 
 #[test]
 fn both_engines_rewrite_alike() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let (mut compared, mut changed) = (0, 0);
+    let (mut compared, mut changed, mut with_lets, mut with_rewriters) = (0, 0, 0, 0);
     let mut differ: Vec<(String, String)> = Vec::new();
     for (place, rule, source) in cases(&root) {
         let (lang, pattern, constraints, Some(template)) = &rule else {
@@ -283,13 +306,22 @@ fn both_engines_rewrite_alike() {
             continue;
         };
         compared += 1;
+        for c in constraints {
+            if let colab_core::Test::Let { steps, .. } = &c.test {
+                with_lets += 1;
+                if matches!(steps.first(), Some(colab_core::Transform::Rewrite(_))) {
+                    with_rewriters += 1;
+                }
+            }
+        }
         let old = op.apply(&source);
         let patterns = (language.pattern)();
         let new = colab_rewrite::syntax::compile_forms(&patterns, pattern).and_then(|forms| {
             let bound = colab_rewrite::syntax::bound(&forms.forms[0].pattern);
             let checks = colab_rewrite::syntax::Checks::compile(&patterns, &bound, constraints)?;
+            let lets = colab_rewrite::syntax::Lets::compile(&patterns, &bound, constraints)?;
             Ok(colab_rewrite::syntax::rewrite(
-                &patterns, &forms, &checks, &source, template,
+                &patterns, &forms, &checks, &lets, &source, template,
             ))
         });
         if old != source {
@@ -315,6 +347,11 @@ fn both_engines_rewrite_alike() {
         differ.len()
     );
     assert!(compared > 100, "too few rewrites compared: {compared}");
+    eprintln!("  {with_lets} `let`s among them, {with_rewriters} with a rewriter");
+    assert!(
+        with_lets > 0 && with_rewriters > 0,
+        "the comparison must cover `let`s and rewriters"
+    );
     let unexplained: Vec<String> = differ
         .iter()
         .filter(|(place, _)| !KNOWN_REWRITES.iter().any(|(p, _)| place.starts_with(p)))

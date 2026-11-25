@@ -784,7 +784,7 @@ pub(super) fn metavariables(pattern: &str) -> Vec<Var> {
 /// A template metavariable the pattern does not bind (nor a `let`) would
 /// be filled with nothing; refuse it. A `where` pattern's metavariables
 /// are its own, so `$F` from `follows '$V, err := $F($$$A)'` is not one.
-pub(super) fn unbound_in_template(
+pub(crate) fn unbound_in_template(
     pattern: &str,
     template: &str,
     constraints: &[Constraint],

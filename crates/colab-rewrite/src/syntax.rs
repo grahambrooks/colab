@@ -18,7 +18,7 @@ use crate::pattern::PatternLanguage;
 mod check;
 mod rewrite;
 pub use check::{Checks, Enclosing, Frame, Nested, bound};
-pub use rewrite::rewrite;
+pub use rewrite::{Lets, rewrite};
 
 /// `language`'s kind and field names, built on first use.
 pub fn grammar_of(language: &tree_sitter::Language) -> Arc<Grammar> {
@@ -306,6 +306,55 @@ fn find_in_macros(
     frame: Option<&Frame<'_>>,
     depth: usize,
 ) -> Vec<Found> {
+    each_macro(
+        language,
+        forms,
+        checks,
+        tree,
+        frame,
+        depth,
+        |region, _, found| {
+            let (slot, base) = (region.slot, region.inner.start);
+            Some(
+                found
+                    .into_iter()
+                    .map(|f| Found {
+                        range: f.range.start - slot + base..f.range.end - slot + base,
+                        in_macro: true,
+                        ..f
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        },
+    )
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// A listed macro call's contents, as [`each_macro`] reads them.
+pub(crate) struct Region {
+    /// The contents in the text: inside the call's delimiters.
+    pub(crate) inner: std::ops::Range<usize>,
+    /// Where the contents start in `wrapped`.
+    pub(crate) slot: usize,
+    /// The contents in the language's macro wrapper.
+    pub(crate) wrapped: String,
+}
+
+/// `then` for each listed macro call in `tree` whose contents parse in the
+/// wrapper and hold a match of `forms` that `checks` hold for, none of
+/// them reaching into the wrapper: given the region, its frame, and the
+/// matches in the wrapped text (nested macros' included).
+fn each_macro<R>(
+    language: &PatternLanguage,
+    forms: &Forms,
+    checks: &Checks,
+    tree: &Tree,
+    frame: Option<&Frame<'_>>,
+    depth: usize,
+    mut then: impl FnMut(&Region, &Frame<'_>, Vec<Found>) -> Option<R>,
+) -> Vec<R> {
     let Some(spec) = language.macro_contents else {
         return Vec::new();
     };
@@ -394,11 +443,59 @@ fn find_in_macros(
         {
             continue;
         }
-        out.extend(found.into_iter().map(|f| Found {
-            range: f.range.start - slot + inner.start..f.range.end - slot + inner.start,
-            in_macro: true,
-            ..f
-        }));
+        let region = Region {
+            inner: inner.clone(),
+            slot,
+            wrapped: wrapped.clone(),
+        };
+        out.extend(then(&region, &inner_frame, found));
+    }
+    out
+}
+
+/// `text` with the contents of each macro call `forms` match in rewritten
+/// by `rewrite` (given the wrapped contents and their frame) and put back,
+/// unless the rewrite changed the wrapper around them.
+pub(crate) fn edit_macros(
+    language: &PatternLanguage,
+    forms: &Forms,
+    checks: &Checks,
+    text: &str,
+    frame: Option<&Frame<'_>>,
+    depth: usize,
+    rewrite: impl Fn(&str, &Frame<'_>, usize) -> String,
+) -> String {
+    let Some(tree) = self::tree(&language.grammar, text) else {
+        return text.to_string();
+    };
+    let changed = each_macro(
+        language,
+        forms,
+        checks,
+        &tree,
+        frame,
+        depth,
+        |region, inner, _| {
+            Some((
+                region.inner.clone(),
+                region.slot,
+                region.wrapped.clone(),
+                rewrite(&region.wrapped, inner, depth + 1),
+            ))
+        },
+    );
+    let mut out = text.to_string();
+    for (inner, slot, wrapped, changed) in changed.into_iter().rev() {
+        let suffix = wrapped.len() - slot - inner.len();
+        let (head, tail) = (&wrapped[..slot], &wrapped[wrapped.len() - suffix..]);
+        if changed == wrapped
+            || changed.len() < head.len() + tail.len()
+            || !changed.starts_with(head)
+            || !changed.ends_with(tail)
+        {
+            continue;
+        }
+        out.replace_range(inner, &changed[head.len()..changed.len() - tail.len()]);
     }
     out
 }

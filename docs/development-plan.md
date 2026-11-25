@@ -408,10 +408,19 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    token right after a `$$$` (it is the sequence's: a TypeScript member's
    `;`). The comparison gains `both_engines_rewrite_alike`: of 196
    `replace` rules without `let`s, 195 rewrite to the same text; the one
-   left is rewriting inside Rust macro contents, listed. Still to do
-   before `StructuralPattern` moves over: macro-content rewriting, `let`s
-   and rewriters, delete (with attached docs and attributes), and the
-   prefilter; then the switch, with the corpus as the bar. After that, the engine's other
+   left was rewriting inside Rust macro contents. **Macro rewriting,
+   `let`s and rewriters, 2026-11-25:** macro calls' contents are
+   rewritten in their frames and put back (`syntax::edit_macros`, one
+   walk with the search, `each_macro`); `syntax::Lets` compiles a rule's
+   `let`s, a first `rewrite(…)` step's rewriters included, and the
+   rewriter derives their values as the old engine does. The comparison
+   now reads each rule as the compiler hands it to a backend
+   (`colab_dsl::compiler::resolved_matches`: includes, named patterns
+   and rewriters resolved; `lower_lets` for the `let`s): 254 finds with
+   none refused by both, and 200 rewrites, 4 `let`s and a rewriter among
+   them, none differing. Still to do before `StructuralPattern` moves
+   over: delete (with attached docs and attributes) and the prefilter;
+   then the switch, with the corpus as the bar. After that, the engine's other
    tree readers (`declarations`, `calls`, rename, generalize), each
    behind the same parity bar.
 2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a

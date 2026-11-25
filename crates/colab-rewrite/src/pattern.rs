@@ -47,7 +47,7 @@ pub(crate) use compile::{qualify_call, root_path, shorthand_fields, shorthand_te
 pub(crate) use delete::attached_start;
 pub(crate) use rewrite::{
     indent_with_tabs, keep_layout, only_metavariables, same_but_whitespace, shift_lines,
-    strip_blank_line_indent, tighten, transformable_template,
+    strip_blank_line_indent, tighten, transformable_template, unbound_in_template,
 };
 mod find;
 mod macros;
