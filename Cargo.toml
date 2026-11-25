@@ -25,6 +25,7 @@ members = [
     "crates/colab-rewrite",
     "crates/colab-syntax",
     "crates/colab-parse-rust",
+    "crates/colab-parse-go",
     "crates/colab-lsp-client",
     "crates/colab-mcp",
     "crates/colab-cli",
@@ -64,6 +65,7 @@ colab-mcp = { path = "crates/colab-mcp" }
 colab-rewrite = { path = "crates/colab-rewrite" }
 colab-syntax = { path = "crates/colab-syntax" }
 colab-parse-rust = { path = "crates/colab-parse-rust" }
+colab-parse-go = { path = "crates/colab-parse-go" }
 colab-lsp-client = { path = "crates/colab-lsp-client" }
 
 # Third-party deps shared across crates. Crates pick what they need.

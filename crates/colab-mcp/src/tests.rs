@@ -1263,6 +1263,7 @@ fn find_reports_pattern_matches_with_captures_relative_to_cwd() {
 
 #[test]
 fn ast_shows_a_pattern_tree_and_its_context() {
+    // A bare call reads as it is; a case clause only inside a switch.
     let parsed = call_ok("colab.ast", json!({"lang": "go", "pattern": "f($A)"}));
     assert!(
         parsed["tree"]
@@ -1270,8 +1271,18 @@ fn ast_shows_a_pattern_tree_and_its_context() {
             .unwrap()
             .starts_with("call_expression")
     );
-    assert!(parsed["context"].as_str().unwrap().contains("func _()"));
     assert_eq!(parsed["prefilter"], "f");
+    let case = call_ok(
+        "colab.ast",
+        json!({"lang": "go", "pattern": "case $X: $$$B"}),
+    );
+    assert!(
+        case["tree"]
+            .as_str()
+            .unwrap()
+            .starts_with("expression_case")
+    );
+    assert!(case["context"].as_str().unwrap().contains("switch"));
 }
 
 #[test]

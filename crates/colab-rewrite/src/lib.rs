@@ -22,7 +22,7 @@
 
 pub mod calls;
 pub mod declarations;
-pub use declarations::declarations;
+pub use declarations::{declarations, declarations_in};
 mod derive;
 pub mod generalize;
 pub mod language;

@@ -169,8 +169,45 @@ impl SourceLanguage {
 
     /// `source` as colab's tree, for a language with a parser of its own.
     fn own_tree(&self, source: &str) -> Option<colab_syntax::Tree> {
-        self.own?;
-        crate::syntax::source_tree(&(self.pattern)(), source)
+        let language = (self.pattern)();
+        language.syntax.tree_sitter().is_none().then_some(())?;
+        crate::syntax::source_tree(&language, source)
+    }
+
+    /// Every call in `source` of a `Fields`-shaped language read by a
+    /// parser of colab's own (tree-sitter-shaped: a `function` and an
+    /// `arguments` field), outermost first.
+    fn own_calls(&self, source: &str) -> Option<Vec<Call>> {
+        let CallShape::Fields(kind) = self.calls else {
+            return None;
+        };
+        let tree = self.own_tree(source)?;
+        Some(
+            tree.nodes()
+                .filter(|n| n.kind_name() == kind)
+                .filter_map(|n| {
+                    let callee = n.child_by_field("function")?;
+                    let args = n.child_by_field("arguments")?;
+                    Some(Call {
+                        range: n.range(),
+                        callee: callee.text().to_string(),
+                        arguments: args
+                            .named_children()
+                            .map(|a| a.text().to_string())
+                            .collect(),
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    /// The calls of a language read by a parser of colab's own: its
+    /// [`OwnSyntax`], or its tree's fields.
+    fn calls_of(&self, source: &str) -> Option<Vec<Call>> {
+        match self.own {
+            Some(own) => Some(own.calls(source)),
+            None => self.own_calls(source),
+        }
     }
 
     /// The nodes of `tree` whose kind is one of `kinds`.
@@ -240,9 +277,9 @@ impl SourceLanguage {
     /// `source` with every call to `function` replaced by `template`
     /// (`<lang>::call`).
     pub fn rewrite_calls(&self, function: &str, template: &str, source: &str) -> String {
-        if let Some(own) = self.own {
+        if let Some(calls) = self.calls_of(source) {
             let mut edits: Vec<crate::Edit> = Vec::new();
-            for call in own.calls(source) {
+            for call in calls {
                 // An outer call already rewritten takes the ones inside it.
                 if call.callee != function
                     || edits
@@ -283,8 +320,8 @@ impl SourceLanguage {
 
     /// Every callee in `source`, as a `<lang>::call` target would spell it.
     pub fn callees(&self, source: &str) -> Vec<String> {
-        if let Some(own) = self.own {
-            return own.calls(source).into_iter().map(|c| c.callee).collect();
+        if let Some(calls) = self.calls_of(source) {
+            return calls.into_iter().map(|c| c.callee).collect();
         }
         let Some(tree) = self.parse(source) else {
             return Vec::new();
@@ -372,7 +409,9 @@ impl SourceLanguage {
         }
         match (self.pattern)().syntax.tree_sitter() {
             Some(grammar) => crate::declarations(grammar, source),
-            None => Vec::new(),
+            None => self
+                .own_tree(source)
+                .map_or_default(|tree| crate::declarations_in(&tree)),
         }
     }
 

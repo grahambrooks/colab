@@ -14,7 +14,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::Node;
+use colab_syntax::Node;
 
 #[derive(Debug)]
 pub struct TagReplace {
@@ -60,7 +60,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
         return source_code.to_string();
     };
 
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
 
@@ -68,9 +68,8 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
     let replacement = format!("{to_key}:\"{to_value}\"");
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        collect(node, source_code, &needle, &replacement, &mut edits)
-    });
+    tree.nodes()
+        .for_each(|node| collect(node, source_code, &needle, &replacement, &mut edits));
 
     colab_rewrite::apply_edits(
         source_code,
@@ -89,16 +88,16 @@ fn collect(
     edits: &mut Vec<(usize, usize, String)>,
 ) {
     if node.is_named()
-        && node.kind() == "field_declaration"
-        && let Some(tag) = node.child_by_field_name("tag")
-        && let Ok(tag_text) = tag.utf8_text(source.as_bytes())
+        && node.kind_name() == "field_declaration"
+        && let Some(tag) = node.child_by_field("tag")
     {
+        let tag_text = tag.text();
         // tag_text is the full literal including backticks: `key:"v"`.
         // Search for the `key:"value"` pair inside the inner content.
         // Multiple occurrences in one tag are unlikely (Go tags don't
         // repeat keys) but we handle them defensively.
-        let inner_start = tag.start_byte() + 1; // skip opening backtick
-        let inner_end = tag.end_byte() - 1; // skip closing backtick
+        let inner_start = tag.start() + 1; // skip opening backtick
+        let inner_end = tag.end() - 1; // skip closing backtick
         if inner_end <= inner_start {
             // proceed with traversal anyway
         } else {

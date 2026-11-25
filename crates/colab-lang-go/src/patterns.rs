@@ -14,7 +14,7 @@ use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 /// before the slot, so a bare name is never also read as a parameter's type.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_go::LANGUAGE.into()),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_go::PARSER),
         expando: 'µ',
         contexts: &[
             "package p\nfunc _() {\n@@PATTERN@@\n}\n",

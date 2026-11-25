@@ -38,6 +38,8 @@ colab-syntax = { workspace = true, features = ["tree-sitter"] }
 colab-rewrite = { workspace = true }
 # tests/rust_parser.rs measures rust-analyzer's parser against tree-sitter.
 colab-parse-rust = { workspace = true }
+# tests/go_parser.rs holds colab's Go parser to tree-sitter-go's trees.
+colab-parse-go = { workspace = true }
 similar = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-c = { workspace = true }

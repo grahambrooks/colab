@@ -13,7 +13,7 @@
 //! (no blank line between), and the decorators or `export` that wrap it.
 
 use colab_core::symbols::Declaration;
-use tree_sitter::{Node, Parser};
+use colab_syntax::{Node, Tree};
 
 /// Words in a node kind that make it a declaration, given a name.
 const DECLARATION_WORDS: &[&str] = &[
@@ -55,15 +55,15 @@ fn is_declaration_kind(kind: &str) -> bool {
 
 /// The declarations in `source`, parsed with `grammar`.
 pub fn declarations(grammar: &tree_sitter::Language, source: &str) -> Vec<Declaration> {
-    let mut parser = Parser::new();
-    if parser.set_language(grammar).is_err() {
-        return Vec::new();
-    }
-    let Some(tree) = parser.parse(source, None) else {
-        return Vec::new();
-    };
+    crate::syntax::tree(grammar, source).map_or_default(|tree| declarations_in(&tree))
+}
+
+/// The declarations in a colab tree (whichever parser made it), by its
+/// kinds and fields.
+pub fn declarations_in(tree: &Tree) -> Vec<Declaration> {
+    let source = tree.text();
     let mut top = Vec::new();
-    collect(tree.root_node(), source, &mut top);
+    collect(tree.root(), source, &mut top);
     // Go methods are top-level nodes; put each under its receiver type.
     let mut out: Vec<Declaration> = Vec::new();
     let mut methods: Vec<(String, Declaration)> = Vec::new();
@@ -90,8 +90,7 @@ pub fn declarations(grammar: &tree_sitter::Language, source: &str) -> Vec<Declar
 /// Declarations at or below `node`, each with the receiver type it
 /// belongs to, if it has one.
 fn collect(node: Node<'_>, source: &str, out: &mut Vec<(Option<String>, Declaration)>) {
-    let mut cursor = node.walk();
-    for child in node.named_children(&mut cursor) {
+    for child in node.named_children() {
         match declaration(child, source) {
             Some((receiver, mut d)) => {
                 let mut inner = Vec::new();
@@ -105,7 +104,7 @@ fn collect(node: Node<'_>, source: &str, out: &mut Vec<(Option<String>, Declarat
 }
 
 fn text<'s>(node: Node<'_>, source: &'s str) -> &'s str {
-    node.utf8_text(source.as_bytes()).unwrap_or("")
+    &source[node.range()]
 }
 
 /// The last identifier in `text`: the type in `*Config`, `Box<Config>`'s
@@ -118,21 +117,21 @@ fn last_word(text: &str) -> String {
 }
 
 fn declaration(node: Node<'_>, source: &str) -> Option<(Option<String>, Declaration)> {
-    let kind = node.kind();
+    let kind = node.kind_name();
     if !is_declaration_kind(kind) {
         return None;
     }
-    let name = match node.child_by_field_name("name") {
+    let name = match node.child_by_field("name") {
         Some(n) => text(n, source).trim().to_string(),
         // A Rust `impl` is named by the type it is for.
         None if kind == "impl_item" => node
-            .child_by_field_name("type")
+            .child_by_field("type")
             .map(|t| last_word(text(t, source)))?,
         // C and C++ name a function through its declarator chain:
         // `int *f(void)`, `void A::m()`.
         None if kind == "function_definition" => {
-            let mut d = node.child_by_field_name("declarator")?;
-            while let Some(inner) = d.child_by_field_name("declarator") {
+            let mut d = node.child_by_field("declarator")?;
+            while let Some(inner) = d.child_by_field("declarator") {
                 d = inner;
             }
             last_word(text(d, source))
@@ -142,7 +141,7 @@ fn declaration(node: Node<'_>, source: &str) -> Option<(Option<String>, Declarat
     if name.is_empty() {
         return None;
     }
-    let receiver = node.child_by_field_name("receiver").map(|r| {
+    let receiver = node.child_by_field("receiver").map(|r| {
         // `(c *Config)`: the type, not the variable.
         let t = text(r, source);
         last_word(t)
@@ -163,17 +162,21 @@ fn declaration(node: Node<'_>, source: &str) -> Option<(Option<String>, Declarat
 fn extent(node: Node<'_>, source: &str) -> std::ops::Range<usize> {
     let mut outer = node;
     while let Some(parent) = outer.parent() {
-        let k = parent.kind();
+        let k = parent.kind_name();
         if k.contains("decorated") || k == "export_statement" {
             outer = parent;
         } else {
             break;
         }
     }
-    let mut start = outer.start_byte();
-    let mut prev = outer.prev_sibling();
+    let mut start = outer.start();
+    // The sibling before, whitespace passed over.
+    fn before(n: Node<'_>) -> Option<Node<'_>> {
+        std::iter::successors(n.prev_sibling(), Node::prev_sibling).find(|s| !s.is_trivia())
+    }
+    let mut prev = before(outer);
     while let Some(p) = prev {
-        let k = p.kind();
+        let k = p.kind_name();
         // An inner doc comment (`//!`, `/*!`) or attribute (`#![…]`)
         // belongs to what encloses it, not to the next item.
         let inner = {
@@ -183,14 +186,14 @@ fn extent(node: Node<'_>, source: &str) -> std::ops::Range<usize> {
         let leading =
             !inner && (k.contains("comment") || k.contains("attribute") || k == "decorator");
         // Directly above: nothing but one line break between.
-        let gap = &source[p.end_byte()..start];
+        let gap = &source[p.end()..start];
         if !leading || gap.matches('\n').count() > 1 || !gap.trim().is_empty() {
             break;
         }
-        start = p.start_byte();
-        prev = p.prev_sibling();
+        start = p.start();
+        prev = before(p);
     }
-    start..outer.end_byte()
+    start..outer.end()
 }
 
 #[cfg(test)]

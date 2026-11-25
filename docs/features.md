@@ -193,7 +193,15 @@ any rule can carry a `message` and a `severity` for reports and
 
 ## Go (`colab-lang-go`)
 
-Powered by `tree-sitter-go`.
+Powered by colab's own Go parser (`colab-parse-go`): pure Rust, lossless,
+reading around syntax errors. Its trees have tree-sitter-go's kinds and
+fields, so rules written for them read as before; over 22,537 real Go
+files tree-sitter reads cleanly, 99.2% of the trees are the same node for
+node. Where they differ, mostly colab's tree is the one Go means: a
+parameter group keeps all its names (`func f(a0, …, a9 int)`, which
+tree-sitter splits after nine), and `*(*T)(p)` is a dereference of a
+conversion. `colab ast` reads a bare call or statement as it is, with no
+context.
 
 ### `go::import`
 

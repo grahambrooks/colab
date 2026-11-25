@@ -576,6 +576,29 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    The tree-sitter runtime goes only when the last of these does, so the
    very difficult six decide when: drop them, keep tree-sitter for them
    alone, or write parsers.
+   **Decided 2026-11-25:** no further third-party parsers to adapt
+   (rust-analyzer's suits Rust; others would each be an integration to
+   carry); colab writes its own, Go and Markdown first, the most used in
+   Graham's projects and Markdown in every agent project. **The tree
+   shape is transitional:** an own parser emits tree-sitter's kinds and
+   fields while tree-sitter is still there to hold it to (and the
+   backends, corpus and users' rules keep working); once tree-sitter is
+   gone the shape is to be redesigned for what colab's matcher and
+   rewrites need, so each parser names its kinds and fields in one table
+   (`names.rs`) apart from its parsing.
+   **Go, done 2026-11-25:** `colab-parse-go`, a hand-written lexer and
+   recursive-descent parser (~2,000 lines, no dependency but
+   `colab-syntax`). Over the repo's 91 Go files the trees are
+   tree-sitter-go's node for node (a test holds it); over the workspace's
+   22,537 files tree-sitter reads cleanly, 22,353 (99.2%) are, in 12.4 s
+   against tree-sitter's 20.0 s. Of the 184 left, 121 are where
+   tree-sitter misreads Go and colab does not copy it (a parameter group
+   cut after nine names; `*(*T)(p)` as a conversion); the rest are
+   ambiguous generic forms and empty-statement placement. The Go backend
+   runs on it (its `import`, `package` and `struct_tag` modules on colab's
+   tree), the floor's declarations, calls and qualifier check moved to
+   colab's tree for every language, and tree-sitter-go is now only a test
+   dependency, kept for the comparison.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

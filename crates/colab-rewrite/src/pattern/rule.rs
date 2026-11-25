@@ -168,32 +168,32 @@ impl PatternRule {
         let (Some(q), PatternAction::Replace(template)) = (self.qualifiers, &self.action) else {
             return Vec::new();
         };
-        // The qualifier languages (Go, Python, JS) parse with tree-sitter.
-        let Some(grammar) = self.pattern.language().syntax.tree_sitter() else {
+        // On colab's own tree, whichever parser made it; a text that does
+        // not parse cleanly is not judged.
+        let language = self.pattern.language();
+        let clean =
+            |text: &str| crate::syntax::source_tree(language, text).filter(|t| !t.has_error());
+        let (Some(old), Some(new)) = (clean(before), clean(after)) else {
             return Vec::new();
         };
-        let (Ok(old), Ok(new)) = (parse_clean(grammar, before), parse_clean(grammar, after)) else {
-            return Vec::new();
-        };
-        let mut known: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        crate::visit_all(&old, |node| {
-            if node.child_count() == 0 {
-                known.insert(&before[node.byte_range()]);
-            }
-        });
+        let known: std::collections::HashSet<&str> = old
+            .nodes()
+            .filter(|n| n.is_token() && !n.is_trivia())
+            .map(|n| n.text())
+            .collect();
         let imported = (q.imported)(after);
         let mut introduced: Vec<String> = Vec::new();
-        crate::visit_all(&new, |node| {
-            if node.kind() != q.kind {
-                return;
+        for node in new.nodes() {
+            if node.kind_name() != q.kind {
+                continue;
             }
-            let Some(qualifier) = node.child_by_field_name(q.field) else {
-                return;
+            let Some(qualifier) = node.child_by_field(q.field) else {
+                continue;
             };
-            if qualifier.child_count() != 0 {
-                return;
+            if !qualifier.is_token() {
+                continue;
             }
-            let name = &after[qualifier.byte_range()];
+            let name = qualifier.text();
             // Only a qualifier this rule's own template spells is its doing;
             // `after` may hold later rules' changes too.
             if template_qualifies(template, name)
@@ -204,7 +204,7 @@ impl PatternRule {
             {
                 introduced.push(name.to_string());
             }
-        });
+        }
         introduced
             .into_iter()
             .map(|name| {

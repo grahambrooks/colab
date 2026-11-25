@@ -1,18 +1,5 @@
-//! Parsing helpers: a clean tree-sitter parse (the qualifier check), and
-//! the node a pattern's text spans in its context (`colab ast`'s printed
-//! tree, on colab's own tree).
-
-pub(super) fn parse_clean(
-    grammar: &tree_sitter::Language,
-    text: &str,
-) -> Result<tree_sitter::Tree, String> {
-    let tree = crate::parse_cache::parse(grammar, text)
-        .ok_or_else(|| "the parser gave up (or the grammar failed to load)".to_string())?;
-    if tree.root_node().has_error() {
-        return Err("syntax error".into());
-    }
-    Ok(tree)
-}
+//! Parsing helpers: the node a pattern's text spans in its context
+//! (`colab ast`'s printed tree, on colab's own tree).
 
 /// Narrow `span` to exclude surrounding whitespace.
 pub(super) fn trim_span(text: &str, span: std::ops::Range<usize>) -> std::ops::Range<usize> {

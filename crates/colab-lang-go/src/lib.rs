@@ -1,7 +1,9 @@
 //! Go backend for colab.
 //!
 //! Exposes a [`GoBackend`] that the binary registers with the
-//! [`BackendRegistry`](colab_core::BackendRegistry), plus the underlying tree-sitter rewriters.
+//! [`BackendRegistry`](colab_core::BackendRegistry), plus the underlying
+//! rewriters. Go is read by colab's own parser (`colab-parse-go`), no
+//! tree-sitter.
 
 #[cfg(test)]
 mod calls;
@@ -31,6 +33,13 @@ pub static LANG: SourceLanguage = SourceLanguage {
     qualifiers: Some(patterns::QUALIFIERS),
     own: None,
 };
+
+/// `source` as colab's Go tree. Always a tree (a syntax error is read
+/// around); `Option` keeps the modules' shape from when tree-sitter could
+/// fail to load.
+pub(crate) fn tree(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_go::parse(source).ok()
+}
 
 /// Plug-in entry point for the `go` namespace. Knows how to lower
 /// `go::<module>` matches into concrete [`Operation`]s.

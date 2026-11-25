@@ -9,20 +9,19 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Tree};
+use colab_syntax::{Node, Tree};
 
 /// Iterate every `import_spec` node whose `path` field equals
 /// `target` exactly, calling `visit` with the spec node.
-fn for_each_matching_import<F>(tree: &Tree, source: &str, target: &str, mut visit: F)
+fn for_each_matching_import<F>(tree: &Tree, target: &str, mut visit: F)
 where
     F: FnMut(Node<'_>),
 {
-    colab_rewrite::visit_all(tree, |node| {
+    tree.nodes().for_each(|node| {
         if node.is_named()
-            && node.kind() == "import_spec"
-            && let Some(path_node) = node.child_by_field_name("path")
-            && let Ok(path_text) = path_node.utf8_text(source.as_bytes())
-            && path_text.trim_matches('"') == target
+            && node.kind_name() == "import_spec"
+            && let Some(path_node) = node.child_by_field("path")
+            && path_node.text().trim_matches('"') == target
         {
             visit(node);
         }
@@ -31,8 +30,12 @@ where
 
 /// Every import path in `source`, for near-miss reporting.
 pub(crate) fn import_paths(source: &str) -> Vec<String> {
-    crate::LANG.parse(source).map_or_default(|tree| {
-        colab_rewrite::field_texts(&tree, source, &["import_spec"], Some("path"), &['"'])
+    crate::tree(source).map_or_default(|tree| {
+        tree.nodes()
+            .filter(|n| n.kind_name() == "import_spec")
+            .filter_map(|n| n.child_by_field("path"))
+            .map(|p| p.text().trim_matches('"').to_string())
+            .collect()
     })
 }
 
@@ -80,18 +83,14 @@ impl Operation for ImportRename {
 ///
 /// Returns `source_code` unchanged if no imports match.
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    for_each_matching_import(&tree, source_code, from, |node| {
-        if let Some(path_node) = node.child_by_field_name("path") {
-            edits.push((
-                path_node.start_byte(),
-                path_node.end_byte(),
-                format!("\"{to}\""),
-            ));
+    for_each_matching_import(&tree, from, |node| {
+        if let Some(path_node) = node.child_by_field("path") {
+            edits.push((path_node.start(), path_node.end(), format!("\"{to}\"")));
         }
     });
 
@@ -182,7 +181,7 @@ impl Operation for ImportDropUnused {
 /// `package_names`). Any identifier with one of those names outside the
 /// import declarations, a local variable included, keeps the import.
 pub fn is_used(target: &str, source_code: &str) -> bool {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return true;
     };
     let mut names: Vec<String> = Vec::new();
@@ -193,9 +192,9 @@ pub fn is_used(target: &str, source_code: &str) -> bool {
                 continue;
             }
             imported = true;
-            match spec.child_by_field_name("name") {
+            match spec.child_by_field("name") {
                 Some(alias) => {
-                    let alias = &source_code[alias.byte_range()];
+                    let alias = &source_code[alias.range()];
                     if alias == "_" || alias == "." {
                         return true;
                     }
@@ -210,13 +209,13 @@ pub fn is_used(target: &str, source_code: &str) -> bool {
         return true;
     }
     let mut used = false;
-    colab_rewrite::visit_all(&tree, |node| {
-        if used || !matches!(node.kind(), "identifier" | "package_identifier") {
+    tree.nodes().for_each(|node| {
+        if used || !matches!(node.kind_name(), "identifier" | "package_identifier") {
             return;
         }
-        let in_import = std::iter::successors(node.parent(), tree_sitter::Node::parent)
-            .any(|n| n.kind() == "import_declaration");
-        if !in_import && names.iter().any(|n| *n == source_code[node.byte_range()]) {
+        let in_import = std::iter::successors(node.parent(), colab_syntax::Node::parent)
+            .any(|n| n.kind_name() == "import_declaration");
+        if !in_import && names.iter().any(|n| *n == source_code[node.range()]) {
             used = true;
         }
     });
@@ -227,15 +226,15 @@ pub fn is_used(target: &str, source_code: &str) -> bool {
 /// for an unaliased import every conventional name of its package (see
 /// [`package_names`]). Blank and dot imports bind no qualifier.
 pub(crate) fn imported_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
     let mut names = Vec::new();
     for decl in import_declarations(&tree) {
         for spec in specs_of(decl) {
-            match spec.child_by_field_name("name") {
+            match spec.child_by_field("name") {
                 Some(alias) => {
-                    let alias = &source[alias.byte_range()];
+                    let alias = &source[alias.range()];
                     if alias != "_" && alias != "." {
                         names.push(alias.to_string());
                     }
@@ -284,7 +283,7 @@ fn package_names(path: &str) -> Vec<String> {
 /// leaves dangling (after `(`, before `)`, or doubled), and a declaration
 /// left with no specs is removed together with one surrounding blank line.
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
 
@@ -304,7 +303,7 @@ pub fn delete(target: &str, source_code: &str) -> String {
         } else if let Some(group) = Group::of(decl, source_code) {
             let removed: HashSet<usize> = matched
                 .iter()
-                .map(|spec| line_start(source_code, spec.start_byte()))
+                .map(|spec| line_start(source_code, spec.start()))
                 .collect();
             let mut kept = Vec::new();
             let mut at = group.open_end;
@@ -322,8 +321,8 @@ pub fn delete(target: &str, source_code: &str) -> String {
         } else {
             // A one-line group (`import ("a"; "b")`): drop just the lines.
             for spec in &matched {
-                let start = line_start(source_code, spec.start_byte());
-                let end = line_end(source_code, spec.end_byte());
+                let start = line_start(source_code, spec.start());
+                let end = line_end(source_code, spec.end());
                 if !edits.iter().any(|e: &colab_rewrite::Edit| e.start == start) {
                     edits.push(colab_rewrite::Edit::new(start, end, String::new()));
                 }
@@ -335,26 +334,23 @@ pub fn delete(target: &str, source_code: &str) -> String {
 
 /// The top-level `import` declarations, in source order.
 fn import_declarations(tree: &Tree) -> Vec<Node<'_>> {
-    let root = tree.root_node();
-    let mut cursor = root.walk();
-    root.named_children(&mut cursor)
-        .filter(|n| n.kind() == "import_declaration")
+    let root = tree.root();
+    root.named_children()
+        .filter(|n| n.kind_name() == "import_declaration")
         .collect()
 }
 
 /// The `import_spec`s of one declaration, grouped or not.
 fn specs_of(decl: Node<'_>) -> Vec<Node<'_>> {
-    let mut cursor = decl.walk();
     let mut out = Vec::new();
-    for child in decl.named_children(&mut cursor) {
-        match child.kind() {
+    for child in decl.named_children() {
+        match child.kind_name() {
             "import_spec" => out.push(child),
             "import_spec_list" => {
-                let mut inner = child.walk();
                 out.extend(
                     child
-                        .named_children(&mut inner)
-                        .filter(|n| n.kind() == "import_spec"),
+                        .named_children()
+                        .filter(|n| n.kind_name() == "import_spec"),
                 );
             }
             _ => {}
@@ -365,8 +361,8 @@ fn specs_of(decl: Node<'_>) -> Vec<Node<'_>> {
 
 /// The unquoted path of an `import_spec`.
 fn spec_path<'s>(spec: Node<'_>, source: &'s str) -> Option<&'s str> {
-    let path = spec.child_by_field_name("path")?;
-    Some(source[path.byte_range()].trim_matches(|c| c == '"' || c == '`'))
+    let path = spec.child_by_field("path")?;
+    Some(source[path.range()].trim_matches(|c| c == '"' || c == '`'))
 }
 
 fn line_start(source: &str, at: usize) -> usize {
@@ -381,8 +377,8 @@ fn line_end(source: &str, at: usize) -> usize {
 /// A declaration's whole lines, plus one blank line when it sits between
 /// two (or opens the file), so no double blank line is left behind.
 fn remove_declaration(decl: Node<'_>, source: &str) -> colab_rewrite::Edit {
-    let start = line_start(source, decl.start_byte());
-    let mut end = line_end(source, decl.end_byte());
+    let start = line_start(source, decl.start());
+    let mut end = line_end(source, decl.end());
     let blank_before = start == 0
         || source[..start - 1]
             .rsplit('\n')
@@ -425,20 +421,17 @@ struct Group {
 
 impl Group {
     fn of(decl: Node<'_>, source: &str) -> Option<Self> {
-        let mut cursor = decl.walk();
         let list = decl
-            .named_children(&mut cursor)
-            .find(|n| n.kind() == "import_spec_list")?;
-        let open = list.child(0).filter(|n| n.kind() == "(")?;
-        let close = list
-            .child(list.child_count().checked_sub(1)?)
-            .filter(|n| n.kind() == ")")?;
-        let open_end = line_end(source, open.end_byte());
-        if !is_blank(&source[open.end_byte()..open_end]) || open_end > close.start_byte() {
+            .named_children()
+            .find(|n| n.kind_name() == "import_spec_list")?;
+        let open = list.first_child().filter(|n| n.kind_name() == "(")?;
+        let close = list.last_child().filter(|n| n.kind_name() == ")")?;
+        let open_end = line_end(source, open.end());
+        if !is_blank(&source[open.end()..open_end]) || open_end > close.start() {
             return None;
         }
-        let close_start = line_start(source, close.start_byte());
-        if !is_blank(&source[close_start..close.start_byte()]) {
+        let close_start = line_start(source, close.start());
+        if !is_blank(&source[close_start..close.start()]) {
             return None;
         }
         Some(Self {
@@ -556,12 +549,12 @@ impl Operation for ImportEnsure {
 /// With no imports at all, a standalone `import "<target>"` follows the
 /// `package` clause.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
 
     let mut already_present = false;
-    for_each_matching_import(&tree, source_code, target, |_| {
+    for_each_matching_import(&tree, target, |_| {
         already_present = true;
     });
     if already_present {
@@ -579,27 +572,26 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         return colab_rewrite::apply_edits(source_code, vec![edit]);
     }
     let lone = decls.iter().find(|d| {
-        let mut cursor = d.walk();
-        d.named_children(&mut cursor)
-            .all(|c| c.kind() != "import_spec_list")
+        d.named_children()
+            .all(|c| c.kind_name() != "import_spec_list")
     });
     if let Some(decl) = lone
         && let [spec] = specs_of(*decl)[..]
     {
-        let existing = format!("\t{}\n", &source_code[spec.byte_range()]);
+        let existing = format!("\t{}\n", &source_code[spec.range()]);
         let text = format!("import (\n{})", insert_into_group(&existing, target));
-        let edit = colab_rewrite::Edit::new(decl.start_byte(), decl.end_byte(), text);
+        let edit = colab_rewrite::Edit::new(decl.start(), decl.end(), text);
         return colab_rewrite::apply_edits(source_code, vec![edit]);
     }
 
     // No imports yet: insert immediately after the package clause's
     // terminating newline. If there is no package clause (uncommon —
     // partial Go file fragment), fall back to prepending.
-    let root = tree.root_node();
+    let root = tree.root();
     let mut insert_at: Option<usize> = None;
-    for child in root.named_children(&mut root.walk()) {
-        if child.kind() == "package_clause" {
-            let end = child.end_byte();
+    for child in root.named_children() {
+        if child.kind_name() == "package_clause" {
+            let end = child.end();
             insert_at = Some(source_code[end..].find('\n').map_or(end, |p| end + p + 1));
             break;
         }

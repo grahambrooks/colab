@@ -1,0 +1,15 @@
+[package]
+name = "colab-parse-go"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Go source as colab's own syntax tree, read by a parser of colab's own: pure Rust, lossless, error-tolerant."
+
+[dependencies]
+colab-syntax = { workspace = true }
+
+[lints]
+workspace = true

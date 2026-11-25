@@ -329,7 +329,9 @@ fn ast_prints_a_pattern_tree_with_its_context() {
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("context: package p"), "{stdout}");
+    // colab's Go parser reads a bare call as it is, with no context.
+    assert!(!stdout.contains("context:"), "{stdout}");
+    assert!(stdout.contains("call_expression"), "{stdout}");
     assert!(stdout.contains("prefilter: errors"), "{stdout}");
     assert!(stdout.contains("identifier  \"$E\""), "{stdout}");
 }

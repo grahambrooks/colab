@@ -9,7 +9,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::Node;
+use colab_syntax::Node;
 
 #[derive(Debug)]
 pub struct PackageRename {
@@ -47,19 +47,17 @@ impl Operation for PackageRename {
 
 /// The name in every `package` clause in `source`, for near-miss reporting.
 fn package_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        if node.kind() != "package_clause" {
+    tree.nodes().for_each(|node| {
+        if node.kind_name() != "package_clause" {
             return;
         }
-        for child in node.named_children(&mut node.walk()) {
-            if matches!(child.kind(), "package_identifier")
-                && let Ok(text) = child.utf8_text(source.as_bytes())
-            {
-                out.push(text.to_string());
+        for child in node.named_children() {
+            if child.kind_name() == "package_identifier" {
+                out.push(child.text().to_string());
             }
         }
     });
@@ -67,11 +65,12 @@ fn package_names(source: &str) -> Vec<String> {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, from, &mut edits));
+    tree.nodes()
+        .for_each(|node| collect(node, from, &mut edits));
     colab_rewrite::apply_edits(
         source_code,
         edits
@@ -81,14 +80,11 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
     )
 }
 
-fn collect(node: Node<'_>, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
-    if node.kind() == "package_clause" {
-        for child in node.named_children(&mut node.walk()) {
-            if child.kind() == "package_identifier"
-                && let Ok(text) = child.utf8_text(source.as_bytes())
-                && text == from
-            {
-                out.push((child.start_byte(), child.end_byte()));
+fn collect(node: Node<'_>, from: &str, out: &mut Vec<(usize, usize)>) {
+    if node.kind_name() == "package_clause" {
+        for child in node.named_children() {
+            if child.kind_name() == "package_identifier" && child.text() == from {
+                out.push((child.start(), child.end()));
             }
         }
     }
