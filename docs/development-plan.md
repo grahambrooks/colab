@@ -254,6 +254,111 @@ runtime API, so each must be pinned exactly and bumped on purpose, with
 the conformance matrix as the check. The spike's crates are in the
 session scratchpad, `parser-spike/`, and are not kept.
 
+### Building colab's own parsers (direction, 2026-11-25)
+
+The aim is a set of parsers written for colab, each producing a
+**lossless syntax tree** (every byte of the file in some token, comments
+and layout included) with a typed AST generated over it, as
+rust-analyzer does. A plain AST would drop what a rewrite has to keep.
+
+**Why custom parsers improve outcomes, checked against the evidence.**
+Error nodes and comments are *not* what custom parsers add: tree-sitter
+already has both. The same Rust file with `a + ( let = ;` in its middle
+function, parsed both ways on 2026-11-25:
+
+| | tree-sitter (today) | rust-analyzer's hand-written parser |
+| --- | --- | --- |
+| Recovery | one `ERROR` node inside `broken_here`; `last` intact | one `ERROR` node (`;`) inside `broken_here`; `last` intact |
+| Lossless | yes | yes (token texts rebuild the file) |
+| Comments | nodes, but **floating siblings**: `/// Doc comment` sits beside `struct_item`, `/* block */` beside `function_item` | trivia **attached** to what they belong to: `/* block */` inside its `FN`, the file's first comment inside the `USE` |
+
+What custom parsers do add:
+
+1. **No wrong tree without an error.** The failures that cost colab most
+   were never error nodes; they were grammars returning a confident wrong
+   tree: C++ `T f() { x }` read as a declaration with a brace
+   initializer, a Kotlin annotation read as `annotated_expression` on
+   `("x")`, a C# anonymous object read as a flat list. A wrong tree
+   cannot be caught downstream; an error node can (`errors_captured`
+   leaves it alone). A colab parser's first rule is to emit an error
+   node where it is unsure, never a guess.
+2. **Comments that belong to something.** Attached trivia replaces the
+   per-backend `Leading` tables and doc-comment heuristics that a
+   delete or move needs so that an item's docs and attributes go with
+   it.
+3. **Fragments parsed directly.** An entry point per fragment kind
+   (expression, statement, item, parameter, type, case, argument)
+   replaces the wrapper contexts, the "wrapper has an earlier node of
+   that kind" refusals, `terminate_lone_sequences` and the `also`
+   readings.
+4. **Fields and kinds designed for rewriting**, generated from one
+   description per language, so `replace_call`, `where … field`,
+   declarations and modifiers stop being per-backend configuration.
+5. **Safe growth.** Because an error region outside every capture is
+   never rewritten (`982e9f5`), a parser that does not yet handle a
+   construct matches less there and corrupts nothing, so a parser can
+   ship covering the common syntax and grow from the property suite's
+   failures, as long as rule 1 holds.
+
+**How to build them: hand-written, on a shared toolkit.** Parser
+generators fit poorly: LR generators (`lrpar`, LALRPOP) cannot express
+C++, Kotlin or Swift without heavy disambiguation and repair errors by
+inserting or deleting tokens rather than making error regions; PEG and
+combinator libraries (pest, `chumsky`, `winnow`) have weak recovery or
+become hard to compile and debug at a full language's size; ANTLR
+(`antlr4rust`, grammars-v4) has every grammar but they were written for
+valid code, its parsing can be pathologically slow (C++), and its
+rule-per-node trees need reshaping. rust-analyzer, Biome and Ruff all
+chose hand-written recursive descent for the same reasons. The shared
+part is most of the work, once:
+
+- `colab-syntax`: the lossless tree (`rowan`), an event-based builder,
+  recovery helpers (recovery sets, error nodes), a Pratt expression
+  engine, lexer support (`logos` or hand-written), and a nesting limit
+  (the stack-overflow finding, rank 8);
+- per language, an `ungrammar` description generating the node kinds,
+  the field table and the typed AST, a lexer, and the grammar module.
+
+`ra_ap_syntax` (Rust) and Biome (JS / TS / TSX / JSON) are built this
+way already, so they plug in almost directly instead of being rewritten.
+
+**How to keep them correct.** For every parser: a lossless round trip
+over a large real corpus (the workspace's own repositories); differential
+tests against tree-sitter while it is still there (a file it parses
+cleanly must parse cleanly) and against the language's own tool on
+accept / reject (`gofmt -e`, `javac`, the compiler); fuzzing for no
+panic, losslessness and the nesting limit; and the conformance matrix,
+property suite and corpus unchanged as the bar. Each language release
+adds a conformance case for its new syntax; Go and Java move slowly,
+Kotlin, Swift and TypeScript fast. These are well-specified tasks with
+strong oracles, which suits agent-written code.
+
+**Rough size per language**, grammar code alone (the toolkit is separate):
+Go 4–6k lines (small and regular; `gofmt -e` is a perfect oracle), C
+4–6k (preprocessor directives as trivia), Java 6–8k, PHP ~6k, Python ~6k
+(the indentation lexer; Ruff's parser serves meanwhile), Kotlin 8–10k
+(newline-sensitive), C# and Swift 10k+, Ruby very hard (heredocs, an
+ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
+
+**Order.**
+
+1. `colab-syntax` and the matcher of colab's own, with tree-sitter
+   feeding the tree: needed whichever way the parsers go.
+2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a
+   safe-Rust port of the 0.25 runtime, five weeks old; tree-sitter's own
+   generator, `tree-sitter-generate`, is already Rust). If colab's
+   grammars give the same trees under it on the samples and the corpus,
+   C goes at once with every language kept, at the cost of porting each
+   grammar's external scanner (Python 437 lines, Kotlin 459, C# 713,
+   Ruby 1,107, Swift 1,119, C++ 148, PHP 17, Go and Java none) and of
+   keeping tree-sitter's misparses.
+3. Parsers in order of value, each replacing tree-sitter for its
+   language once it passes the bar: Rust (`ra_ap_syntax`) and JS / TS /
+   TSX / JSON (Biome) through adapters; then Go, Java and Kotlin
+   hand-written. Drop C++; decide Ruby, Swift and C# by use. Until a
+   language has its parser it keeps tree-sitter behind a Cargo feature,
+   or the bridge from step 2.
+
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would
 drop them and could give agent-oriented error messages; worth it when the
