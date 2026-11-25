@@ -1981,6 +1981,17 @@ command can be `colab hook post-edit 2>/dev/null || true` and an older
 colab stays silent. `colab hook post-edit --file <path>` prints the same
 report as text and exits 10 when there is one.
 
+When the packs have nothing to say about an `Edit`, the hook also asks
+whether the edit is one of many: it generalizes `old_string` → `new_string`
+into a rule (as `colab.generalize` does) and, when that rule matches
+elsewhere in the repository, answers with a PostToolUse
+`additionalContext` note naming up to three of the places and giving the
+rule ready for `colab.apply {rules: [...]}`. It stays silent for other
+tools, for a file no source backend reads, for an edit that does not
+generalize, for a rule with no name to anchor on (`x + 1` → `x + 2`), and
+when nothing else matches; it looks for at most 50 matches (about 0.1 s
+on a repository of 250 files). `COLAB_HOOK_SUGGEST=0` turns it off.
+
 ### `colab hook pre-bash`
 
 The pre-bash hook (the plugin's, or `colab agent install`'s, in project

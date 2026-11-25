@@ -15,6 +15,11 @@
 //! scan phases (they need the whole tree): no output. With `--file` the
 //! report is plain text and the exit code 10, as for `--check`.
 //!
+//! When the packs say nothing about an `Edit`, the hook generalizes its
+//! `old_string` → `new_string` into a rule and, if that rule matches
+//! elsewhere in the repository, says so as `additionalContext` with the
+//! rule ready for `colab.apply` ([`suggest_generalize`]).
+//!
 //! `colab hook pre-bash` is the `PreToolUse` hook on `Bash`: a command
 //! that edits tracked files through the shell is answered with a `deny`
 //! naming them (see [`crate::shell_edit`]).
@@ -83,8 +88,134 @@ pub fn run(args: HookArgs, backends: &BackendRegistry) -> Result<u8> {
             "{}",
             serde_json::json!({"decision": "block", "reason": report})
         );
+        return Ok(0);
+    }
+    if let Some(note) = suggest_generalize(&input, backends) {
+        println!(
+            "{}",
+            serde_json::json!({"hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": note,
+            }})
+        );
     }
     Ok(0)
+}
+
+/// The most matches the suggestion looks for: enough to say "many".
+const SUGGEST_LIMIT: usize = 50;
+
+/// After an Edit: when the change, generalized into a rule
+/// (`LanguageBackend::generalize`), matches elsewhere in the repository,
+/// a note telling the agent so, with the rule ready for `colab.apply`.
+/// `None` (silence) for anything else: another tool, a file no source
+/// backend reads, an edit that does not generalize, no other match, or
+/// `COLAB_HOOK_SUGGEST=0`.
+pub fn suggest_generalize(input: &str, backends: &BackendRegistry) -> Option<String> {
+    if std::env::var("COLAB_HOOK_SUGGEST")
+        .is_ok_and(|v| matches!(v.as_str(), "0" | "false" | "off"))
+    {
+        return None;
+    }
+    let call: Value = serde_json::from_str(input).ok()?;
+    if call.get("tool_name").and_then(Value::as_str) != Some("Edit") {
+        return None;
+    }
+    let before = call.pointer("/tool_input/old_string")?.as_str()?;
+    let after = call.pointer("/tool_input/new_string")?.as_str()?;
+    // A small, one-node change: a whole-file rewrite is not a pattern.
+    if before.trim().is_empty() || before.len() > 2_000 || before.lines().count() > 30 {
+        return None;
+    }
+    let file = edited_file(input)?;
+    let lang = source_language(&file, backends)?;
+    let learned = backends.get(&lang)?.generalize(before, after).ok()?;
+    let root = crate::git::Repo::discover(file.parent()?)
+        .map(|repo| repo.top().to_path_buf())
+        .or_else(|| file.parent().map(Path::to_path_buf))?;
+    let script = format!(
+        "match {lang}::pattern {} {{ delete }}",
+        colab_dsl::ast::quote_double(&learned.pattern)
+    );
+    let refactoring = colab_dsl::compile(&script, backends).ok()?;
+    // Only a rule anchored on a name is worth a word: `$A + 1` (from
+    // `x + 1` → `x + 2`) matches every such sum and is noise.
+    let anchored = refactoring
+        .rules
+        .first()?
+        .prefilter()
+        .is_some_and(|literal| {
+            literal.chars().count() >= 3 && literal.chars().any(char::is_alphabetic)
+        });
+    if !anchored {
+        return None;
+    }
+    let selector = colab_core::find::Selector::new(&refactoring.rules, &refactoring.name);
+    let source = colab_dsl::pipeline::Source::Walk {
+        targets: vec![root.clone()],
+        options: colab_core::walker::WalkOptions::default(),
+    };
+    let mut hits: Vec<String> = Vec::new();
+    let _ = source.visit(&selector, &mut |change: FileChange| {
+        for (_, located) in selector.take(&change.path) {
+            let rel = change.path.strip_prefix(&root).unwrap_or(&change.path);
+            hits.push(format!("{}:{}", rel.display(), located.line));
+        }
+        if hits.len() >= SUGGEST_LIMIT {
+            // Enough to say so; stop the walk.
+            return Err(Error::Config("enough".into()));
+        }
+        Ok(())
+    });
+    if hits.is_empty() {
+        return None;
+    }
+    let rule =
+        serde_json::json!({"lang": lang, "match": learned.pattern, "replace": learned.template});
+    let more = if hits.len() >= SUGGEST_LIMIT { "+" } else { "" };
+    let mut note = format!(
+        "colab: the edit you just made, as a rule, matches {}{more} more place(s) in this repository ({}{}). \
+         To make the same change there, check the matches with colab.find, then call colab.apply \
+         {{\"rules\": [{rule}], \"paths\": [\".\"], \"cwd\": \"{}\"}} (or colab.generalize to adjust it). \
+         Ignore this if the edit was meant for this place only.",
+        hits.len(),
+        hits.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
+        if hits.len() > 3 { ", …" } else { "" },
+        root.display()
+    );
+    for warning in &learned.warnings {
+        let _ = write!(note, " Note: {warning}");
+    }
+    Some(note)
+}
+
+/// The source backend for `path`: of those whose patterns read it, the
+/// one named after its extension (`ts` over `js` for `.ts`), else the
+/// first.
+fn source_language(path: &Path, backends: &BackendRegistry) -> Option<String> {
+    let ext = path.extension()?.to_str()?;
+    let relevant: Vec<String> = backends
+        .languages()
+        .into_iter()
+        .filter(|lang| {
+            backends.get(lang).is_some_and(|b| {
+                b.capabilities().iter().any(|c| c.module == "pattern")
+                    && b.build_rule(
+                        "pattern",
+                        colab_core::RuleSpec::Delete {
+                            target: "$X".into(),
+                        },
+                    )
+                    .is_ok_and(|op| op.is_file_relevant(path))
+            })
+        })
+        .map(str::to_string)
+        .collect();
+    relevant
+        .iter()
+        .find(|lang| lang.as_str() == ext)
+        .or_else(|| relevant.first())
+        .cloned()
 }
 
 /// `colab hook pre-bash`: a `deny` for a command that edits tracked files
@@ -261,6 +392,69 @@ fn covered(rel: &Path, config: &crate::config::Config) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_edit_that_matches_elsewhere_is_suggested_as_a_rule() {
+        let root = std::env::temp_dir().join(format!("colab-hook-suggest-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("a.go");
+        std::fs::write(
+            &file,
+            "package p\n\nfunc a() {\n\trequire.Equal(t, got, 1)\n\tz := x + 2\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("b.go"),
+            "package p\n\nfunc b() {\n\tassert.Equal(t, want, f(x))\n\ty := x + 1\n}\n",
+        )
+        .unwrap();
+        let backends = colab_backends::registry();
+        let call = |old: &str, new: &str, tool: &str| {
+            serde_json::json!({"tool_name": tool, "tool_input": {
+                "file_path": file.to_string_lossy(), "old_string": old, "new_string": new
+            }})
+            .to_string()
+        };
+        let note = suggest_generalize(
+            &call(
+                "assert.Equal(t, 1, got)",
+                "require.Equal(t, got, 1)",
+                "Edit",
+            ),
+            &backends,
+        )
+        .expect("a suggestion");
+        assert!(
+            note.contains("matches 1 more place(s)") && note.contains("b.go:4"),
+            "{note}"
+        );
+        assert!(
+            note.contains(r#""match":"assert.Equal($A, $B, $C)""#),
+            "{note}"
+        );
+        // `x + 1` → `x + 2` is `$A + 1`: no name to anchor on, so no word.
+        assert!(suggest_generalize(&call("x + 1", "x + 2", "Edit"), &backends).is_none());
+        // Other tools, and edits with nothing elsewhere, stay quiet.
+        assert!(
+            suggest_generalize(
+                &call(
+                    "assert.Equal(t, 1, got)",
+                    "require.Equal(t, got, 1)",
+                    "Write"
+                ),
+                &backends
+            )
+            .is_none()
+        );
+        assert!(
+            suggest_generalize(
+                &call("other.Call(t, 1)", "other.Call(t)", "Edit"),
+                &backends
+            )
+            .is_none()
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
 
     #[test]
     fn the_edited_file_comes_from_the_tool_call() {
