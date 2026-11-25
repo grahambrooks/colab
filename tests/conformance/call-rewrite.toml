@@ -1,0 +1,188 @@
+feature = "A call rewritten"
+description = "`old($A, $B)` → `new($B, $A)`: a pattern binds a call's arguments, and the template moves them."
+
+[[case]]
+lang = "c"
+script = "match c::pattern 'old($A, $B)' { replace 'new($B, $A)' }"
+input = '''
+void f(void) {
+    old(1, 2);
+}
+'''
+expected = '''
+void f(void) {
+    new(2, 1);
+}
+'''
+
+[[case]]
+lang = "cpp"
+script = "match cpp::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+void f() {
+    old(1, 2);
+}
+'''
+expected = '''
+void f() {
+    next(2, 1);
+}
+'''
+
+[[case]]
+lang = "csharp"
+script = "match csharp::pattern 'Old($A, $B)' { replace 'New($B, $A)' }"
+input = '''
+class A {
+    void F() {
+        Old(1, 2);
+    }
+}
+'''
+expected = '''
+class A {
+    void F() {
+        New(2, 1);
+    }
+}
+'''
+
+[[case]]
+lang = "go"
+script = "match go::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+package p
+
+func f() {
+	old(1, 2)
+}
+'''
+expected = '''
+package p
+
+func f() {
+	next(2, 1)
+}
+'''
+
+[[case]]
+lang = "java"
+script = "match java::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+class A {
+    void f() {
+        old(1, 2);
+    }
+}
+'''
+expected = '''
+class A {
+    void f() {
+        next(2, 1);
+    }
+}
+'''
+
+[[case]]
+lang = "js"
+script = "match js::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+old(1, 2);
+'''
+expected = '''
+next(2, 1);
+'''
+
+[[case]]
+lang = "kotlin"
+script = "match kotlin::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+fun f() {
+    old(1, 2)
+}
+'''
+expected = '''
+fun f() {
+    next(2, 1)
+}
+'''
+
+[[case]]
+lang = "php"
+script = "match php::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+<?php
+old(1, 2);
+'''
+expected = '''
+<?php
+next(2, 1);
+'''
+
+[[case]]
+lang = "python"
+script = "match python::pattern 'old($A, $B)' { replace 'new($B, $A)' }"
+input = '''
+old(1, 2)
+'''
+expected = '''
+new(2, 1)
+'''
+
+[[case]]
+lang = "ruby"
+script = "match ruby::pattern 'old($A, $B)' { replace 'new_one($B, $A)' }"
+input = '''
+old(1, 2)
+'''
+expected = '''
+new_one(2, 1)
+'''
+
+[[case]]
+lang = "rust"
+script = "match rust::pattern 'old($A, $B)' { replace 'new($B, $A)' }"
+input = '''
+fn f() {
+    old(1, 2);
+}
+'''
+expected = '''
+fn f() {
+    new(2, 1);
+}
+'''
+
+[[case]]
+lang = "swift"
+script = "match swift::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+func f() {
+    old(1, 2)
+}
+'''
+expected = '''
+func f() {
+    next(2, 1)
+}
+'''
+
+[[case]]
+lang = "ts"
+script = "match ts::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+old(1, 2);
+'''
+expected = '''
+next(2, 1);
+'''
+
+[[case]]
+lang = "tsx"
+script = "match tsx::pattern 'old($A, $B)' { replace 'next($B, $A)' }"
+input = '''
+old(1, 2);
+'''
+expected = '''
+next(2, 1);
+'''

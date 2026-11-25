@@ -15,6 +15,8 @@ lalrpop-util = { workspace = true }
 
 [dev-dependencies]
 colab-backends = { workspace = true }
+# The conformance matrix's feature files (tests/conformance/*.toml).
+toml_edit = { workspace = true }
 # Tests need real backends to exercise compile() end-to-end. Production
 # code in this crate must NOT depend on any colab-lang-* crate.
 
