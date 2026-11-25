@@ -22,7 +22,8 @@ pub(crate) fn language() -> PatternLanguage {
         expando: 'µ',
         contexts: &["@@PATTERN@@;", "class C {\n@@PATTERN@@\n}\n"],
         also: &[],
-        qualified_calls: None,
+        // `\M\f(…)` is a call of `f` named by its namespace.
+        qualified_calls: Some("\\"),
         // PHPDoc documents the declaration after it.
         leading: colab_rewrite::pattern::Leading {
             kinds: &[],
@@ -122,6 +123,15 @@ mod tests {
             op.apply(src),
             "<?php\n// a note\nfunction kept() { return 1; }\n"
         );
+    }
+
+    #[test]
+    fn a_bare_call_pattern_also_finds_namespaced_calls() {
+        let op = crate::LANG
+            .compile_pattern("old($A)", PatternAction::Replace("zap($A)".into()), &[])
+            .unwrap();
+        let src = "<?php\nold(1);\nM\\old(2);\n\\M\\old(3);\n";
+        assert_eq!(op.apply(src), "<?php\nzap(1);\nM\\zap(2);\n\\M\\zap(3);\n");
     }
 
     #[test]

@@ -19,12 +19,12 @@ in that language and checks the output and a second, unchanged run.
 | [A lone body](#a-lone-body) | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Modifiers left out](#modifiers-left-out) | ❌ | ❌ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ | ✅ | ✅ | ✅ |
 | [A statement deleted](#a-statement-deleted) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A qualified call matched bare](#a-qualified-call-matched-bare) | n/a | ❌ | n/a | n/a | n/a | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a |
+| [A qualified call matched bare](#a-qualified-call-matched-bare) | n/a | ✅ | n/a | n/a | n/a | n/a | n/a | ✅ | n/a | n/a | ✅ | n/a | n/a | n/a |
 | [A symbol renamed](#a-symbol-renamed) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Scoped with where inside](#scoped-with-where-inside) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [A binding tested with where matches](#a-binding-tested-with-where-matches) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-164 working, 10 known gaps, 22 not applicable, 0 without a case.
+166 working, 8 known gaps, 22 not applicable, 0 without a case.
 
 ## A call replaced by name
 
@@ -117,13 +117,11 @@ A bare pattern `old($A)` also matches a call through a namespace path (`m::old(1
 Cases: [`tests/conformance/qualified-call.toml`](../tests/conformance/qualified-call.toml).
 
 - n/a **c**: C has no namespaces: `m.old(1)` calls a function pointer held in a struct field.
-- ❌ **cpp**: C++ sets no `qualified_calls`: `m::old(1)`'s callee is a `qualified_identifier`, which the identifier `old` in the pattern does not match.
 - n/a **csharp**: `M.Old(1)` is a `member_access_expression`, the same as a call on a value; spell the qualifier (`M.Old($A)`) to match it.
 - n/a **go**: a package qualifier `m.old(1)` is a `selector_expression`, the same as a field or method; spell it (`m.old($A)`) to match it.
 - n/a **java**: `M.old(1)` is a `method_invocation` with an object, the same as a call on a value; spell the qualifier to match it.
 - n/a **js**: `m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it.
 - n/a **kotlin**: `M.old(1)` is a navigation expression, the same as a call on a value; spell the qualifier to match it.
-- ❌ **php**: PHP sets no `qualified_calls`: `\M\old(1)`'s callee is a `qualified_name`, which the `name` `old` in the pattern does not match.
 - n/a **python**: a module qualifier `m.old(1)` is an `attribute`, the same as a method call; spell it (`m.old($A)`) to match it.
 - n/a **ruby**: `M.old(1)` is a `call` with a receiver, the same as a method call on a value; spell the receiver to match it.
 - n/a **swift**: `M.old(1)` is a navigation expression, the same as a call on a value; spell the qualifier to match it.

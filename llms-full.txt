@@ -339,11 +339,13 @@ refactor "modernise" {
 | `$$$NAME` | zero or more sibling nodes — e.g. the rest of an argument list — bound to `NAME` |
 | `$_` | one node, not bound |
 
-**Qualified calls (Rust).** A `rust::pattern` that starts with a bare
+**Qualified calls (Rust, C++, PHP).** A pattern that starts with a bare
 call also matches the same call through any path: `to_svg($A, $B)`
-finds `to_svg(a, b)`, `svg::to_svg(a, b)` and
-`diagram_scene::svg::to_svg(a, b)`, but not the method call
-`x.to_svg(a, b)`. A `replace` template that starts with a bare call
+finds `to_svg(a, b)`, `svg::to_svg(a, b)`,
+`diagram_scene::svg::to_svg(a, b)` and the rooted `::svg::to_svg(a, b)`,
+but not the method call `x.to_svg(a, b)`. C++ paths are `ns::f(…)` and
+`::ns::f(…)`, PHP's `M\f(…)` and `\M\f(…)`. In the other languages a module
+qualifier reads like a method call (`m.f(…)`), so spell it to match it. A `replace` template that starts with a bare call
 keeps the path it matched when it calls the same function or a rename
 of it (`render($A, &$B)` turns `svg::to_svg(c, d)` into
 `svg::render(c, &d)`). A template that wraps the call

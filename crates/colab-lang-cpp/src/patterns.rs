@@ -23,7 +23,8 @@ pub(crate) fn language() -> PatternLanguage {
             "void _() {\n@@PATTERN@@;\n}\n",
         ],
         also: &[],
-        qualified_calls: None,
+        // `ns::f(…)` is a call of `f` named by its namespace.
+        qualified_calls: Some("::"),
         leading: colab_rewrite::pattern::Leading::NONE,
         macro_contents: None,
         modifiers: None,
@@ -36,6 +37,20 @@ pub(crate) fn language() -> PatternLanguage {
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    #[test]
+    fn a_bare_call_pattern_also_finds_namespaced_calls() {
+        let op = crate::LANG
+            .compile_pattern("old($A)", PatternAction::Replace("next($A)".into()), &[])
+            .unwrap();
+        let src = "void f() {\n    old(1);\n    m::old(2);\n    ::m::old(3);\n    x.old(4);\n}\n";
+        let out = op.apply(src);
+        assert_eq!(
+            out,
+            "void f() {\n    next(1);\n    m::next(2);\n    ::m::next(3);\n    x.old(4);\n}\n"
+        );
+        assert_eq!(op.apply(&out), out, "idempotent");
+    }
 
     #[test]
     fn rewrites_call_with_two_captures() {

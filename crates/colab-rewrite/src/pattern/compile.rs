@@ -157,12 +157,24 @@ pub(super) fn shorthand_template(template: &str, fields: &[(String, String)]) ->
     out
 }
 
+/// `qualified` (from [`qualify_call`]) with `sep` before its path, after
+/// any leading whitespace: `$COLAB_PATH::f()` → `::$COLAB_PATH::f()`.
+fn root_path(qualified: &str, sep: &str) -> String {
+    let body = qualified.trim_start();
+    format!("{}{sep}{body}", &qualified[..qualified.len() - body.len()])
+}
+
 /// What the qualified form of a bare-call pattern needs to rewrite.
 #[derive(Debug, Clone)]
 pub(super) struct Qualified {
     separator: &'static str,
     /// The pattern's callee, `to_svg` in `to_svg($A)`.
     callee: String,
+    /// The form of a path from the root, led by the separator: Rust's
+    /// `::std::f()`, C++'s `::ns::f()`, PHP's `\M\f()`. The separator
+    /// before the path is an anonymous token, which ast-grep does not skip
+    /// before a metavariable, so the plain form never matches these.
+    rooted: bool,
 }
 
 impl Qualified {
@@ -175,6 +187,11 @@ impl Qualified {
     pub(super) fn template(&self, template: &str) -> Option<String> {
         let (qualified, callee) = qualify_call(template, self.separator)?;
         let renamed = !template.contains(self.callee.as_str());
+        let qualified = if self.rooted {
+            root_path(&qualified, self.separator)
+        } else {
+            qualified
+        };
         (callee == self.callee || renamed).then_some(qualified)
     }
 }
@@ -587,13 +604,18 @@ impl StructuralPattern {
         // qualified call to the function it names.
         if let Some(sep) = language.qualified_calls
             && let Some((qualified, callee)) = qualify_call(text, sep)
-            && let Ok(mut alt) = Self::compile_one(language, &qualified, true)
         {
-            alt.qualified = Some(Qualified {
-                separator: sep,
-                callee: callee.to_string(),
-            });
-            primary.also.push(alt);
+            let rooted = root_path(&qualified, sep);
+            for (text, rooted) in [(qualified, false), (rooted, true)] {
+                if let Ok(mut alt) = Self::compile_one(language, &text, true) {
+                    alt.qualified = Some(Qualified {
+                        separator: sep,
+                        callee: callee.to_string(),
+                        rooted,
+                    });
+                    primary.also.push(alt);
+                }
+            }
         }
         // `void $F() {}` also as `@ColabMods void $F() {}`, the sentinel
         // reading as the modifiers and binding them: an item's modifiers

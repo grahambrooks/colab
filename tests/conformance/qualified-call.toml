@@ -7,7 +7,6 @@ na = "C has no namespaces: `m.old(1)` calls a function pointer held in a struct 
 
 [[case]]
 lang = "cpp"
-xfail = "C++ sets no `qualified_calls`: `m::old(1)`'s callee is a `qualified_identifier`, which the identifier `old` in the pattern does not match."
 script = "match cpp::pattern 'old($A)' { replace 'next($A)' }"
 input = '''
 void f() {
@@ -42,7 +41,6 @@ na = "`M.old(1)` is a navigation expression, the same as a call on a value; spel
 
 [[case]]
 lang = "php"
-xfail = "PHP sets no `qualified_calls`: `\\M\\old(1)`'s callee is a `qualified_name`, which the `name` `old` in the pattern does not match."
 script = "match php::pattern 'old($A)' { replace 'next($A)' }"
 input = '''
 <?php
