@@ -10,8 +10,8 @@
 #[cfg(test)]
 mod calls;
 pub mod deps;
+mod own;
 mod patterns;
-pub use patterns::on_rust_analyzer;
 mod symbols;
 pub mod uses;
 
@@ -27,9 +27,18 @@ pub static LANG: SourceLanguage = SourceLanguage {
     file_names: &[],
     pattern: patterns::language,
     rename_kinds: symbols::RENAME_KINDS,
-    prose_kinds: &["line_comment", "block_comment", "string_content"],
-    calls: CallShape::Fields("call_expression"),
+    // Comments, doc comments, and string literals (quotes included).
+    prose_kinds: &[
+        "comment",
+        "doc_comment",
+        "string",
+        "byte_string",
+        "c_string",
+    ],
+    // Read from rust-analyzer's typed AST (`own`); the shape is unused.
+    calls: CallShape::Fields("call_expr"),
     qualifiers: None,
+    own: Some(&own::OWN),
 };
 
 /// Plug-in entry point for the `rust` namespace.

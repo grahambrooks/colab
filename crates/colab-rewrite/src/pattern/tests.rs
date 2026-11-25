@@ -75,6 +75,7 @@ fn go() -> PatternLanguage {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
+        method_calls: None,
     }
 }
 
@@ -90,6 +91,7 @@ fn python() -> PatternLanguage {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
+        method_calls: None,
     }
 }
 
@@ -625,9 +627,9 @@ fn an_unknown_kind_or_bad_regex_fails_at_compile_time() {
 
 fn rust() -> PatternLanguage {
     PatternLanguage {
-        syntax: Syntax::TreeSitter(tree_sitter_rust::LANGUAGE.into()),
+        syntax: Syntax::Own(&colab_parse_rust::PARSER),
         expando: 'µ',
-        contexts: &["fn f() { @@PATTERN@@ }"],
+        contexts: &["const _: () = { @@PATTERN@@ };", "fn f() { @@PATTERN@@ }"],
         also: &[],
         qualified_calls: None,
         leading: Leading::NONE,
@@ -635,6 +637,7 @@ fn rust() -> PatternLanguage {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
+        method_calls: None,
     }
 }
 
@@ -706,6 +709,7 @@ fn a_multi_line_template_follows_tab_indentation() {
         modifiers: None,
         shorthand_fields: None,
         modifier_tokens: &[],
+        method_calls: None,
     };
     let p = StructuralPattern::compile(&go, "log.Print($A)").unwrap();
     let src = "package p\n\nfunc f() {\n\tif x {\n\t\tlog.Print(a)\n\t}\n}\n";

@@ -200,24 +200,24 @@ mod from_tree_sitter {
             .collect()
     }
 
-    const RUST: &str = "// leading\nuse std::fmt;\n\n/// Doc.\npub struct S { a: u32 }\n\nfn broken(a: i32) -> i32 {\n    a + ( let = ;\n}\n\n/* block */ fn last() -> usize { f(1, \"é\") }\n";
+    const C: &str = "// leading\n#include <stdio.h>\n\n/* Doc. */\nstruct S { int a; };\n\nint broken(int a) {\n    return a + ( ] = ;\n}\n\n/* block */ int last(void) { return f(1, \"é\"); }\n";
 
     #[test]
-    fn a_rust_parse_keeps_every_node_and_every_byte() {
-        let (ts, tree) = both(tree_sitter_rust::LANGUAGE.into(), "rust", RUST);
+    fn a_c_parse_keeps_every_node_and_every_byte() {
+        let (ts, tree) = both(tree_sitter_c::LANGUAGE.into(), "c", C);
         assert_eq!(shape(&tree), shape_ts(&ts));
         let text: String = tree.tokens().map(|t| t.text()).collect();
-        assert_eq!(text, RUST);
+        assert_eq!(text, C);
         assert!(tree.has_error());
-        let error = tree.nodes().find(Node::is_error).unwrap();
-        assert!(error.text().contains("let"), "{error:?}");
+        assert!(tree.nodes().any(|n| n.is_error() || n.is_missing()));
         // The function after the error is whole.
         let last = tree
             .nodes()
-            .filter(|n| n.kind_name() == "function_item")
+            .filter(|n| n.kind_name() == "function_definition")
             .last()
             .unwrap();
-        assert_eq!(last.child_by_field("name").unwrap().text(), "last");
+        assert!(last.text().starts_with("int last(void)"), "{last:?}");
+        assert!(last.child_by_field("body").is_some());
     }
 
     #[test]

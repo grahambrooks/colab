@@ -264,7 +264,28 @@ Templated rewrite of call expressions.
 
 ## Rust (`colab-lang-rust`)
 
-Powered by `tree-sitter-rust` and `toml_edit`.
+Powered by rust-analyzer's parser (`ra_ap_syntax`, through
+`colab-parse-rust`) and `toml_edit`: pure Rust, no tree-sitter. Its trees
+recover from syntax errors and read real code, macros especially, more
+fully than tree-sitter's did.
+
+- **Kind names** are rust-analyzer's (`call_expr`, `method_call_expr`,
+  `fn`, `extern_block`; `colab ast --lang rust` shows them). The names
+  tree-sitter gave the same constructs still work in `where $X is …` as
+  aliases (`call_expression` is both calls and method calls,
+  `foreign_mod_item` is `extern_block`); a name with no counterpart
+  (`type_identifier`) gets a "did you mean".
+- **Fields** are tree-sitter's names (`function`, `arguments`, `name`,
+  `body`, `value`, `pattern`, `type`, …), put on rust-analyzer's nodes, so
+  `where $X field …` reads as before.
+- **Method calls:** `$F($$$A)` matches `x.m(a)` too, `$F` binding `x.m`.
+  For plain calls only, `where $F is path_expr`; a pattern that spells a
+  method call (`$R.m($$$A)`) matches only method calls. A field-access
+  pattern (`$X.field`) matches field accesses, not a method's callee.
+- **Attributes and doc comments** are an item's own children here. A
+  pattern leaves attributes and visibility out as before, a rewrite keeps
+  them where they are, and a delete takes the item's docs and attributes
+  with it (a plain comment above them stays).
 
 ### `rust::use`
 

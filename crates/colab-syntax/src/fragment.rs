@@ -48,15 +48,35 @@ pub struct Compiled {
 }
 
 /// Whether a tree's errors are acceptable: none, or, when `tolerant`, only
-/// `ERROR` nodes holding nothing but a metavariable, and no missing node.
+/// those a placeholder causes: `ERROR` nodes holding nothing but a
+/// metavariable, and a missing token straight after one (rust-analyzer
+/// reads a lone `$$$B` in an item list as a macro call missing its `!`).
 fn parses(tree: &Tree, expando: char, tolerant: bool) -> bool {
     if !tree.has_error() {
         return true;
     }
-    tolerant
-        && tree.nodes().all(|n| {
-            !n.is_missing() && (!n.is_error() || meta_variable(n.text(), expando).is_some())
-        })
+    if !tolerant {
+        return false;
+    }
+    let mut after_placeholder = false;
+    for n in tree.nodes() {
+        if n.is_trivia() {
+            continue;
+        }
+        if n.is_missing() {
+            if !after_placeholder {
+                return false;
+            }
+            continue;
+        }
+        if n.is_error() && meta_variable(n.text(), expando).is_none() {
+            return false;
+        }
+        if n.is_token() {
+            after_placeholder = meta_variable(n.text(), expando).is_some();
+        }
+    }
+    true
 }
 
 /// The deepest node spanning exactly `span` (or `span` and whitespace

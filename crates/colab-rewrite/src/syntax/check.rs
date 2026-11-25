@@ -25,9 +25,24 @@ impl Nested {
         Ok(Self(forms.forms.into_iter().map(|f| f.pattern).collect()))
     }
 
+    /// Whether a form matches `node`, or a node it wraps over exactly the
+    /// same text: rust-analyzer's `a` is `path_expr › path › path_segment ›
+    /// name_ref › ident`, and the pattern `a` compiles to the `ident`.
     pub fn matches(&self, node: Node<'_>) -> bool {
-        self.0.iter().any(|p| p.matches(node).is_some())
+        same_text_chain(node).any(|n| self.0.iter().any(|p| p.matches(n).is_some()))
     }
+}
+
+/// `node`, then the only child it holds over exactly the same text, and
+/// so on down.
+fn same_text_chain(node: Node<'_>) -> impl Iterator<Item = Node<'_>> {
+    std::iter::successors(Some(node), |n| {
+        let mut inner = n.children().filter(|c| !c.is_trivia() && !c.is_extra());
+        match (inner.next(), inner.next()) {
+            (Some(only), None) if only.range() == n.range() => Some(only),
+            _ => None,
+        }
+    })
 }
 
 /// Whether an enclosing node outside a macro's contents matches.
@@ -85,7 +100,8 @@ enum Kind {
     },
     Is {
         name: String,
-        kind: String,
+        /// The kinds the name stands for (an alias stands for several).
+        kinds: Vec<colab_syntax::Kind>,
     },
     Count {
         name: String,
@@ -233,7 +249,7 @@ impl Check {
                 }
                 Kind::Is {
                     name: var.name.clone(),
-                    kind: kind.clone(),
+                    kinds: grammar.kinds_named(kind),
                 }
             }
             Test::Count { var, min, max } => {
@@ -328,9 +344,12 @@ impl Check {
         let node = m.node;
         let result = match &self.kind {
             Kind::Matches { var, regex } => regex.is_match(&text_of(var, m)),
-            Kind::Is { name, kind } => {
-                matches!(m.get(name), Some(Binding::One(n)) if n.kind_name() == kind)
-            }
+            // The binding, or a node it wraps over the same text
+            // (rust-analyzer's `literal › int_number`).
+            Kind::Is { name, kinds } => match m.get(name) {
+                Some(Binding::One(n)) => same_text_chain(*n).any(|n| kinds.contains(&n.kind())),
+                _ => false,
+            },
             Kind::Count { name, min, max } => {
                 // Separators are anonymous: count what a reader would.
                 let n = match m.get(name) {

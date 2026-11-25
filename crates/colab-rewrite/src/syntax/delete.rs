@@ -6,7 +6,9 @@
 
 use super::{Checks, Forms, Frame};
 use crate::line_span;
-use crate::pattern::{PatternLanguage, attached_start, with_separator, without_double_blank};
+use crate::pattern::{
+    PatternLanguage, attached_start, own_start, with_separator, without_double_blank,
+};
 
 /// `source` with every match of `forms` that `checks` hold for removed,
 /// then inside the macro calls the language reads.
@@ -28,13 +30,16 @@ fn delete_in(
     let leading = language.leading;
     let attaches = !(leading.kinds.is_empty() && leading.doc_comments.is_empty());
     let mut spans: Vec<(usize, usize)> = Vec::new();
-    for found in super::find_in_tree(forms, checks, &tree, frame) {
+    for found in super::find_in_tree(language, forms, checks, &tree, frame) {
         // A node that owns the newline ending it is the code before it.
         let (start, end) = (found.range.start, found.range.end);
         let end = start + source[start..end].trim_end().len();
         // An item's doc comments and attributes go with it.
+        // From the item's own first token (a tree may hold comments that
+        // are not its own), back over what belongs to it.
         let first = if attaches {
-            attached_start(&tree, source, start, end, leading)
+            let own = own_start(&tree, start, end, leading);
+            attached_start(&tree, source, own, end, leading)
         } else {
             start
         };

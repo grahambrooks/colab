@@ -26,6 +26,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
     // Keyword arguments travel with their names.
     calls: CallShape::Fields("call"),
     qualifiers: Some(patterns::QUALIFIERS),
+    own: None,
 };
 
 /// Plug-in entry point for the `python` namespace.

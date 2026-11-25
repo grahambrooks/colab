@@ -846,13 +846,22 @@ A pattern that is only a metavariable, `$X`, matches any node, so a
 `where $X is <kind>` picks nodes by kind alone:
 
 ```
-match rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ {
+match rust::pattern '$X' where $X is extern_block, not $X matches /^unsafe/ {
     replace 'unsafe $X'
 }
 ```
 
 This is how the Rust 2024 pack finds `extern` blocks, whose item list a
 `$$$` cannot stand for.
+
+Kind names are those of the parser that reads the language (`colab ast`
+prints them). Rust is read by rust-analyzer's parser, so its kinds are
+`extern_block`, `call_expr`, `method_call_expr`; the names tree-sitter
+gave the same constructs (`foreign_mod_item`, `call_expression`) are kept
+as aliases, and `is` looks through a node to the one it wraps over the
+same text (`$X is integer_literal` holds for the literal `1`). See
+[Rust](./features.md#rust-colab-lang-rust) for method calls, fields and
+attributes.
 
 ## Across files: scan, in and then
 

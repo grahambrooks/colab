@@ -1,4 +1,4 @@
-1 rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ -> 'unsafe $X'
+1 rust::pattern '$X' where $X is extern_block, not $X matches /^unsafe/ -> 'unsafe $X'
 1 rust::pattern '#[no_mangle]' -> '#[unsafe(no_mangle)]'
 1 rust::pattern '#[export_name = $N]' -> '#[unsafe(export_name = $N)]'
 1 rust::pattern '#[link_section = $N]' -> '#[unsafe(link_section = $N)]'

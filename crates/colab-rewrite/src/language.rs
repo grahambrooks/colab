@@ -64,6 +64,28 @@ pub enum CallShape {
     },
 }
 
+/// What a language with a parser of its own ([`crate::pattern::Syntax::Own`])
+/// answers for the floor that tree-sitter's fields answered: its
+/// declarations and its calls. Kinds (`rename_kinds`, `prose_kinds`) are
+/// then its own tree's.
+pub trait OwnSyntax: Send + Sync {
+    /// The file's declarations, as [`crate::declarations()`] gives them.
+    fn declarations(&self, source: &str) -> Vec<Declaration>;
+    /// Every call in the file, outermost first.
+    fn calls(&self, source: &str) -> Vec<Call>;
+}
+
+/// One call, as `<lang>::call` sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Call {
+    /// What `replace_call` replaces.
+    pub range: Range<usize>,
+    /// The callee as a target spells it (`f`, `a::b`, `x.m`).
+    pub callee: String,
+    /// Each argument as written.
+    pub arguments: Vec<String>,
+}
+
 /// Everything a source backend tells the common floor about its language.
 pub struct SourceLanguage {
     /// The DSL namespace: `c`, `go`, `rust`, …
@@ -83,6 +105,9 @@ pub struct SourceLanguage {
     /// The qualifier check for pattern templates (Go, Python, JS), whose
     /// imports bind the qualifier; `None` stays silent.
     pub qualifiers: Option<Qualifiers>,
+    /// Declarations and calls from the language's own parser; `None` reads
+    /// them from tree-sitter's tree.
+    pub own: Option<&'static dyn OwnSyntax>,
 }
 
 impl fmt::Debug for SourceLanguage {
@@ -142,18 +167,99 @@ impl SourceLanguage {
         crate::parse_cache::parse((self.pattern)().syntax.tree_sitter()?, source)
     }
 
+    /// `source` as colab's tree, for a language with a parser of its own.
+    fn own_tree(&self, source: &str) -> Option<colab_syntax::Tree> {
+        self.own?;
+        crate::syntax::source_tree(&(self.pattern)(), source)
+    }
+
+    /// The nodes of `tree` whose kind is one of `kinds`.
+    fn of_kinds<'t>(
+        tree: &'t colab_syntax::Tree,
+        kinds: &'static [&'static str],
+    ) -> impl Iterator<Item = colab_syntax::Node<'t>> + 't {
+        tree.nodes()
+            .filter(move |n| !n.is_trivia() && kinds.contains(&n.kind_name()))
+    }
+
     /// `source` with every identifier `from` renamed to `to`
     /// (`<lang>::symbol`).
     pub fn rename(&self, from: &str, to: &str, source: &str) -> String {
+        if let Some(tree) = self.own_tree(source) {
+            let edits = Self::of_kinds(&tree, self.rename_kinds)
+                .filter(|n| n.text() == from)
+                .map(|n| crate::Edit::new(n.start(), n.end(), to))
+                .collect();
+            return crate::apply_edits(source, edits);
+        }
         match self.parse(source) {
             Some(tree) => crate::rename_nodes_by_text(&tree, source, self.rename_kinds, from, to),
             None => source.to_string(),
         }
     }
 
+    /// The identifiers `<lang>::symbol` would rename, as written.
+    fn identifiers(&self, source: &str) -> Vec<String> {
+        if let Some(tree) = self.own_tree(source) {
+            return Self::of_kinds(&tree, self.rename_kinds)
+                .map(|n| n.text().to_string())
+                .collect();
+        }
+        self.parse(source)
+            .map_or_default(|tree| crate::field_texts(&tree, source, self.rename_kinds, None, &[]))
+    }
+
+    /// The conflict renaming `from` to `to` in `source` would cause
+    /// ([`crate::rename_conflict`]).
+    fn rename_conflict(&self, from: &str, to: &str, source: &str) -> Option<String> {
+        let Some(tree) = self.own_tree(source) else {
+            return self.parse(source).and_then(|tree| {
+                crate::rename_conflict(&tree, source, self.rename_kinds, from, to)
+            });
+        };
+        let (mut has_from, mut lines) = (false, Vec::new());
+        for node in Self::of_kinds(&tree, self.rename_kinds) {
+            if node.text() == from {
+                has_from = true;
+            } else if node.text() == to {
+                lines.push(source[..node.start()].matches('\n').count() + 1);
+            }
+        }
+        if !has_from || lines.is_empty() {
+            return None;
+        }
+        lines.dedup();
+        let shown: Vec<String> = lines.iter().take(5).map(usize::to_string).collect();
+        let more = if lines.len() > 5 { ", …" } else { "" };
+        Some(format!(
+            "`{to}` already occurs in this file (line {}{more}), so renaming `{from}` to it merges two names",
+            shown.join(", ")
+        ))
+    }
+
     /// `source` with every call to `function` replaced by `template`
     /// (`<lang>::call`).
     pub fn rewrite_calls(&self, function: &str, template: &str, source: &str) -> String {
+        if let Some(own) = self.own {
+            let mut edits: Vec<crate::Edit> = Vec::new();
+            for call in own.calls(source) {
+                // An outer call already rewritten takes the ones inside it.
+                if call.callee != function
+                    || edits
+                        .iter()
+                        .any(|e| e.start <= call.range.start && call.range.end <= e.end)
+                {
+                    continue;
+                }
+                let args: Vec<&str> = call.arguments.iter().map(String::as_str).collect();
+                edits.push(crate::Edit::new(
+                    call.range.start,
+                    call.range.end,
+                    colab_core::render_call_template(template, function, &args),
+                ));
+            }
+            return crate::apply_edits(source, edits);
+        }
         let Some(tree) = self.parse(source) else {
             return source.to_string();
         };
@@ -177,6 +283,9 @@ impl SourceLanguage {
 
     /// Every callee in `source`, as a `<lang>::call` target would spell it.
     pub fn callees(&self, source: &str) -> Vec<String> {
+        if let Some(own) = self.own {
+            return own.calls(source).into_iter().map(|c| c.callee).collect();
+        }
         let Some(tree) = self.parse(source) else {
             return Vec::new();
         };
@@ -245,12 +354,22 @@ impl SourceLanguage {
 
     /// For `LanguageBackend::prose_ranges`.
     pub fn prose_ranges(&self, source: &str) -> Option<Vec<Range<usize>>> {
+        if let Some(tree) = self.own_tree(source) {
+            return Some(
+                Self::of_kinds(&tree, self.prose_kinds)
+                    .map(|n| n.range())
+                    .collect(),
+            );
+        }
         self.parse(source)
             .map(|tree| crate::ranges_of_kinds(&tree, self.prose_kinds))
     }
 
     /// For `LanguageBackend::declarations`.
     pub fn declarations(&self, source: &str) -> Vec<Declaration> {
+        if let Some(own) = self.own {
+            return own.declarations(source);
+        }
         match (self.pattern)().syntax.tree_sitter() {
             Some(grammar) => crate::declarations(grammar, source),
             None => Vec::new(),
@@ -418,17 +537,12 @@ impl Operation for SymbolRename {
     }
 
     fn observed_targets(&self, source: &str) -> Vec<String> {
-        self.lang.parse(source).map_or_default(|tree| {
-            crate::field_texts(&tree, source, self.lang.rename_kinds, None, &[])
-        })
+        self.lang.identifiers(source)
     }
 
     fn conflicts(&self, before: &str, _after: &str) -> Vec<String> {
         self.lang
-            .parse(before)
-            .and_then(|tree| {
-                crate::rename_conflict(&tree, before, self.lang.rename_kinds, &self.from, &self.to)
-            })
+            .rename_conflict(&self.from, &self.to, before)
             .into_iter()
             .collect()
     }

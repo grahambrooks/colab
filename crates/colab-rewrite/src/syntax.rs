@@ -191,6 +191,24 @@ pub fn compile_forms(language: &PatternLanguage, text: &str) -> Result<Forms, St
             forms.push(form);
         }
     };
+    // `$F($$$A)` is also `x.m(a)` where a method call is its own kind.
+    if let Some(calls) = language.method_calls {
+        let grammar = grammar_for(language);
+        let methods: Vec<EngineForm> = forms
+            .iter()
+            .filter_map(|f| {
+                Some(EngineForm {
+                    pattern: method_form(&f.pattern, calls, &grammar)?.with_rules(rules.clone()),
+                    context: f.context.clone(),
+                    role: Role::Plain,
+                    loose_semicolon: f.loose_semicolon,
+                })
+            })
+            .collect();
+        for form in methods {
+            add(form, &mut forms);
+        }
+    }
     // `name = $V;` is also a class field without its `;`.
     if let Some(stripped) = semicolon
         && let Ok(loose) = compile_fragment(language, stripped)
@@ -341,6 +359,33 @@ pub fn find(language: &PatternLanguage, forms: &Forms, source: &str) -> Vec<Foun
     find_where(language, forms, &Checks::default(), source)
 }
 
+/// `pattern` as a method call when it is a call whose callee is one
+/// metavariable (`$F(…)`): the callee then binds everything before the
+/// arguments (`x.m`, `x.m::<T>`), as a sequence.
+fn method_form(
+    pattern: &colab_syntax::pattern::Pattern,
+    calls: crate::pattern::MethodCalls,
+    grammar: &Grammar,
+) -> Option<colab_syntax::pattern::Pattern> {
+    use colab_syntax::pattern::{MetaVar, PatternNode};
+    let PatternNode::Node { kind, children } = pattern.root() else {
+        return None;
+    };
+    if grammar.kind_name(*kind) != calls.call {
+        return None;
+    }
+    let (PatternNode::Var(MetaVar::One { name, .. }), rest) = children.split_first()? else {
+        return None;
+    };
+    let method = grammar.kinds_named(calls.method_call).into_iter().next()?;
+    let mut children = vec![PatternNode::Var(MetaVar::Many { name: name.clone() })];
+    children.extend(rest.iter().cloned());
+    Some(colab_syntax::pattern::Pattern::new(PatternNode::Node {
+        kind: method,
+        children,
+    }))
+}
+
 /// [`find`], keeping only the matches every one of `checks` holds for (a
 /// rule's `where`), judged in the file or, for a macro's contents, as if
 /// in the file ([`Frame`]).
@@ -353,14 +398,28 @@ pub fn find_where(
     let Some(tree) = self::source_tree(language, source) else {
         return Vec::new();
     };
-    let mut out = find_in_tree(forms, checks, &tree, None);
+    let mut out = find_in_tree(language, forms, checks, &tree, None);
     out.extend(find_in_macros(language, forms, checks, &tree, None, 0));
     out.sort_by_key(|f| (f.range.start, std::cmp::Reverse(f.range.end), f.form));
     out.dedup_by(|a, b| a.range == b.range);
     out
 }
 
+/// Where match `m` starts as code: after the comments its node holds
+/// first and the [`crate::pattern::Leading`] kinds the pattern left out
+/// (rust-analyzer's items hold their doc comments and attributes), where
+/// tree-sitter's node, which has them as siblings, starts. A rewrite's
+/// edit and a found match both start here.
+pub(crate) fn match_start(m: &colab_syntax::pattern::Match<'_>, leading: &[&str]) -> usize {
+    m.node
+        .children()
+        .filter(|c| !c.is_trivia())
+        .find(|c| !(c.is_extra() || (leading.contains(&c.kind_name()) && m.absorbed.contains(c))))
+        .map_or(m.node.start(), |c| c.start())
+}
+
 fn find_in_tree(
+    language: &PatternLanguage,
     forms: &Forms,
     checks: &Checks,
     tree: &Tree,
@@ -371,6 +430,7 @@ fn find_in_tree(
         let mut found = f.pattern.find_all(tree);
         checks.retain(&mut found, tree.text(), frame);
         out.extend(found.into_iter().map(|m| {
+            let start = match_start(&m, language.leading.kinds);
             let mut captures: Vec<(String, String)> = m
                 .bindings
                 .iter()
@@ -379,10 +439,10 @@ fn find_in_tree(
             captures.sort();
             captures.dedup();
             Found {
-                range: m.node.range(),
+                range: start..m.node.end(),
                 form,
                 in_macro: frame.is_some(),
-                text: m.node.text().to_string(),
+                text: tree.text()[start..m.node.end()].to_string(),
                 captures,
             }
         }));
@@ -525,7 +585,7 @@ fn each_macro<R>(
             file: frame.map_or(tree.text(), |f| f.file),
             map,
         };
-        let mut found = find_in_tree(forms, checks, &wrapped_tree, Some(&inner_frame));
+        let mut found = find_in_tree(language, forms, checks, &wrapped_tree, Some(&inner_frame));
         found.extend(find_in_macros(
             language,
             forms,

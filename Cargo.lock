@@ -287,7 +287,6 @@ dependencies = [
  "tree-sitter-php",
  "tree-sitter-python",
  "tree-sitter-ruby",
- "tree-sitter-rust",
  "tree-sitter-swift",
  "tree-sitter-typescript",
 ]
@@ -467,8 +466,6 @@ dependencies = [
  "colab-parse-rust",
  "colab-rewrite",
  "toml_edit",
- "tree-sitter",
- "tree-sitter-rust",
 ]
 
 [[package]]
@@ -552,13 +549,13 @@ name = "colab-rewrite"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-rust",
  "colab-syntax",
  "regex",
  "similar",
  "tree-sitter",
  "tree-sitter-go",
  "tree-sitter-python",
- "tree-sitter-rust",
 ]
 
 [[package]]
@@ -566,8 +563,8 @@ name = "colab-syntax"
 version = "2026.11.24"
 dependencies = [
  "tree-sitter",
+ "tree-sitter-c",
  "tree-sitter-go",
- "tree-sitter-rust",
 ]
 
 [[package]]
@@ -1724,16 +1721,6 @@ name = "tree-sitter-ruby"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be0484ea4ef6bb9c575b4fdabde7e31340a8d2dbc7d52b321ac83da703249f95"
-dependencies = [
- "cc",
- "tree-sitter-language",
-]
-
-[[package]]
-name = "tree-sitter-rust"
-version = "0.24.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
 dependencies = [
  "cc",
  "tree-sitter-language",

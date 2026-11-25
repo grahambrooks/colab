@@ -27,7 +27,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
 use colab_core::{LanguageBackend, RuleSpec};
-use tree_sitter::{Node, Parser, Tree};
+use colab_syntax::{Node, Tree};
 
 /// Nodes checked for self-match and identity per sample file, at most.
 const PER_FILE: usize = 40;
@@ -40,12 +40,15 @@ const CALLS_PER_FILE: usize = 12;
 const NAMES: [&str; 4] = ["self-match", "identity", "generalize", "matcher"];
 
 mod common;
-use common::grammar;
 
+/// `source` as colab's tree, by the parser its backend reads it with.
 fn parse(lang: &str, source: &str) -> Tree {
-    let mut parser = Parser::new();
-    parser.set_language(&grammar(lang)).unwrap();
-    parser.parse(source, None).unwrap()
+    common::tree(lang, source)
+}
+
+/// Whether `node` holds a syntax error.
+fn has_error(node: &Node<'_>) -> bool {
+    node.descendants().any(|n| n.is_error() || n.is_missing())
 }
 
 /// Counts for one property in one language.
@@ -85,7 +88,11 @@ enum Outcome {
 
 /// Whether a node is a candidate: an expression, statement, item or call
 /// of a size a pattern is written at.
-fn candidate(node: &Node<'_>, source: &str) -> bool {
+fn candidate(lang: &str, node: &Node<'_>, source: &str) -> bool {
+    // rust-analyzer's kinds: `*_expr`, `*_stmt`, and items by name.
+    const RUST_ITEMS: &[&str] = &[
+        "fn", "struct", "enum", "impl", "trait", "module", "const", "static", "use",
+    ];
     const KINDS: &[&str] = &[
         "call",
         "invocation",
@@ -98,12 +105,18 @@ fn candidate(node: &Node<'_>, source: &str) -> bool {
         "lambda",
         "closure",
     ];
-    let kind = node.kind();
-    let text = &source[node.byte_range()];
+    let kind = node.kind_name();
+    let text = &source[node.range()];
+    let shaped = if lang == "rust" {
+        kind.ends_with("_expr") || kind.ends_with("_stmt") || RUST_ITEMS.contains(&kind)
+    } else {
+        KINDS.iter().any(|k| kind.contains(k))
+    };
     node.is_named()
+        && !node.is_token()
         && !node.is_error()
-        && !node.has_error()
-        && KINDS.iter().any(|k| kind.contains(k))
+        && !has_error(node)
+        && shaped
         && (3..=300).contains(&text.trim().len())
         && text.lines().count() <= 8
 }
@@ -112,13 +125,12 @@ fn candidate(node: &Node<'_>, source: &str) -> bool {
 /// most `cap` remain: deterministic, and spread over the whole file.
 fn pick<'t>(tree: &'t Tree, keep: impl Fn(&Node<'t>) -> bool, cap: usize) -> Vec<Node<'t>> {
     let mut all = Vec::new();
-    let mut stack = vec![tree.root_node()];
+    let mut stack = vec![tree.root()];
     while let Some(node) = stack.pop() {
         if keep(&node) {
             all.push(node);
         }
-        let mut cursor = node.walk();
-        let children: Vec<Node<'t>> = node.named_children(&mut cursor).collect();
+        let children: Vec<Node<'t>> = node.named_children().collect();
         stack.extend(children.into_iter().rev());
     }
     let stride = all.len().div_ceil(cap).max(1);
@@ -131,7 +143,7 @@ fn near(a: (usize, usize), b: (usize, usize)) -> bool {
 }
 
 fn self_match(backend: &dyn LanguageBackend, source: &str, node: &Node<'_>) -> Outcome {
-    let text = &source[node.byte_range()];
+    let text = &source[node.range()];
     let Ok(op) = backend.build_rule(
         "pattern",
         RuleSpec::Delete {
@@ -140,7 +152,7 @@ fn self_match(backend: &dyn LanguageBackend, source: &str, node: &Node<'_>) -> O
     ) else {
         return Outcome::Refused;
     };
-    let range = (node.start_byte(), node.end_byte());
+    let range = (node.start(), node.end());
     let found = op.locate(source).unwrap_or_default();
     let hit = found.iter().any(|f| {
         let at = (f.start, f.end);
@@ -175,14 +187,14 @@ fn source_language(lang: &str) -> &'static colab_rewrite::SourceLanguage {
 /// backend's contexts, found in the file at (or around) the node.
 fn own_self_match(lang: &str, source: &str, node: &Node<'_>) -> Outcome {
     let language = (source_language(lang).pattern)();
-    let text = &source[node.byte_range()];
+    let text = &source[node.range()];
     let Ok(compiled) = colab_rewrite::syntax::compile_forms(&language, text) else {
         return Outcome::Refused;
     };
     let Some(tree) = colab_rewrite::syntax::source_tree(&language, source) else {
         return Outcome::Missed;
     };
-    let range = (node.start_byte(), node.end_byte());
+    let range = (node.start(), node.end());
     let hit = compiled.forms.iter().any(|form| {
         form.pattern.find_all(&tree).iter().any(|m| {
             let at = (m.node.start(), m.node.end());
@@ -194,7 +206,7 @@ fn own_self_match(lang: &str, source: &str, node: &Node<'_>) -> Outcome {
 }
 
 fn identity(backend: &dyn LanguageBackend, source: &str, node: &Node<'_>) -> Outcome {
-    let text = source[node.byte_range()].to_string();
+    let text = source[node.range()].to_string();
     let Ok(op) = backend.build_rule(
         "pattern",
         RuleSpec::Replace {
@@ -214,39 +226,39 @@ fn identity(backend: &dyn LanguageBackend, source: &str, node: &Node<'_>) -> Out
 /// A call's first literal argument (a number, or a string without
 /// interpolation), and a different literal of the same sort for it.
 fn literal_argument<'t>(lang: &str, call: Node<'t>, source: &str) -> Option<(Node<'t>, String)> {
-    let kind = call.kind();
+    let kind = call.kind_name();
     // Swift's `call_suffix` is the argument half of a call, not one.
     if !(kind.contains("call") || kind.contains("invocation")) || kind == "call_suffix" {
         return None;
     }
     // Where `'…'` is a string, not a character.
     let single_quoted = matches!(lang, "js" | "ts" | "tsx" | "python" | "php" | "ruby");
-    let mut cursor = call.walk();
     let mut lists: Vec<Node<'t>> = call
-        .named_children(&mut cursor)
-        .filter(|c| c.kind().ends_with("arguments") || c.kind().ends_with("argument_list"))
+        .named_children()
+        .filter(|c| {
+            c.kind_name().ends_with("arguments")
+                || c.kind_name().ends_with("argument_list")
+                || c.kind_name() == "arg_list"
+        })
         .collect();
     // Swift: `call_suffix` holds `value_arguments`.
-    let mut cursor = call.walk();
     for suffix in call
-        .named_children(&mut cursor)
-        .filter(|c| c.kind() == "call_suffix")
+        .named_children()
+        .filter(|c| c.kind_name() == "call_suffix")
     {
-        let mut inner = suffix.walk();
         lists.extend(
             suffix
-                .named_children(&mut inner)
-                .filter(|c| c.kind() == "value_arguments"),
+                .named_children()
+                .filter(|c| c.kind_name() == "value_arguments"),
         );
     }
     for list in lists {
-        let mut cursor = list.walk();
-        for mut arg in list.named_children(&mut cursor) {
+        for mut arg in list.named_children() {
             // `argument` / `value_argument` wrappers around one value.
-            while arg.named_child_count() == 1 && arg.kind().contains("argument") {
-                arg = arg.named_child(0)?;
+            while arg.named_children().count() == 1 && arg.kind_name().contains("argument") {
+                arg = arg.named_children().next()?;
             }
-            let text = &source[arg.byte_range()];
+            let text = &source[arg.range()];
             if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) {
                 let value: u64 = text.parse().ok()?;
                 return Some((arg, (value + 1).to_string()));
@@ -272,10 +284,10 @@ fn generalize(
     node: &Node<'_>,
 ) -> Option<Outcome> {
     let (number, new_value) = literal_argument(lang, *node, source)?;
-    let before = &source[node.byte_range()];
-    let offset = number.start_byte() - node.start_byte();
+    let before = &source[node.range()];
+    let offset = number.start() - node.start();
     let mut after = before.to_string();
-    after.replace_range(offset..offset + number.byte_range().len(), &new_value);
+    after.replace_range(offset..offset + number.range().len(), &new_value);
     let Ok(rules) = backend.generalize(before, &after) else {
         return Some(Outcome::Refused);
     };
@@ -294,8 +306,8 @@ fn generalize(
     }
     // At that site exactly the number changed (other sites the rule also
     // matches may change too), and the file still parses.
-    let parses = !parse(lang, &result).root_node().has_error();
-    let here = changed_alone(source, &result, number.byte_range(), &new_value);
+    let parses = !parse(lang, &result).has_error();
+    let here = changed_alone(source, &result, number.range(), &new_value);
     Some(if here && parses {
         Outcome::Pass
     } else {
@@ -405,7 +417,7 @@ fn properties_over_the_samples() {
         for file in files {
             let source = fs::read_to_string(&file).unwrap();
             let tree = parse(&lang, &source);
-            if tree.root_node().has_error() {
+            if tree.has_error() {
                 problems.push(format!(
                     "{}: the sample does not parse cleanly",
                     file.display()
@@ -414,10 +426,10 @@ fn properties_over_the_samples() {
             }
             // Self-match and identity over the spread of nodes; generalize
             // over the calls with a literal argument.
-            let picked = pick(&tree, |n| candidate(n, &source), PER_FILE);
+            let picked = pick(&tree, |n| candidate(&lang, n, &source), PER_FILE);
             let calls = pick(
                 &tree,
-                |n| literal_argument(&lang, *n, &source).is_some() && candidate(n, &source),
+                |n| literal_argument(&lang, *n, &source).is_some() && candidate(&lang, n, &source),
                 CALLS_PER_FILE,
             );
             let jobs = picked
@@ -425,7 +437,7 @@ fn properties_over_the_samples() {
                 .map(|n| (n, false))
                 .chain(calls.into_iter().map(|n| (n, true)));
             for (node, call) in jobs {
-                let kind = node.kind().to_string();
+                let kind = node.kind_name().to_string();
                 let checks = catch_unwind(AssertUnwindSafe(|| {
                     if call {
                         [None, None, generalize(&lang, backend, &source, &node), None]
@@ -451,8 +463,8 @@ fn properties_over_the_samples() {
                                     } else {
                                         "missed"
                                     },
-                                    node.start_position().row + 1,
-                                    &source[node.byte_range()]
+                                    source[..node.start()].matches('\n').count() + 1,
+                                    &source[node.range()]
                                 );
                             }
                             tally[i].record(&kind, outcome);
@@ -461,8 +473,8 @@ fn properties_over_the_samples() {
                     Err(_) => problems.push(format!(
                         "{}: panicked on a `{kind}` at byte {}: {:?}",
                         file.display(),
-                        node.start_byte(),
-                        &source[node.byte_range()]
+                        node.start(),
+                        &source[node.range()]
                     )),
                 }
             }

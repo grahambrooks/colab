@@ -53,7 +53,8 @@ crates/
   colab-lang-php/     # PHP backend (tree-sitter-php).
   colab-lang-python/  # Python backend (tree-sitter-python).
   colab-lang-ruby/    # Ruby backend (tree-sitter-ruby).
-  colab-lang-rust/    # Rust backend (tree-sitter-rust + toml_edit).
+  colab-lang-rust/    # Rust backend (rust-analyzer's parser via colab-parse-rust + toml_edit).
+  colab-parse-rust/   # Rust as colab's own tree from ra_ap_syntax: tree-sitter's kind names as aliases, its fields.
   colab-lang-swift/   # Swift backend (tree-sitter-swift).
   colab-lang-ts/      # TypeScript backend (tree-sitter-typescript); import via colab-lang-js.
   colab-lang-tsx/     # TSX backend (the TSX grammar); patterns via colab-lang-ts, import via colab-lang-js.

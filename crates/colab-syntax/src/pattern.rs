@@ -163,11 +163,13 @@ pub struct Pattern {
     rules: Rules,
 }
 
-/// Whether matching passes over `node`: trivia, and comments. tree-sitter
-/// also marks some recovered `ERROR` nodes as extra; an error is never
-/// invisible, or a match would skip text it cannot read.
+/// Whether matching passes over `node`: trivia, comments, and missing
+/// tokens (zero-width, standing for nothing written; a pattern's come
+/// from its placeholders). tree-sitter also marks some recovered `ERROR`
+/// nodes as extra; an error with text is never invisible, or a match
+/// would skip text it cannot read.
 fn invisible(node: Node<'_>) -> bool {
-    node.is_trivia() || (node.is_extra() && !node.is_error())
+    node.is_trivia() || node.is_missing() || (node.is_extra() && !node.is_error())
 }
 
 /// The children matching sees.
@@ -254,13 +256,28 @@ impl Pattern {
     }
 
     /// Every match in `tree`, in document order: an outer match before
-    /// those inside it.
+    /// those inside it. Of nodes over exactly the same text (rust-analyzer's
+    /// `path_expr › path › … › ident`), only the outermost that matches is
+    /// a match: they are one place, and one's binding would hold the other.
     pub fn find_all<'t>(&self, tree: &'t Tree) -> Vec<Match<'t>> {
         let kind = self.kind();
-        tree.nodes()
+        let mut out: Vec<Match<'t>> = Vec::new();
+        for m in tree
+            .nodes()
             .filter(|n| kind.is_none_or(|k| n.kind() == k))
             .filter_map(|n| self.matches(n))
-            .collect()
+        {
+            // Document order puts a node's same-range descendants right
+            // after it, so the previous match is the one to compare.
+            if out
+                .last()
+                .is_some_and(|last| last.node.range() == m.node.range())
+            {
+                continue;
+            }
+            out.push(m);
+        }
+        out
     }
 }
 

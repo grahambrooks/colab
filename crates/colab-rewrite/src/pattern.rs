@@ -34,7 +34,7 @@ mod compile;
 use compile::*;
 // The text transforms both matchers' forms share (`crate::syntax`).
 pub(crate) use compile::{qualify_call, root_path, shorthand_fields, shorthand_template};
-pub(crate) use delete::{attached_start, with_separator, without_double_blank};
+pub(crate) use delete::{attached_start, own_start, with_separator, without_double_blank};
 pub(crate) use rewrite::{
     indent_later_lines, keep_layout, keep_modifier_words, only_metavariables, same_but_whitespace,
     shift_lines, strip_blank_line_indent, tighten, transformable_template, unbound_in_template,
@@ -129,6 +129,20 @@ pub struct PatternLanguage {
     /// does not spell, so `f2() {}` gives `static async f2() {}`, not
     /// `f2() {}`. Empty where modifiers are named nodes.
     pub modifier_tokens: &'static [&'static str],
+    /// A grammar that tells a method call from a call (rust-analyzer's
+    /// `method_call_expr` beside `call_expr`) where the pattern's should
+    /// not: `$F($$$A)` matches `x.m(a)` too, `$F` binding `x.m`, as when
+    /// both were tree-sitter's `call_expression`. `None` where one kind is
+    /// both.
+    pub method_calls: Option<MethodCalls>,
+}
+
+/// The kinds of a call and of a method call, for
+/// [`PatternLanguage::method_calls`].
+#[derive(Clone, Copy, Debug)]
+pub struct MethodCalls {
+    pub call: &'static str,
+    pub method_call: &'static str,
 }
 
 /// An item's modifiers — visibility, `static`, annotations: Rust's `pub`,

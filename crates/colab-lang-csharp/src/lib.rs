@@ -35,6 +35,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
     ],
     calls: CallShape::Fields("invocation_expression"),
     qualifiers: None,
+    own: None,
 };
 
 /// Plug-in entry point for the `csharp` namespace.

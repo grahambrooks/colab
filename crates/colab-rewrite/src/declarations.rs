@@ -203,30 +203,8 @@ mod tests {
         flatten(&decls).iter().map(|f| f.path.join("/")).collect()
     }
 
-    #[test]
-    fn rust_impls_are_named_by_their_type_and_take_their_attributes() {
-        let src = "//! The crate.\nmod m;\nstruct Config;\n\n/// Docs.\n#[inline]\nfn top() {}\n\nimpl Display for Config {\n    fn fmt(&self) {}\n}\n\nmod inner {\n    fn deep() {}\n}\n";
-        let grammar: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        assert_eq!(
-            paths(grammar.clone(), src),
-            [
-                "m",
-                "Config",
-                "top",
-                "Config",
-                "Config/fmt",
-                "inner",
-                "inner/deep"
-            ]
-        );
-        let all = declarations(&grammar, src);
-        let m = resolve(&all, "m", src).unwrap();
-        assert_eq!(&src[m.declaration.range.clone()], "mod m;");
-        let decls = declarations(&grammar, src);
-        let top = resolve(&decls, "top", src).unwrap();
-        assert!(src[top.declaration.range.clone()].starts_with("/// Docs.\n#[inline]\nfn top"));
-        assert!(resolve(&decls, "Config/fmt", src).is_ok());
-    }
+    // Rust's declarations come from rust-analyzer's typed AST
+    // (`colab-lang-rust/src/own.rs`, which has the Rust cases).
 
     #[test]
     fn go_methods_sit_under_their_receiver_type() {

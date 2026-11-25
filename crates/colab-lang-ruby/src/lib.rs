@@ -33,6 +33,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
         through_arguments: false,
     },
     qualifiers: None,
+    own: None,
 };
 
 /// Plug-in entry point for the `ruby` namespace.

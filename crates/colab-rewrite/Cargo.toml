@@ -18,7 +18,8 @@ similar = { workspace = true }
 [dev-dependencies]
 tree-sitter-go = { workspace = true }
 tree-sitter-python = { workspace = true }
-tree-sitter-rust = { workspace = true }
+# Rust patterns in the engine's own tests, on rust-analyzer's trees.
+colab-parse-rust = { workspace = true }
 
 [lints]
 workspace = true

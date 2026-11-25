@@ -1,93 +1,76 @@
 //! `rust::pattern`: code-shaped structural rewrites with metavariables.
 //!
 //! All matching lives in [`colab_rewrite::pattern`]; this module only
-//! supplies Rust's grammar, expando character, and the contexts that
-//! let a fragment that is not a valid Rust *file* on its own parse.
+//! supplies Rust's parser (rust-analyzer's, through `colab_parse_rust`),
+//! expando character, and the contexts that let a fragment that is not a
+//! valid Rust *file* on its own parse.
 
 use colab_rewrite::pattern::PatternLanguage;
 
 /// `$` only appears in Rust inside `macro_rules!`, where it means a macro
-/// variable, so metavariables are parsed as `µ`. Items and `;`-terminated
-/// statements parse on their own.
+/// variable, so metavariables are parsed as `µ`. Items parse on their own.
 ///
-/// The pattern compiler refuses a context with an earlier node of the
-/// pattern's kind than the pattern itself, so
-/// an expression is tried first as a top-level statement (nothing before
-/// the slot), then as the tail of a function body.
-pub(crate) fn language() -> PatternLanguage {
+/// Kinds are rust-analyzer's (`call_expr`, `method_call_expr`, `fn`), and
+/// tree-sitter's names are aliases of them (`colab_parse_rust`'s `names`),
+/// so a rule written as `where $X is call_expression` still reads.
+/// Attributes, visibility and doc comments are an item's own children
+/// here: visibility is left out of a pattern as a modifier, an attribute
+/// whatever else it spells (`attr` is a loose kind), and a rewrite leaves
+/// the item's docs and the attributes it kept where they are.
+pub fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_rust::LANGUAGE.into()),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_rust::PARSER),
         expando: 'µ',
-        // The next two let a struct field (`pub conflicts: $T`) and a
-        // struct-literal field (`conflicts: $C`) be patterns, e.g. in
-        // `where not has '…'`; then a match arm (`Some($X) => $E,`); the
-        // last, a type on its own (`HashMap<PathBuf, String>`), which no
-        // other context parses.
-        contexts: &[
-            "@@PATTERN@@;",
-            "fn f() {\n@@PATTERN@@\n}\n",
-            "struct _S {\n@@PATTERN@@\n}\n",
-            "fn f() {\n_S {\n@@PATTERN@@\n};\n}\n",
-            "fn f() {\nmatch _m {\n@@PATTERN@@\n}\n}\n",
-            "type _T = @@PATTERN@@;\n",
-        ],
         also: &[],
         qualified_calls: Some("::"),
         // `#[derive(…)]` and `///` / `/** */` docs belong to the item after
         // them; `//!` documents the enclosing module, so it stays.
         leading: colab_rewrite::pattern::Leading {
-            kinds: &["attribute_item"],
+            kinds: &["attr"],
             doc_comments: &["///", "/**"],
         },
-        // A macro call's arguments are a token tree to tree-sitter. These
+        // A macro call's arguments are a token tree to the parser. These
         // macros take expressions, so their contents are read as call
         // arguments; any other macro (`matches!`'s pattern, a DSL such as
         // `html!` or `sqlx::query!`) is left alone.
         macro_contents: Some(colab_rewrite::pattern::MacroContents {
-            invocation: "macro_invocation",
+            invocation: "macro_call",
             name_field: "macro",
             body: "token_tree",
             macros: EXPRESSION_MACROS,
             wrapper: "fn _w() {\n_m(@@PATTERN@@);\n}\n",
         }),
         modifiers: Some(colab_rewrite::pattern::Modifiers {
-            kinds: &["visibility_modifier"],
-        }),
-        shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
-        modifier_tokens: &[],
-    }
-}
-
-/// Rust's patterns on rust-analyzer's trees (`colab_parse_rust`), step 3
-/// of the move off tree-sitter: the same contexts and macros, its kind
-/// names, and its attributes and visibility, which are the item's own
-/// children there (tree-sitter's `attribute_item` is the item's sibling),
-/// left out of a pattern as a modifier is; a rewrite leaves the item's
-/// doc comments and those attributes where they are. Not yet what
-/// `rust::pattern` runs on: `colab-backends/tests/rust_parser.rs`
-/// measures the distance.
-pub fn on_rust_analyzer() -> PatternLanguage {
-    let base = language();
-    PatternLanguage {
-        macro_contents: base
-            .macro_contents
-            .map(|m| colab_rewrite::pattern::MacroContents {
-                invocation: "macro_call",
-                body: "token_tree",
-                ..m
-            }),
-        modifiers: Some(colab_rewrite::pattern::Modifiers {
             kinds: &["visibility"],
         }),
-        // An attribute is left out whatever else the pattern spells, as
-        // tree-sitter's sibling `attribute_item` is never seen.
+        shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
+        // An attribute is left out whatever else the pattern spells.
         modifier_tokens: &["attr"],
-        leading: colab_rewrite::pattern::Leading {
-            kinds: &["attr"],
-            ..base.leading
-        },
-        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_rust::PARSER),
-        ..base
+        // The pattern compiler refuses a context with an earlier node of
+        // the pattern's kind, and only items parse at file level, so
+        // statements and expressions are read first in a block with no
+        // name before the slot (a pattern that is one identifier is then
+        // not refused for the wrapper's own `fn f`); then a struct field
+        // (`pub conflicts: $T`), a struct-literal field (`conflicts: $C`),
+        // a match arm (`Some($X) => $E,`), a type on its own
+        // (`HashMap<PathBuf, String>`), and an attribute or doc comment on
+        // its own (`#[no_mangle]`), the next item's.
+        contexts: &[
+            "const _: () = {\n@@PATTERN@@\n};\n",
+            "fn f() {\n@@PATTERN@@\n}\n",
+            "struct _S {\n@@PATTERN@@\n}\n",
+            "const _: () = {\n_S {\n@@PATTERN@@\n};\n};\n",
+            "const _: () = {\nmatch _m {\n@@PATTERN@@\n}\n};\n",
+            "type _T = @@PATTERN@@;\n",
+            "@@PATTERN@@\nfn _f() {}\n",
+        ],
+        // `$F($$$A)` also matches `x.m(a)`, `$F` binding `x.m`, as when both
+        // were one kind; `where $F is path_expr` keeps a rule to plain
+        // calls, and a pattern spelling a method call matches only those.
+        method_calls: Some(colab_rewrite::pattern::MethodCalls {
+            call: "call_expr",
+            method_call: "method_call_expr",
+        }),
     }
 }
 
@@ -134,7 +117,7 @@ mod tests {
 
     /// The spans `pattern` matches in `src` on rust-analyzer's trees.
     fn ra_find(pattern: &str, src: &str) -> Vec<String> {
-        let language = super::on_rust_analyzer();
+        let language = super::language();
         let forms = colab_rewrite::syntax::compile_forms(&language, pattern).unwrap();
         colab_rewrite::syntax::find(&language, &forms, src)
             .into_iter()
@@ -143,18 +126,56 @@ mod tests {
     }
 
     #[test]
+    fn a_call_pattern_matches_method_calls_and_is_narrows_it_to_calls() {
+        let src = "fn f() { g(1); x.m(2); x.y.m::<T>(3); }\n";
+        assert_eq!(ra_find("$F($A)", src), ["g(1)", "x.m(2)", "x.y.m::<T>(3)"]);
+        let rewrite = crate::LANG
+            .compile_pattern("$F($A)", PatternAction::Replace("$F($A, ctx)".into()), &[])
+            .unwrap();
+        assert_eq!(
+            rewrite.apply(src),
+            "fn f() { g(1, ctx); x.m(2, ctx); x.y.m::<T>(3, ctx); }\n"
+        );
+        // rust-analyzer's kinds tell them apart: a plain call's callee is a
+        // `path_expr`; a method call's is the receiver and the name.
+        let plain = crate::LANG
+            .compile_pattern(
+                "$F($A)",
+                PatternAction::Delete,
+                &[colab_core::Constraint {
+                    negated: false,
+                    test: colab_core::Test::Is {
+                        var: colab_core::Var::parse("$F").unwrap(),
+                        kind: "path_expr".into(),
+                    },
+                }],
+            )
+            .unwrap();
+        assert_eq!(
+            plain
+                .rule()
+                .find(src)
+                .iter()
+                .map(|f| &src[f.start..f.end])
+                .collect::<Vec<_>>(),
+            ["g(1)"]
+        );
+        // A pattern spelling a method call matches only method calls.
+        assert_eq!(ra_find("$R.m($A)", src), ["x.m(2)"]);
+    }
+
+    #[test]
     fn on_rust_analyzer_items_take_their_attributes_and_visibility() {
         let src = "#[derive(Debug)]\npub struct A(u32);\nstruct B(u8, u8);\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n";
-        assert_eq!(
-            ra_find("pub struct $S($$$F);", src),
-            ["#[derive(Debug)]\npub struct A(u32);"]
-        );
+        // Found from the item itself, as on tree-sitter, where the
+        // attribute is its sibling.
+        assert_eq!(ra_find("pub struct $S($$$F);", src), ["pub struct A(u32);"]);
         assert_eq!(ra_find("struct $S($$$F);", src).len(), 2);
         let documented = "/// A span.\n#[must_use = \"ends when dropped\"]\npub struct Span(Option<SpanData>);\n";
         assert_eq!(ra_find("pub struct $S($$$F);", documented).len(), 1);
         assert_eq!(ra_find("mod $M { $$$B }", src).len(), 1);
         // A rewrite keeps the attributes and docs the pattern left out.
-        let language = super::on_rust_analyzer();
+        let language = super::language();
         let forms =
             colab_rewrite::syntax::compile_forms(&language, "pub struct $S($$$F);").unwrap();
         let rewritten = colab_rewrite::syntax::rewrite(
@@ -374,9 +395,11 @@ mod tests {
             op.apply(src),
             "//! The module.\n\nuse x::y;\n\n// About the next two.\n\n/// Kept.\npub fn f() {}\n"
         );
-        // A blank line ends what belongs to the item.
-        let apart = "/// Orphaned docs.\n\n#[derive(Debug)]\npub struct A(u8);\n";
-        assert_eq!(op.apply(apart), "/// Orphaned docs.\n\n");
+        // A blank line ends what belongs to the item. (Docs left with no
+        // item after them would not build, E0585, and the delete is not
+        // made: rust-analyzer reads them as a syntax error.)
+        let apart = "/// Orphaned docs.\n\n#[derive(Debug)]\npub struct A(u8);\nfn g() {}\n";
+        assert_eq!(op.apply(apart), "/// Orphaned docs.\n\nfn g() {}\n");
     }
 
     #[test]

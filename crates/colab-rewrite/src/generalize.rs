@@ -386,7 +386,9 @@ fn collect(
     let shared = !is_list(&node)
         && text.chars().any(char::is_alphanumeric)
         && !token_positions(after, text).is_empty();
-    let argument = !is_list(&node) && parent.kind_name().contains("argument");
+    // tree-sitter's `arguments` / `argument_list`, rust-analyzer's `arg_list`.
+    let argument = !is_list(&node)
+        && (parent.kind_name().contains("argument") || parent.kind_name() == "arg_list");
     if shared || argument {
         cut.push(node.range());
         return;

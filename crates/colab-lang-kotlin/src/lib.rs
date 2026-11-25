@@ -32,6 +32,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
         through_arguments: true,
     },
     qualifiers: None,
+    own: None,
 };
 
 /// Plug-in entry point for the `kotlin` namespace.

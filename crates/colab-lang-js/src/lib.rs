@@ -32,6 +32,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
     prose_kinds: &["comment", "string_fragment"],
     calls: CallShape::Fields("call_expression"),
     qualifiers: Some(patterns::QUALIFIERS),
+    own: None,
 };
 
 /// Plug-in entry point for the `js` namespace.

@@ -1,4 +1,4 @@
-//! The matcher on real parses (Rust and Go through tree-sitter).
+//! The matcher on real parses (Go and C through tree-sitter).
 
 use std::sync::Arc;
 
@@ -36,15 +36,6 @@ fn compile(language: tree_sitter::Language, name: &str, wrap: &str, pattern: &st
     Pattern::from_node(spanning(&tree, at..at + expanded.len()), 'µ')
 }
 
-fn rust(pattern: &str) -> Pattern {
-    compile(
-        tree_sitter_rust::LANGUAGE.into(),
-        "rust",
-        "fn _p() { @; }",
-        pattern,
-    )
-}
-
 fn go(pattern: &str) -> Pattern {
     compile(
         tree_sitter_go::LANGUAGE.into(),
@@ -54,12 +45,13 @@ fn go(pattern: &str) -> Pattern {
     )
 }
 
-fn rust_tree(src: &str) -> Tree {
-    parse(tree_sitter_rust::LANGUAGE.into(), "rust", src)
-}
-
 fn go_tree(src: &str) -> Tree {
     parse(tree_sitter_go::LANGUAGE.into(), "go", src)
+}
+
+/// `body` as a Go function's statements.
+fn go_body(body: &str) -> Tree {
+    go_tree(&format!("package p\nfunc m() {{\n{body}\n}}\n"))
 }
 
 /// Each match's text and its bindings as `NAME=text`.
@@ -80,31 +72,27 @@ fn found(pattern: &Pattern, tree: &Tree) -> Vec<(String, Vec<String>)> {
 
 #[test]
 fn modifiers_a_pattern_leaves_out_are_absorbed_and_reported() {
-    let tree = rust_tree("pub fn f() {}\nfn g() {}\npub(crate) fn h() {}\n");
-    let visibility = tree.grammar().kinds_named("visibility_modifier");
+    let c = |text: &str| parse(tree_sitter_c::LANGUAGE.into(), "c", text);
+    let tree = c("static void f(void) {}\nvoid g(void) {}\nstatic inline void h(void) {}\n");
+    let storage = tree.grammar().kinds_named("storage_class_specifier");
     let rules = crate::pattern::Rules {
-        absorb: visibility.clone(),
-        exact: visibility,
+        absorb: storage.clone(),
+        exact: storage,
         loose: Vec::new(),
     };
-    let bare = compile(tree_sitter_rust::LANGUAGE.into(), "rust", "@", "fn $F() {}");
+    let pattern = |text: &str| compile(tree_sitter_c::LANGUAGE.into(), "c", "@", text);
+    let bare = pattern("void $F(void) {}");
     assert_eq!(found(&bare, &tree).len(), 1, "without the rules, only `g`");
     let open = bare.with_rules(rules.clone());
     let matches = open.find_all(&tree);
     let names: Vec<&str> = matches.iter().map(|m| m.get("F").unwrap().text()).collect();
     assert_eq!(names, ["f", "g", "h"]);
     let absorbed: Vec<&str> = matches[0].absorbed.iter().map(Node::text).collect();
-    assert_eq!(absorbed, ["pub"]);
-    // A pattern that spells its visibility is held to it.
-    let spelled = compile(
-        tree_sitter_rust::LANGUAGE.into(),
-        "rust",
-        "@",
-        "pub fn $F() {}",
-    )
-    .with_rules(rules);
+    assert_eq!(absorbed, ["static"]);
+    // A pattern that spells its storage class is held to it.
+    let spelled = pattern("static void $F(void) {}").with_rules(rules);
     let names: Vec<String> = found(&spelled, &tree).into_iter().map(|h| h.0).collect();
-    assert_eq!(names, ["pub fn f() {}"]);
+    assert_eq!(names, ["static void f(void) {}"]);
 }
 
 mod fragments {
@@ -215,9 +203,9 @@ fn metavariables_are_read_as_colab_writes_them() {
 
 #[test]
 fn a_call_binds_its_arguments() {
-    let tree = rust_tree("fn m() { foo(1, x + 2); bar(3); foo(4); }");
+    let tree = go_body("foo(1, x + 2)\nbar(3)\nfoo(4)");
     assert_eq!(
-        found(&rust("foo($A, $B)"), &tree),
+        found(&go("foo($A, $B)"), &tree),
         [("foo(1, x + 2)".into(), vec!["A=1".into(), "B=x + 2".into()])]
     );
 }
@@ -248,39 +236,39 @@ fn a_syntax_error_is_taken_only_by_a_capture() {
 
 #[test]
 fn a_trailing_comma_is_passed_over_and_reported() {
-    let tree = rust_tree("fn m() { foo(1, 2,); }");
-    let pattern = rust("foo($A, $B)");
+    let tree = go_body("foo(1, 2,)");
+    let pattern = go("foo($A, $B)");
     let matches = pattern.find_all(&tree);
     assert_eq!(matches.len(), 1);
     let skipped: Vec<&str> = matches[0].skipped.iter().map(Node::text).collect();
     assert_eq!(skipped, [","]);
     // A token the pattern spells must be there.
     assert!(
-        rust("foo($A, $B,)")
-            .find_all(&rust_tree("fn m() { foo(1, 2); }"))
+        go("foo($A, $B,)")
+            .find_all(&go_body("foo(1, 2)"))
             .is_empty()
     );
 }
 
 #[test]
 fn a_sequence_backtracks_to_fit_what_follows() {
-    let tree = rust_tree("fn m() { f(1, 2, 3); f(9); }");
+    let tree = go_body("f(1, 2, 3)\nf(9)");
     assert_eq!(
-        found(&rust("f($$$A, $L)"), &tree),
+        found(&go("f($$$A, $L)"), &tree),
         [("f(1, 2, 3)".into(), vec!["A=1, 2".into(), "L=3".into()])]
     );
-    let all = found(&rust("f($$$A)"), &tree);
+    let all = found(&go("f($$$A)"), &tree);
     assert_eq!(all.len(), 2);
     assert_eq!(all[1].1, ["A=9"]);
     // An empty sequence matches nothing.
-    let empty = found(&rust("g($$$A)"), &rust_tree("fn m() { g(); }"));
+    let empty = found(&go("g($$$A)"), &go_body("g()"));
     assert_eq!(empty, [("g()".into(), vec!["A=".into()])]);
 }
 
 #[test]
 fn a_repeated_metavariable_is_the_same_code() {
-    let tree = rust_tree("fn m() { a == a; a == b; f(x,y) == f(x, /* c */ y); }");
-    let hits: Vec<_> = found(&rust("$X == $X"), &tree)
+    let tree = go_body("_ = a == a\n_ = a == b\n_ = f(x,y) == f(x, /* c */ y)");
+    let hits: Vec<_> = found(&go("$X == $X"), &tree)
         .into_iter()
         .map(|h| h.0)
         .collect();
@@ -289,17 +277,17 @@ fn a_repeated_metavariable_is_the_same_code() {
 
 #[test]
 fn comments_are_invisible_to_matching() {
-    let tree = rust_tree("fn m() { foo(/* why */ 1); }");
+    let tree = go_body("foo(/* why */ 1)");
     assert_eq!(
-        found(&rust("foo($A)"), &tree),
+        found(&go("foo($A)"), &tree),
         [("foo(/* why */ 1)".into(), vec!["A=1".into()])]
     );
 }
 
 #[test]
 fn matches_come_outer_first_and_include_nested_ones() {
-    let tree = rust_tree("fn m() { f(f(1)); }");
-    let hits: Vec<_> = found(&rust("f($A)"), &tree)
+    let tree = go_body("f(f(1))");
+    let hits: Vec<_> = found(&go("f($A)"), &tree)
         .into_iter()
         .map(|h| h.0)
         .collect();
@@ -308,8 +296,8 @@ fn matches_come_outer_first_and_include_nested_ones() {
 
 #[test]
 fn a_lone_metavariable_takes_any_named_node() {
-    let tree = rust_tree("fn m() { 1; }");
-    let pattern = rust("$X");
+    let tree = go_body("_ = 1");
+    let pattern = go("$X");
     assert!(pattern.kind().is_none());
     let all = pattern.find_all(&tree);
     assert!(all.iter().all(|m| m.node.is_named()));
@@ -319,12 +307,12 @@ fn a_lone_metavariable_takes_any_named_node() {
 #[test]
 fn a_named_token_keeps_its_kind() {
     // `x` the identifier is not `x` the field name.
-    let tree = rust_tree("fn m() { x; s.x; }");
-    let hits: Vec<_> = found(&rust("x"), &tree).into_iter().map(|h| h.0).collect();
+    let tree = go_body("_ = x\n_ = s.x");
+    let hits: Vec<_> = found(&go("x"), &tree).into_iter().map(|h| h.0).collect();
     assert_eq!(hits, ["x"], "the identifier, not the field");
     let field = tree
         .nodes()
         .find(|n| n.kind_name() == "field_identifier")
         .unwrap();
-    assert!(rust("x").matches(field).is_none());
+    assert!(go("x").matches(field).is_none());
 }

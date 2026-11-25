@@ -29,6 +29,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
     ],
     calls: CallShape::Fields("call_expression"),
     qualifiers: Some(patterns::QUALIFIERS),
+    own: None,
 };
 
 /// Plug-in entry point for the `go` namespace. Knows how to lower

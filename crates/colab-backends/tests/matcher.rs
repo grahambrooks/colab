@@ -1,6 +1,7 @@
 //! `colab_syntax::pattern`, the matcher of colab's own, over every source
-//! file the repo holds in the 14 languages (as `syntax_tree.rs` walks
-//! them). For a spread of named nodes in each file:
+//! file the repo holds in the 14 languages, each read by the parser its
+//! backend uses (tree-sitter, or rust-analyzer's for Rust). For a spread
+//! of named nodes in each file:
 //!
 //! - **self-match**: the node, as an exact pattern, matches itself;
 //! - **soundness**: everywhere the exact pattern matches, the code is the
@@ -17,10 +18,9 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
+use colab_syntax::Node;
 use colab_syntax::pattern::{Binding, MetaVar, Pattern, PatternNode};
-use colab_syntax::{Grammar, Node, Tree};
 
 /// Nodes checked per file, at most, spread evenly over the file.
 const PER_FILE: usize = 60;
@@ -136,7 +136,6 @@ fn the_matcher_holds_its_properties_over_every_source_file() {
         files_under(&root.join(dir), &mut files);
     }
     files.sort();
-    let mut grammars = std::collections::HashMap::new();
     let mut failures: Vec<String> = Vec::new();
     let mut checked = 0usize;
     for path in &files {
@@ -144,15 +143,7 @@ fn the_matcher_holds_its_properties_over_every_source_file() {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
-        let (language, grammar) = grammars.entry(lang).or_insert_with(|| {
-            let language = common::grammar(lang);
-            let grammar = Arc::new(Grammar::from_tree_sitter(lang, &language));
-            (language, grammar)
-        });
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(language).unwrap();
-        let ts = parser.parse(&text, None).unwrap();
-        let tree = Tree::from_tree_sitter(&ts, &text, grammar.clone()).unwrap();
+        let tree = common::tree(lang, &text);
         let shown = path
             .strip_prefix(&root)
             .unwrap_or(path)

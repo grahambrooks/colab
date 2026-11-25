@@ -7,7 +7,7 @@ refactor "rust-edition-2021-to-2024" {
     // `extern` blocks must be `unsafe extern` (RFC 3484). The pattern is a
     // single metavariable narrowed to the node kind; `not … matches`
     // leaves blocks that are already `unsafe`, so the rule is idempotent.
-    match rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ {
+    match rust::pattern '$X' where $X is extern_block, not $X matches /^unsafe/ {
         replace 'unsafe $X'
     }
 

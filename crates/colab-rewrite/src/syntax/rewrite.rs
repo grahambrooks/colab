@@ -333,14 +333,7 @@ impl Rewriter<'_, '_> {
         // pattern left out (rust-analyzer's items) keeps them where they
         // are: the edit starts after them, as it does where they are the
         // item's siblings (tree-sitter's).
-        let start = m
-            .node
-            .children()
-            .filter(|c| !c.is_trivia())
-            .find(|c| {
-                !(c.is_extra() || (self.leading.contains(&c.kind_name()) && m.absorbed.contains(c)))
-            })
-            .map_or(m.node.start(), |c| c.start());
+        let start = super::match_start(m, self.leading);
         // A node that owns the newline ending it keeps that newline.
         let end = start + source[start..m.node.end()].trim_end().len();
         let text = self.lay_out(template, &values, start..end);

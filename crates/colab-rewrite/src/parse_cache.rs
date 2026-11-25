@@ -257,35 +257,44 @@ mod tests {
 
     #[test]
     fn the_same_text_is_parsed_once_and_a_changed_one_again() {
-        let rust: Language = tree_sitter_rust::LANGUAGE.into();
+        let python: Language = tree_sitter_python::LANGUAGE.into();
         let go: Language = tree_sitter_go::LANGUAGE.into();
-        let a = parse(&rust, "fn a() {}").unwrap();
-        let again = parse(&rust, "fn a() {}").unwrap();
+        let a = parse(&python, "def a(): pass\n").unwrap();
+        let again = parse(&python, "def a(): pass\n").unwrap();
         // The cached tree is the one parsed: same root, same text.
         assert_eq!(a.root_node().to_sexp(), again.root_node().to_sexp());
-        let b = parse(&rust, "fn b() {}").unwrap();
+        let b = parse(&python, "def b(): pass\n").unwrap();
         assert_eq!(b.root_node().to_sexp(), a.root_node().to_sexp());
         // A different grammar on the same text is its own parse.
-        let as_go = parse(&go, "fn a() {}").unwrap();
+        let as_go = parse(&go, "def a(): pass\n").unwrap();
         assert!(as_go.root_node().has_error());
-        assert!(!parse(&rust, "fn a() {}").unwrap().root_node().has_error());
+        assert!(
+            !parse(&python, "def a(): pass\n")
+                .unwrap()
+                .root_node()
+                .has_error()
+        );
     }
 
     #[test]
     fn an_edited_text_is_reparsed_to_the_tree_a_fresh_parse_gives() {
-        let rust: Language = tree_sitter_rust::LANGUAGE.into();
-        let before = "fn a() {\n    let x = f().unwrap();\n    g(x).unwrap()\n}\n\nfn b() {}\n";
-        parse(&rust, before).unwrap();
+        let go: Language = tree_sitter_go::LANGUAGE.into();
+        let before =
+            "package p\n\nfunc a() {\n\tx := f().Unwrap()\n\tg(x).Unwrap()\n}\n\nfunc b() {}\n";
+        parse(&go, before).unwrap();
         // Several edits, one adding lines, one removing them.
+        let first = before.find(".Unwrap()").unwrap();
+        let second = before.rfind(".Unwrap()").unwrap();
+        let tail = before.find("\n\nfunc b").unwrap();
         let edits = vec![
-            Edit::new(24, 33, ".expect(\"x\")"),
-            Edit::new(43, 52, ".expect(\n        \"y\",\n    )"),
-            Edit::new(55, 65, ""),
+            Edit::new(first, first + 9, ".Expect(\"x\")"),
+            Edit::new(second, second + 9, ".Expect(\n\t\t\"y\",\n\t)"),
+            Edit::new(tail, tail + 13, ""),
         ];
         let after = crate::apply_edits(before, edits);
-        let cached = parse(&rust, &after).unwrap();
+        let cached = parse(&go, &after).unwrap();
         let mut parser = Parser::new();
-        parser.set_language(&rust).unwrap();
+        parser.set_language(&go).unwrap();
         let fresh = parser.parse(&after, None).unwrap();
         assert_eq!(cached.root_node().to_sexp(), fresh.root_node().to_sexp());
         assert_eq!(
@@ -296,13 +305,13 @@ mod tests {
 
     #[test]
     fn the_kind_index_lists_a_kinds_nodes_in_pre_order() {
-        let rust: Language = tree_sitter_rust::LANGUAGE.into();
-        let text = "fn a() { f(g(1)); }\nfn b() { h(); }\n";
-        let tree = parse(&rust, text).unwrap();
+        let go: Language = tree_sitter_go::LANGUAGE.into();
+        let text = "package p\nfunc a() { f(g(1)) }\nfunc b() { h() }\n";
+        let tree = parse(&go, text).unwrap();
         // The first search walks the tree itself; the index comes after.
         assert!(kind_index(text, tree.root_node()).is_none());
         let index = kind_index(text, tree.root_node()).unwrap();
-        let call = rust.id_for_node_kind("call_expression", true);
+        let call = go.id_for_node_kind("call_expression", true);
         let mut cursor = tree.walk();
         let found: Vec<String> = index
             .positions([usize::from(call)])

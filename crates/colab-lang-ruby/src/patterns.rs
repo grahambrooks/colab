@@ -27,6 +27,7 @@ pub(crate) fn language() -> PatternLanguage {
         // Ruby 3.1: `f(host:)` and `{ host: }` pass `host: host`.
         shorthand_fields: Some(colab_rewrite::pattern::Shorthand::RUBY),
         modifier_tokens: &[],
+        method_calls: None,
     }
 }
 

@@ -13,13 +13,10 @@
 //! all twelve backends share one implementation and differ only in which
 //! node kinds count as an identifier.
 
-/// Node kinds this backend treats as renameable identifiers.
-pub(crate) const RENAME_KINDS: &[&str] = &[
-    "identifier",
-    "type_identifier",
-    "field_identifier",
-    "shorthand_field_identifier",
-];
+/// Node kinds this backend treats as renameable identifiers: rust-analyzer's
+/// `ident` token, which every name, path segment, field and type name is
+/// (lifetimes, labels and string contents are other kinds).
+pub(crate) const RENAME_KINDS: &[&str] = &["ident"];
 
 #[cfg(test)]
 fn rename(from: &str, to: &str, source_code: &str) -> String {

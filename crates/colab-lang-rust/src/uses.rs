@@ -5,12 +5,43 @@
 //! `foo::tokio`. Rename rewrites the matched prefix; delete erases
 //! the whole `use` line; ensure inserts a new `use <target>;` if no
 //! existing declaration starts with the same path.
+//!
+//! Read from rust-analyzer's typed AST (`ast::Use` / `ast::UseTree`). A
+//! `use` there holds its attributes and doc comments, so deleting one
+//! takes them with it (`#[cfg(test)]` is not left on the next item).
 
 use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::Node;
+use colab_parse_rust::ra::ast::{self, AstNode, HasAttrs, HasModuleItem, HasName};
+use colab_parse_rust::ra::{SyntaxKind, SyntaxNode, TextRange};
+
+/// A text range as byte offsets.
+fn span(range: TextRange) -> (usize, usize) {
+    (usize::from(range.start()), usize::from(range.end()))
+}
+
+fn start(node: &SyntaxNode) -> usize {
+    span(node.text_range()).0
+}
+
+fn end(node: &SyntaxNode) -> usize {
+    span(node.text_range()).1
+}
+
+/// `source` as rust-analyzer's syntax tree. Always a tree (a syntax error
+/// is recovered from), as tree-sitter's was; `Option` keeps the callers'
+/// shape.
+fn file(source: &str) -> Option<ast::SourceFile> {
+    let (parse, _) = colab_parse_rust::source_file(source);
+    Some(parse.tree())
+}
+
+/// Every `use` declaration in `file`, nested ones included.
+fn uses(file: &ast::SourceFile) -> impl Iterator<Item = ast::Use> + use<> {
+    file.syntax().descendants().filter_map(ast::Use::cast)
+}
 
 /// If `text` begins with `from` followed by a path-segment boundary
 /// (`::`, end of path, whitespace, or `;`), returns the byte length
@@ -73,64 +104,72 @@ struct UseTree<'a> {
 }
 
 impl<'a> UseTree<'a> {
-    fn text(&self, node: Node<'_>) -> &'a str {
+    fn text(&self, node: &SyntaxNode) -> &'a str {
         let source: &'a str = self.source;
-        node.utf8_text(source.as_bytes()).unwrap_or("")
+        let (from, to) = span(node.text_range());
+        &source[from..to]
     }
 
     fn hits(&self, path: &str) -> bool {
         match_path_prefix(path, self.target).is_some()
     }
 
-    /// The fate of `node` (a use tree, inside a group whose path is `prefix`).
-    fn walk(&mut self, node: Node<'_>, prefix: &str) -> Fate {
-        match node.kind() {
-            "scoped_use_list" => {
-                let path = node.child_by_field_name("path");
-                let full = join(prefix, path.map_or("", |p| self.text(p)));
-                if self.hits(&full) {
-                    return self.hit(path.unwrap_or(node), prefix, &full, None);
-                }
-                match node.child_by_field_name("list") {
-                    Some(list) => self.list(list, &full, path),
-                    None => Fate::Keep(Vec::new()),
-                }
+    /// The fate of `tree` (a use tree, inside a group whose path is `prefix`).
+    fn walk(&mut self, tree: &ast::UseTree, prefix: &str) -> Fate {
+        let path = tree.path().map(|p| p.syntax().clone());
+        // `a::{b, c}`, or `{b, c}` with no path of its own.
+        if let Some(list) = tree.use_tree_list() {
+            let full = join(prefix, path.as_ref().map_or("", |p| self.text(p)));
+            if let Some(path) = &path
+                && self.hits(&full)
+            {
+                return self.hit(path, prefix, &full, None);
             }
-            "use_list" => self.list(node, prefix, None),
-            "use_as_clause" => {
-                let Some(path) = node.child_by_field_name("path") else {
-                    return Fate::Keep(Vec::new());
-                };
-                let full = join(prefix, self.text(path));
-                let alias = node.child_by_field_name("alias").map(|a| self.text(a));
-                if self.hits(&full) {
-                    self.hit(path, prefix, &full, alias)
-                } else {
-                    Fate::Keep(Vec::new())
-                }
-            }
-            _ => {
-                let text = self.text(node);
-                let full = if text == "self" {
-                    prefix.to_string()
-                } else {
-                    join(prefix, text)
-                };
-                if self.hits(&full) && text != "*" {
-                    self.hit(node, prefix, &full, None)
-                } else if text.ends_with('*') && self.hits(full.trim_end_matches("::*")) {
-                    // `use a::*` names everything under `a`.
-                    self.hit(node, prefix, &full, None)
-                } else {
-                    Fate::Keep(Vec::new())
-                }
-            }
+            return self.list(&list, &full, path.as_ref());
+        }
+        // `b as x`.
+        if let Some(rename) = tree.rename() {
+            let Some(path) = path else {
+                return Fate::Keep(Vec::new());
+            };
+            let full = join(prefix, self.text(&path));
+            let alias = rename
+                .name()
+                .map(|n| self.text(n.syntax()))
+                .or_else(|| rename.underscore_token().map(|_| "_"));
+            return if self.hits(&full) {
+                self.hit(&path, prefix, &full, alias)
+            } else {
+                Fate::Keep(Vec::new())
+            };
+        }
+        // A path, `self`, or a glob (`a::*`, `*`).
+        let node = tree.syntax().clone();
+        let text = self.text(&node);
+        let full = if text == "self" {
+            prefix.to_string()
+        } else {
+            join(prefix, text)
+        };
+        if self.hits(&full) && text != "*" {
+            self.hit(&node, prefix, &full, None)
+        } else if text.ends_with('*') && self.hits(full.trim_end_matches("::*")) {
+            // `use a::*` names everything under `a`.
+            self.hit(&node, prefix, &full, None)
+        } else {
+            Fate::Keep(Vec::new())
         }
     }
 
     /// A member whose path `full` (written as `path_node`) is the target or
     /// under it.
-    fn hit(&mut self, path_node: Node<'_>, prefix: &str, full: &str, alias: Option<&str>) -> Fate {
+    fn hit(
+        &mut self,
+        path_node: &SyntaxNode,
+        prefix: &str,
+        full: &str,
+        alias: Option<&str>,
+    ) -> Fate {
         let Some(to) = self.rename_to else {
             return Fate::Drop;
         };
@@ -140,9 +179,8 @@ impl<'a> UseTree<'a> {
         if self.text(path_node) == "self" {
             return Fate::Keep(Vec::new());
         }
-        let edit = |text: &str| {
-            colab_rewrite::Edit::new(path_node.start_byte(), path_node.end_byte(), text)
-        };
+        let (from, until) = span(path_node.text_range());
+        let edit = |text: &str| colab_rewrite::Edit::new(from, until, text);
         if prefix.is_empty() {
             return Fate::Keep(vec![edit(&renamed)]);
         }
@@ -159,12 +197,11 @@ impl<'a> UseTree<'a> {
 
     /// The members of a brace group, `list`, under `prefix`. `path` is the
     /// group's own path node (`a` in `a::{b, c}`), absent for `use {b, c};`.
-    fn list(&mut self, list: Node<'_>, prefix: &str, path: Option<Node<'_>>) -> Fate {
-        let members: Vec<Node<'_>> = list
-            .named_children(&mut list.walk())
-            .filter(|m| !matches!(m.kind(), "line_comment" | "block_comment"))
-            .collect();
-        let fates: Vec<Fate> = members.iter().map(|m| self.walk(*m, prefix)).collect();
+    fn list(&mut self, list: &ast::UseTreeList, prefix: &str, path: Option<&SyntaxNode>) -> Fate {
+        let trees: Vec<ast::UseTree> = list.use_trees().collect();
+        let members: Vec<SyntaxNode> = trees.iter().map(|t| t.syntax().clone()).collect();
+        let list = list.syntax();
+        let fates: Vec<Fate> = trees.iter().map(|m| self.walk(m, prefix)).collect();
         let dropped: Vec<bool> = fates.iter().map(|f| matches!(f, Fate::Drop)).collect();
         if members.is_empty() || dropped.iter().all(|d| *d) {
             return if members.is_empty() {
@@ -180,12 +217,12 @@ impl<'a> UseTree<'a> {
             if let [only] = kept[..]
                 && matches!(&fates[only], Fate::Keep(inner) if inner.is_empty())
             {
-                let text = self.text(members[only]);
+                let text = self.text(&members[only]);
                 let collapsed = match path {
                     Some(path) if text == "self" => {
-                        colab_rewrite::Edit::new(path.end_byte(), list.end_byte(), "")
+                        colab_rewrite::Edit::new(end(path), end(list), "")
                     }
-                    _ => colab_rewrite::Edit::new(list.start_byte(), list.end_byte(), text),
+                    _ => colab_rewrite::Edit::new(start(list), end(list), text),
                 };
                 return Fate::Keep(vec![collapsed]);
             }
@@ -203,9 +240,9 @@ impl<'a> UseTree<'a> {
                     i += 1;
                 }
                 let range = if i < members.len() {
-                    (members[run_start].start_byte(), members[i].start_byte())
+                    (start(&members[run_start]), start(&members[i]))
                 } else {
-                    (members[run_start - 1].end_byte(), members[i - 1].end_byte())
+                    (end(&members[run_start - 1]), end(&members[i - 1]))
                 };
                 edits.push(colab_rewrite::Edit::new(range.0, range.1, ""));
             }
@@ -221,66 +258,58 @@ impl<'a> UseTree<'a> {
 
 /// Every path a `use` declaration names, one per member, as written:
 /// `use a::{b, c as d}` names `a::b` and `a::c`.
-fn member_paths(source: &str, arg: Node<'_>, prefix: &str, out: &mut Vec<String>) {
-    let text = |n: Node<'_>| n.utf8_text(source.as_bytes()).unwrap_or("").to_string();
-    match arg.kind() {
-        "scoped_use_list" => {
-            let full = join(
-                prefix,
-                &arg.child_by_field_name("path").map_or(String::new(), text),
-            );
-            if let Some(list) = arg.child_by_field_name("list") {
-                member_paths(source, list, &full, out);
-            }
+fn member_paths(source: &str, tree: &ast::UseTree, prefix: &str, out: &mut Vec<String>) {
+    let text = |n: &SyntaxNode| {
+        let (from, to) = span(n.text_range());
+        source[from..to].to_string()
+    };
+    let path = tree.path().map(|p| text(p.syntax()));
+    if let Some(list) = tree.use_tree_list() {
+        let full = join(prefix, path.as_deref().unwrap_or(""));
+        for member in list.use_trees() {
+            member_paths(source, &member, &full, out);
         }
-        "use_list" => {
-            for member in arg.named_children(&mut arg.walk()) {
-                member_paths(source, member, prefix, out);
-            }
+    } else if tree.rename().is_some() {
+        if let Some(path) = path {
+            out.push(join(prefix, &path));
         }
-        "use_as_clause" => {
-            if let Some(path) = arg.child_by_field_name("path") {
-                out.push(join(prefix, &text(path)));
-            }
-        }
-        "line_comment" | "block_comment" => {}
-        _ => {
-            let t = text(arg);
-            out.push(if t == "self" {
-                prefix.to_string()
-            } else {
-                join(prefix, &t)
-            });
-        }
+    } else {
+        let t = text(tree.syntax());
+        out.push(if t == "self" {
+            prefix.to_string()
+        } else {
+            join(prefix, &t)
+        });
     }
 }
 
 /// Rewrite every `use` in `source_code` that names `target` or a path
 /// under it: drop those members (`rename_to` absent), or rename them.
 fn rewrite_uses(target: &str, rename_to: Option<&str>, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(file) = file(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<colab_rewrite::Edit> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        if node.kind() != "use_declaration" {
-            return;
-        }
-        let Some(arg) = node.child_by_field_name("argument") else {
-            return;
+    for declaration in uses(&file) {
+        let Some(arg) = declaration.use_tree() else {
+            continue;
         };
+        let node = declaration.syntax();
+        let (node_start, node_end) = span(node.text_range());
         let mut walk = UseTree {
             source: source_code,
             target,
             rename_to,
             moved_out: Vec::new(),
         };
-        let fate = walk.walk(arg, "");
+        let fate = walk.walk(&arg, "");
         // Lines moved out go after the declaration, with its indentation.
         if !walk.moved_out.is_empty() {
-            let line_start = source_code[..node.start_byte()]
-                .rfind('\n')
-                .map_or(0, |p| p + 1);
+            // From the `use` itself, after any attributes and docs.
+            let use_at = declaration
+                .use_token()
+                .map_or(node_start, |t| span(t.text_range()).0);
+            let line_start = source_code[..use_at].rfind('\n').map_or(0, |p| p + 1);
             let indent: String = source_code[line_start..]
                 .chars()
                 .take_while(|c| *c == ' ' || *c == '\t')
@@ -290,24 +319,19 @@ fn rewrite_uses(target: &str, rename_to: Option<&str>, source_code: &str) -> Str
                 .iter()
                 .map(|l| format!("\n{indent}{l}"))
                 .collect();
-            edits.push(colab_rewrite::Edit::new(
-                node.end_byte(),
-                node.end_byte(),
-                lines,
-            ));
+            edits.push(colab_rewrite::Edit::new(node_end, node_end, lines));
         }
         match fate {
             // The whole declaration goes: its line, when it has the line to
             // itself (the lines moved out go in its place).
             Fate::Drop => {
-                let (start, end) =
-                    colab_rewrite::line_span(source_code, node.start_byte(), node.end_byte());
-                let alone = source_code[start..node.start_byte()].trim().is_empty()
-                    && source_code[node.end_byte()..end].trim().is_empty();
+                let (start, end) = colab_rewrite::line_span(source_code, node_start, node_end);
+                let alone = source_code[start..node_start].trim().is_empty()
+                    && source_code[node_end..end].trim().is_empty();
                 let (start, end) = if alone {
                     (start, end)
                 } else {
-                    (node.start_byte(), node.end_byte())
+                    (node_start, node_end)
                 };
                 if walk.moved_out.is_empty() {
                     edits.push(colab_rewrite::Edit::new(start, end, ""));
@@ -315,18 +339,14 @@ fn rewrite_uses(target: &str, rename_to: Option<&str>, source_code: &str) -> Str
                     // Replace it with what moved out, rather than leave an
                     // edit at its end inside the range that goes.
                     edits.pop();
-                    let indent: String = source_code[start..node.start_byte()].to_string();
+                    let indent: String = source_code[start..node_start].to_string();
                     let lines = walk
                         .moved_out
                         .iter()
                         .map(|l| format!("{indent}{l}"))
                         .collect::<Vec<_>>()
                         .join("\n");
-                    let tail = if alone && end > node.end_byte() {
-                        "\n"
-                    } else {
-                        ""
-                    };
+                    let tail = if alone && end > node_end { "\n" } else { "" };
                     edits.push(colab_rewrite::Edit::new(
                         start,
                         end,
@@ -336,7 +356,7 @@ fn rewrite_uses(target: &str, rename_to: Option<&str>, source_code: &str) -> Str
             }
             Fate::Keep(inner) => edits.extend(inner),
         }
-    });
+    }
     colab_rewrite::apply_edits(source_code, edits)
 }
 
@@ -344,9 +364,16 @@ fn rewrite_uses(target: &str, rename_to: Option<&str>, source_code: &str) -> Str
 /// near-miss reporting. The matcher segment-prefix-matches the target
 /// against this same text.
 pub(crate) fn use_paths(source: &str) -> Vec<String> {
-    crate::LANG.parse(source).map_or_default(|tree| {
-        colab_rewrite::field_texts(&tree, source, &["use_declaration"], Some("argument"), &[])
-    })
+    let Some(file) = file(source) else {
+        return Vec::new();
+    };
+    uses(&file)
+        .filter_map(|u| u.use_tree())
+        .map(|t| {
+            let (from, to) = span(t.syntax().text_range());
+            source[from..to].to_string()
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -481,7 +508,7 @@ impl Operation for UseEnsure {
 /// after any leading inner attributes (`#![...]`) and inner doc
 /// comments (`//!`, `/*! */`), which must come before every item.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(file) = file(source_code) else {
         return source_code.to_string();
     };
 
@@ -489,30 +516,31 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // members included: `use std::{fmt, io};` already names `std::fmt`, and a
     // second `use std::fmt;` would not build (E0252).
     let mut paths = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        if node.kind() == "use_declaration"
-            && let Some(arg) = node.child_by_field_name("argument")
-        {
-            member_paths(source_code, arg, "", &mut paths);
+    for declaration in uses(&file) {
+        if let Some(tree) = declaration.use_tree() {
+            member_paths(source_code, &tree, "", &mut paths);
         }
-    });
+    }
     if paths.iter().any(|p| match_path_prefix(p, target).is_some()) {
         return source_code.to_string();
     }
 
-    let root = tree.root_node();
     // With `use` declarations already at the top level, join their group:
     // before the first one, unless an attribute sits on it (`#[cfg(test)]
     // use …;` would then cover the new line), in which case the next.
-    let first_use = root
-        .named_children(&mut root.walk())
-        .filter(|c| c.kind() == "use_declaration")
-        .find(|c| {
-            c.prev_named_sibling()
-                .is_none_or(|p| p.kind() != "attribute_item")
-        });
+    let first_use = file
+        .items()
+        .filter_map(|item| match item {
+            ast::Item::Use(u) => Some(u),
+            _ => None,
+        })
+        .find(|u| u.attrs().next().is_none());
     if let Some(first) = first_use {
-        let at = colab_rewrite::line_span(source_code, first.start_byte(), first.end_byte()).0;
+        // The line of the `use` itself, after any doc comments on it.
+        let at = first
+            .use_token()
+            .map_or(start(first.syntax()), |t| span(t.text_range()).0);
+        let at = colab_rewrite::line_span(source_code, at, at).0;
         let insertion = format!("use {target};\n");
         return format!("{}{insertion}{}", &source_code[..at], &source_code[at..]);
     }
@@ -520,19 +548,54 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // Insert after the last leading inner attribute or inner doc
     // comment: both must precede every item. Plain comments among them
     // (a licence header) are looked past without moving the point. With
-    // none, insert at byte 0.
+    // none, insert at byte 0. Read token by token, as rust-analyzer may
+    // hold a comment inside the item after it.
     let mut insert_at = 0usize;
-    for child in root.named_children(&mut root.walk()) {
-        let comment = matches!(child.kind(), "line_comment" | "block_comment");
-        let inner = child.kind() == "inner_attribute_item"
-            || (comment && child.child_by_field_name("inner").is_some());
-        if inner {
-            let end = child.end_byte();
+    let mut tokens = file
+        .syntax()
+        .descendants_with_tokens()
+        .filter_map(colab_parse_rust::ra::NodeOrToken::into_token);
+    while let Some(token) = tokens.next() {
+        let kind = token.kind();
+        if kind == SyntaxKind::WHITESPACE {
+            continue;
+        }
+        let text = token.text();
+        let comment = matches!(
+            kind,
+            SyntaxKind::COMMENT | SyntaxKind::INNER_DOC_COMMENT | SyntaxKind::OUTER_DOC_COMMENT
+        );
+        let inner_doc = kind == SyntaxKind::INNER_DOC_COMMENT
+            || (comment && (text.starts_with("//!") || text.starts_with("/*!")));
+        // `#!` opens an inner attribute at the top of the file.
+        let inner_attr = (kind == SyntaxKind::POUND)
+            .then(|| token.parent().and_then(ast::Attr::cast))
+            .flatten()
+            .filter(|a| a.excl_token().is_some())
+            .filter(|a| {
+                a.syntax()
+                    .parent()
+                    .is_some_and(|p| p.kind() == SyntaxKind::SOURCE_FILE)
+            });
+        let end_of = if inner_doc {
+            Some(span(token.text_range()).1)
+        } else {
+            inner_attr.as_ref().map(|a| end(a.syntax()))
+        };
+        if let Some(end) = end_of {
             insert_at = if source_code[..end].ends_with('\n') {
                 end
             } else {
                 source_code[end..].find('\n').map_or(end, |p| end + p + 1)
             };
+            // Past the attribute's own tokens.
+            if inner_attr.is_some() {
+                for t in tokens.by_ref() {
+                    if span(t.text_range()).1 >= end {
+                        break;
+                    }
+                }
+            }
         } else if !comment {
             break;
         }

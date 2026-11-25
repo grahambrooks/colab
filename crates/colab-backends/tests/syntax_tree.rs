@@ -1,6 +1,7 @@
 //! `colab_syntax::Tree::from_tree_sitter` over every source file the repo
-//! holds in a language colab parses: the property samples, the corpus
-//! cases, and colab's own Rust. For each file the colab tree must
+//! holds in a language colab parses with tree-sitter: the property samples
+//! and the corpus cases (Rust is rust-analyzer's, `rust_parser.rs`). For
+//! each file the colab tree must
 //!
 //! - be lossless: its tokens' texts, in order, are the file;
 //! - be tree-sitter's tree: the same nodes, in the same order, with the
@@ -32,7 +33,6 @@ fn language_of(path: &Path) -> Option<&'static str> {
         "php" => "php",
         "py" => "python",
         "rb" => "ruby",
-        "rs" => "rust",
         "swift" => "swift",
         "ts" => "ts",
         "tsx" => "tsx",
@@ -160,9 +160,10 @@ fn the_colab_tree_is_tree_sitters_and_lossless_over_every_source_file() {
         }
         *checked.entry(lang).or_default() += 1;
     }
+    // The 13 tree-sitter source languages (Rust is rust-analyzer's).
     assert!(
-        checked.len() >= 14,
-        "every source language has a file: {checked:?}"
+        checked.len() >= 13,
+        "every tree-sitter source language has a file: {checked:?}"
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     // `--nocapture` shows what building the tree costs beside the parse.

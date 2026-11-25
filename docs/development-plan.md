@@ -524,6 +524,31 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    read tree-sitter; the corpus and conformance matrix on the new parser;
    and the user-visible names (`where … is`, `field`) for rust-analyzer's
    kinds.
+   **Done 2026-11-25: Rust has no tree-sitter.** `tree-sitter-rust` is out
+   of the dependency graph, tests included. `rust::pattern`, `symbol`,
+   `call`, `use`, declarations and `colab ast` read rust-analyzer: the
+   pattern engine through `Syntax::Own`; `use`, declarations and calls
+   from its typed AST (`colab-lang-rust/src/{uses,own}.rs`, through
+   `SourceLanguage::own`). Today's behaviour is kept where users see it:
+   tree-sitter's kind names are aliases (`call_expression` is `call_expr`
+   and `method_call_expr`), its fields are put on rust-analyzer's nodes,
+   and `$F($$$A)` matches method calls (`PatternLanguage::method_calls`),
+   with rust-analyzer's own names for finer control (`where $F is
+   path_expr` for plain calls only). Both tables came from lining up the
+   two parsers' nodes over the Cargo registry. Engine changes this needed,
+   all language-neutral: delete's attachments, `colab ast` and
+   `generalize` on colab's own tree; a match starting after the docs and
+   attributes its node holds; one match per run of nodes over the same
+   text; missing tokens invisible to matching. The corpus, conformance
+   matrix, evals and hook replay pass (the replay's one change is a rule
+   the hook now rightly withholds: on rust-analyzer's tree `let $A`
+   binds `mut x`, so the learned rule would rematch its output); the
+   property suite's Rust row went from 37/40 to 37/37. Over the registry
+   `colab find '$X.unwrap()'` finds 457,704 matches against
+   tree-sitter's 457,760 (the files the two parsers read differently), in
+   21.7–24.5 s against 25.4 s. Known difference: a field-access pattern
+   (`$X.f`) no longer matches a method's callee (`x.f()`), which
+   tree-sitter read as a field expression.
    Parsers in order of value, each replacing tree-sitter for its
    language once it passes the bar: Rust (`ra_ap_syntax`) and JS / TS /
    TSX / JSON (Biome) through adapters; then Go, Java and Kotlin

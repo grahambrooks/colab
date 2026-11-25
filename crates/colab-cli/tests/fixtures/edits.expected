@@ -6,8 +6,7 @@
      "$A.files_changed = $B" -> "$A.set_counts(10, 4, $B)"
  4 spoke in the 2026-11-24 replay:
      "$A.files_visited = $B" -> "$A.set_counts($B, 0, 0)"
- 5 spoke in the 2026-11-24 replay:
-     "let $A = colab_core::merge::prepare_writes(\n        $B,\n    )?;" -> "let mut $A = colab_core::merge::prepare_writes(\n        changes\n            .iter()\n            .filter(|c| c.changed() && !c.created)\n            .map(|c| (c.path.as_path(), c.before.as_str(), c.after.as_str())),\n    )?;\n    prepare_creations(changes, &mut $A);"
+ 5 spoke in the 2026-11-24 replay: -
  6 spoke in the 2026-11-24 replay:
      "change_diff($A)" -> "unified_diff(&$A.path, &$A.before, &$A.after)"
  7 silent in the 2026-11-24 replay: -

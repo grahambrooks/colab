@@ -36,11 +36,24 @@ fn next_named(node: Node<'_>) -> Option<Node<'_>> {
     std::iter::successors(next(node), |n| next(*n)).find(Node::is_named)
 }
 
+/// Where the item spanning `start..end` begins as code: after the doc
+/// comments, comments and [`Leading`] kinds a tree holds inside the item
+/// (rust-analyzer's), which [`attached_start`] then judges one by one; at
+/// the item's start where they are its siblings (tree-sitter's).
+pub(crate) fn own_start(tree: &Tree, start: usize, end: usize, leading: Leading) -> usize {
+    let Some(node) = widest(tree, start, end) else {
+        return start;
+    };
+    node.children()
+        .filter(|c| !c.is_trivia())
+        .find(|c| !(c.is_extra() || leading.kinds.contains(&c.kind_name())))
+        .map_or(start, |c| c.start().max(start))
+}
+
 /// Where the item matched at `start..end` really starts: before the doc
 /// comments and attributes just above it that belong to it ([`Leading`]),
-/// each on its own line(s) with no blank line between it and the next.
-/// (A tree that holds them inside the item, rust-analyzer's, starts the
-/// match there already.)
+/// each on its own line(s) with no blank line between it and the next;
+/// those the item holds itself (before `start`) are judged first.
 pub(crate) fn attached_start(
     tree: &Tree,
     source: &str,
@@ -48,12 +61,23 @@ pub(crate) fn attached_start(
     end: usize,
     leading: Leading,
 ) -> usize {
-    let Some(node) = widest(tree, start, end) else {
+    let Some(node) = widest(tree, start, end).or_else(|| tree.root().covering(start..end)) else {
         return start;
     };
-    let mut at = start;
+    // What the node holds before `start`, nearest first, then its siblings
+    // before it.
+    let mut before: Vec<Node<'_>> = node
+        .children()
+        .filter(|c| !c.is_trivia() && c.end() <= start)
+        .collect();
+    before.reverse();
     let mut cursor = node;
-    while let Some(before) = prev(cursor) {
+    while let Some(p) = prev(cursor) {
+        before.push(p);
+        cursor = p;
+    }
+    let mut at = start;
+    for before in before {
         let text = before.text();
         let attached = leading.kinds.contains(&before.kind_name())
             || (before.is_extra() && leading.doc_comments.iter().any(|p| text.starts_with(p)));
@@ -70,7 +94,6 @@ pub(crate) fn attached_start(
             break;
         }
         at = before.start();
-        cursor = before;
     }
     at
 }

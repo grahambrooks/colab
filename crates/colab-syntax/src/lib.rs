@@ -65,6 +65,10 @@ pub struct Grammar {
     /// Field `i`'s name, by index (tree-sitter's ids start at 1; slot 0 is
     /// unused there).
     fields: Vec<Box<str>>,
+    /// Other names for kinds: a name another parser gave the same
+    /// construct (tree-sitter's `call_expression` for rust-analyzer's
+    /// `call_expr` and `method_call_expr`), which a rule may still spell.
+    aliases: Vec<(Box<str>, Vec<Kind>)>,
 }
 
 impl Grammar {
@@ -79,7 +83,19 @@ impl Grammar {
             name: name.into(),
             kinds,
             fields,
+            aliases: Vec::new(),
         }
+    }
+
+    /// The grammar with `name` also standing for each of `kinds` (by
+    /// their own names; one it does not have is skipped).
+    #[must_use]
+    pub fn with_alias(mut self, name: &str, kinds: &[&str]) -> Self {
+        let ids: Vec<Kind> = kinds.iter().flat_map(|k| self.kinds_named(k)).collect();
+        if !ids.is_empty() {
+            self.aliases.push((name.into(), ids));
+        }
+        self
     }
 
     pub fn name(&self) -> &str {
@@ -118,6 +134,7 @@ impl Grammar {
             .iter()
             .filter(|(_, named)| *named)
             .map(|(n, _)| &**n)
+            .chain(self.aliases.iter().map(|(n, _)| &**n))
             .collect();
         names.sort_unstable();
         names.dedup();
@@ -137,14 +154,22 @@ impl Grammar {
         names
     }
 
-    /// Every kind called `name`: an aliased kind has more than one id.
+    /// Every kind called `name`: an aliased kind has more than one id, and
+    /// an alias ([`Grammar::with_alias`]) stands for the kinds it names.
     pub fn kinds_named(&self, name: &str) -> Vec<Kind> {
-        self.kinds
+        let mut out: Vec<Kind> = self
+            .kinds
             .iter()
             .enumerate()
             .filter(|(_, (n, _))| &**n == name)
             .filter_map(|(i, _)| u16::try_from(i).ok().map(Kind))
-            .collect()
+            .collect();
+        for (alias, kinds) in &self.aliases {
+            if &**alias == name {
+                out.extend(kinds);
+            }
+        }
+        out
     }
 
     /// The field called `name`, if the grammar has one.

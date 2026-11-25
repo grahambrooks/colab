@@ -855,13 +855,22 @@ A pattern that is only a metavariable, `$X`, matches any node, so a
 `where $X is <kind>` picks nodes by kind alone:
 
 ```
-match rust::pattern '$X' where $X is foreign_mod_item, not $X matches /^unsafe/ {
+match rust::pattern '$X' where $X is extern_block, not $X matches /^unsafe/ {
     replace 'unsafe $X'
 }
 ```
 
 This is how the Rust 2024 pack finds `extern` blocks, whose item list a
 `$$$` cannot stand for.
+
+Kind names are those of the parser that reads the language (`colab ast`
+prints them). Rust is read by rust-analyzer's parser, so its kinds are
+`extern_block`, `call_expr`, `method_call_expr`; the names tree-sitter
+gave the same constructs (`foreign_mod_item`, `call_expression`) are kept
+as aliases, and `is` looks through a node to the one it wraps over the
+same text (`$X is integer_literal` holds for the literal `1`). See
+[Rust](./features.md#rust-colab-lang-rust) for method calls, fields and
+attributes.
 
 ## Across files: scan, in and then
 
@@ -3261,7 +3270,28 @@ Templated rewrite of call expressions.
 
 ## Rust (`colab-lang-rust`)
 
-Powered by `tree-sitter-rust` and `toml_edit`.
+Powered by rust-analyzer's parser (`ra_ap_syntax`, through
+`colab-parse-rust`) and `toml_edit`: pure Rust, no tree-sitter. Its trees
+recover from syntax errors and read real code, macros especially, more
+fully than tree-sitter's did.
+
+- **Kind names** are rust-analyzer's (`call_expr`, `method_call_expr`,
+  `fn`, `extern_block`; `colab ast --lang rust` shows them). The names
+  tree-sitter gave the same constructs still work in `where $X is …` as
+  aliases (`call_expression` is both calls and method calls,
+  `foreign_mod_item` is `extern_block`); a name with no counterpart
+  (`type_identifier`) gets a "did you mean".
+- **Fields** are tree-sitter's names (`function`, `arguments`, `name`,
+  `body`, `value`, `pattern`, `type`, …), put on rust-analyzer's nodes, so
+  `where $X field …` reads as before.
+- **Method calls:** `$F($$$A)` matches `x.m(a)` too, `$F` binding `x.m`.
+  For plain calls only, `where $F is path_expr`; a pattern that spells a
+  method call (`$R.m($$$A)`) matches only method calls. A field-access
+  pattern (`$X.field`) matches field accesses, not a method's callee.
+- **Attributes and doc comments** are an item's own children here. A
+  pattern leaves attributes and visibility out as before, a rewrite keeps
+  them where they are, and a delete takes the item's docs and attributes
+  with it (a plain comment above them stays).
 
 ### `rust::use`
 

@@ -32,6 +32,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
     prose_kinds: &["comment", "string_content"],
     calls: CallShape::Fields("call_expression"),
     qualifiers: None,
+    own: None,
 };
 
 /// Plug-in entry point for the `c` namespace.
