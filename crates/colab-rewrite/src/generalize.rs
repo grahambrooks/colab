@@ -381,18 +381,18 @@ fn collect(
     }
     let text = &source[node.byte_range()];
     // A string's inside is not a node a metavariable can stand for (`"$A"`
-    // is a literal), and text with no letter or digit (`.`) is no value: as
-    // a token it would also match every `.` in the template.
+    // is a literal), and neither is an escape in one (`\n`).
     let kind = node.kind();
-    if kind.ends_with("content")
-        || kind.ends_with("fragment")
-        || !text.chars().any(char::is_alphanumeric)
-    {
+    if kind.ends_with("content") || kind.ends_with("fragment") || kind.contains("escape") {
         return;
     }
-    // A list is what holds the values, not one: look inside it.
-    let shared =
-        !is_list(&node) && !text.trim().is_empty() && !token_positions(after, text).is_empty();
+    // A list is what holds the values, not one: look inside it. Text with
+    // no letter or digit (`.`) is not carried over by search: as a token it
+    // would match every `.` in the template. (As an argument, `""` is a
+    // value all the same.)
+    let shared = !is_list(&node)
+        && text.chars().any(char::is_alphanumeric)
+        && !token_positions(after, text).is_empty();
     let argument = !is_list(&node) && parent.kind().contains("argument");
     if shared || argument {
         cut.push(node.byte_range());

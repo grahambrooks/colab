@@ -36,7 +36,8 @@
 29 silent in the 2026-11-24 replay: -
 30 silent in the 2026-11-24 replay: -
 31 silent in the 2026-11-24 replay: -
-32 silent in the 2026-11-24 replay: -
+32 silent in the 2026-11-24 replay:
+     "crate::LANG\n            .compile_pattern($A, $B, $C)" -> "crate::LANG\n            .compile_pattern(\"y()\", PatternAction::Replace(\"z()\".into()), $C)"
 33 silent in the 2026-11-24 replay: -
 34 silent in the 2026-11-24 replay: -
 35 silent in the 2026-11-24 replay: -
@@ -54,7 +55,8 @@
 46 silent in the 2026-11-24 replay: -
 47 silent in the 2026-11-24 replay: -
 48 silent in the 2026-11-24 replay: -
-49 silent in the 2026-11-24 replay: -
+49 silent in the 2026-11-24 replay:
+     "let other = if $A { '\"' } else { '\\'' };" -> "let fix = if $A {\n            \"quote it with \\\"…\\\" instead (a `\\\"` inside escaped as `\\\\\\\"`)\"\n        } else {\n            \"escape it as `\\\\\\\"`, or quote the text with '…'\"\n        };"
 50 silent in the 2026-11-24 replay: -
 51 silent in the 2026-11-24 replay: -
 52 silent in the 2026-11-24 replay: -

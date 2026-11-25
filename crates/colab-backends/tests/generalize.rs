@@ -56,6 +56,15 @@ fn punctuation_and_string_contents_are_never_bound() {
         );
         assert!(rule.template.contains(".source()"), "{:?}", pairs(&rules));
     }
+    // An escape inside a string in a macro's token tree is no value either.
+    let rules = learn(
+        "rust",
+        r#"assert_eq!(call.apply("fn x() { y(); }\n"), "fn x() { ; }\n");"#,
+        r#"assert_eq!(call.apply("pub fn x() { y(); }\n"), "pub fn x() { z(); }\n");"#,
+    );
+    for rule in &rules {
+        assert!(!rule.pattern.contains("}$"), "{:?}", pairs(&rules));
+    }
 }
 
 #[test]
