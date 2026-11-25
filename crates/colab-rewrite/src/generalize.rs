@@ -84,7 +84,13 @@ pub fn generalize(
                     last_error = Some(e);
                     match (b.parent(), a.parent()) {
                         (Some(pb), Some(pa)) if within(pb, &range_b) && within(pa, &range_a) => {
-                            (b, a) = (pb, pa);
+                            // An argument list stands for its call, as in
+                            // `unit`: alone, `(path, "utf8")` parses as a
+                            // tuple and the rule would lose its callee.
+                            (b, a) = unit(pb, pa);
+                            if !within(b, &range_b) || !within(a, &range_a) {
+                                break;
+                            }
                         }
                         _ => break,
                     }

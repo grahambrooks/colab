@@ -153,6 +153,28 @@ fn a_value_quoted_inside_a_longer_token_is_a_warning() {
 }
 
 #[test]
+fn a_changed_string_argument_lifts_to_the_call_not_its_argument_list() {
+    // The string alone has nothing to vary; its argument list, alone, is a
+    // parenthesized sequence in JavaScript. The rule is the call.
+    let rules = learn(
+        "js",
+        r#"fs.writeFile(path, data, "utf8")"#,
+        r#"fs.writeFile(path, data, "latin1")"#,
+    );
+    assert_eq!(
+        pairs(&rules),
+        [(
+            "fs.writeFile($A, $B, $C)",
+            r#"fs.writeFile($A, $B, "latin1")"#
+        )]
+    );
+    assert_eq!(
+        apply("js", &rules, "fs.writeFile(out, text, \"utf8\");\n"),
+        "fs.writeFile(out, text, \"latin1\");\n"
+    );
+}
+
+#[test]
 fn mistakes_are_explained() {
     let registry = colab_backends::registry();
     let rust = registry.get("rust").unwrap();
