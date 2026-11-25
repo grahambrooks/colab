@@ -464,6 +464,7 @@ name = "colab-lang-rust"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-rust",
  "colab-rewrite",
  "toml_edit",
  "tree-sitter",

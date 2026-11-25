@@ -179,7 +179,7 @@ fn own_self_match(lang: &str, source: &str, node: &Node<'_>) -> Outcome {
     let Ok(compiled) = colab_rewrite::syntax::compile_forms(&language, text) else {
         return Outcome::Refused;
     };
-    let Some(tree) = colab_rewrite::syntax::tree(&language.grammar, source) else {
+    let Some(tree) = colab_rewrite::syntax::source_tree(&language, source) else {
         return Outcome::Missed;
     };
     let range = (node.start_byte(), node.end_byte());

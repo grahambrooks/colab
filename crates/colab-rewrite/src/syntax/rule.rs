@@ -124,7 +124,7 @@ impl RulePattern {
 
     /// `true` when `source` parses without a syntax error.
     pub fn parses_cleanly(&self, source: &str) -> bool {
-        super::tree(&self.language.grammar, source).is_some_and(|t| !t.has_error())
+        super::source_tree(&self.language, source).is_some_and(|t| !t.has_error())
     }
 
     /// Where the first match whose rewrite alone breaks `source` starts,

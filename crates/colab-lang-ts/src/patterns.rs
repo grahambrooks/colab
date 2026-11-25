@@ -50,6 +50,7 @@ pub(crate) fn language() -> PatternLanguage {
         modifier_tokens: MODIFIER_TOKENS,
         // `{ host }` is `{ host: host }`, as in JavaScript.
         shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
+        parser: None,
     }
 }
 

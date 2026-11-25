@@ -154,7 +154,7 @@ impl Checks {
         bound: &[Var],
         constraints: &[Constraint],
     ) -> Result<Self, String> {
-        let grammar = super::grammar_of(&language.grammar);
+        let grammar = super::grammar_for(language);
         let checks = constraints
             .iter()
             .filter(|c| !matches!(c.test, Test::Let { .. }))

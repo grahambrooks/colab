@@ -451,13 +451,25 @@ fn match_node<'t>(
                 return false;
             }
             let mut cands = significant(cand);
-            // Modifiers the pattern leaves out are taken as given.
+            // Modifiers the pattern leaves out are taken as given. Loose
+            // kinds among them (rust-analyzer's `attr` before a `pub`) stay
+            // for the children's match, which passes over them.
             if !rules.absorb.is_empty() && !spells(children, &rules.absorb) {
                 let leading = cands
                     .iter()
-                    .take_while(|c| rules.absorb.contains(&c.kind()))
+                    .take_while(|c| {
+                        rules.absorb.contains(&c.kind()) || rules.loose.contains(&c.kind())
+                    })
                     .count();
-                state.absorbed.extend(cands.drain(..leading));
+                let mut kept = Vec::new();
+                for c in cands.drain(..leading) {
+                    if rules.absorb.contains(&c.kind()) {
+                        state.absorbed.push(c);
+                    } else {
+                        kept.push(c);
+                    }
+                }
+                cands.splice(0..0, kept);
             }
             let exact = rules.exact.contains(kind);
             match_children(children, &cands, state, rules, exact)

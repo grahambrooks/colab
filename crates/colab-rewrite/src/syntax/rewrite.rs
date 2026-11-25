@@ -529,7 +529,7 @@ fn edits(
     template: &str,
     frame: Option<&Frame<'_>>,
 ) -> Vec<Edit> {
-    let Some(tree) = super::tree(&language.grammar, source) else {
+    let Some(tree) = super::source_tree(language, source) else {
         return Vec::new();
     };
     let mut matches = form.pattern.find_all(&tree);
@@ -679,7 +679,7 @@ pub fn rewrite(
     let text = rewrite_unguarded(language, forms, checks, lets, source, template);
     // A rewrite that leaves code which parsed unparseable is not made (the
     // rule explains why it changed nothing).
-    let breaks = |t: &str| super::tree(&language.grammar, t).is_none_or(|t| t.has_error());
+    let breaks = |t: &str| super::source_tree(language, t).is_none_or(|t| t.has_error());
     if text != source && breaks(&text) && !breaks(source) {
         return source.to_string();
     }
@@ -710,7 +710,7 @@ pub(crate) fn first_breaking_edit(
     source: &str,
     template: &str,
 ) -> Option<usize> {
-    let breaks = |t: &str| super::tree(&language.grammar, t).is_none_or(|t| t.has_error());
+    let breaks = |t: &str| super::source_tree(language, t).is_none_or(|t| t.has_error());
     forms.forms.iter().find_map(|form| {
         edits(
             language,

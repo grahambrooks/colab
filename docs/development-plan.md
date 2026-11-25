@@ -505,10 +505,25 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    colab as tree-sitter did: **fields** (rust-analyzer's live in its typed
    AST) and **tree-sitter's kind names** (`call_expr`, not
    `call_expression`), which `where … is`, `field`, the backend's
-   modifier, attribute and macro kinds, and `colab ast` all expose. Next:
-   the engine reads a `PatternLanguage`'s parser when it has one, and a
-   distance test runs the Rust rules on both parsers, to see what moving
-   them changes before any of it reaches users.
+   modifier, attribute and macro kinds, and `colab ast` all expose.
+   **Then:** the engine reads a `PatternLanguage`'s own parser when it has
+   one (`PatternLanguage::parser`), and `colab_lang_rust::on_rust_analyzer()`
+   is Rust's pattern configuration on rust-analyzer's trees (its macro
+   kinds; `attr` passed over as a loose modifier, since it is the item's
+   child there and tree-sitter's `attribute_item` its sibling; doc comments
+   extras). Of the 27 Rust patterns the repo's corpus, conformance cases
+   and examples spell, 26 find the same matches over the repo's Rust on
+   both parsers (compared by end and bindings, since rust-analyzer's items
+   start at their attributes). The one that differs is a decision, not a
+   bug: `$F($$$A)` matches method calls on tree-sitter (`a.b(x)` is a call
+   whose function is `a.b`) and not on rust-analyzer (a `method_call_expr`),
+   27,851 matches against 9,341. Still to do before `rust::pattern` moves:
+   a rewrite replaces the whole item node, so it loses the doc comments
+   and attribute layout it should keep (start the edit at the first child
+   the pattern covers); attached docs, separators and `colab ast` still
+   read tree-sitter; the corpus and conformance matrix on the new parser;
+   and the user-visible names (`where … is`, `field`) for rust-analyzer's
+   kinds.
    Parsers in order of value, each replacing tree-sitter for its
    language once it passes the bar: Rust (`ra_ap_syntax`) and JS / TS /
    TSX / JSON (Biome) through adapters; then Go, Java and Kotlin

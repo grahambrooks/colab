@@ -109,6 +109,12 @@ pub struct PatternLanguage {
     /// does not spell, so `f2() {}` gives `static async f2() {}`, not
     /// `f2() {}`. Empty where modifiers are named nodes.
     pub modifier_tokens: &'static [&'static str],
+    /// A parser of colab's own for the language, read in place of
+    /// `grammar` by the pattern engine (`crate::syntax::source_tree`):
+    /// step 3 of the move off tree-sitter, one language at a time. `None`
+    /// parses with tree-sitter. Kinds, fields and context wrappers are
+    /// then the parser's (`colab_parse_rust`'s for Rust).
+    pub parser: Option<&'static dyn colab_syntax::SourceParser>,
 }
 
 /// An item's modifiers — visibility, `static`, annotations: Rust's `pub`,

@@ -55,6 +55,38 @@ pub(crate) fn language() -> PatternLanguage {
         }),
         shorthand_fields: Some(colab_rewrite::pattern::Shorthand::BRACES),
         modifier_tokens: &[],
+        parser: None,
+    }
+}
+
+/// Rust's patterns on rust-analyzer's trees (`colab_parse_rust`), step 3
+/// of the move off tree-sitter: the same contexts and macros, its kind
+/// names, and its attributes and visibility, which are the item's own
+/// children there (tree-sitter's `attribute_item` is the item's sibling),
+/// left out of a pattern as a modifier is. Not yet what `rust::pattern`
+/// runs on: `colab-backends/tests/rust_parser.rs` measures the distance.
+/// Attached docs and separators are still judged on tree-sitter's tree,
+/// and a rewrite still replaces the whole item node, so it loses the doc
+/// comments and the layout of the attributes it keeps (next to fix: start
+/// the edit at the first child the pattern covers).
+pub fn on_rust_analyzer() -> PatternLanguage {
+    let base = language();
+    PatternLanguage {
+        macro_contents: base
+            .macro_contents
+            .map(|m| colab_rewrite::pattern::MacroContents {
+                invocation: "macro_call",
+                body: "token_tree",
+                ..m
+            }),
+        modifiers: Some(colab_rewrite::pattern::Modifiers {
+            kinds: &["visibility"],
+        }),
+        // An attribute is left out whatever else the pattern spells, as
+        // tree-sitter's sibling `attribute_item` is never seen.
+        modifier_tokens: &["attr"],
+        parser: Some(&colab_parse_rust::PARSER),
+        ..base
     }
 }
 
@@ -98,6 +130,33 @@ const EXPRESSION_MACROS: &[&str] = &[
 mod tests {
     use colab_core::{Error, Operation};
     use colab_rewrite::pattern::PatternAction;
+
+    /// The spans `pattern` matches in `src` on rust-analyzer's trees.
+    fn ra_find(pattern: &str, src: &str) -> Vec<String> {
+        let language = super::on_rust_analyzer();
+        let forms = colab_rewrite::syntax::compile_forms(&language, pattern).unwrap();
+        colab_rewrite::syntax::find(&language, &forms, src)
+            .into_iter()
+            .map(|f| f.text.trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn on_rust_analyzer_items_take_their_attributes_and_visibility() {
+        let src = "#[derive(Debug)]\npub struct A(u32);\nstruct B(u8, u8);\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n";
+        assert_eq!(
+            ra_find("pub struct $S($$$F);", src),
+            ["#[derive(Debug)]\npub struct A(u32);"]
+        );
+        assert_eq!(ra_find("struct $S($$$F);", src).len(), 2);
+        let documented = "/// A span.\n#[must_use = \"ends when dropped\"]\npub struct Span(Option<SpanData>);\n";
+        assert_eq!(ra_find("pub struct $S($$$F);", documented).len(), 1);
+        assert_eq!(ra_find("mod $M { $$$B }", src).len(), 1);
+        assert_eq!(
+            ra_find("$X.unwrap()", "fn f() { assert!(a.unwrap()); }\n"),
+            ["a.unwrap()"]
+        );
+    }
 
     #[test]
     fn an_item_pattern_without_a_visibility_matches_any_and_keeps_it() {

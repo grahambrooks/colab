@@ -40,6 +40,24 @@ pub fn grammar_of(language: &tree_sitter::Language) -> Arc<Grammar> {
         .clone()
 }
 
+/// `source` as a colab tree for `language`: by its own parser when it has
+/// one ([`PatternLanguage::parser`]), else by tree-sitter ([`tree`]).
+pub fn source_tree(language: &PatternLanguage, source: &str) -> Option<Tree> {
+    match language.parser {
+        Some(parser) => Some(parser.parse(source)),
+        None => tree(&language.grammar, source),
+    }
+}
+
+/// The kind and field names of `language`'s trees: its own parser's, or
+/// tree-sitter's.
+pub fn grammar_for(language: &PatternLanguage) -> Arc<Grammar> {
+    match language.parser {
+        Some(parser) => parser.grammar(),
+        None => grammar_of(&language.grammar),
+    }
+}
+
 /// `source` as a colab tree, parsed through the shared parse cache.
 pub fn tree(language: &tree_sitter::Language, source: &str) -> Option<Tree> {
     let parsed = crate::parse_cache::parse(language, source)?;
@@ -89,7 +107,7 @@ pub struct Forms {
 /// and its modifier tokens may be left out; a spelled modifiers node is
 /// matched exactly.
 pub fn rules_for(language: &PatternLanguage) -> colab_syntax::pattern::Rules {
-    let grammar = grammar_of(&language.grammar);
+    let grammar = grammar_for(language);
     let kinds = |names: &[&str]| -> Vec<colab_syntax::Kind> {
         names.iter().flat_map(|n| grammar.kinds_named(n)).collect()
     };
@@ -163,7 +181,7 @@ pub fn compile_forms(language: &PatternLanguage, text: &str) -> Result<Forms, St
     if let Some(stripped) = semicolon
         && let Ok(loose) = compile_fragment(language, stripped)
     {
-        let grammar = grammar_of(&language.grammar);
+        let grammar = grammar_for(language);
         for form in plain(loose, true) {
             let field = form
                 .pattern
@@ -318,7 +336,7 @@ pub fn find_where(
     checks: &Checks,
     source: &str,
 ) -> Vec<Found> {
-    let Some(tree) = self::tree(&language.grammar, source) else {
+    let Some(tree) = self::source_tree(language, source) else {
         return Vec::new();
     };
     let mut out = find_in_tree(forms, checks, &tree, None);
@@ -434,8 +452,11 @@ fn each_macro<R>(
         if frame.is_some_and(|f| !f.holds(call)) {
             continue;
         }
+        // A tree without fields (rust-analyzer's) names the macro by the
+        // call's first named child, its path.
         let name = call
             .child_by_field(spec.name_field)
+            .or_else(|| call.children().find(colab_syntax::Node::is_named))
             .map(|n| n.text().rsplit("::").next().unwrap_or(n.text()).trim());
         if !name.is_some_and(listed) {
             continue;
@@ -454,7 +475,7 @@ fn each_macro<R>(
         let wrapped = spec
             .wrapper
             .replacen(crate::pattern::PATTERN_SLOT, contents, 1);
-        let Some(wrapped_tree) = self::tree(&language.grammar, &wrapped) else {
+        let Some(wrapped_tree) = self::source_tree(language, &wrapped) else {
             continue;
         };
         if wrapped_tree.has_error() {
@@ -528,7 +549,7 @@ pub(crate) fn edit_macros(
     depth: usize,
     rewrite: impl Fn(&str, &Frame<'_>, usize) -> String,
 ) -> String {
-    let Some(tree) = self::tree(&language.grammar, text) else {
+    let Some(tree) = self::source_tree(language, text) else {
         return text.to_string();
     };
     let changed = each_macro(
@@ -573,10 +594,13 @@ pub fn compile_fragment(language: &PatternLanguage, text: &str) -> Result<Compil
     };
     // A fragment's parse is never reused, so it skips the shared cache.
     let parse = |filled: &str| {
+        if let Some(own) = language.parser {
+            return Some(own.parse(filled));
+        }
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&language.grammar).ok()?;
         let parsed = parser.parse(filled, None)?;
-        Tree::from_tree_sitter(&parsed, filled, grammar_of(&language.grammar)).ok()
+        Tree::from_tree_sitter(&parsed, filled, grammar_for(language)).ok()
     };
     fragment::compile(text, &lang, &parse)
 }

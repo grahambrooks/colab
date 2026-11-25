@@ -11,6 +11,7 @@
 mod calls;
 pub mod deps;
 mod patterns;
+pub use patterns::on_rust_analyzer;
 mod symbols;
 pub mod uses;
 

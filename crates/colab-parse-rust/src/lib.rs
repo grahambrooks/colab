@@ -28,6 +28,18 @@ pub struct RustParser;
 /// The one parser; it holds nothing but its grammar.
 pub static PARSER: RustParser = RustParser;
 
+/// A comment, which matching passes over: a plain one (a token), or a doc
+/// comment (a `doc_comment` node holding an inner or outer token).
+fn comment(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::COMMENT
+            | SyntaxKind::DOC_COMMENT
+            | SyntaxKind::INNER_DOC_COMMENT
+            | SyntaxKind::OUTER_DOC_COMMENT
+    )
+}
+
 fn named(kind: SyntaxKind) -> bool {
     !(kind.is_punct() || kind.is_keyword(EDITION) || kind == SyntaxKind::WHITESPACE)
 }
@@ -103,6 +115,7 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
                     None,
                     Flags {
                         named: true,
+                        extra: comment(kind),
                         ..Flags::default()
                     },
                 )?;
@@ -123,7 +136,7 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
                 } else {
                     let flags = Flags {
                         named: named(kind),
-                        extra: kind == SyntaxKind::COMMENT,
+                        extra: comment(kind),
                         ..Flags::default()
                     };
                     b.token(kind_of(kind), None, flags, len)?;

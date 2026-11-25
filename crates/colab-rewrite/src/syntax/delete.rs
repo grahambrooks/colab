@@ -22,7 +22,7 @@ fn delete_in(
     frame: Option<&Frame<'_>>,
     depth: usize,
 ) -> String {
-    let Some(tree) = super::tree(&language.grammar, source) else {
+    let Some(tree) = super::source_tree(language, source) else {
         return source.to_string();
     };
     let ts = crate::parse_cache::parse(&language.grammar, source);
