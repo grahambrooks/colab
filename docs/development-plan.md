@@ -479,8 +479,12 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    matches in 16.6 s against 25.4 s, and the release binary is 27.1 MB
    against 39.9 MB. The risk is provenance: one owner, account and repo
    created in September / October 2026, 1 star; MIT (tree-sitter's
-   licence), `cargo deny` passes. The switch sits in a worktree
-   (`../.wt/colab-mesquite`) pending a decision. Original notes: a
+   licence), `cargo deny` passes. **Decided 2026-11-25: not adopted.**
+   colab keeps C tree-sitter through the transition: moving to mesquite
+   and then to colab's own parsers would be two migrations of every
+   language instead of one, and step 3 replaces the parser per language
+   anyway. The worktree was removed; the comparison tool and its numbers
+   above are the reference if the question comes back. Original notes: a
    short spike on a pure-Rust tree-sitter runtime (`mesquite`, a
    safe-Rust port of the 0.25 runtime, five weeks old; tree-sitter's own
    generator, `tree-sitter-generate`, is already Rust). If colab's
