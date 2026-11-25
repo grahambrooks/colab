@@ -91,6 +91,111 @@ Found while doing the round above, in order.
 | 6 | ~~**`colab-dsl/src/compiler.rs`** (1,928 lines) **and `colab-mcp/src/lib.rs`'s tests** (most of its 1,915 lines).~~ | Done 2026-11-24 through rust-analyzer's assists: `compiler.rs` a 290-line root (compile, check) over `compiler/{syntax,includes,names,lower,tests}.rs`; MCP's tests in `src/tests.rs` (they drive private tool functions, so `tests/` cannot hold them), `lib.rs` 674 lines. |
 | 7 | **Release.** The 2026.11.4 release the M20 plugin pins is still waiting on the stable gate. | Everything since is on `main`, unreleased; see [Stable gate](#stable-gate-before-m20). |
 
+## Review 2026-11-25: safety, robustness and dependencies
+
+A critical pass over the application rather than its features: a
+security review of every surface that writes or runs something, probes
+with hostile inputs (CRLF, BOM, Latin-1, 20,000-deep nesting, 200,000
+matches in one file, syntax errors), and the dependencies' fit. Ranked
+by severity; struck through when done.
+
+| Rank | Finding | Where, and what to do |
+| ---- | ------- | --------------------- |
+| 1 | **A cloned repo's `colab.toml` runs commands through a git pack.** `[[packs]] git` / `rev` reach `git fetch` as positional arguments with no `--` and no validation, so `--upload-pack=<cmd>` runs `<cmd>` (reproduced). `hook post-edit` compiles packs, so with the hook installed an agent editing any file in a malicious clone triggers it, with no prompt; so do `fix --check` in CI on a PR and `fleet`. | `git_packs.rs:115`, `config.rs:200`. Refuse a url or rev that starts with `-`, put `--` before the url, allow only https / ssh / file urls (`-c protocol.allow=user`), revs as hex or tag characters; `hook post-edit` uses cached packs only. |
+| 2 | **A repo's `colab.toml` commands run in modes that look read-only.** `[formatters]` and `[run] check` run through `sh -c`, including under `fix --check` when the file sets `tidy = true`, and in every repo of a `fleet` with `run = fix`. | `tidy.rs:93`, `refactor.rs:366,381,401`, `fleet.rs:413`. Run them only for trusted roots (an opt-in list in `~/.config/colab`, or `--trust-config`); never under `--check` / `--dry-run`. Needs a decision. |
+| 3 | ~~**Text lost beside a syntax error.**~~ | Done 2026-11-25 (`982e9f5`): ast-grep passes over an `ERROR` node like any unnamed child, so `old($A)` matched `old(x :: y)` and the rewrite dropped `:: y`, and a `js::` rule over a `.ts` file turned `old(x as any)` into `neu(any)`. A match is now kept only when every error inside it lies within a capture (`find.rs::errors_captured`). |
+| 4 | **`create` paths can leave the workspace.** `create "../x"` wrote above the run's root; the check reads the template before captures fill it. | `pattern/rule.rs:262,291`. Check the filled path; refuse one that does not stay under the run base. |
+| 5 | **Nothing confines where MCP tools and server edits write.** Any `cwd` and paths are accepted, and a language server's `WorkspaceEdit` may name any `file://` uri. MCP tools are often auto-approved where Bash is not. | `colab-mcp/src/args.rs:23`, `colab-lsp-client/src/edit.rs`. Refuse writes outside the MCP roots (or the server's start directory), and server edits outside the project root unless `--allow-outside`. |
+| 6 | **The daemon's socket directory is predictable and unprotected on Linux.** `temp_dir()/colab-lsp-$USER`, default mode, no owner or peer check; another user can pre-create it and stand in for the language server, which then feeds rank 5. macOS's per-user `TMPDIR` mitigates it. | `colab-lsp-client/src/daemon.rs:142,174,329`. `$XDG_RUNTIME_DIR` where set, else a 0700 directory checked to be the user's and not a symlink, named by uid; check `peer_cred` on accept. |
+| 7 | ~~**Quadratic rewriting.**~~ | Done 2026-11-25 (`982e9f5`): `Rewriter::outermost` compared every match with every other, once per binding; 48,000 matches took 24.5 s, now 1.95 s (200,000: 8.6 s, mostly the linear self-call check, which parses each function body again). |
+| 8 | **Unbounded recursion.** ~~A walk over several files aborted at ~4,000 levels of nesting (rayon's 2 MiB worker stack).~~ Workers now have 64 MiB (`982e9f5`) and 8,000 levels run, but one file nested ~20,000 deep still overflows the main thread and aborts the process (an MCP server with it). | Bound the depth of the engine's own walks, or run every walk on the pool. |
+| 9 | **`js` claims `.ts` / `.tsx`.** Since `ts` and `tsx` exist, a `js::` rule reads TypeScript with the JavaScript grammar. Rank 3 stops it corrupting, but it still misses or misreads. | `colab-lang-js/src/lib.rs:28`. Drop the extensions, or point `js::` rules at the TypeScript grammars for them. Needs a decision. |
+| 10 | **The pre-bash hook is a nudge, not enforcement.** `bash -c`, `eval`, `sh <<<`, `cp`, `dd of=`, `git apply`, `ruby -i`, `awk -i inplace` all pass. | Say so in the docs; do not present it as a boundary. |
+| 11 | **Latin-1 and other non-UTF-8 files are skipped** (reported, never corrupted), so colab cannot edit them. | Low; decode-and-reencode only if a user needs it. |
+
+Sound: telemetry exports counts and flag names only (an unknown MCP tool
+name reaches a span name verbatim); the walker follows no symlinks; every
+spawn but `cli::shell` is an argument list; CRLF and BOM files round-trip.
+
+### Dependencies: what each one buys
+
+The tree is current and clean (`cargo outdated`, `cargo audit`,
+`cargo deny` on 2026-11-25), so the question is fit, not hygiene. 171
+crates build `colab` (142 at run time); the binary is 44 MB.
+
+**ast-grep-core** (0.51, pre-1.0; 6,800 lines). colab uses four things
+from it: turning a parsed pattern into a pattern tree with its
+metavariables (`Pattern`, `PatternBuilder`, the `Language` trait's
+`extract_meta_var`); the matcher that walks a node against that tree with
+`$X` / `$$$X` backtracking (`match_tree`, ~1,000 lines); the binding
+environment that makes a repeated `$X` agree (`meta_var`, ~400); and
+template filling with re-indentation (`replacer`, ~850). Its traversal,
+rule combinators, `Doc` abstraction and most of its node API go unused.
+Against that, colab's own 5,700-line pattern module spends much of its
+size correcting ast-grep's matching for rewriting: `Shape` (every named
+child accounted for, since ast-grep ignores trailing ones), `led_forms`
+and the modifier sentinels (it skips anonymous tokens before a literal,
+not before a metavariable), surgery on `PatternNode` internals,
+`first_of_kind` (its contextual pattern takes the first node of the
+kind), `errors_captured` (it skips `ERROR`), and layout keeping on top of
+its templates. Each correction is another compiled form per pattern, and
+the internals colab edits are not semver-stable. **Assessment: replace
+it** with a matcher of colab's own over tree-sitter (~1,500–2,000 lines),
+whose rules are the ones colab now bolts on: every child accounted for,
+anonymous tokens treated alike, an error node never trivial. Do it behind
+the existing `StructuralPattern` API, with the conformance matrix, the
+property suite and the corpus as the parity bar, then delete the
+corrections it makes redundant.
+
+**tree-sitter and its grammars.** Kept. The alternatives are worse: a
+native parser per language (`syn`, `swc`, …) means fourteen ASTs and no
+shared engine, most without error recovery; a language server offers no
+syntax tree to match on (document symbols and selection ranges are not
+patterns), is slow to start and missing for many languages; delimiter
+matching in the style of comby needs no grammar and would reach any
+language, but loses node kinds, `where … is`, declarations and the
+structure the Markdown backend depends on. tree-sitter is error-tolerant,
+incremental, uniform across fourteen languages and the industry default.
+Its costs are real and are what to manage: grammar quality varies (the
+C++ brace-initializer, Kotlin annotation and C# anonymous-object misparses
+are all grammar bugs colab works around); six grammars have had no
+crates.io release since late 2024 or January 2025 (C++, Ruby, TypeScript,
+JSON, Java, Kotlin) though their repositories are active; and the
+grammars are most of the binary (`parser.c` sources: C# 37 MB, Swift 23,
+Kotlin 22, C++ 17, TypeScript 17 twice). Options: a `colab-grammars`
+crate that vendors chosen upstream commits and builds them with `cc`
+(fresh grammars, still publishable, one place to patch); per-language
+Cargo features for smaller builds; fixes sent upstream for the misparses.
+YAML, Dockerfile and shell backends, the largest capability gap for
+fleet maintenance, would come from tree-sitter grammars too.
+
+**The LSP client.** Already minimal: `colab-lsp-client` speaks JSON-RPC
+over Content-Length framing on `serde_json` alone, with no `lsp-types` or
+async runtime. Its risk is behavioural (a server release that answers
+differently), which the weekly `real_lsp` job now covers for
+rust-analyzer; gopls and clangd would be the next servers to add there.
+
+**The LSP server (`colab server`, for `.colab` files).** `tower-lsp-server`
+brings 45 crates nothing else needs (tokio, tower, futures, dashmap,
+tracing, `ls-types`, …) and is the only async code in colab. The MCP
+server is already a synchronous JSON-RPC loop, and the client's transport
+already frames Content-Length messages, so the server can run on that
+transport synchronously and drop all 45. With rules now writable as JSON,
+whether `.colab` editor support is worth keeping at all is a fair
+question.
+
+**LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
+a `build.rs`. A hand-written recursive-descent parser (~700 lines) would
+drop them and could give agent-oriented error messages; worth it when the
+grammar next changes.
+
+**Logging.** `env_logger` brings `jiff`, `anstream` and `env_filter` for
+a format colab overrides anyway; a ~40-line `log::Log` would do, and
+`colored` could go with it. Small.
+
+Kept as they are: `clap`, `ignore`, `globset`, `regex`, `rayon`,
+`similar`, `toml_edit`, `serde_json`.
+
 ## Stable gate before M20
 
 A version is pinned into Claude (plugin, MCP config, hook) when all of
@@ -235,6 +340,9 @@ agents fall back to `text::literal`. A sound design:
 | Risk | Mitigation |
 | --- | --- |
 | Tree-sitter grammar drift across languages produces brittle rewrites. | Pin grammar versions per backend crate; corpus tests catch regressions on upgrade. |
+| Grammars go unreleased for years, and colab works around their misparses. | The conformance matrix and property suite name each workaround; see [Dependencies](#dependencies-what-each-one-buys) for vendoring chosen upstream commits. |
+| colab's matching depends on ast-grep internals that are not semver-stable, and corrects them with more forms per pattern. | Pinned exactly in `Cargo.lock`; the plan is a matcher of colab's own ([Dependencies](#dependencies-what-each-one-buys)). |
+| A repository's own `colab.toml` runs commands (git packs, formatters, `check`). | Open, ranks 1–2 of the [2026-11-25 review](#review-2026-11-25-safety-robustness-and-dependencies). |
 | Multi-rule scripts make scripts harder to debug. | `colab explain` shows the full lowered IR; `--format diff` previews each rule's effect. |
 | Idiom packs encourage unsafe mass rewrites. | Each pack ships a README listing exclusions; `--check` mode lets users gate adoption. |
 | Workspace split temporarily slows iteration. | Migrate in one PR, no behaviour change, full CI green before any backend work begins. |
