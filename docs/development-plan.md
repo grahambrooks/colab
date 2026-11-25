@@ -458,7 +458,30 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    matcher; parsing still uses tree-sitter (step 2 onwards). After that, the engine's other
    tree readers (`declarations`, `calls`, rename, generalize), each
    behind the same parity bar.
-2. A short spike on a pure-Rust tree-sitter runtime (`mesquite`, a
+2. **Tested 2026-11-25.** colab builds on `mesquite` 0.26.1 with its
+   grammar crates (`mesquite_rust` … `mesquite_tsx`, from the same
+   upstream versions as colab's except C#, 0.23.5 against 0.24.0) by
+   renaming the dependencies and changing three imports (TSX, PHP-only
+   and inline Markdown are separate crates), plus dropping `.clone()` on
+   `Language`, which is `Copy` there (clippy). The build then has no `cc`
+   and no `-sys` crate. All 70 test binaries pass (corpus, conformance,
+   property suite with an identical summary, matcher properties, CLI end
+   to end). A tool parsing with both runtimes compared every node (kind,
+   field, range, error, missing, extra) over ~5,900 real files from the
+   workspace and the Cargo registry: identical in Go, Java, JavaScript,
+   JSON, Kotlin, PHP, Python, Ruby, Rust, TypeScript and TSX; C# differs
+   by the older grammar; Markdown's `info_string` lost its field name in
+   185 files (a mesquite bug colab does not depend on); and 10 files of
+   ambiguous C, C++ and Swift parse differently (a `FOO(x);` statement read
+   as a type; one Swift file C cannot parse at all, which mesquite
+   parses). Parsing is 9–38% faster per language; a registry-wide
+   `colab find '$X.unwrap()'` (122,614 files) finds the same 457,760
+   matches in 16.6 s against 25.4 s, and the release binary is 27.1 MB
+   against 39.9 MB. The risk is provenance: one owner, account and repo
+   created in September / October 2026, 1 star; MIT (tree-sitter's
+   licence), `cargo deny` passes. The switch sits in a worktree
+   (`../.wt/colab-mesquite`) pending a decision. Original notes: a
+   short spike on a pure-Rust tree-sitter runtime (`mesquite`, a
    safe-Rust port of the 0.25 runtime, five weeks old; tree-sitter's own
    generator, `tree-sitter-generate`, is already Rust). If colab's
    grammars give the same trees under it on the samples and the corpus,
