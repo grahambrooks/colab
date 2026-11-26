@@ -191,7 +191,6 @@ fn link(text: &str, open: usize, to: usize, image: bool) -> Option<(Item, usize)
     } else {
         "link_text"
     };
-    let start = if image { open - 1 } else { open };
     let mut items = Vec::new();
     if image {
         items.push(punct("!", open - 1..open));
@@ -228,7 +227,6 @@ fn link(text: &str, open: usize, to: usize, image: bool) -> Option<(Item, usize)
         items.push(leaf("link_title", t));
     }
     items.push(punct(")", i..i + 1));
-    let _ = start;
     Some((
         node(if image { "image" } else { "inline_link" }, items),
         i + 1,

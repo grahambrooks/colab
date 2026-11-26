@@ -125,9 +125,11 @@ fn facts(source: &str, tree: &Tree, inline: &dyn Fn(&str) -> Option<Tree>) -> BT
                 }
             }
             "fenced_code_block" => {
+                // Without the indentation tree-sitter-md sometimes puts in
+                // a delimiter: colab's is the fence characters alone.
                 let delimiters = children(n, "fenced_code_block_delimiter")
                     .iter()
-                    .map(|d| span(d.range()))
+                    .map(|d| trim(source, d.range()))
                     .collect();
                 let language = n
                     .children()

@@ -609,14 +609,17 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    and text, list items, table cells, fences, link destinations), held to
    tree-sitter-md's by `colab-backends/tests/markdown_parser.rs`: all of
    the repo's 78 files but one tree-sitter-md misreads; over the
-   workspace's 5,816, 5,675 (97.6%); over the knowledge vault's 123, all
-   but one. What differs is mostly tree-sitter-md misreading CommonMark:
-   links whose destination holds `<` or whose text holds brackets (97
-   files), links after a code span holding a triple backtick, an item in
-   a block quote taking the next line's `> `, an ordered list that cannot
-   interrupt a paragraph. Left on colab's side: a fence's indentation
-   inside a list item (4 files). The backend runs on it and tree-sitter-md
-   leaves the shipped binary (a test dependency, for the comparison).
+   workspace's 5,816, 5,679 (97.6%); over the knowledge vault's 123, all
+   but one. What differs is tree-sitter-md misreading CommonMark: links
+   whose destination holds `<` or whose text holds brackets (97 files),
+   links after a code span holding a triple backtick, an item in a block
+   quote taking the next line's `> `, an ordered list that cannot
+   interrupt a paragraph, a list item's text lost after an escape. A
+   fence delimiter is the fence characters alone, so `in fences` strips
+   an indented fence's indentation (tree-sitter-md's delimiter sometimes
+   took it, leaving nothing to strip). The backend runs on it and
+   tree-sitter-md leaves the shipped binary (a test dependency, for the
+   comparison).
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

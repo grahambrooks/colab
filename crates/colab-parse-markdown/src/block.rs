@@ -206,8 +206,9 @@ impl<'s> Blocks<'s> {
             return None;
         }
         let l = lines[i];
-        // A delimiter takes its indentation with it.
-        let mut items = vec![leaf("fenced_code_block_delimiter", l.content..at + n)];
+        // A delimiter is its run of backticks or tildes alone, so the text
+        // before it on its line is the fence's indentation (`Fence::indent`).
+        let mut items = vec![leaf("fenced_code_block_delimiter", at..at + n)];
         let info_trimmed = info.trim();
         if !info_trimmed.is_empty() {
             let istart = at + n + (info.len() - info.trim_start().len());
@@ -245,10 +246,7 @@ impl<'s> Blocks<'s> {
         }
         let (end_line, next) = match close {
             Some((c, cat, m)) => {
-                items.push(leaf(
-                    "fenced_code_block_delimiter",
-                    lines[c].content..cat + m,
-                ));
+                items.push(leaf("fenced_code_block_delimiter", cat..cat + m));
                 (lines[c], c + 1)
             }
             None => (*lines.last().unwrap_or(&l), lines.len()),

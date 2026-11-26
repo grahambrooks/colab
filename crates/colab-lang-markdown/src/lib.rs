@@ -423,7 +423,7 @@ impl LanguageBackend for MarkdownBackend {
 mod fence_tests {
     #[test]
     fn fences_report_language_body_and_indent() {
-        let doc = "# T\n\n```Go title=x\nfoo()\n```\n\n- item\n\n  ```rust\n  let x = 1;\n  ```\n\n````\nbare\n````\n";
+        let doc = "# T\n\n```Go title=x\nfoo()\n```\n\n- item\n\n  ```rust\n  let x = 1;\n  ```\n\n````\nbare\n````\n\n  ```sh\n  ls\n  ```\n";
         let found = super::fences(doc);
         let shown: Vec<(&str, &str, &str)> = found
             .iter()
@@ -434,7 +434,9 @@ mod fence_tests {
             [
                 ("go", "foo()\n", ""),
                 ("rust", "  let x = 1;\n", "  "),
-                ("", "bare\n", "")
+                ("", "bare\n", ""),
+                // Indented outside any list: the indentation is the fence's.
+                ("sh", "  ls\n", "  ")
             ]
         );
     }
