@@ -645,6 +645,24 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    tree-sitter's 365 s, once comments were placed in one pass (placing
    them one at a time was quadratic in a long literal: x/text's
    `date/tables.go`, 7,000 comments, took 16 s; now 1 s).
+   **Java, done 2026-11-26, as a check of the estimates** (difficulty
+   ranking of 2026-11-26: Java first, 3–4k lines): `colab-parse-java`
+   came to 3,444 lines (parser 2,361, lexer 498, names 323, emission
+   262), no dependency but `colab-syntax`, written in one session. Over
+   14,827 Java files (the workspace's 270, and 14,557 in shallow clones
+   of Spring Framework, Guava and JUnit 5 for a wider corpus), every one
+   of the 14,738 that tree-sitter reads cleanly is the same tree node for node,
+   in 2.8 s against tree-sitter's 6.1 s; the first run had 99.7%, and the
+   two differences were tree-sitter's (each statement-less `case` label
+   its own group; a record pattern's name an `identifier`). Go took
+   ~2,900 lines and Python ~3,100, so a regular grammar costs about 3k
+   lines here and the size column of the ranking holds; the harder
+   languages' estimates (Kotlin 6–8k, C# and Swift 8–10k, C++ 12k+)
+   stand as they are. The backend runs on it: patterns `Syntax::Own`,
+   `imports.rs` and `packages.rs` on colab's tree, and calls by a new
+   `CallShape::Prefixed` (the callee is the text before `arguments`, as
+   Java's tree-sitter locator read it, now on colab's tree; Kotlin and PHP
+   can use it too). tree-sitter-java is a test dependency only.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

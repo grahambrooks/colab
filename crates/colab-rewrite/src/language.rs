@@ -62,6 +62,10 @@ pub enum CallShape {
         /// parentheses survives (Kotlin, Swift).
         through_arguments: bool,
     },
+    /// One node kind whose callee is its text before its `arguments`
+    /// field, receiver included (`Old.run`): Java's `method_invocation`,
+    /// on a parser of colab's own.
+    Prefixed(&'static str),
 }
 
 /// What a language with a parser of its own ([`crate::pattern::Syntax::Own`])
@@ -175,23 +179,30 @@ impl SourceLanguage {
         crate::syntax::source_tree(&language, source)
     }
 
-    /// Every call in `source` of a `Fields`-shaped language read by a
-    /// parser of colab's own (tree-sitter-shaped: a `function` and an
-    /// `arguments` field), outermost first.
+    /// Every call in `source` of a language read by a parser of colab's
+    /// own whose calls are `Fields`-shaped (a `function` and an
+    /// `arguments` field) or `Prefixed` (the text before `arguments`),
+    /// outermost first.
     fn own_calls(&self, source: &str) -> Option<Vec<Call>> {
-        let CallShape::Fields(kind) = self.calls else {
-            return None;
+        let (kind, prefixed) = match self.calls {
+            CallShape::Fields(kind) => (kind, false),
+            CallShape::Prefixed(kind) => (kind, true),
+            CallShape::Located { .. } => return None,
         };
         let tree = self.own_tree(source)?;
         Some(
             tree.nodes()
                 .filter(|n| n.kind_name() == kind)
                 .filter_map(|n| {
-                    let callee = n.child_by_field("function")?;
                     let args = n.child_by_field("arguments")?;
+                    let callee = if prefixed {
+                        source.get(n.start()..args.start())?.trim_end().to_string()
+                    } else {
+                        n.child_by_field("function")?.text().to_string()
+                    };
                     Some(Call {
                         range: n.range(),
-                        callee: callee.text().to_string(),
+                        callee,
                         arguments: args
                             .named_children()
                             .map(|a| a.text().to_string())
@@ -316,6 +327,8 @@ impl SourceLanguage {
                 function,
                 template,
             ),
+            // Read only from a parser of colab's own (`calls_of` above).
+            CallShape::Prefixed(_) => source.to_string(),
         }
     }
 
@@ -334,6 +347,7 @@ impl SourceLanguage {
             CallShape::Located { locate, .. } => {
                 crate::calls::callees_located(&tree, source, locate)
             }
+            CallShape::Prefixed(_) => Vec::new(),
         }
     }
 

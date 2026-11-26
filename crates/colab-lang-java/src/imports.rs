@@ -1,6 +1,6 @@
 //! Operations on Java `import` declarations.
 //!
-//! `import_declaration` nodes in tree-sitter-java contain either a
+//! `import_declaration` nodes (`colab-parse-java`) contain either a
 //! `scoped_identifier` (regular import) or a `scoped_identifier`
 //! after a `static` keyword (`import static foo.Bar.baz;`). For
 //! matching we extract the dotted name as a string.
@@ -9,22 +9,20 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Tree};
+use colab_syntax::{Node, Tree};
 
 fn import_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, String)> {
-    if !node.is_named() || node.kind() != "import_declaration" {
+    if !node.is_named() || node.kind_name() != "import_declaration" {
         return None;
     }
     // The identifier node is one of the import_declaration's named
     // children — it can be `scoped_identifier`, `identifier`, or
     // `asterisk` after `import com.x.*;`. We want a dotted name; for
     // `*` we return None so it never matches a literal target.
-    for child in node.named_children(&mut node.walk()) {
-        match child.kind() {
+    for child in node.named_children() {
+        match child.kind_name() {
             "scoped_identifier" | "identifier" => {
-                if let Ok(text) = child.utf8_text(source.as_bytes()) {
-                    return Some((child, text.to_string()));
-                }
+                return Some((child, source[child.range()].to_string()));
             }
             _ => {}
         }
@@ -36,7 +34,7 @@ fn for_each_matching_import<F>(tree: &Tree, source: &str, target: &str, mut visi
 where
     F: FnMut(Node<'_>, Node<'_>),
 {
-    colab_rewrite::visit_all(tree, |node| {
+    tree.nodes().for_each(|node| {
         if let Some((name_node, name)) = import_name(node, source)
             && name == target
         {
@@ -47,11 +45,11 @@ where
 
 /// Every name this module matches against in `source`, for near-miss reporting.
 pub(crate) fn import_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
+    tree.nodes().for_each(|node| {
         if let Some((_, text)) = import_name(node, source) {
             out.push(text);
         }
@@ -98,12 +96,12 @@ impl Operation for ImportRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     for_each_matching_import(&tree, source_code, from, |_decl, name_node| {
-        edits.push((name_node.start_byte(), name_node.end_byte(), to.to_string()));
+        edits.push((name_node.start(), name_node.end(), to.to_string()));
     });
     colab_rewrite::apply_edits(
         source_code,
@@ -152,13 +150,13 @@ impl Operation for ImportDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for_each_matching_import(&tree, source_code, target, |decl, _name| {
         // `delete_lines` widens each range to whole lines.
-        spans.push((decl.start_byte(), decl.end_byte()));
+        spans.push((decl.start(), decl.end()));
     });
     colab_rewrite::delete_lines(source_code, spans)
 }
@@ -193,7 +191,7 @@ impl Operation for ImportEnsure {
 /// Insert `import <target>;` after the package declaration if no
 /// existing import already names `<target>`.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut already_present = false;
@@ -205,11 +203,11 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     }
 
     // Insert after the package_declaration if any; otherwise prepend.
-    let root = tree.root_node();
+    let root = tree.root();
     let mut insert_at: Option<usize> = None;
-    for child in root.named_children(&mut root.walk()) {
-        if child.kind() == "package_declaration" {
-            let end = child.end_byte();
+    for child in root.named_children() {
+        if child.kind_name() == "package_declaration" {
+            let end = child.end();
             insert_at = Some(source_code[end..].find('\n').map_or(end, |p| end + p + 1));
             break;
         }

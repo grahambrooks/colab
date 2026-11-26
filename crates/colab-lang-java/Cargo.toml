@@ -6,13 +6,13 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Java language backend for colab: import and package rewrites via tree-sitter-java."
+description = "Java language backend for colab: import and package rewrites on colab's own Java parser."
 
 [dependencies]
 colab-core = { workspace = true }
 colab-rewrite = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-java = { workspace = true }
+colab-syntax = { workspace = true }
+colab-parse-java = { workspace = true }
 
 [lints]
 workspace = true

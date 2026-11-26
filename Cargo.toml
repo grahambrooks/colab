@@ -26,6 +26,7 @@ members = [
     "crates/colab-parse-rust",
     "crates/colab-parse-go",
     "crates/colab-parse-python",
+    "crates/colab-parse-java",
     "crates/colab-parse-markdown",
     "crates/colab-lsp-client",
     "crates/colab-mcp",
@@ -67,6 +68,7 @@ colab-syntax = { path = "crates/colab-syntax" }
 colab-parse-rust = { path = "crates/colab-parse-rust" }
 colab-parse-go = { path = "crates/colab-parse-go" }
 colab-parse-python = { path = "crates/colab-parse-python" }
+colab-parse-java = { path = "crates/colab-parse-java" }
 colab-parse-markdown = { path = "crates/colab-parse-markdown" }
 colab-lsp-client = { path = "crates/colab-lsp-client" }
 

@@ -48,7 +48,8 @@ crates/
   colab-lang-csharp/  # C# backend (tree-sitter-c-sharp).
   colab-lang-go/      # Go backend (colab's own parser, colab-parse-go).
   colab-parse-go/     # Go as colab's own tree: a hand-written lexer and recursive-descent parser.
-  colab-lang-java/    # Java backend (tree-sitter-java).
+  colab-lang-java/    # Java backend (colab's own parser, colab-parse-java).
+  colab-parse-java/   # Java as colab's own tree: a lexer and recursive-descent parser.
   colab-lang-js/      # JS/TS backend (tree-sitter-javascript).
   colab-lang-kotlin/  # Kotlin backend (tree-sitter-kotlin-ng).
   colab-lang-php/     # PHP backend (tree-sitter-php).

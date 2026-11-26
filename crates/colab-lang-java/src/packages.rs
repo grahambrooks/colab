@@ -44,19 +44,17 @@ impl Operation for PackageRename {
 
 /// The name in every `package` declaration in `source`, for near-miss reporting.
 fn package_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        if node.kind() != "package_declaration" {
+    tree.nodes().for_each(|node| {
+        if node.kind_name() != "package_declaration" {
             return;
         }
-        for child in node.named_children(&mut node.walk()) {
-            if matches!(child.kind(), "scoped_identifier" | "identifier")
-                && let Ok(text) = child.utf8_text(source.as_bytes())
-            {
-                out.push(text.to_string());
+        for child in node.named_children() {
+            if matches!(child.kind_name(), "scoped_identifier" | "identifier") {
+                out.push(source[child.range()].to_string());
             }
         }
     });
@@ -64,25 +62,22 @@ fn package_names(source: &str) -> Vec<String> {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
-    let root = tree.root_node();
-    for child in root.named_children(&mut root.walk()) {
-        if child.kind() != "package_declaration" {
+    let root = tree.root();
+    for child in root.named_children() {
+        if child.kind_name() != "package_declaration" {
             continue;
         }
         // Find the dotted name child.
-        for name_node in child.named_children(&mut child.walk()) {
-            if !matches!(name_node.kind(), "scoped_identifier" | "identifier") {
+        for name_node in child.named_children() {
+            if !matches!(name_node.kind_name(), "scoped_identifier" | "identifier") {
                 continue;
             }
-            let Ok(name) = name_node.utf8_text(source_code.as_bytes()) else {
-                continue;
-            };
-            if name == from {
+            if &source_code[name_node.range()] == from {
                 let mut out = source_code.to_string();
-                out.replace_range(name_node.start_byte()..name_node.end_byte(), to);
+                out.replace_range(name_node.start()..name_node.end(), to);
                 return out;
             }
         }

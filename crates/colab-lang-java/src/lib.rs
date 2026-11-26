@@ -6,6 +6,7 @@
 //!   (handles both regular and `import static`).
 //! - `java::package` — rename the file's `package` declaration.
 
+#[cfg(test)]
 mod calls;
 pub mod imports;
 pub mod packages;
@@ -29,13 +30,15 @@ pub static LANG: SourceLanguage = SourceLanguage {
         "string_fragment",
         "multiline_string_fragment",
     ],
-    calls: CallShape::Located {
-        locate: calls::callee,
-        through_arguments: false,
-    },
+    calls: CallShape::Prefixed("method_invocation"),
     qualifiers: None,
     own: None,
 };
+
+/// `source` as colab's Java tree (`colab-parse-java`).
+pub(crate) fn tree(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_java::parse(source).ok()
+}
 
 /// Plug-in entry point for the `java` namespace.
 pub struct JavaBackend;
@@ -115,7 +118,7 @@ impl LanguageBackend for JavaBackend {
     }
 
     fn description(&self) -> &'static str {
-        "Java source rewrites via tree-sitter-java."
+        "Java source rewrites on colab's own Java parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

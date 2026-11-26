@@ -3363,7 +3363,10 @@ Templated rewrite of call expressions.
 
 ## Java (`colab-lang-java`)
 
-Powered by `tree-sitter-java`.
+Read by colab's own parser (`colab-parse-java`), whose trees hold
+tree-sitter-java's kinds and fields: over 14,827 Java files (Spring
+Framework, Guava, JUnit 5 and the workspace's own) it reads all 14,738
+that tree-sitter reads cleanly exactly as tree-sitter did.
 
 ### `java::import`
 

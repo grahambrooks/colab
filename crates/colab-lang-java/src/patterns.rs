@@ -16,7 +16,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// with `;` appended), then a class member.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_java::LANGUAGE.into()),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_java::PARSER),
         expando: '$',
         contexts: &[
             "@@PATTERN@@;",

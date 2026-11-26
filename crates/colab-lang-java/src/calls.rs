@@ -16,28 +16,15 @@
 //! Idempotency: templates that keep the callee text match their own
 //! output and re-apply on every pass. Rename the method to stay
 //! re-runnable.
-
-use std::borrow::Cow;
-use tree_sitter::Node;
-
-const CALL_KINDS: &[&str] = &["method_invocation"];
+//!
+//! The floor reads the callee as the source before the argument list,
+//! trailing whitespace trimmed (`CallShape::Prefixed`): taking it as raw
+//! source keeps the receiver in the target, which is what makes qualified
+//! and bare calls distinguishable.
 
 #[cfg(test)]
 fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     crate::LANG.rewrite_calls(function, template, source_code)
-}
-
-/// The argument list of a call node and its callee: the raw source
-/// before the argument list, trailing whitespace trimmed. Taking the
-/// callee as raw source keeps the receiver in the target, which is what
-/// makes qualified and bare calls distinguishable.
-pub(crate) fn callee<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, Cow<'a, str>)> {
-    if !CALL_KINDS.contains(&node.kind()) {
-        return None;
-    }
-    let args = node.child_by_field_name("arguments")?;
-    let callee = source.get(node.start_byte()..args.start_byte())?;
-    Some((args, callee.trim_end().into()))
 }
 
 #[cfg(test)]
