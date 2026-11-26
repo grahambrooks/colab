@@ -348,16 +348,14 @@ reserved for the matched path. A struct literal of a type named bare
 `crate::walker::FileChange { … }`, and a template that starts with the
 same type keeps the path.
 
-**Field shorthand (Rust, JS, TS, Ruby).** A field written `name: $VAR` in a
+**Field shorthand (Rust, JS, TS).** A field written `name: $VAR` in a
 struct or object literal also matches the shorthand `name` (a field set
 from a variable of its name): `Write { path: $P, text: $T }` finds
-`Write { path, text }` and `Write { path: p, text }` too. In Ruby the
-shorthand is 3.1's `name:`, in a hash or a call's arguments:
-`connect(host: $H)` finds `connect(host:)`. A rewrite of a shorthand
-match fills `$VAR` with the name and keeps the shorthand. Only a field
-after `{` (Ruby: also `(`) or `,` and before `,` or the closing bracket
-counts, so `let x: $T`, parameters and a Ruby `def`'s required keywords
-are left alone, and a `where` on `$VAR` matches only the fields written
+`Write { path, text }` and `Write { path: p, text }` too. A rewrite of a
+shorthand match fills `$VAR` with the name and keeps the shorthand. Only
+a field after `{` or `,` and before `,` or the closing brace counts, so
+`let x: $T` and parameters are left alone, and a `where` on `$VAR`
+matches only the fields written
 out. C#'s `new { Name }` is not matched: its grammar cannot tell a
 shorthand member from a value.
 
@@ -384,9 +382,8 @@ from just above: its doc comments (`///` and `/** */` in Rust, C#, Swift;
 `/** */` in JavaScript, Java, Kotlin, PHP; `/** */` and `///` in C), Rust's
 `#[…]` attributes and Python's decorators, up to the first blank line. A
 plain `//` or `#` comment stays, since it may be about the code around it,
-except in Go and Ruby: their documentation tools read any comment directly
-above a declaration as its doc (go doc, RDoc / YARD), so a deleted Go `func`
-takes the `//` lines above it, and a Ruby `def` the `#` lines. Deleting lines
+except in Go: go doc reads any comment directly above a declaration as its
+doc, so a deleted Go `func` takes the `//` lines above it. Deleting lines
 between two blank lines also removes one of the blanks, so deleting a run of
 items leaves a single blank line, not one per item.
 
@@ -820,7 +817,7 @@ match go::pattern 'errors.Wrap($E, $M)' where $M matches /^"/ {
 ```
 
 - **`requires import "<x>"`** runs the backend's import-equivalent
-  `ensure` (`go::import`, `rust::use`, `c::include`, `ruby::require`, …)
+  `ensure` (`go::import`, `rust::use`, `c::include`, `csharp::using`, …)
   on each file the rule rewrote, and on no other file. Every source
   backend supports it.
 - **`drops import "<x>" when unused`** deletes the import from a file the
@@ -1006,7 +1003,7 @@ refactor "stub" { }
 
 Each backend owns a namespace and exposes one or more *modules* within
 it. Every source backend — `c`, `cpp`, `csharp`, `go`, `java`, `js`,
-`kotlin`, `php`, `python`, `ruby`, `rust`, `swift` — provides an
+`ts`, `tsx`, `kotlin`, `php`, `python`, `rust`, `swift` — provides an
 import-equivalent (named for the language's own construct), a `symbol`
 rename, a `call` rewrite and `pattern`; those with a namespace or
 package declaration expose one too. The config backends `json`,
@@ -1073,9 +1070,6 @@ table below summarises:
 | `php::namespace` | Exact backslash-separated namespace. | `"App\Old"` |
 | `php::call` | Verbatim callee, including `::` or `->`. | `"Old::run"`, `"$obj->run"` |
 | `python::call` | Verbatim callee text. | `"mod.old"`, `"old_fn"` |
-| `ruby::require` | Quoted path from `require`/`require_relative`. | `"old/client"` |
-| `ruby::symbol` | Identifier or constant text. Covers `module`/`class` names. | `"OldClient"` |
-| `ruby::call` | Verbatim callee, receiver included. Parenthesised calls only. | `"Log.write"` |
 | `swift::import` | Module path. | `"OldLog"`, `"UIKit.UIView"` |
 | `swift::call` | Verbatim callee text. | `"Log.write"` |
 | `python::import` | Leading dotted prefix, segment-wise (covers `import` and `from … import`). | `"old_pkg"`, `"old_pkg.sub"` |
@@ -1260,7 +1254,7 @@ the CLI reference):
   qualifier (above). Only these languages bind a qualifier by importing
   it; in Rust an external crate needs no `use`, in Java, Kotlin, C# and
   PHP a qualifier may be a class of the same package or namespace, and C,
-  C++, Ruby and Swift imports bind no names, so a syntactic check there
+  C++ and Swift imports bind no names, so a syntactic check there
   could only guess.
 - With `--verify-lsp`, any error the language server sees after the change
   and not before.

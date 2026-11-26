@@ -258,7 +258,7 @@ pub fn list() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": workflow_properties(json!({
-                    "lang": {"type": "string", "description": "Source language namespace: go, rust, python, js, java, kotlin, c, cpp, csharp, php, ruby, swift."},
+                    "lang": {"type": "string", "description": "Source language namespace: go, rust, python, js, ts, tsx, java, kotlin, c, cpp, csharp, php, swift."},
                     "from": {"type": "string", "description": "The import as written today, e.g. `github.com/pkg/errors`, `crate::old::path`, `os.path`."},
                     "to": {"type": "string", "description": "What to import instead. Omit to delete the import."}
                 })),

@@ -241,35 +241,6 @@ def b():
 '''
 
 [[case]]
-lang = "ruby"
-script = """
-match ruby::pattern 'log($A)' where inside 'def a
-  $$$B
-end' { replace 'trace($A)' }
-match ruby::pattern 'log($A)' where not inside 'def a
-  $$$B
-end' { replace 'info($A)' }
-"""
-input = '''
-def a
-  log(1)
-end
-
-def b
-  log(2)
-end
-'''
-expected = '''
-def a
-  trace(1)
-end
-
-def b
-  info(2)
-end
-'''
-
-[[case]]
 lang = "rust"
 script = """
 match rust::pattern 'log($A)' where inside 'fn a() { $$$B }' { replace 'trace($A)' }

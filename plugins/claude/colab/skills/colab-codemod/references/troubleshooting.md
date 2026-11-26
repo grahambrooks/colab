@@ -50,8 +50,7 @@ typo. Check the target against the convention for that namespace in
 - **`<lang>::call`** matches the function text verbatim. If the source
   says `pkg.Old(…)`, the target is `"pkg.Old"`, not `"Old"`.
   `rust::call` never matches method calls (`x.foo()`); `kotlin::call`
-  skips trailing-lambda calls; `ruby::call` only rewrites parenthesised
-  calls.
+  skips trailing-lambda calls.
 - **`<lang>::symbol`** matches identifier node text exactly. It will not
   match a substring of a longer name.
 - **`json::key`** is a JSON Pointer — it starts with `/`. A dotted path

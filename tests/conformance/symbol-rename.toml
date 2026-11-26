@@ -186,22 +186,6 @@ print("count")
 '''
 
 [[case]]
-lang = "ruby"
-script = 'match ruby::symbol "count" { replace "total" }'
-input = '''
-count = 0
-# count stays
-count += 1
-puts "count"
-'''
-expected = '''
-total = 0
-# count stays
-total += 1
-puts "count"
-'''
-
-[[case]]
 lang = "rust"
 script = 'match rust::symbol "count" { replace "total" }'
 input = '''

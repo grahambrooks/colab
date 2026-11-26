@@ -13,7 +13,6 @@ pub fn grammar(lang: &str) -> tree_sitter::Language {
         "kotlin" => tree_sitter_kotlin_ng::LANGUAGE.into(),
         "php" => tree_sitter_php::LANGUAGE_PHP.into(),
         "python" => tree_sitter_python::LANGUAGE.into(),
-        "ruby" => tree_sitter_ruby::LANGUAGE.into(),
         "swift" => tree_sitter_swift::LANGUAGE.into(),
         "ts" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),

@@ -566,7 +566,7 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    | PHP | `mago-syntax` 1.61 (87 crates; C only through blake3's SIMD, `pure` avoids it) | spans and trivia, error-recovering | medium |
    | Go | `gosyn` 0.2.16 (AST), or hand-written | AST with positions | medium: a small grammar; hand-written is likely the sturdier path |
    | Java | none | — | hard: a parser of colab's own; a regular grammar, but large |
-   | Ruby | `lib-ruby-parser` (Ruby 3.1, last release 2024-04); Prism's Rust crate wraps C | — | **very difficult** |
+   | Ruby | `lib-ruby-parser` (Ruby 3.1, last release 2024-04); Prism's Rust crate wraps C | — | **very difficult**. **Dropped 2026-11-26**: the backend, its corpus, conformance cases and `ruby-lsp` mapping are gone (17 backends, 13 source languages) |
    | Kotlin | none | — | **very difficult**: newline-sensitive, large grammar |
    | Swift | none | — | **very difficult**: large, context-sensitive grammar |
    | C# | none | — | **very difficult**: one of the largest grammars |
@@ -574,8 +574,9 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    | C++ | none | — | **very difficult**: the hardest grammar there is, plus the preprocessor |
 
    The tree-sitter runtime goes only when the last of these does, so the
-   very difficult six decide when: drop them, keep tree-sitter for them
-   alone, or write parsers.
+   very difficult ones decide when: drop them, keep tree-sitter for them
+   alone, or write parsers. Ruby was dropped (2026-11-26); Kotlin,
+   Swift, C#, C and C++ are still to decide.
    **Decided 2026-11-25:** no further third-party parsers to adapt
    (rust-analyzer's suits Rust; others would each be an integration to
    carry); colab writes its own, Go and Markdown first, the most used in

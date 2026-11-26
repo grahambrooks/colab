@@ -174,7 +174,6 @@ fn source_language(lang: &str) -> &'static colab_rewrite::SourceLanguage {
         "kotlin" => &colab_lang_kotlin::LANG,
         "php" => &colab_lang_php::LANG,
         "python" => &colab_lang_python::LANG,
-        "ruby" => &colab_lang_ruby::LANG,
         "rust" => &colab_lang_rust::LANG,
         "swift" => &colab_lang_swift::LANG,
         "ts" => &colab_lang_ts::LANG,
@@ -232,7 +231,7 @@ fn literal_argument<'t>(lang: &str, call: Node<'t>, source: &str) -> Option<(Nod
         return None;
     }
     // Where `'…'` is a string, not a character.
-    let single_quoted = matches!(lang, "js" | "ts" | "tsx" | "python" | "php" | "ruby");
+    let single_quoted = matches!(lang, "js" | "ts" | "tsx" | "python" | "php");
     let mut lists: Vec<Node<'t>> = call
         .named_children()
         .filter(|c| {

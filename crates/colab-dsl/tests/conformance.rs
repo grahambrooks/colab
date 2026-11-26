@@ -68,7 +68,6 @@ const LANGUAGES: &[(&str, &str)] = &[
     ("kotlin", "Sample.kt"),
     ("php", "sample.php"),
     ("python", "sample.py"),
-    ("ruby", "sample.rb"),
     ("rust", "sample.rs"),
     ("swift", "Sample.swift"),
     ("ts", "sample.ts"),

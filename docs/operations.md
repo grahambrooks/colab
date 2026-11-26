@@ -31,8 +31,7 @@ Language servers are only needed for the commands that delegate to one
 colab looks for the usual one for each language on `PATH`:
 `rust-analyzer`, `gopls`, `clangd`, `pyright-langserver --stdio`,
 `typescript-language-server --stdio`, `jdtls`, `csharp-ls`,
-`kotlin-language-server`, `intelephense --stdio`, `ruby-lsp`,
-`sourcekit-lsp`. `--lsp '<command>'` names another.
+`kotlin-language-server`, `intelephense --stdio`, `sourcekit-lsp`. `--lsp '<command>'` names another.
 
 ## Put colab in front of an agent
 

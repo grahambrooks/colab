@@ -36,7 +36,6 @@ fn language_of(path: &Path) -> Option<&'static str> {
         "kt" | "kts" => "kotlin",
         "php" => "php",
         "py" => "python",
-        "rb" => "ruby",
         "rs" => "rust",
         "swift" => "swift",
         "ts" => "ts",

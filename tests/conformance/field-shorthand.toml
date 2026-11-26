@@ -59,16 +59,6 @@ lang = "python"
 na = "Python's `{a}` is a set, not a dict with a shorthand key."
 
 [[case]]
-lang = "ruby"
-script = "match ruby::pattern 'connect(host: $H, port: $P)' { replace 'open(host: $H, port: $P)' }"
-input = '''
-connect(host:, port: 1)
-'''
-expected = '''
-open(host:, port: 1)
-'''
-
-[[case]]
 lang = "rust"
 script = "match rust::pattern 'Conn { host: $H, port: $P }' { replace 'Link { host: $H, port: $P }' }"
 input = '''

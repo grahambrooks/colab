@@ -856,7 +856,7 @@ $ colab rename --at src/config.rs:2:9 --to amount --format diff
   (`prepareRename`), so a miss is an error, not a silent no-op.
 - **Which server:** by extension — `rust-analyzer`, `gopls`, `clangd`,
   `pyright-langserver --stdio`, `typescript-language-server --stdio`,
-  `sourcekit-lsp`, `ruby-lsp`, `kotlin-language-server`, `jdtls`,
+  `sourcekit-lsp`, `kotlin-language-server`, `jdtls`,
   `csharp-ls`, `intelephense --stdio`. Override with `--lsp`.
 - **Root:** the nearest ancestor holding `.git`, `Cargo.toml`, `go.mod`,
   `package.json`, `pyproject.toml`, `compile_commands.json`, … — the

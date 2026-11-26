@@ -14,7 +14,6 @@ members = [
     "crates/colab-lang-markdown",
     "crates/colab-lang-php",
     "crates/colab-lang-python",
-    "crates/colab-lang-ruby",
     "crates/colab-lang-rust",
     "crates/colab-lang-swift",
     "crates/colab-lang-text",
@@ -56,7 +55,6 @@ colab-lang-kotlin = { path = "crates/colab-lang-kotlin" }
 colab-lang-markdown = { path = "crates/colab-lang-markdown" }
 colab-lang-php = { path = "crates/colab-lang-php" }
 colab-lang-python = { path = "crates/colab-lang-python" }
-colab-lang-ruby = { path = "crates/colab-lang-ruby" }
 colab-lang-rust = { path = "crates/colab-lang-rust" }
 colab-lang-swift = { path = "crates/colab-lang-swift" }
 colab-lang-text = { path = "crates/colab-lang-text" }
@@ -91,7 +89,6 @@ tree-sitter-javascript = "0.25"
 tree-sitter-kotlin-ng = "1.1.0"
 tree-sitter-php = "0.25.2"
 tree-sitter-python = "0.25"
-tree-sitter-ruby = "0.23.1"
 tree-sitter-swift = "0.7.4"
 tree-sitter-typescript = "0.23.2"
 toml_edit = "0.25"

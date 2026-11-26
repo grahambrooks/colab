@@ -56,10 +56,6 @@ lang = "python"
 na = "a module qualifier `m.old(1)` is an `attribute`, the same as a method call; spell it (`m.old($A)`) to match it."
 
 [[case]]
-lang = "ruby"
-na = "`M.old(1)` is a `call` with a receiver, the same as a method call on a value; spell the receiver to match it."
-
-[[case]]
 lang = "rust"
 script = "match rust::pattern 'old($A)' { replace 'new($A)' }"
 input = '''

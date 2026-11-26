@@ -154,8 +154,8 @@ colab list-languages        # every registered backend
 colab list-rules go         # modules + actions for one backend
 ```
 
-The 18 backends: `c`, `cpp`, `csharp`, `go`, `java`, `js`, `kotlin`,
-`php`, `python`, `ruby`, `rust`, `swift`, `ts` (TypeScript's grammar:
+The 17 backends: `c`, `cpp`, `csharp`, `go`, `java`, `js`, `kotlin`,
+`php`, `python`, `rust`, `swift`, `ts` (TypeScript's grammar:
 types, interfaces, member modifiers; `js` reads `.ts` too, without them),
 `tsx` (`.tsx`: the same, with JSX elements)
 for source, and `json`,

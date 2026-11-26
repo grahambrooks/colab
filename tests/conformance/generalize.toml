@@ -139,17 +139,6 @@ log("b")
 '''
 
 [[case]]
-lang = "ruby"
-before = 'log(ctx, "a")'
-after = 'log("a")'
-input = '''
-log(other, "b")
-'''
-expected = '''
-log("b")
-'''
-
-[[case]]
 lang = "rust"
 before = 'log(ctx, "a")'
 after = 'log("a")'

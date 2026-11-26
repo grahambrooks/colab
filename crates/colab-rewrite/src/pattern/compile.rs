@@ -45,8 +45,7 @@ pub(crate) fn qualify_call<'t>(text: &'t str, sep: &str) -> Option<(String, &'t 
 /// after an opening bracket of `shorthand` or `,` and right before `,` or
 /// a closing one (whitespace aside), with `$VAR` a single metavariable the
 /// pattern names nowhere else. So `let x: $T = …` and (with braces only)
-/// `fn f(a: $T)` never count, nor does a Ruby `def`'s `(a: $T)`, whose
-/// shorthand `a:` is a required keyword, not one set from `a`. Each is
+/// `fn f(a: $T)` never count. Each is
 /// `(the bytes from the name to the end of $VAR, name, VAR)`.
 pub(crate) fn shorthand_fields(
     text: &str,
@@ -106,8 +105,7 @@ pub(crate) fn shorthand_fields(
 
 /// A template for a match of a shorthand form (see
 /// [`shorthand_fields`]): each `$VAR` is the field's name, and a field
-/// that ends up `name: name` is written as the shorthand (`name`, Ruby's
-/// `name:`).
+/// that ends up `name: name` is written as the shorthand (`name`).
 pub(crate) fn shorthand_template(
     template: &str,
     fields: &[(String, String)],

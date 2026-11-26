@@ -148,18 +148,6 @@ g = old
 '''
 
 [[case]]
-lang = "ruby"
-script = 'match ruby::call "old" { replace_call "new_one($args)" }'
-input = '''
-old(1, 2)
-g = method(:old)
-'''
-expected = '''
-new_one(1, 2)
-g = method(:old)
-'''
-
-[[case]]
 lang = "rust"
 script = 'match rust::call "old" { replace_call "new($args)" }'
 input = '''

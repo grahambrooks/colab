@@ -378,7 +378,6 @@ fn prose_ranges_cover_comments_and_strings_but_not_code() {
             "<?php\n// Needle\n$s = \"Needle\";\nfunction Needle() {}\n",
         ),
         ("python", "# Needle\ns = \"Needle\"\nNeedle = 1\n"),
-        ("ruby", "# Needle\ns = \"Needle\"\nNeedle = 1\n"),
         (
             "rust",
             "// Needle\nconst S: &str = \"Needle\";\nfn Needle() {}\n",
@@ -425,7 +424,7 @@ fn source_backends_name_their_code_fences() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 14);
+    assert_eq!(checked, 13);
     assert!(registry.get("markdown").unwrap().fence_locator().is_some());
 }
 
@@ -455,7 +454,6 @@ fn every_source_backend_lists_declarations() {
             "class A:\n    def m(self):\n        pass\n",
             "A/m",
         ),
-        ("ruby", "class A\n  def m\n  end\nend\n", "A/m"),
         ("rust", "struct S;\nimpl S {\n    fn m() {}\n}\n", "S/m"),
         ("swift", "class A {\n  func m() {}\n}\n", "A/m"),
     ];
@@ -556,5 +554,5 @@ fn every_source_backend_has_the_common_floor() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 14);
+    assert_eq!(checked, 13);
 }

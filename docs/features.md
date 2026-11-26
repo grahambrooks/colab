@@ -12,7 +12,7 @@ same in every language (a lone `$$$B` body, modifiers left out of a
 pattern, a deleted item taking its docs, `colab:ignore`, generalizing an
 edit, …) is in [`conformance.md`](./conformance.md): a feature ×
 language matrix that a test generates by running a case in each of the
-14 source languages. Each known gap there comes with a one-line
+13 source languages. Each known gap there comes with a one-line
 diagnosis.
 
 ## At a glance
@@ -62,10 +62,6 @@ diagnosis.
 | `python::symbol`    | ✅ |    |    |    |    |    |    | `.py` |
 | `python::call`      |    |    |    | ✅ |    |    |    | `.py` |
 | `python::pattern`   | ✅ | ✅ |    |    |    |    | ✅ | `.py` |
-| `ruby::require`     | ✅ | ✅ | ✅ |    |    |    |    | `.rb`, `.rake`, `.gemspec`, `.ru`, `Rakefile`, `Gemfile`, `Guardfile`, `Capfile` |
-| `ruby::symbol`      | ✅ |    |    |    |    |    |    | as `ruby::require` |
-| `ruby::call`        |    |    |    | ✅ |    |    |    | as `ruby::require` |
-| `ruby::pattern`     | ✅ | ✅ |    |    |    |    | ✅ | as `ruby::require` |
 | `rust::use`         | ✅ | ✅ | ✅ |    |    |    |    | `.rs` |
 | `rust::symbol`      | ✅ |    |    |    |    |    |    | `.rs` |
 | `rust::crate`       | ✅ | ✅ |    |    |    |    |    | `Cargo.toml` |
@@ -652,25 +648,6 @@ it. Expand the group first.
 
 `php::call` targets include the call syntax: `"helper"`, `"Old::run"`,
 and `"$obj->run"` are three distinct targets.
-
-## Ruby (`colab-lang-ruby`)
-
-Powered by `tree-sitter-ruby`.
-
-Ruby has no import statement — `require 'foo'` is an ordinary method
-call — so `ruby::require` matches a call to `require`/`require_relative`
-whose argument is a **string literal**. A computed require
-(`require File.join(dir, 'x')`) never matches, because colab cannot know
-what it resolves to. Rename preserves the quote style and the
-require/require_relative form already in the file.
-
-There is no separate namespace module: Ruby `module` and `class` names
-are constants, which `ruby::symbol` already covers.
-
-`ruby::call` rewrites **parenthesised calls only**. A paren-less call
-(`puts x`) parses as a call too, but rewriting it with a template that
-adds parentheses could change how the surrounding expression parses, so
-those are skipped.
 
 ## Kotlin (`colab-lang-kotlin`)
 

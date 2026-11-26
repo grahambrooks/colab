@@ -1,7 +1,7 @@
-# One script, six languages
+# One script, five languages
 
 A logging library moved and renamed its entry point. In a polyglot repo
-that change lands in C, C#, PHP, Ruby, Kotlin, and Swift at once — and it
+that change lands in C, C#, PHP, Kotlin, and Swift at once — and it
 is exactly the kind of mechanical, structural edit colab exists for.
 
 ```sh
@@ -11,10 +11,10 @@ colab refactor --script examples/polyglot/rename-logger.colab \
 ```
 
 ```json
-{"summary":{"visited":8,"scanned":6,"changed":6,"skipped":0,"elapsed_ms":6},
+{"summary":{"visited":7,"scanned":5,"changed":5,"skipped":0,"elapsed_ms":3},
  "rules":[{"i":0,"files":1,"rule":"c::include \"oldlog/log.h\" -> \"newlog/log.h\""},
           {"i":1,"files":1,"rule":"c::call \"log_write\" -> replace_call \"newlog_write($args)\""},
-          … 12 rules, one file each …]}
+          … 10 rules, one file each …]}
 ```
 
 Every rule reports `files: 1`, so nothing is dead. Then:
@@ -26,18 +26,18 @@ colab refactor --script examples/polyglot/rename-logger.colab --write examples/p
 
 ## What it shows
 
-**One DSL, twelve rules, six grammars.** Each backend names its import
+**One DSL, ten rules, five grammars.** Each backend names its import
 construct after the language's own — `c::include`, `csharp::using`,
-`php::use`, `ruby::require`, `kotlin::import`, `swift::import` — but the
+`php::use`, `kotlin::import`, `swift::import` — but the
 actions (`replace` / `delete` / `ensure` / `replace_call`) are identical
 everywhere.
 
 **Rules for other languages cost nothing.** The two C rules are skipped
 outright for `Service.kt`, not run and discarded: colab gates each rule on
-the path before parsing. That is why a 12-rule polyglot script runs about
+the path before parsing. That is why a 10-rule polyglot script runs about
 as fast as a 2-rule single-language one.
 
-**`visited: 8` vs `scanned: 6`.** The other two files are the
+**`visited: 7` vs `scanned: 5`.** The other two files are the
 `.colab` script and this README — visited by the walker, but not a
 language any rule targets, so never parsed.
 
@@ -47,7 +47,6 @@ language any rule targets, so never parsed.
 | -------- | ------ |
 | C / C++ | The match string is the **bare path**: `"oldlog/log.h"` matches both `#include "oldlog/log.h"` and `#include <oldlog/log.h>`, and rename preserves whichever style the file used. |
 | PHP | DSL string literals have **no escape sequences**, so a namespace separator is a single backslash: `"OldLog\Client"`. |
-| Ruby | `require` is an ordinary method call, so matching is on the string argument. A computed `require File.join(...)` never matches. |
 | Kotlin | For `import a.b.C as D` the target is `a.b.C`, not the alias. A star import `a.b.*` is matched by `"a.b"` — the `*` is punctuation. |
 | Swift | Argument labels are part of the argument text, so `$1`/`$2` keep each label with its value when reordering. |
 | C# | For `using Alias = Foo.Bar;` the target is the right-hand side, `Foo.Bar`. |
@@ -65,7 +64,7 @@ way the call reads in the source:
 | `Log.Write(x)` (C#) | `"Log.Write"` |
 | `Log::write($x)` (PHP) | `"Log::write"` |
 | `$obj->write($x)` (PHP) | `"$obj->write"` |
-| `Log.write(x)` (Ruby/Kotlin/Swift) | `"Log.write"` |
+| `Log.write(x)` (Kotlin/Swift) | `"Log.write"` |
 
 ## Idempotency
 

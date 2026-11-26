@@ -126,18 +126,6 @@ from new import thing
 '''
 
 [[case]]
-lang = "ruby"
-script = 'match ruby::require "old" { replace "new" }'
-input = '''
-require "json"
-require "old"
-'''
-expected = '''
-require "json"
-require "new"
-'''
-
-[[case]]
 lang = "rust"
 script = 'match rust::use "old::Tool" { replace "new::Tool" }'
 input = '''

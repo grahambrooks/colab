@@ -149,21 +149,6 @@ def f():
 '''
 
 [[case]]
-lang = "ruby"
-script = "match ruby::pattern 'debug($A)' { delete }"
-input = '''
-def f
-  debug(1)
-  run
-end
-'''
-expected = '''
-def f
-  run
-end
-'''
-
-[[case]]
 lang = "rust"
 script = "match rust::pattern 'debug($A)' { delete }"
 input = '''

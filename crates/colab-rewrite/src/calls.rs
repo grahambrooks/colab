@@ -52,7 +52,7 @@ fn call_edit(
 }
 
 /// [`rewrite`] for a language whose calls are not one node kind with
-/// `function` / `arguments` fields (Java, Kotlin, PHP, Ruby, Swift):
+/// `function` / `arguments` fields (Java, Kotlin, PHP, Swift):
 /// `locate` reads each call's argument list and callee its own way.
 /// With `through_arguments`, the edit ends at the argument list, so a
 /// trailing lambda or closure after it survives.

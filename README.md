@@ -6,9 +6,9 @@
 
 A scripted, AST-aware code refactoring (codemod) tool. Point it at a
 repo, hand it a small `.colab` script, and it will rewrite source
-files deterministically — using tree-sitter for the matching, not
-regex — across fourteen languages: **C, C++, C#, Go, Java, JavaScript,
-TypeScript, TSX, Kotlin, PHP, Python, Ruby, Rust, and Swift**. It
+files deterministically — matching syntax trees, not regex — across
+thirteen languages: **C, C++, C#, Go, Java, JavaScript, TypeScript,
+TSX, Kotlin, PHP, Python, Rust, and Swift**. It
 also edits **TOML, JSON and Markdown** configuration by key path, JSON
 Pointer or managed block, so a repository convention can be rolled out
 the same way (see [`examples/config`](examples/config/repo_migration/)).
@@ -61,7 +61,6 @@ import-equivalent, a symbol rename, call rewriting, and `pattern`
 | Kotlin                  | `kotlin`  | `import`, `package`, `symbol`, `call`               |
 | PHP                     | `php`     | `use`, `namespace`, `symbol`, `call`                |
 | Python                  | `python`  | `import`, `symbol`, `call`                          |
-| Ruby                    | `ruby`    | `require`, `symbol`, `call`                         |
 | Rust                    | `rust`    | `use`, `symbol`, `crate` (Cargo.toml), `call`       |
 | Swift                   | `swift`   | `import`, `symbol`, `call`                          |
 
@@ -345,7 +344,6 @@ crates/
   colab-lang-kotlin/  # Kotlin backend
   colab-lang-php/     # PHP backend
   colab-lang-python/  # Python backend
-  colab-lang-ruby/    # Ruby backend
   colab-lang-rust/    # Rust backend
   colab-lang-swift/   # Swift backend
   colab-lang-json/    # JSON (key by JSON Pointer)
@@ -372,7 +370,7 @@ add a corpus case.
 | [`examples/go/imports/`](examples/go/imports/)                                                         | Single-rule Go import rename.                                                                   |
 | [`examples/rust/rename_crate/`](examples/rust/rename_crate/)                                           | End-to-end crate rename across `Cargo.toml` and `*.rs`.                                         |
 | [`examples/rust/scoped_rename/`](examples/rust/scoped_rename/)                                         | Scoping a symbol rename with `in "<glob>"` so a shared name is only renamed where it should be. |
-| [`examples/polyglot/`](examples/polyglot/)                                                             | One script rewriting an import and a call site across C, C#, PHP, Ruby, Kotlin, and Swift.      |
+| [`examples/polyglot/`](examples/polyglot/)                                                             | One script rewriting an import and a call site across C, C#, PHP, Kotlin, and Swift.            |
 | [`examples/packs/`](examples/packs/README.md)                                                          | The built-in packs: Go 1.18, Java 8→21, CommonJS→ESM, Python 3.12 typing, Rust 2024.            |
 | [`examples/patterns/`](examples/patterns/)                                                             | Structural patterns with `$METAVARS`.                                                           |
 | [`examples/markdown/`](examples/markdown/)                                                             | Markdown edits by structure: sections, rows, items, links.                                      |

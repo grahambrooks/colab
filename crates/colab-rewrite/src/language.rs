@@ -54,7 +54,7 @@ pub enum CallShape {
     /// Go, JS, Python, Rust). The target is the `function` field's text.
     Fields(&'static str),
     /// A callee read by the backend's [`CallLocator`] (Java, Kotlin, PHP,
-    /// Ruby, Swift), which keeps a receiver in the target (`Old.run`).
+    /// Swift), which keeps a receiver in the target (`Old.run`).
     Located {
         locate: CallLocator,
         /// Replace up to the end of the argument list rather than the
@@ -92,7 +92,8 @@ pub struct SourceLanguage {
     pub namespace: &'static str,
     /// The file extensions the floor's operations run on.
     pub extensions: &'static [&'static str],
-    /// Whole file names they also run on (Ruby's `Rakefile`, …).
+    /// Whole file names they also run on, for a language whose build
+    /// files have no extension (none today).
     pub file_names: &'static [&'static str],
     /// The `<lang>::pattern` grammar, expando and contexts.
     pub pattern: fn() -> PatternLanguage,

@@ -130,16 +130,6 @@ new(2, 1)
 '''
 
 [[case]]
-lang = "ruby"
-script = "match ruby::pattern 'old($A, $B)' { replace 'new_one($B, $A)' }"
-input = '''
-old(1, 2)
-'''
-expected = '''
-new_one(2, 1)
-'''
-
-[[case]]
 lang = "rust"
 script = "match rust::pattern 'old($A, $B)' { replace 'new($B, $A)' }"
 input = '''

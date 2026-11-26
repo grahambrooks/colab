@@ -131,24 +131,6 @@ def keep():
 '''
 
 [[case]]
-lang = "ruby"
-script = """match ruby::pattern 'def old
-  $$$B
-end' { delete }"""
-input = '''
-# Old docs.
-def old
-  run
-end
-def keep
-end
-'''
-expected = '''
-def keep
-end
-'''
-
-[[case]]
 lang = "rust"
 script = "match rust::pattern 'fn old() { $$$B }' { delete }"
 input = '''

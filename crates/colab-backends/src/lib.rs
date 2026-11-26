@@ -36,7 +36,6 @@ pub fn registry() -> BackendRegistry {
     registry.register(Box::new(colab_lang_markdown::MarkdownBackend));
     registry.register(Box::new(colab_lang_php::PhpBackend));
     registry.register(Box::new(colab_lang_python::PythonBackend));
-    registry.register(Box::new(colab_lang_ruby::RubyBackend));
     registry.register(Box::new(colab_lang_rust::RustBackend));
     registry.register(Box::new(colab_lang_swift::SwiftBackend));
     registry.register(Box::new(colab_lang_text::TextBackend));
@@ -49,7 +48,7 @@ pub fn registry() -> BackendRegistry {
 /// The number of backends [`registry`] registers.
 ///
 /// Exposed so a test can assert the registry has not silently lost one.
-pub const BACKEND_COUNT: usize = 18;
+pub const BACKEND_COUNT: usize = 17;
 
 #[cfg(test)]
 mod tests {

@@ -115,8 +115,8 @@ pub struct PatternLanguage {
     /// leave out.
     pub modifiers: Option<Modifiers>,
     /// How a struct or object literal names a field by itself for a
-    /// variable of the same name (Rust's `S { text }`, JS's `{ text }`,
-    /// Ruby's `f(text:)`): a pattern's `text: $T` then also matches the
+    /// variable of the same name (Rust's `S { text }`, JS's `{ text }`):
+    /// a pattern's `text: $T` then also matches the
     /// shorthand, with `$T` bound to `text`. `None` where that spelling
     /// means something else (Go's `T{a}` is positional, Python's `{a}` a
     /// set) or the grammar cannot tell it apart (C#'s `new { A }` and
@@ -203,11 +203,10 @@ pub struct MacroContents {
 /// `name<separator> $V` written `name<kept>`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shorthand {
-    /// What the shorthand keeps of `name: value`: nothing (`text`), or
-    /// Ruby's `:` (`text:`).
+    /// What the shorthand keeps of `name: value` after the name: nothing
+    /// (`text`) in Rust and JS.
     pub kept: &'static str,
-    /// The brackets a field list opens and closes with: `{` `}`, and
-    /// Ruby's call parentheses too.
+    /// The brackets a field list opens and closes with (`{` `}`).
     pub open: &'static [char],
     pub close: &'static [char],
 }
@@ -218,12 +217,6 @@ impl Shorthand {
         kept: "",
         open: &['{'],
         close: &['}'],
-    };
-    /// `name: value` → `name:` in a hash or a call's arguments (Ruby 3.1).
-    pub const RUBY: Self = Self {
-        kept: ":",
-        open: &['{', '('],
-        close: &['}', ')'],
     };
 }
 

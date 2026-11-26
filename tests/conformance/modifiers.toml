@@ -126,10 +126,6 @@ lang = "python"
 na = "Python items have no modifiers; decorators are statements of their own, kept as written."
 
 [[case]]
-lang = "ruby"
-na = "Ruby has no item modifiers: `private` is a method call, not part of the `def`."
-
-[[case]]
 lang = "rust"
 script = "match rust::pattern 'fn old() { $$$B }' { replace 'fn new() { $$$B }' }"
 input = '''

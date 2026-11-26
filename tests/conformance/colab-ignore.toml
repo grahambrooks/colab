@@ -184,22 +184,6 @@ old(3) # colab:ignore
 '''
 
 [[case]]
-lang = "ruby"
-script = "match ruby::pattern 'old($A)' { replace 'new_one($A)' }"
-input = '''
-old(1)
-# colab:ignore
-old(2)
-old(3) # colab:ignore
-'''
-expected = '''
-new_one(1)
-# colab:ignore
-old(2)
-old(3) # colab:ignore
-'''
-
-[[case]]
 lang = "rust"
 script = "match rust::pattern 'old($A)' { replace 'new($A)' }"
 input = '''

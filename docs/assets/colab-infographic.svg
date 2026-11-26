@@ -127,9 +127,8 @@
     <rect x="56"  y="686" width="78" height="32" rx="16" class="chip"/><text x="95"  y="707">Kotlin</text>
     <rect x="142" y="686" width="64" height="32" rx="16" class="chip"/><text x="174" y="707">PHP</text>
     <rect x="214" y="686" width="82" height="32" rx="16" class="chip"/><text x="255" y="707">Python</text>
-    <rect x="304" y="686" width="70" height="32" rx="16" class="chip"/><text x="339" y="707">Ruby</text>
-    <rect x="382" y="686" width="66" height="32" rx="16" class="chip"/><text x="415" y="707">Rust</text>
-    <rect x="456" y="686" width="72" height="32" rx="16" class="chip"/><text x="492" y="707">Swift</text>
+    <rect x="304" y="686" width="66" height="32" rx="16" class="chip"/><text x="337" y="707">Rust</text>
+    <rect x="378" y="686" width="72" height="32" rx="16" class="chip"/><text x="414" y="707">Swift</text>
     <rect x="56"  y="726" width="72" height="32" rx="16" class="chipc"/><text x="92"  y="747">TOML</text>
     <rect x="136" y="726" width="68" height="32" rx="16" class="chipc"/><text x="170" y="747">JSON</text>
     <rect x="212" y="726" width="104" height="32" rx="16" class="chipc"/><text x="264" y="747">Markdown</text>

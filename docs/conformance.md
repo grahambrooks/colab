@@ -7,24 +7,24 @@ in that language and checks the output and a second, unchanged run.
 
 ✅ works · ❌ a known gap (see below) · n/a does not apply · — no case yet
 
-| Feature | c | cpp | csharp | go | java | js | kotlin | php | python | ruby | rust | swift | ts | tsx |
-| --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
-| [A call replaced by name](#a-call-replaced-by-name) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A call rewritten](#a-call-rewritten) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Held back by colab:ignore](#held-back-by-colabignore) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A deleted item takes its docs](#a-deleted-item-takes-its-docs) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Field shorthand](#field-shorthand) | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a | ✅ | ✅ | n/a | ✅ | ✅ |
-| [Generalized from an edit](#generalized-from-an-edit) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [An import moved](#an-import-moved) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A lone body](#a-lone-body) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Modifiers left out](#modifiers-left-out) | ✅ | ✅ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ | n/a | n/a | ✅ | ✅ | ✅ | ✅ |
-| [A statement deleted](#a-statement-deleted) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A qualified call matched bare](#a-qualified-call-matched-bare) | n/a | ✅ | n/a | n/a | n/a | n/a | n/a | ✅ | n/a | n/a | ✅ | n/a | n/a | n/a |
-| [A symbol renamed](#a-symbol-renamed) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Scoped with where inside](#scoped-with-where-inside) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [A binding tested with where matches](#a-binding-tested-with-where-matches) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Feature | c | cpp | csharp | go | java | js | kotlin | php | python | rust | swift | ts | tsx |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
+| [A call replaced by name](#a-call-replaced-by-name) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A call rewritten](#a-call-rewritten) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Held back by colab:ignore](#held-back-by-colabignore) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A deleted item takes its docs](#a-deleted-item-takes-its-docs) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Field shorthand](#field-shorthand) | n/a | n/a | ❌ | n/a | n/a | ✅ | n/a | n/a | n/a | ✅ | n/a | ✅ | ✅ |
+| [Generalized from an edit](#generalized-from-an-edit) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [An import moved](#an-import-moved) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A lone body](#a-lone-body) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Modifiers left out](#modifiers-left-out) | ✅ | ✅ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ |
+| [A statement deleted](#a-statement-deleted) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A qualified call matched bare](#a-qualified-call-matched-bare) | n/a | ✅ | n/a | n/a | n/a | n/a | n/a | ✅ | n/a | ✅ | n/a | n/a | n/a |
+| [A symbol renamed](#a-symbol-renamed) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Scoped with where inside](#scoped-with-where-inside) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [A binding tested with where matches](#a-binding-tested-with-where-matches) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-173 working, 1 known gaps, 22 not applicable, 0 without a case.
+161 working, 1 known gaps, 20 not applicable, 0 without a case.
 
 ## A call replaced by name
 
@@ -92,7 +92,6 @@ Cases: [`tests/conformance/modifiers.toml`](../tests/conformance/modifiers.toml)
 
 - n/a **go**: Go has no item modifiers: visibility is the name's first letter.
 - n/a **python**: Python items have no modifiers; decorators are statements of their own, kept as written.
-- n/a **ruby**: Ruby has no item modifiers: `private` is a method call, not part of the `def`.
 
 ## A statement deleted
 
@@ -113,7 +112,6 @@ Cases: [`tests/conformance/qualified-call.toml`](../tests/conformance/qualified-
 - n/a **js**: `m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it.
 - n/a **kotlin**: `M.old(1)` is a navigation expression, the same as a call on a value; spell the qualifier to match it.
 - n/a **python**: a module qualifier `m.old(1)` is an `attribute`, the same as a method call; spell it (`m.old($A)`) to match it.
-- n/a **ruby**: `M.old(1)` is a `call` with a receiver, the same as a method call on a value; spell the receiver to match it.
 - n/a **swift**: `M.old(1)` is a navigation expression, the same as a call on a value; spell the qualifier to match it.
 - n/a **ts**: `m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it.
 - n/a **tsx**: `m.old(1)` is a `member_expression` callee, the same as a method call; spell the qualifier to match it.

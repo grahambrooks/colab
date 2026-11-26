@@ -33,7 +33,6 @@ fn language_of(path: &Path) -> Option<&'static str> {
         "js" | "mjs" | "cjs" | "jsx" => "js",
         "kt" | "kts" => "kotlin",
         "php" => "php",
-        "rb" => "ruby",
         "swift" => "swift",
         "ts" => "ts",
         "tsx" => "tsx",
@@ -163,7 +162,7 @@ fn the_colab_tree_is_tree_sitters_and_lossless_over_every_source_file() {
     }
     // The source languages still read through tree-sitter.
     assert!(
-        checked.len() >= 11,
+        checked.len() >= 10,
         "every tree-sitter source language has a file: {checked:?}"
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));

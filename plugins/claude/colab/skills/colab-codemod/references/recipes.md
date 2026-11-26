@@ -23,7 +23,6 @@ package declaration expose one too.
 | `kotlin` | `import`  | `package`   | — | `.kt` `.kts` |
 | `php`    | `use`     | `namespace` | — | `.php` `.phtml` |
 | `python` | `import`  | — | — | `.py` |
-| `ruby`   | `require` | — | — | `.rb` `.rake` `.gemspec` `.ru` `Rakefile` `Gemfile` … |
 | `rust`   | `use`     | — | `crate` (`.toml`; `replace`/`delete` only) | `.rs` `Cargo.toml` |
 | `swift`  | `import`  | — | — | `.swift` |
 
@@ -76,7 +75,6 @@ Confirm at runtime rather than trusting this table:
 | `php::use` | Backslash-separated name, **single backslash**. | `"App\Old\Thing"` |
 | `php::namespace` | Exact backslash-separated namespace. | `"App\Old"` |
 | `python::import` | Leading dotted prefix, segment-wise. Covers `import x` and `from x import y`. | `"old_pkg"`, `"old_pkg.sub"` |
-| `ruby::require` | Quoted path from `require`/`require_relative`. | `"old/client"` |
 | `rust::use` | Leading path prefix, segment-wise. | `"tokio"`, `"tokio::sync"` |
 | `rust::crate` | `Cargo.toml` dependency key. | `"old_crate"` |
 | `swift::import` | Module path. | `"OldLog"`, `"UIKit.UIView"` |
@@ -317,27 +315,6 @@ Expand the group first.
 PHP call targets carry the call syntax: `"helper"`, `"Old::run"` and
 `"$obj->run"` are three distinct targets.
 
-### Ruby requires
-
-```
-refactor "ruby-migrate" {
-    match ruby::require "old/client" { replace "new/client" }
-    match ruby::require "json" { ensure }
-    match ruby::symbol "OldClient" { replace "NewClient" }
-}
-```
-
-`require` is an ordinary method call, so matching is on the string
-argument — a computed `require File.join(dir, 'x')` never matches.
-Rename preserves the quote style and the `require`/`require_relative`
-form. `ensure` places the new require below any magic comment.
-
-Ruby has no namespace module: `module` and `class` names are constants,
-which `ruby::symbol` already covers.
-
-`ruby::call` rewrites **parenthesised calls only** — rewriting `puts x`
-could change how the surrounding expression parses.
-
 ### Kotlin package move
 
 ```
@@ -389,7 +366,6 @@ refactor "logger-v2" {
     match c::include "oldlog/log.h" { replace "newlog/log.h" }
     match csharp::using "OldLog.Client" { replace "NewLog.Client" }
     match php::use "OldLog\Client" { replace "NewLog\Client" }
-    match ruby::require "oldlog/client" { replace "newlog/client" }
     match kotlin::import "com.oldlog.Client" { replace "com.newlog.Client" }
     match swift::import "OldLog" { replace "NewLog" }
 }

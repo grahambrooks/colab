@@ -486,7 +486,7 @@ fn every_backend_advertises_import_symbol_and_call() {
 
     // The import-equivalent module is named for the language's own
     // construct, so accept any of these.
-    const IMPORT_MODULES: &[&str] = &["import", "include", "use", "using", "require"];
+    const IMPORT_MODULES: &[&str] = &["import", "include", "use", "using"];
     // Config-file backends edit data, not source, and `text` reads every
     // file as plain text: they have no imports, symbols or calls. They are
     // named here so a new source backend cannot slip past the floor by
@@ -517,7 +517,7 @@ fn every_backend_advertises_import_symbol_and_call() {
         );
         assert!(modules.contains(&"call"), "{name} lacks call: {modules:?}");
     }
-    assert_eq!(source_backends, 14, "source backend count changed");
+    assert_eq!(source_backends, 13, "source backend count changed");
 }
 
 #[test]

@@ -148,18 +148,6 @@ old("keep")
 '''
 
 [[case]]
-lang = "ruby"
-script = "match ruby::pattern 'old($A)' where $A matches /tmp/ { replace 'new_one($A)' }"
-input = '''
-old("tmp")
-old("keep")
-'''
-expected = '''
-new_one("tmp")
-old("keep")
-'''
-
-[[case]]
 lang = "rust"
 script = "match rust::pattern 'old($A)' where $A matches /tmp/ { replace 'new($A)' }"
 input = '''
