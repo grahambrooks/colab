@@ -16,7 +16,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// written, then with `;` appended), then a class member.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_c_sharp::LANGUAGE.into()),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_csharp::PARSER),
         expando: 'µ',
         contexts: &[
             "return @@PATTERN@@;",

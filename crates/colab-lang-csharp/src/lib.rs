@@ -38,6 +38,11 @@ pub static LANG: SourceLanguage = SourceLanguage {
     own: None,
 };
 
+/// `source` as colab's C# tree (`colab-parse-csharp`).
+pub(crate) fn tree(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_csharp::parse(source).ok()
+}
+
 /// Plug-in entry point for the `csharp` namespace.
 pub struct CSharpBackend;
 
@@ -120,7 +125,7 @@ impl LanguageBackend for CSharpBackend {
     }
 
     fn description(&self) -> &'static str {
-        "C# source rewrites via tree-sitter-c-sharp."
+        "C# source rewrites via colab's own C# parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

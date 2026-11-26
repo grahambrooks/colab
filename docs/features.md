@@ -629,7 +629,8 @@ sees the source as written.
 
 ## C# (`colab-lang-csharp`)
 
-Powered by `tree-sitter-c-sharp`.
+Powered by colab's own C# parser (`colab-parse-csharp`, with
+tree-sitter-c-sharp's node kinds).
 
 `csharp::using` covers all three forms. For the alias form the target is
 the **right-hand side**, since that is the thing being imported:

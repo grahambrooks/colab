@@ -337,7 +337,7 @@ crates/
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR
   colab-lang-c/       # C backend
   colab-lang-cpp/     # C++ backend
-  colab-lang-csharp/  # C# backend
+  colab-lang-csharp/  # C# backend (colab's own parser, colab-parse-csharp)
   colab-lang-go/      # Go backend
   colab-lang-java/    # Java backend
   colab-lang-js/      # JS/TS backend

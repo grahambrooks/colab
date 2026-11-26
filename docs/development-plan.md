@@ -701,6 +701,29 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    TypeScript; TSX's 63 error files were all JSX tags with type arguments
    (`<Select<Option> …>`). `ts` and `tsx` run on it; tree-sitter-typescript
    is a test dependency.
+   **C#, done 2026-11-26:** `colab-parse-csharp`, 5,749 lines (parser
+   2,388, expressions and patterns 1,704, types 451, lexer 817, names 105,
+   emission 284), no dependency but `colab-syntax`. The workspace has only
+   162 C# files, so it was held to a corpus of four public repositories
+   (jellyfin, Newtonsoft.Json, eShop, efcore; 9,745 files, 9,179 clean to
+   tree-sitter): 9,082 the same (98.9%), in 4.0 s against 15.8 s, and no
+   clean file read with an error; the workspace's 108 clean files are all
+   the same. The first run had 64%, most of it two things: the line end
+   of a directive tree-sitter takes over a run of newlines, and a BOM
+   before `#region`. Most of the work after that was tree-sitter's GLR
+   choices, which the grammar alone does not predict and were found by
+   probing: an `is` chain's first test takes the rest of it into its
+   constant (`x is null || y` is `x is (null || y)`) unless the chain
+   holds two tests that could be constants and does not end in one, or a
+   `? :` follows, and then a bare name before `&&` is a type
+   (`is_expression`); `(a) - b` is a cast; conditional access binds at the
+   conditional's precedence (`x + b?.c` is `(x + b)?.c`); a parenthesized
+   pattern is a tuple constant whenever every element is an argument
+   (`not null` reads as a declaration there); `(T)F<A>(x)` and
+   `new X<A>(y) { … }` are comparisons, a cast's dynamic precedence or the
+   smaller tree winning. The 97 left are more of the same tie-breaks.
+   `csharp` runs on it (`usings.rs` and `namespaces.rs` ported to colab's
+   tree); tree-sitter-c-sharp is a test dependency.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

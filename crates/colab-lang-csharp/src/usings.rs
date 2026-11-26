@@ -17,22 +17,20 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Tree};
+use colab_syntax::{Node, Tree};
 
 /// The dotted-name node a `using_directive` imports, plus its text.
 ///
 /// Takes the *last* qualified name/identifier child so the alias form
 /// (`using Alias = Foo.Bar;`) yields `Foo.Bar` rather than `Alias`.
 fn using_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str)> {
-    if node.kind() != "using_directive" {
+    if !node.is_named() || node.kind_name() != "using_directive" {
         return None;
     }
     let mut found = None;
-    for child in node.named_children(&mut node.walk()) {
-        if matches!(child.kind(), "qualified_name" | "identifier")
-            && let Ok(text) = child.utf8_text(source.as_bytes())
-        {
-            found = Some((child, text));
+    for child in node.named_children() {
+        if matches!(child.kind_name(), "qualified_name" | "identifier") {
+            found = Some((child, &source[child.range()]));
         }
     }
     found
@@ -42,7 +40,7 @@ fn for_each_matching_using<F>(tree: &Tree, source: &str, target: &str, mut visit
 where
     F: FnMut(Node<'_>, Node<'_>),
 {
-    colab_rewrite::visit_all(tree, |node| {
+    tree.nodes().for_each(|node| {
         if let Some((name_node, text)) = using_name(node, source)
             && text == target
         {
@@ -53,11 +51,11 @@ where
 
 /// Every name this module matches against in `source`, for near-miss reporting.
 pub(crate) fn using_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
+    tree.nodes().for_each(|node| {
         if let Some((_, text)) = using_name(node, source) {
             out.push(text.to_string());
         }
@@ -104,12 +102,12 @@ impl Operation for UsingRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     for_each_matching_using(&tree, source_code, from, |_directive, name_node| {
-        edits.push((name_node.start_byte(), name_node.end_byte(), to.to_string()));
+        edits.push((name_node.start(), name_node.end(), to.to_string()));
     });
     colab_rewrite::apply_edits(
         source_code,
@@ -158,13 +156,13 @@ impl Operation for UsingDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for_each_matching_using(&tree, source_code, target, |directive, _name| {
         // `delete_lines` widens each range to whole lines.
-        spans.push((directive.start_byte(), directive.end_byte()));
+        spans.push((directive.start(), directive.end()));
     });
     colab_rewrite::delete_lines(source_code, spans)
 }
@@ -199,7 +197,7 @@ impl Operation for UsingEnsure {
 /// Insert `using <target>;` after the last existing using directive, or
 /// at the top of the file when there is none.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
 
@@ -212,10 +210,9 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     }
 
     let mut insert_at = 0usize;
-    let root = tree.root_node();
-    for child in root.named_children(&mut root.walk()) {
-        if child.kind() == "using_directive" {
-            let end = child.end_byte();
+    for child in tree.root().named_children() {
+        if child.kind_name() == "using_directive" {
+            let end = child.end();
             insert_at = source_code[end..]
                 .find('\n')
                 .map_or(source_code.len(), |p| end + p + 1);
