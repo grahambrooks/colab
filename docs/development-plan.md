@@ -640,7 +640,10 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    read as tree-sitter reads them, newline-as-whitespace after a dangling
    operator included. tree-sitter-python is a test dependency only.
    Go over the module cache (186,104 files, 185,743 clean to
-   tree-sitter): 184,382 the same (99.3%).
+   tree-sitter): 184,382 the same (99.3%), in 188 s against
+   tree-sitter's 365 s, once comments were placed in one pass (placing
+   them one at a time was quadratic in a long literal: x/text's
+   `date/tables.go`, 7,000 comments, took 16 s; now 1 s).
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

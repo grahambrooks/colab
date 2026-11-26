@@ -77,9 +77,13 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
         Item::Node(n) => n,
         Item::Tok(_) => unreachable!("a file is a node"),
     };
-    for extra in &lexed.extras {
-        place_extra(&mut root, extra.kind, extra.start, extra.end);
-    }
+    let mut extras: Vec<(usize, usize, &'static str)> = lexed
+        .extras
+        .iter()
+        .map(|e| (e.start, e.end, e.kind))
+        .collect();
+    extras.sort_unstable();
+    place_extras(&mut root, extras);
     let mut b = Builder::new(text, names().grammar.clone());
     if p.errors || lexed.errors {
         b.error_seen();
@@ -98,40 +102,71 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
     b.finish()
 }
 
-/// A comment or line continuation into the deepest node holding code on
-/// both sides of it.
-fn place_extra(root: &mut Node, kind: &'static str, start: usize, end: usize) {
-    let mut node = root;
-    loop {
-        let inside = node.items.iter().position(|i| {
-            matches!(i, Item::Node(n) if !n.items.is_empty()) && i.start() < start && end <= i.end()
-        });
-        match inside {
-            Some(k) => match &mut node.items[k] {
-                Item::Node(n) => node = n,
-                Item::Tok(_) => unreachable!(),
-            },
-            None => break,
+/// Each comment and line continuation (in order) into the deepest node
+/// holding code on both sides of it: one pass down the tree, a binary
+/// search per extra and level, so thousands of comments in one long
+/// literal stay linear.
+fn place_extras(node: &mut Node, extras: Vec<(usize, usize, &'static str)>) {
+    if extras.is_empty() {
+        return;
+    }
+    type Extras = Vec<(usize, usize, &'static str)>;
+    let mut into: Vec<(usize, Extras)> = Vec::new();
+    let mut here = Vec::new();
+    for e in extras {
+        let (start, end, _) = e;
+        // Children are in order, so the one that could hold the extra is
+        // the first ending at or after it.
+        let k = node.items.partition_point(|i| i.end() < end);
+        match node.items.get(k) {
+            Some(i @ Item::Node(n))
+                if !n.items.is_empty() && i.start() < start && end <= i.end() =>
+            {
+                match into.last_mut() {
+                    Some((last, list)) if *last == k => list.push(e),
+                    _ => into.push((k, vec![e])),
+                }
+            }
+            _ => here.push(e),
         }
     }
-    let at = node
-        .items
-        .iter()
-        .position(|i| i.start() >= end)
-        .unwrap_or(node.items.len());
-    node.items.insert(
-        at,
-        Item::Tok(Tok {
-            kind,
-            named: true,
-            start,
-            end,
-            field: None,
-            hidden: false,
-            missing: false,
-            extra: true,
-        }),
-    );
+    for (k, list) in into {
+        if let Item::Node(n) = &mut node.items[k] {
+            place_extras(n, list);
+        }
+    }
+    if here.is_empty() {
+        return;
+    }
+    let old = std::mem::take(&mut node.items);
+    let mut items = Vec::with_capacity(old.len() + here.len());
+    let mut pending = here.into_iter().peekable();
+    for item in old {
+        let at = item.start();
+        while let Some(&e) = pending.peek() {
+            if e.1 > at {
+                break;
+            }
+            items.push(extra(e));
+            pending.next();
+        }
+        items.push(item);
+    }
+    items.extend(pending.map(extra));
+    node.items = items;
+}
+
+fn extra((start, end, kind): (usize, usize, &'static str)) -> Item {
+    Item::Tok(Tok {
+        kind,
+        named: true,
+        start,
+        end,
+        field: None,
+        hidden: false,
+        missing: false,
+        extra: true,
+    })
 }
 
 fn emit(b: &mut Builder, item: &Item) -> Result<(), BuildError> {

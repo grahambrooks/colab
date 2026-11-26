@@ -76,9 +76,9 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
         Item::Node(n) => n,
         Item::Tok(_) => unreachable!("a file is a node"),
     };
-    for (start, end) in comments {
-        place_comment(&mut root, start, end);
-    }
+    let mut comments = comments;
+    comments.sort_unstable();
+    place_comments(&mut root, comments);
     let mut b = Builder::new(text, names().grammar.clone());
     if p.errors {
         b.error_seen();
@@ -97,39 +97,69 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
     b.finish()
 }
 
-/// `comment` into the deepest node holding code on both sides of it.
-fn place_comment(root: &mut Node, start: usize, end: usize) {
-    let mut node = root;
-    loop {
-        let inside = node.items.iter().position(|i| {
-            matches!(i, Item::Node(n) if !n.items.is_empty()) && i.start() < start && end <= i.end()
-        });
-        match inside {
-            Some(k) => match &mut node.items[k] {
-                Item::Node(n) => node = n,
-                Item::Tok(_) => unreachable!(),
-            },
-            None => break,
+/// Each comment (in order) into the deepest node holding code on both
+/// sides of it: one pass down the tree, a binary search per comment and
+/// level, so a generated file with thousands of comments in one long
+/// literal stays linear.
+fn place_comments(node: &mut Node, comments: Vec<(usize, usize)>) {
+    if comments.is_empty() {
+        return;
+    }
+    let mut into: Vec<(usize, Vec<(usize, usize)>)> = Vec::new();
+    let mut here = Vec::new();
+    for (start, end) in comments {
+        // Children are in order, so the one that could hold the comment is
+        // the first ending at or after it.
+        let k = node.items.partition_point(|i| i.end() < end);
+        match node.items.get(k) {
+            Some(i @ Item::Node(n))
+                if !n.items.is_empty() && i.start() < start && end <= i.end() =>
+            {
+                match into.last_mut() {
+                    Some((last, list)) if *last == k => list.push((start, end)),
+                    _ => into.push((k, vec![(start, end)])),
+                }
+            }
+            _ => here.push((start, end)),
         }
     }
-    let at = node
-        .items
-        .iter()
-        .position(|i| i.start() >= end)
-        .unwrap_or(node.items.len());
-    node.items.insert(
-        at,
-        Item::Tok(Tok {
-            kind: "comment",
-            named: true,
-            start,
-            end,
-            field: None,
-            hidden: false,
-            missing: false,
-            extra: true,
-        }),
-    );
+    for (k, list) in into {
+        if let Item::Node(n) = &mut node.items[k] {
+            place_comments(n, list);
+        }
+    }
+    if here.is_empty() {
+        return;
+    }
+    let old = std::mem::take(&mut node.items);
+    let mut items = Vec::with_capacity(old.len() + here.len());
+    let mut pending = here.into_iter().peekable();
+    for item in old {
+        let at = item.start();
+        while let Some(&(start, end)) = pending.peek() {
+            if end > at {
+                break;
+            }
+            items.push(comment(start, end));
+            pending.next();
+        }
+        items.push(item);
+    }
+    items.extend(pending.map(|(start, end)| comment(start, end)));
+    node.items = items;
+}
+
+fn comment(start: usize, end: usize) -> Item {
+    Item::Tok(Tok {
+        kind: "comment",
+        named: true,
+        start,
+        end,
+        field: None,
+        hidden: false,
+        missing: false,
+        extra: true,
+    })
 }
 
 fn emit(b: &mut Builder, item: &Item) -> Result<(), BuildError> {
