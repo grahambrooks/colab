@@ -575,8 +575,12 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
 
    The tree-sitter runtime goes only when the last of these does, so the
    very difficult ones decide when: drop them, keep tree-sitter for them
-   alone, or write parsers. Ruby was dropped (2026-11-26); Kotlin,
-   Swift, C#, C and C++ are still to decide.
+   alone, or write parsers. Ruby was dropped (2026-11-26).
+   **Decided 2026-11-26:** parsers of colab's own for every remaining
+   language, written in order of popularity (GitHub's rankings): JavaScript
+   with TypeScript and TSX (one crate, `colab-parse-js`, with dialects),
+   then C#, C++, PHP, C, Kotlin, Swift. tree-sitter leaves the binary with
+   the last of them.
    **Decided 2026-11-25:** no further third-party parsers to adapt
    (rust-analyzer's suits Rust; others would each be an integration to
    carry); colab writes its own, Go and Markdown first, the most used in
@@ -663,6 +667,22 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    `CallShape::Prefixed` (the callee is the text before `arguments`, as
    Java's tree-sitter locator read it, now on colab's tree; Kotlin and PHP
    can use it too). tree-sitter-java is a test dependency only.
+   **JavaScript, done 2026-11-26:** `colab-parse-js`, 3,560 lines (parser
+   2,223, lexer 675, names 403, emission 259), JSX included, no
+   dependency but `colab-syntax`. Its
+   lexer is pulled by the parser and lexes a token again where the mode
+   matters (regex or division, JSX text and tags); automatic semicolons
+   follow tree-sitter-javascript's scanner, comment rule included. Over
+   the workspace's 11,143 JavaScript files (11,058 clean to tree-sitter):
+   11,039 the same (99.8%), in 7.5 s against 14.1 s; the other 19 are
+   `await (f)(x)`, which tree-sitter misreads. The first run had 95.1%,
+   the differences nearly all one rule (a statement ending at an
+   automatic semicolon holds the comment left on its line, when an
+   expression ends it and no `}` follows). The `js` backend runs on it
+   (patterns, `imports.rs`, which `ts` and `tsx` share and now read
+   through colab's tree whatever the parser); tree-sitter-javascript is a
+   test dependency (and the parse cache's). TypeScript and TSX next, as
+   dialects of the same parser.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

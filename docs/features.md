@@ -430,9 +430,14 @@ conditional.
 
 ## JavaScript / TypeScript (`colab-lang-js`)
 
-Powered by `tree-sitter-javascript`. The JavaScript grammar parses
-TypeScript module syntax well enough for specifier and identifier
-rewriting, and `js` still runs over `.ts` and `.tsx` files. For
+Read by colab's own parser (`colab-parse-js`, JSX included), whose
+trees hold tree-sitter-javascript's kinds and fields: over 11,058
+JavaScript files it reads 99.8% exactly as tree-sitter did; the rest are
+`await (f)(x)`, which tree-sitter reads as a call of `await (f)` and
+colab as awaiting the call. It reads TypeScript module syntax well
+enough for specifier and identifier rewriting (a type annotation after
+a name is an error it reads past), and `js` still runs over `.ts` and
+`.tsx` files. For
 TypeScript code (types, interfaces, generics, member modifiers) use
 [`ts::`](#typescript-colab-lang-ts) (and [`tsx::`](#tsx-colab-lang-tsx)
 for `.tsx`, JSX included), which parse them.

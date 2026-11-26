@@ -1,6 +1,7 @@
 //! ES module specifier rewriting.
 //!
-//! Tree-sitter-javascript represents:
+//! The trees (colab's own JavaScript parser's, or tree-sitter-typescript's
+//! for TypeScript and TSX, both read as colab's tree) hold:
 //! - `import_statement` with a `source` field → `string`
 //! - `export_statement` with an optional `source` field → `string`
 //!
@@ -12,7 +13,13 @@ use std::path::Path;
 
 use colab_core::Operation;
 use colab_rewrite::SourceLanguage;
-use tree_sitter::{Node, Tree};
+use colab_syntax::{Node, Tree};
+
+/// `source` as colab's tree, by `lang`'s parser (colab's own, or
+/// tree-sitter's read into colab's tree).
+fn tree(lang: &SourceLanguage, source: &str) -> Option<Tree> {
+    colab_rewrite::syntax::source_tree(&(lang.pattern)(), source)
+}
 
 /// The `import` module's operation for `spec` over `lang`'s files (a
 /// grammar with JavaScript's module syntax: JavaScript's or TypeScript's),
@@ -63,10 +70,10 @@ fn for_each_specifier<F>(tree: &Tree, source: &str, mut visit: F)
 where
     F: FnMut(Node<'_>, usize, usize, &str),
 {
-    colab_rewrite::visit_all(tree, |node| {
-        if matches!(node.kind(), "import_statement" | "export_statement")
-            && let Some(specifier) = node.child_by_field_name("source")
-            && specifier.kind() == "string"
+    tree.nodes().for_each(|node| {
+        if matches!(node.kind_name(), "import_statement" | "export_statement")
+            && let Some(specifier) = node.child_by_field("source")
+            && specifier.kind_name() == "string"
             && let Some((inner_start, inner_end, value)) = string_inner_bytes(specifier, source)
         {
             visit(node, inner_start, inner_end, value);
@@ -88,23 +95,21 @@ pub(crate) fn imported_names(source: &str) -> Vec<String> {
 /// module syntax (TypeScript's), as a backend's `Qualifiers::imported`
 /// calls it.
 pub fn imported_names_in(lang: &SourceLanguage, source: &str) -> Vec<String> {
-    let Some(tree) = lang.parse(source) else {
+    let Some(tree) = tree(lang, source) else {
         return Vec::new();
     };
-    let text = |n: Node<'_>| source[n.byte_range()].to_string();
+    let text = |n: Node<'_>| source[n.range()].to_string();
     let mut names = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| match node.kind() {
+    tree.nodes().for_each(|node| match node.kind_name() {
         "import_clause" => {
-            let mut cursor = node.walk();
-            for child in node.named_children(&mut cursor) {
-                match child.kind() {
+            for child in node.named_children() {
+                match child.kind_name() {
                     "identifier" => names.push(text(child)),
                     "namespace_import" => {
-                        let mut c = child.walk();
                         names.extend(
                             child
-                                .named_children(&mut c)
-                                .filter(|n| n.kind() == "identifier")
+                                .named_children()
+                                .filter(|n| n.kind_name() == "identifier")
                                 .map(text),
                         );
                     }
@@ -114,32 +119,31 @@ pub fn imported_names_in(lang: &SourceLanguage, source: &str) -> Vec<String> {
         }
         "import_specifier" => {
             if let Some(bound) = node
-                .child_by_field_name("alias")
-                .or_else(|| node.child_by_field_name("name"))
+                .child_by_field("alias")
+                .or_else(|| node.child_by_field("name"))
             {
                 names.push(text(bound));
             }
         }
         "variable_declarator" => {
             let requires = node
-                .child_by_field_name("value")
-                .filter(|v| v.kind() == "call_expression")
-                .and_then(|v| v.child_by_field_name("function"))
-                .is_some_and(|f| &source[f.byte_range()] == "require");
-            let Some(name) = node.child_by_field_name("name").filter(|_| requires) else {
+                .child_by_field("value")
+                .filter(|v| v.kind_name() == "call_expression")
+                .and_then(|v| v.child_by_field("function"))
+                .is_some_and(|f| &source[f.range()] == "require");
+            let Some(name) = node.child_by_field("name").filter(|_| requires) else {
                 return;
             };
-            match name.kind() {
+            match name.kind_name() {
                 "identifier" => names.push(text(name)),
                 "object_pattern" => {
-                    let mut cursor = name.walk();
-                    for part in name.named_children(&mut cursor) {
-                        match part.kind() {
+                    for part in name.named_children() {
+                        match part.kind_name() {
                             "shorthand_property_identifier_pattern" => names.push(text(part)),
                             "pair_pattern" => {
                                 if let Some(v) = part
-                                    .child_by_field_name("value")
-                                    .filter(|v| v.kind() == "identifier")
+                                    .child_by_field("value")
+                                    .filter(|v| v.kind_name() == "identifier")
                                 {
                                     names.push(text(v));
                                 }
@@ -157,7 +161,7 @@ pub fn imported_names_in(lang: &SourceLanguage, source: &str) -> Vec<String> {
 }
 
 pub fn specifiers(lang: &SourceLanguage, source: &str) -> Vec<String> {
-    let Some(tree) = lang.parse(source) else {
+    let Some(tree) = tree(lang, source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -171,21 +175,18 @@ fn string_inner_bytes<'a>(
     string_node: Node<'a>,
     source: &'a str,
 ) -> Option<(usize, usize, &'a str)> {
-    // tree-sitter-javascript wraps the inner text in either
-    // `string_fragment` children or matches the literal directly. The
-    // safest approach: look for a `string_fragment` named child.
-    for child in string_node.named_children(&mut string_node.walk()) {
-        if child.kind() == "string_fragment"
-            && let Ok(text) = child.utf8_text(source.as_bytes())
-        {
-            return Some((child.start_byte(), child.end_byte(), text));
+    // The inner text is a `string_fragment` child (or, empty, none): look
+    // for it.
+    for child in string_node.named_children() {
+        if child.kind_name() == "string_fragment" {
+            return Some((child.start(), child.end(), &source[child.range()]));
         }
     }
     // Fall back: strip the first/last byte (the quotes). Only safe
     // when the string contains no escapes; we guard above by
     // requiring an exact-match comparison and bailing if missing.
-    let start = string_node.start_byte();
-    let end = string_node.end_byte();
+    let start = string_node.start();
+    let end = string_node.end();
     if end > start + 1 {
         let inner_start = start + 1;
         let inner_end = end - 1;
@@ -240,7 +241,7 @@ impl Operation for SpecifierRename {
 }
 
 pub fn rename(lang: &SourceLanguage, from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = lang.parse(source_code) else {
+    let Some(tree) = tree(lang, source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
@@ -299,13 +300,13 @@ impl Operation for SpecifierDelete {
 }
 
 pub fn delete(lang: &SourceLanguage, target: &str, source_code: &str) -> String {
-    let Some(tree) = lang.parse(source_code) else {
+    let Some(tree) = tree(lang, source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for_each_matching_specifier(&tree, source_code, target, |stmt, _, _| {
         // `delete_lines` widens each range to whole lines.
-        spans.push((stmt.start_byte(), stmt.end_byte()));
+        spans.push((stmt.start(), stmt.end()));
     });
     colab_rewrite::delete_lines(source_code, spans)
 }
@@ -451,7 +452,7 @@ impl Operation for SpecifierEnsure {
 /// Insert `import '<target>';` after the last existing import, or at the
 /// top of the file when there is none.
 pub fn ensure(lang: &SourceLanguage, target: &str, source_code: &str) -> String {
-    let Some(tree) = lang.parse(source_code) else {
+    let Some(tree) = tree(lang, source_code) else {
         return source_code.to_string();
     };
 
@@ -463,11 +464,11 @@ pub fn ensure(lang: &SourceLanguage, target: &str, source_code: &str) -> String 
         return source_code.to_string();
     }
 
-    let root = tree.root_node();
+    let root = tree.root();
     let mut insert_at = 0usize;
-    for child in root.named_children(&mut root.walk()) {
-        if child.kind() == "import_statement" {
-            let end = child.end_byte();
+    for child in root.named_children() {
+        if child.kind_name() == "import_statement" {
+            let end = child.end();
             insert_at = source_code[end..]
                 .find('\n')
                 .map_or(source_code.len(), |p| end + p + 1);

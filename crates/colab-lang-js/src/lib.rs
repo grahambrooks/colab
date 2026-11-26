@@ -118,7 +118,7 @@ impl LanguageBackend for JsBackend {
     }
 
     fn description(&self) -> &'static str {
-        "JavaScript/TypeScript module-specifier rewrites via tree-sitter-javascript."
+        "JavaScript/TypeScript module-specifier rewrites, on colab's own JavaScript parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

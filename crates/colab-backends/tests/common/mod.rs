@@ -22,8 +22,8 @@ pub fn grammar(lang: &str) -> tree_sitter::Language {
 }
 
 /// `text` as colab's tree, by the parser `lang`'s backend reads it with:
-/// rust-analyzer's for Rust, colab's own for Go, Python and Java,
-/// tree-sitter's for the rest.
+/// rust-analyzer's for Rust, colab's own for Go, Python, Java and
+/// JavaScript, tree-sitter's for the rest.
 #[allow(dead_code)] // not every test that shares this module parses
 pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
     match lang {
@@ -31,6 +31,7 @@ pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
         "go" => colab_parse_go::parse(text).expect("colab's Go tree builds"),
         "python" => colab_parse_python::parse(text).expect("colab's Python tree builds"),
         "java" => colab_parse_java::parse(text).expect("colab's Java tree builds"),
+        "js" => colab_parse_js::parse(text).expect("colab's JavaScript tree builds"),
         _ => tree_sitter_tree(lang, text),
     }
 }
