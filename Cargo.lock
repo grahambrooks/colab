@@ -273,6 +273,7 @@ dependencies = [
  "colab-lang-ts",
  "colab-lang-tsx",
  "colab-parse-go",
+ "colab-parse-markdown",
  "colab-parse-rust",
  "colab-rewrite",
  "colab-syntax",
@@ -285,6 +286,7 @@ dependencies = [
  "tree-sitter-java",
  "tree-sitter-javascript",
  "tree-sitter-kotlin-ng",
+ "tree-sitter-md",
  "tree-sitter-php",
  "tree-sitter-python",
  "tree-sitter-ruby",
@@ -424,9 +426,9 @@ name = "colab-lang-markdown"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-markdown",
  "colab-rewrite",
- "tree-sitter",
- "tree-sitter-md",
+ "colab-syntax",
 ]
 
 [[package]]
@@ -539,6 +541,13 @@ dependencies = [
 
 [[package]]
 name = "colab-parse-go"
+version = "2026.11.24"
+dependencies = [
+ "colab-syntax",
+]
+
+[[package]]
+name = "colab-parse-markdown"
 version = "2026.11.24"
 dependencies = [
  "colab-syntax",

@@ -599,6 +599,24 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    tree), the floor's declarations, calls and qualifier check moved to
    colab's tree for every language, and tree-sitter-go is now only a test
    dependency, kept for the comparison.
+   **Markdown, done 2026-11-25:** `colab-parse-markdown`, colab's own
+   CommonMark + GFM parser (blocks line by line through containers, and
+   inline links), ~1,500 lines with no dependency but `colab-syntax`. Its
+   tree is shaped for colab from the start (the shape question above
+   answered here first): tree-sitter-md's names for what the backend
+   reads, none of its `section` nodes, continuation tokens or inline
+   punctuation. The bar is the backend's views of a file (heading levels
+   and text, list items, table cells, fences, link destinations), held to
+   tree-sitter-md's by `colab-backends/tests/markdown_parser.rs`: all of
+   the repo's 78 files but one tree-sitter-md misreads; over the
+   workspace's 5,816, 5,675 (97.6%); over the knowledge vault's 123, all
+   but one. What differs is mostly tree-sitter-md misreading CommonMark:
+   links whose destination holds `<` or whose text holds brackets (97
+   files), links after a code span holding a triple backtick, an item in
+   a block quote taking the next line's `> `, an ordered list that cannot
+   interrupt a paragraph. Left on colab's side: a fence's indentation
+   inside a list item (4 files). The backend runs on it and tree-sitter-md
+   leaves the shipped binary (a test dependency, for the comparison).
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

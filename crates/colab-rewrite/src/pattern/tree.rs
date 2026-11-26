@@ -24,6 +24,14 @@ pub fn grammar_tree(
     printed(crate::syntax::tree(grammar, source), source)
 }
 
+/// [`syntax_tree`] of a tree a backend parsed itself (Markdown's).
+pub fn print_tree_of(tree: &colab_syntax::Tree) -> (String, bool) {
+    (
+        print_tree(tree.root(), tree.text(), '$', true),
+        tree.has_error(),
+    )
+}
+
 fn printed(tree: Option<colab_syntax::Tree>, source: &str) -> Result<(String, bool), String> {
     let tree =
         tree.ok_or_else(|| "the parser gave up (or the grammar failed to load)".to_string())?;

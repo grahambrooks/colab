@@ -328,50 +328,47 @@ fn nth_list(source: &str, own: Range<usize>, nth: usize) -> Vec<Item> {
         return Vec::new();
     };
     let lists = crate::nodes(&tree, |n| {
-        n.kind() == "list"
-            && own.contains(&n.start_byte())
-            && !std::iter::successors(n.parent(), tree_sitter::Node::parent)
-                .any(|p| p.kind() == "list")
+        n.kind_name() == "list"
+            && own.contains(&n.start())
+            && !std::iter::successors(n.parent(), colab_syntax::Node::parent)
+                .any(|p| p.kind_name() == "list")
     });
     let Some(list) = nth.checked_sub(1).and_then(|i| lists.get(i)) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    let mut cursor = list.walk();
-    for item in list.children(&mut cursor) {
-        if item.kind() != "list_item" {
+    for item in list.children() {
+        if item.kind_name() != "list_item" {
             continue;
         }
-        let mut c = item.walk();
-        let children: Vec<_> = item.children(&mut c).collect();
+        let children: Vec<_> = item.children().collect();
         let Some(marker) = children
             .iter()
-            .find(|n| n.kind().starts_with("list_marker"))
+            .find(|n| n.kind_name().starts_with("list_marker"))
         else {
             continue;
         };
         let text = children
             .iter()
-            .find(|n| n.kind() == "paragraph")
+            .find(|n| n.kind_name() == "paragraph")
             .and_then(|p| {
-                let mut pc = p.walk();
-                p.children(&mut pc)
-                    .find(|n| n.kind() == "inline")
-                    .map(|n| n.byte_range())
+                p.children()
+                    .find(|n| n.kind_name() == "inline")
+                    .map(|n| n.range())
             })
-            .unwrap_or(marker.end_byte()..marker.end_byte());
+            .unwrap_or(marker.end()..marker.end());
         // The item's span ends at its last line's end, never in the blank
         // line after it.
-        let end = source[..item.end_byte()]
+        let end = source[..item.end()]
             .trim_end_matches(['\n', '\r', ' ', '\t'])
             .len();
         let end = source[end..]
             .find('\n')
             .map_or(source.len(), |i| end + i + 1);
         out.push(Item {
-            marker: source[marker.byte_range()].to_string(),
+            marker: source[marker.range()].to_string(),
             text,
-            span: item.start_byte()..end,
+            span: item.start()..end,
         });
     }
     out

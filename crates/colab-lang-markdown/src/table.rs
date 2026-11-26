@@ -454,14 +454,14 @@ fn escape_pipes(cell: &str) -> String {
 pub(crate) fn nth_table(source: &str, own: Range<usize>, nth: usize) -> Option<Table> {
     let tree = crate::parse(source)?;
     let tables = crate::nodes(&tree, |n| {
-        n.kind() == "pipe_table" && own.contains(&n.start_byte())
+        n.kind_name() == "pipe_table" && own.contains(&n.start())
     });
     let node = *tables.get(nth.checked_sub(1)?)?;
-    let line_of = |n: tree_sitter::Node<'_>| {
-        let start = source[..n.start_byte()].rfind('\n').map_or(0, |i| i + 1);
-        let end = source[n.start_byte()..]
+    let line_of = |n: colab_syntax::Node<'_>| {
+        let start = source[..n.start()].rfind('\n').map_or(0, |i| i + 1);
+        let end = source[n.start()..]
             .find('\n')
-            .map_or(source.len(), |i| n.start_byte() + i + 1);
+            .map_or(source.len(), |i| n.start() + i + 1);
         start..end
     };
     let mut header = Vec::new();
@@ -469,10 +469,9 @@ pub(crate) fn nth_table(source: &str, own: Range<usize>, nth: usize) -> Option<T
     let mut top = 0;
     let mut end = 0;
     let mut lines: Vec<Range<usize>> = Vec::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
+    for child in node.children() {
         let range = line_of(child);
-        match child.kind() {
+        match child.kind_name() {
             "pipe_table_header" => {
                 header = split_row(source[range.clone()].trim_end());
                 lines.push(range);

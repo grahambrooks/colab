@@ -35,40 +35,16 @@ pub mod section;
 pub mod table;
 pub mod text;
 
-use std::cell::RefCell;
-
-thread_local! {
-    static PARSER: RefCell<tree_sitter::Parser> = RefCell::new({
-        let mut parser = tree_sitter::Parser::new();
-        parser
-            .set_language(&tree_sitter_md::LANGUAGE.into())
-            .expect("the built-in markdown grammar loads");
-        parser
-    });
-    static INLINE: RefCell<tree_sitter::Parser> = RefCell::new({
-        let mut parser = tree_sitter::Parser::new();
-        parser
-            .set_language(&tree_sitter_md::INLINE_LANGUAGE.into())
-            .expect("the built-in markdown inline grammar loads");
-        parser
-    });
-}
-
-/// Every node of `tree` that `keep` accepts, in document order, borrowed
-/// for as long as the tree (unlike `colab_rewrite::visit_all`'s callback).
+/// Every node of `tree` that `keep` accepts, in document order.
 pub(crate) fn nodes<'t>(
-    tree: &'t tree_sitter::Tree,
-    mut keep: impl FnMut(tree_sitter::Node<'t>) -> bool,
-) -> Vec<tree_sitter::Node<'t>> {
+    tree: &'t colab_syntax::Tree,
+    mut keep: impl FnMut(colab_syntax::Node<'t>) -> bool,
+) -> Vec<colab_syntax::Node<'t>> {
     let mut out = Vec::new();
-    let mut stack = vec![tree.root_node()];
-    while let Some(node) = stack.pop() {
+    for node in tree.nodes() {
         if keep(node) {
             out.push(node);
         }
-        let mut cursor = node.walk();
-        let children: Vec<_> = node.children(&mut cursor).collect();
-        stack.extend(children.into_iter().rev());
     }
     out
 }
@@ -83,33 +59,32 @@ pub fn fences(source: &str) -> Vec<colab_core::Fence> {
     let line_start = |at: usize| source[..at].rfind('\n').map_or(0, |i| i + 1);
     let line_end = |at: usize| source[at..].find('\n').map_or(source.len(), |i| at + i + 1);
     let mut out = Vec::new();
-    for node in nodes(&tree, |n| n.kind() == "fenced_code_block") {
-        let mut cursor = node.walk();
-        let children: Vec<_> = node.children(&mut cursor).collect();
+    for node in nodes(&tree, |n| n.kind_name() == "fenced_code_block") {
+        let children: Vec<_> = node.children().collect();
         let delimiters: Vec<_> = children
             .iter()
-            .filter(|n| n.kind() == "fenced_code_block_delimiter")
+            .filter(|n| n.kind_name() == "fenced_code_block_delimiter")
             .collect();
         let Some(open) = delimiters.first() else {
             continue;
         };
         let lang = children
             .iter()
-            .find(|n| n.kind() == "info_string")
+            .find(|n| n.kind_name() == "info_string")
             .and_then(|info| {
-                source[info.byte_range()]
+                source[info.range()]
                     .split_whitespace()
                     .next()
                     .map(|w| w.trim_matches(['{', '}', '.']).to_lowercase())
             })
             .unwrap_or_default();
-        let start = line_end(open.start_byte());
+        let start = line_end(open.start());
         let end = match delimiters.get(1) {
-            Some(close) => line_start(close.start_byte()),
-            None => node.end_byte(),
+            Some(close) => line_start(close.start()),
+            None => node.end(),
         }
         .max(start);
-        let indent = source[line_start(open.start_byte())..open.start_byte()].to_string();
+        let indent = source[line_start(open.start())..open.start()].to_string();
         out.push(colab_core::Fence {
             lang,
             content: start..end,
@@ -119,10 +94,10 @@ pub fn fences(source: &str) -> Vec<colab_core::Fence> {
     out
 }
 
-/// Parse one inline span (a paragraph's or a heading's text) with the
-/// inline grammar: links, images, code spans.
-pub(crate) fn parse_inline(text: &str) -> Option<tree_sitter::Tree> {
-    INLINE.with(|p| p.borrow_mut().parse(text, None))
+/// Parse one inline span (a paragraph's or a heading's text) for its
+/// links, images, autolinks and code spans.
+pub(crate) fn parse_inline(text: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_markdown::parse_inline(text).ok()
 }
 
 /// `.md` and `.markdown` files.
@@ -133,10 +108,10 @@ pub(crate) fn is_markdown(path: &std::path::Path) -> bool {
     )
 }
 
-/// Parse `source` with the block grammar (headings, sections, tables,
-/// lists, fences, front matter), reusing this thread's parser.
-pub(crate) fn parse(source: &str) -> Option<tree_sitter::Tree> {
-    PARSER.with(|p| p.borrow_mut().parse(source, None))
+/// `source`'s blocks (headings, tables, lists, fences, front matter), by
+/// colab's own Markdown parser.
+pub(crate) fn parse(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_markdown::parse(source).ok()
 }
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
@@ -343,9 +318,10 @@ impl LanguageBackend for MarkdownBackend {
                 "markdown has no `pattern` module; pass a snippet with --stdin".into(),
             ));
         };
-        let (tree, has_error) =
-            colab_rewrite::pattern::grammar_tree(&tree_sitter_md::LANGUAGE.into(), text)
-                .map_err(|e| colab_core::Error::UnsupportedOperation(format!("markdown: {e}")))?;
+        let parsed = parse(text).ok_or_else(|| {
+            colab_core::Error::UnsupportedOperation("markdown: the text does not parse".into())
+        })?;
+        let (tree, has_error) = colab_rewrite::pattern::print_tree_of(&parsed);
         Ok(colab_core::SyntaxTree {
             tree,
             has_error,

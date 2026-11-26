@@ -1,0 +1,15 @@
+[package]
+name = "colab-parse-markdown"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Markdown as colab's own syntax tree, read by a parser of colab's own: pure Rust, lossless, shaped for headings, lists, tables, fences and links."
+
+[dependencies]
+colab-syntax = { workspace = true }
+
+[lints]
+workspace = true

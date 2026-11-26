@@ -89,15 +89,15 @@ pub fn headings(source: &str) -> Vec<Heading> {
     };
     let mut found: Vec<Heading> = Vec::new();
     let mut blocks: Vec<(&'static str, usize)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        let kind = node.kind();
+    tree.nodes().for_each(|node| {
+        let kind = node.kind_name();
         match kind {
             "atx_heading" | "setext_heading" => {
                 let level = heading_level(node, source);
-                let Some(content) = node.child_by_field_name("heading_content") else {
+                let Some(content) = node.child_by_field("heading_content") else {
                     return;
                 };
-                let range = trim_range(source, content.byte_range());
+                let range = trim_range(source, content.range());
                 let range = strip_closing_hashes(source, range);
                 found.push(Heading {
                     level,
@@ -105,24 +105,24 @@ pub fn headings(source: &str) -> Vec<Heading> {
                     slug: String::new(),
                     path: Vec::new(),
                     content: range,
-                    start: line_start(source, node.start_byte()),
-                    heading_end: node.end_byte(),
+                    start: line_start(source, node.start()),
+                    heading_end: node.end(),
                     end: source.len(),
-                    line: node.start_position().row + 1,
+                    line: source[..node.start()].matches('\n').count() + 1,
                     end_line: 0,
                     tables: 0,
                     lists: 0,
                     fences: 0,
                 });
             }
-            "pipe_table" => blocks.push(("table", node.start_byte())),
-            "fenced_code_block" => blocks.push(("fence", node.start_byte())),
+            "pipe_table" => blocks.push(("table", node.start())),
+            "fenced_code_block" => blocks.push(("fence", node.start())),
             // Only outermost lists: a nested list is part of its item.
             "list"
-                if !std::iter::successors(node.parent(), tree_sitter::Node::parent)
-                    .any(|n| n.kind() == "list") =>
+                if !std::iter::successors(node.parent(), colab_syntax::Node::parent)
+                    .any(|n| n.kind_name() == "list") =>
             {
-                blocks.push(("list", node.start_byte()))
+                blocks.push(("list", node.start()))
             }
             _ => {}
         }
@@ -168,10 +168,9 @@ pub fn headings(source: &str) -> Vec<Heading> {
     found
 }
 
-fn heading_level(node: tree_sitter::Node<'_>, source: &str) -> u8 {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        let kind = child.kind();
+fn heading_level(node: colab_syntax::Node<'_>, source: &str) -> u8 {
+    for child in node.children() {
+        let kind = child.kind_name();
         if let Some(n) = kind
             .strip_prefix("atx_h")
             .and_then(|k| k.strip_suffix("_marker"))

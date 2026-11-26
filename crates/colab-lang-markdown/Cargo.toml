@@ -11,8 +11,8 @@ description = "Markdown edits for colab, addressed by structure: sections, front
 [dependencies]
 colab-core = { workspace = true }
 colab-rewrite = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-md = { workspace = true }
+colab-syntax = { workspace = true }
+colab-parse-markdown = { workspace = true }
 
 [lints]
 workspace = true

@@ -3802,6 +3802,16 @@ match json::key "/enabledPlugins/code-intelligence@gb-agent-skills" in ".claude/
 - An array step must be an existing index; `set` and `insert` never grow
   arrays, and `delete` does not remove array elements.
 
+Markdown is read by colab's own parser (`colab-parse-markdown`, CommonMark
+with GFM tables and task markers), whose tree holds what these modules
+address and nothing for rendering. Over 5,816 Markdown files it reads what
+tree-sitter-md read in 97.6%; where they differ it is mostly CommonMark
+that tree-sitter-md misread: links whose destination holds a `<`
+(`…/<VERSION>/…`) or whose text holds brackets, links after a code span
+holding a triple backtick, and an ordered list that is not one (`3.`
+cannot start a list in the middle of a paragraph). A definition whose
+destination is on the next line is read.
+
 ### `markdown::section` — a section by heading
 
 ```

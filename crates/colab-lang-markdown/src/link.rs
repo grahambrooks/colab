@@ -56,22 +56,21 @@ pub fn links(source: &str) -> Vec<Link> {
     let mut out = Vec::new();
     for node in crate::nodes(&tree, |n| {
         matches!(
-            n.kind(),
+            n.kind_name(),
             "inline" | "pipe_table_cell" | "link_reference_definition"
         )
     }) {
-        let base = node.start_byte();
-        if node.kind() == "link_reference_definition" {
-            let mut cursor = node.walk();
+        let base = node.start();
+        if node.kind_name() == "link_reference_definition" {
             if let Some(dest) = node
-                .children(&mut cursor)
-                .find(|n| n.kind() == "link_destination")
+                .children()
+                .find(|n| n.kind_name() == "link_destination")
             {
                 let line_start = source[..base].rfind('\n').map_or(0, |i| i + 1);
-                let line_end = source[node.end_byte()..]
+                let line_end = source[node.end()..]
                     .find('\n')
-                    .map_or(source.len(), |i| node.end_byte() + i + 1);
-                let range = dest.byte_range();
+                    .map_or(source.len(), |i| node.end() + i + 1);
+                let range = dest.range();
                 out.push(Link {
                     kind: Kind::Definition,
                     dest: source[range.clone()].to_string(),
@@ -83,7 +82,7 @@ pub fn links(source: &str) -> Vec<Link> {
             }
             continue;
         }
-        let text = &source[node.byte_range()];
+        let text = &source[node.range()];
         // Every link and image starts with `[` or `![`; most paragraphs
         // have none, and an inline parse costs more than the scan.
         if !text.contains('[') {
@@ -92,16 +91,20 @@ pub fn links(source: &str) -> Vec<Link> {
         let Some(inline) = crate::parse_inline(text) else {
             continue;
         };
-        for link in crate::nodes(&inline, |n| matches!(n.kind(), "inline_link" | "image")) {
-            let mut cursor = link.walk();
-            let children: Vec<_> = link.children(&mut cursor).collect();
-            let Some(dest) = children.iter().find(|n| n.kind() == "link_destination") else {
+        for link in crate::nodes(&inline, |n| {
+            matches!(n.kind_name(), "inline_link" | "image")
+        }) {
+            let children: Vec<_> = link.children().collect();
+            let Some(dest) = children
+                .iter()
+                .find(|n| n.kind_name() == "link_destination")
+            else {
                 continue;
             };
             let shift = |r: Range<usize>| base + r.start..base + r.end;
-            let range = shift(dest.byte_range());
+            let range = shift(dest.range());
             out.push(Link {
-                kind: if link.kind() == "image" {
+                kind: if link.kind_name() == "image" {
                     Kind::Image
                 } else {
                     Kind::Inline
@@ -109,11 +112,11 @@ pub fn links(source: &str) -> Vec<Link> {
                 dest: source[range.clone()].to_string(),
                 line: line_of(range.start),
                 range,
-                whole: shift(link.byte_range()),
+                whole: shift(link.range()),
                 text: children
                     .iter()
-                    .find(|n| n.kind() == "link_text")
-                    .map(|n| shift(n.byte_range())),
+                    .find(|n| n.kind_name() == "link_text")
+                    .map(|n| shift(n.range())),
             });
         }
     }
