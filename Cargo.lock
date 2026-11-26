@@ -271,6 +271,7 @@ dependencies = [
  "colab-lang-toml",
  "colab-lang-ts",
  "colab-lang-tsx",
+ "colab-parse-c",
  "colab-parse-csharp",
  "colab-parse-go",
  "colab-parse-java",
@@ -357,9 +358,9 @@ name = "colab-lang-cpp"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-c",
  "colab-rewrite",
- "tree-sitter",
- "tree-sitter-cpp",
+ "colab-syntax",
 ]
 
 [[package]]
@@ -525,6 +526,13 @@ dependencies = [
  "colab-core",
  "colab-dsl",
  "serde_json",
+]
+
+[[package]]
+name = "colab-parse-c"
+version = "2026.11.24"
+dependencies = [
+ "colab-syntax",
 ]
 
 [[package]]

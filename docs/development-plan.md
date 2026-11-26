@@ -724,6 +724,27 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    smaller tree winning. The 97 left are more of the same tie-breaks.
    `csharp` runs on it (`usings.rs` and `namespaces.rs` ported to colab's
    tree); tree-sitter-c-sharp is a test dependency.
+   **C++, done 2026-11-26:** `colab-parse-c`, 5,421 lines (declarations
+   1,992, expressions 1,221, items, statements and directives 1,179,
+   lexer 662, names 106, emission 261), no dependency but `colab-syntax`;
+   C is to be its second dialect, as TypeScript is `colab-parse-js`'s.
+   Held to six public repositories (abseil-cpp, Catch2, fmt, googletest,
+   nlohmann/json, leveldb; 2,297 files, only 1,048 clean to tree-sitter,
+   macros defeating it) and to a Python environment's 9,288 headers
+   (torch, onnx; 3,784 clean): 994 and 3,747 the same (94.8% and 99.0%),
+   in 3.5 s against 10.1 s; the workspace's five clean files are all the
+   same. The first run had 71%: function definitions whose declarator is
+   under a pointer or reference (`T& f() {`), `MACRO(x);` in a file read as
+   a constructor's declaration, `virtual f() = 0;`. tree-sitter's GLR
+   choices copied since: `a * b;` and `a < b > c;` declare; `T x(a, b)`
+   declares a function (parameters preferred to arguments); `struct
+   TORCH_API Name { … };` is a function definition of a declarator `Name`
+   with a compound statement for a body (1,300 torch headers), whose
+   `Name() = default;` is a constructor's definition and `private:` a
+   label; `(f)(x)` is a cast, `(f)()` a call; `sizeof(x)` takes a
+   parenthesized value, `sizeof(ns::T)` a type. The 91 left are more of the
+   same. `cpp` runs on it (`includes.rs` and `namespaces.rs` ported);
+   tree-sitter-cpp is a test dependency. C next, as its dialect.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

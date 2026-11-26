@@ -22,13 +22,13 @@ use colab_syntax::{Grammar, Tree};
 /// The language a file is parsed as, by extension, as the backends claim
 /// them (`.h` as C): the languages still read through tree-sitter, whose
 /// trees this conversion builds (Rust, Go, Python, Java, JavaScript,
-/// TypeScript and C# have parsers of their own, held to their files by
-/// `rust_parser.rs`, `go_parser.rs`, `python_parser.rs`, `java_parser.rs`,
-/// `js_parser.rs` and `csharp_parser.rs`).
+/// TypeScript, C# and C++ have parsers of their own, held to their files
+/// by `rust_parser.rs`, `go_parser.rs`, `python_parser.rs`,
+/// `java_parser.rs`, `js_parser.rs`, `csharp_parser.rs` and
+/// `cpp_parser.rs`).
 fn language_of(path: &Path) -> Option<&'static str> {
     Some(match path.extension()?.to_str()? {
         "c" | "h" => "c",
-        "cpp" | "cc" | "cxx" | "hpp" | "hh" => "cpp",
         "kt" | "kts" => "kotlin",
         "php" => "php",
         "swift" => "swift",
@@ -158,7 +158,7 @@ fn the_colab_tree_is_tree_sitters_and_lossless_over_every_source_file() {
     }
     // The source languages still read through tree-sitter.
     assert!(
-        checked.len() >= 5,
+        checked.len() >= 4,
         "every tree-sitter source language has a file: {checked:?}"
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));

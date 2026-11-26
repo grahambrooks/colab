@@ -44,7 +44,8 @@ crates/
                       # for colab-dsl / colab-mcp. Home of the
                       # cross-backend contract tests.
   colab-lang-c/       # C backend (tree-sitter-c).
-  colab-lang-cpp/     # C++ backend (tree-sitter-cpp).
+  colab-lang-cpp/     # C++ backend (colab's own parser, colab-parse-c).
+  colab-parse-c/      # C++ (C to follow as a dialect) as colab's own tree: a lexer with the preprocessor's lines, recursive descent.
   colab-lang-csharp/  # C# backend (colab's own parser, colab-parse-csharp).
   colab-parse-csharp/ # C# as colab's own tree: a lexer (interpolated strings as tree-sitter's scanner cuts them), recursive descent.
   colab-lang-go/      # Go backend (colab's own parser, colab-parse-go).

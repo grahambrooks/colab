@@ -23,7 +23,7 @@ pub fn grammar(lang: &str) -> tree_sitter::Language {
 
 /// `text` as colab's tree, by the parser `lang`'s backend reads it with:
 /// rust-analyzer's for Rust, colab's own for Go, Python, Java,
-/// JavaScript, TypeScript, TSX and C#, tree-sitter's for the rest.
+/// JavaScript, TypeScript, TSX, C# and C++, tree-sitter's for the rest.
 #[allow(dead_code)] // not every test that shares this module parses
 pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
     match lang {
@@ -37,6 +37,7 @@ pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
         "tsx" => colab_parse_js::parse_as(text, colab_parse_js::Dialect::Tsx)
             .expect("colab's TSX tree builds"),
         "csharp" => colab_parse_csharp::parse(text).expect("colab's C# tree builds"),
+        "cpp" => colab_parse_c::parse(text).expect("colab's C++ tree builds"),
         _ => tree_sitter_tree(lang, text),
     }
 }

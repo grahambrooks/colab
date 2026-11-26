@@ -18,7 +18,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// a bare name is never also read as a parameter's type.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_cpp::LANGUAGE.into()),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_c::CPP_PARSER),
         expando: 'µ',
         contexts: &[
             "@@PATTERN@@;",

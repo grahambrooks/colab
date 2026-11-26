@@ -3602,7 +3602,8 @@ conflict with colab's syntactic-rewriter premise.
 
 ## C (`colab-lang-c`) and C++ (`colab-lang-cpp`)
 
-Powered by `tree-sitter-c` and `tree-sitter-cpp`.
+C is powered by `tree-sitter-c`; C++ by colab's own parser
+(`colab-parse-c`, with tree-sitter-cpp's node kinds).
 
 **Include paths are matched bare.** The delimiters are part of the
 source, not the target: `"old/lib.h"` matches both `#include "old/lib.h"`
@@ -4780,7 +4781,7 @@ crates/
   colab-backends/     # registry(): the one place every backend is registered
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR
   colab-lang-c/       # C backend
-  colab-lang-cpp/     # C++ backend
+  colab-lang-cpp/     # C++ backend (colab's own parser, colab-parse-c)
   colab-lang-csharp/  # C# backend (colab's own parser, colab-parse-csharp)
   colab-lang-go/      # Go backend
   colab-lang-java/    # Java backend

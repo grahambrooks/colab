@@ -20,7 +20,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Tree};
+use colab_syntax::{Node, Tree};
 
 /// Strip `<...>` or `"..."` from a path node's text.
 fn unquote(text: &str) -> &str {
@@ -41,14 +41,14 @@ fn wants_system_form(target: &str) -> bool {
 
 /// The path node of a `preproc_include`, plus its unquoted text.
 fn include_path<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str)> {
-    if node.kind() != "preproc_include" {
+    if !node.is_named() || node.kind_name() != "preproc_include" {
         return None;
     }
-    let path = node.child_by_field_name("path")?;
-    if !matches!(path.kind(), "system_lib_string" | "string_literal") {
+    let path = node.child_by_field("path")?;
+    if !matches!(path.kind_name(), "system_lib_string" | "string_literal") {
         return None;
     }
-    let text = path.utf8_text(source.as_bytes()).ok()?;
+    let text = &source[path.range()];
     Some((path, unquote(text)))
 }
 
@@ -57,7 +57,7 @@ where
     F: FnMut(Node<'_>, Node<'_>),
 {
     let wanted = unquote(target);
-    colab_rewrite::visit_all(tree, |node| {
+    tree.nodes().for_each(|node| {
         if let Some((path_node, text)) = include_path(node, source)
             && text == wanted
         {
@@ -68,11 +68,11 @@ where
 
 /// Every include path in `source`, without its delimiters, for near-miss reporting.
 pub(crate) fn include_paths(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
+    tree.nodes().for_each(|node| {
         if let Some((_, text)) = include_path(node, source) {
             out.push(text.to_string());
         }
@@ -121,22 +121,20 @@ impl Operation for IncludeRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let replacement = unquote(to);
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     for_each_matching_include(&tree, source_code, from, |_directive, path_node| {
-        let Ok(existing) = path_node.utf8_text(source_code.as_bytes()) else {
-            return;
-        };
+        let existing = &source_code[path_node.range()];
         // Preserve the delimiter style already in the source.
         let rewritten = if existing.starts_with('<') {
             format!("<{replacement}>")
         } else {
             format!("\"{replacement}\"")
         };
-        edits.push((path_node.start_byte(), path_node.end_byte(), rewritten));
+        edits.push((path_node.start(), path_node.end(), rewritten));
     });
     colab_rewrite::apply_edits(
         source_code,
@@ -185,13 +183,13 @@ impl Operation for IncludeDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for_each_matching_include(&tree, source_code, target, |directive, _path| {
         // `delete_lines` widens each range to whole lines.
-        spans.push((directive.start_byte(), directive.end_byte()));
+        spans.push((directive.start(), directive.end()));
     });
     colab_rewrite::delete_lines(source_code, spans)
 }
@@ -226,7 +224,7 @@ impl Operation for IncludeEnsure {
 /// Insert `#include <target>` after the last existing include, or at the
 /// top of the file when there is none.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
 
@@ -246,10 +244,9 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 
     // Prefer to sit with the other includes.
     let mut insert_at = 0usize;
-    let root = tree.root_node();
-    for child in root.named_children(&mut root.walk()) {
-        if child.kind() == "preproc_include" {
-            let end = child.end_byte();
+    for child in tree.root().named_children() {
+        if child.kind_name() == "preproc_include" {
+            let end = child.end();
             // A `preproc_include` node already spans its terminating
             // newline, so only skip forward when it somehow does not —
             // otherwise the insertion lands a line too far down.
