@@ -35,6 +35,11 @@ pub static LANG: SourceLanguage = SourceLanguage {
     own: None,
 };
 
+/// `source` as colab's C tree (`colab-parse-c`, C dialect).
+pub(crate) fn tree(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_c::parse_as(source, colab_parse_c::Dialect::C).ok()
+}
+
 /// Plug-in entry point for the `c` namespace.
 pub struct CBackend;
 
@@ -109,7 +114,7 @@ impl LanguageBackend for CBackend {
     }
 
     fn description(&self) -> &'static str {
-        "C source rewrites via tree-sitter-c."
+        "C source rewrites via colab's own C parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

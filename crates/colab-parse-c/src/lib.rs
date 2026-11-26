@@ -26,10 +26,17 @@ pub struct CParser(Dialect);
 
 /// C++.
 pub static CPP_PARSER: CParser = CParser(Dialect::Cpp);
+/// C.
+pub static C_PARSER: CParser = CParser(Dialect::C);
 
 struct Names {
-    grammar: Arc<Grammar>,
+    /// C++'s grammar and C's: the same kinds, named as tree-sitter's.
+    grammars: [Arc<Grammar>; 2],
     kinds: HashMap<(&'static str, bool), Kind>,
+}
+
+fn grammar(dialect: Dialect) -> Arc<Grammar> {
+    names().grammars[usize::from(dialect == Dialect::C)].clone()
 }
 
 fn names() -> &'static Names {
@@ -44,9 +51,10 @@ fn names() -> &'static Names {
                 kinds.push(((*name).into(), named));
             }
         }
-        let fields = names::FIELDS.iter().map(|f| (*f).into()).collect();
+        let fields: Vec<Box<str>> = names::FIELDS.iter().map(|f| (*f).into()).collect();
+        let grammar = |name: &str| Arc::new(Grammar::new(name, kinds.clone(), fields.clone()));
         Names {
-            grammar: Arc::new(Grammar::new("cpp", kinds, fields)),
+            grammars: [grammar("cpp"), grammar("c")],
             kinds: ids,
         }
     })
@@ -76,7 +84,7 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
 
 /// `text` in `dialect` as a colab tree.
 pub fn parse_as(text: &str, dialect: Dialect) -> Result<Tree, BuildError> {
-    let lexed = lexer::lex(text);
+    let lexed = lexer::lex(text, dialect == Dialect::C);
     let mut p = parser::Parser::new(text, lexed.tokens, dialect);
     let mut root = match p.program() {
         Item::Node(n) => n,
@@ -88,7 +96,7 @@ pub fn parse_as(text: &str, dialect: Dialect) -> Result<Tree, BuildError> {
         .map(|e| comment(e.start, e.end))
         .collect();
     place_extras(&mut root, extras);
-    let mut b = Builder::new(text, names().grammar.clone());
+    let mut b = Builder::new(text, grammar(dialect));
     if p.errors || lexed.errors {
         b.error_seen();
     }
@@ -224,12 +232,12 @@ fn emit(b: &mut Builder, item: &Item) -> Result<(), BuildError> {
 
 impl SourceParser for CParser {
     fn grammar(&self) -> Arc<Grammar> {
-        names().grammar.clone()
+        grammar(self.0)
     }
 
     fn parse(&self, text: &str) -> Tree {
         parse_as(text, self.0).unwrap_or_else(|_| {
-            let mut b = Builder::new(text, names().grammar.clone());
+            let mut b = Builder::new(text, grammar(self.0));
             let _ = b.start_node(kind_of("translation_unit", true), None, Flags::default());
             b.error_seen();
             b.finish()

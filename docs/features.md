@@ -602,8 +602,8 @@ conflict with colab's syntactic-rewriter premise.
 
 ## C (`colab-lang-c`) and C++ (`colab-lang-cpp`)
 
-C is powered by `tree-sitter-c`; C++ by colab's own parser
-(`colab-parse-c`, with tree-sitter-cpp's node kinds).
+Both are powered by colab's own parser (`colab-parse-c`), C as its C
+dialect, with tree-sitter-c's and tree-sitter-cpp's node kinds.
 
 **Include paths are matched bare.** The delimiters are part of the
 source, not the target: `"old/lib.h"` matches both `#include "old/lib.h"`

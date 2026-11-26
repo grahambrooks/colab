@@ -1,7 +1,8 @@
-//! The names of the kinds and fields a C++ tree holds.
+//! The names of the kinds and fields a C++ or C tree holds.
 //!
-//! For the move off tree-sitter these are tree-sitter-cpp's (0.23), so the
-//! C++ backend, the corpus and users' rules read the same tree they did,
+//! For the move off tree-sitter these are tree-sitter-cpp's (0.23), with
+//! tree-sitter-c's (0.24) own few added, so the C and C++ backends, the
+//! corpus and users' rules read the same trees they did,
 //! and `colab-backends/tests/cpp_parser.rs` can hold this parser to
 //! tree-sitter's node for node. Once tree-sitter is gone they are colab's
 //! to redesign (docs/development-plan.md, step 3); the parser names nothing
@@ -215,6 +216,9 @@ pub(crate) const NAMED: &[&str] = &[
     "variadic_type_parameter_declaration",
     "virtual_specifier",
     "while_statement",
+    // C's own.
+    "macro_type_specifier",
+    "variadic_parameter",
 ];
 
 /// The anonymous kinds: punctuation, operators and keywords.
@@ -325,6 +329,7 @@ pub(crate) const ANONYMOUS: &[&str] = &[
     "_unaligned",
     "alignas",
     "alignof",
+    "auto",
     "and",
     "and_eq",
     "asm",
@@ -439,6 +444,7 @@ pub(crate) const FIELDS: &[&str] = &[
     "filter",
     "function",
     "goto_labels",
+    "index",
     "indices",
     "initializer",
     "input_operands",
@@ -465,6 +471,7 @@ pub(crate) const FIELDS: &[&str] = &[
     "symbol",
     "template_parameters",
     "type",
+    "underlying_type",
     "update",
     "value",
 ];

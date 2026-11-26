@@ -18,6 +18,7 @@ impl Parser<'_> {
     /// Whether token `n` can start an expression.
     pub(crate) fn expression_start(&self, n: usize) -> bool {
         match self.kind_at(n) {
+            L::Name if !self.cpp() && self.is_ident(n) => true,
             L::Name => !matches!(
                 self.word_at(n),
                 "else"
@@ -94,6 +95,7 @@ impl Parser<'_> {
                 });
             }
             L::Op(o) => o,
+            L::Name if !self.cpp() => return None,
             L::Name => match self.word() {
                 "or" => "or",
                 "and" => "and",
@@ -192,9 +194,26 @@ impl Parser<'_> {
             L::Op("!" | "~" | "-" | "+") => {
                 let op = self.punct().with("operator");
                 let arg = self.expr_bp(UNARY).with("argument");
+                // tree-sitter-c reads `!b++` as `(!b)++`.
+                if !self.cpp()
+                    && let Item::Node(n) = &arg
+                    && n.kind == "update_expression"
+                    && n.items.last().is_some_and(
+                        |i| matches!(i, Item::Tok(t) if t.kind == "++" || t.kind == "--"),
+                    )
+                    && let Item::Node(mut n) = arg
+                {
+                    let post = n
+                        .items
+                        .pop()
+                        .unwrap_or_else(|| unreachable!("checked above"));
+                    let inner = n.items.pop().unwrap_or_else(|| unreachable!("an argument"));
+                    let u = node("unary_expression", vec![op, inner]).with("argument");
+                    return node("update_expression", vec![u, post]);
+                }
                 return node("unary_expression", vec![op, arg]);
             }
-            L::Name if matches!(self.word(), "not" | "compl") => {
+            L::Name if matches!(self.word(), "not" | "compl") && self.cpp() => {
                 let op = self.punct().with("operator");
                 let arg = self.expr_bp(UNARY).with("argument");
                 return node("unary_expression", vec![op, arg]);
@@ -238,25 +257,26 @@ impl Parser<'_> {
                     ];
                     return node("offsetof_expression", items);
                 }
-                "co_await" => {
-                    let op = self.punct().with("operator");
-                    let arg = self.expr_bp(UNARY).with("argument");
-                    return node("co_await_expression", vec![op, arg]);
-                }
                 "__extension__" => {
                     let kw = self.punct();
                     let e = self.expr_bp(UNARY);
                     return node("extension_expression", vec![kw, e]);
                 }
+                _ if !self.cpp() => {}
+                "co_await" => {
+                    let op = self.punct().with("operator");
+                    let arg = self.expr_bp(UNARY).with("argument");
+                    return node("co_await_expression", vec![op, arg]);
+                }
                 "new" => return self.new_expression(None),
                 "delete" => return self.delete_expression(None),
                 _ => {}
             },
-            L::Op("::") if self.is(self.i + 1, "new") => {
+            L::Op("::") if self.is(self.i + 1, "new") && self.cpp() => {
                 let c = self.punct();
                 return self.new_expression(Some(c));
             }
-            L::Op("::") if self.is(self.i + 1, "delete") => {
+            L::Op("::") if self.is(self.i + 1, "delete") && self.cpp() => {
                 let c = self.punct();
                 return self.delete_expression(Some(c));
             }
@@ -279,7 +299,10 @@ impl Parser<'_> {
         }
         // A name alone in the parentheses is a type only before what
         // cannot continue an expression.
-        if !self.clearly_type(self.i + 1, e) && !self.cast_after_name(next) {
+        if !self.clearly_type(self.i + 1, e)
+            && !self.cast_after_name(next)
+            && !(literal && !self.cpp())
+        {
             return None;
         }
         let open = self.punct();
@@ -340,7 +363,11 @@ impl Parser<'_> {
             }
             L::Number | L::StrOpen(_) | L::CharOpen(_) | L::RawOpen(_) => true,
             // `(f)(x)` is a cast of `(x)` to tree-sitter; `(f)()` a call.
-            L::Op("(") => !self.is(n + 1, ")"),
+            // C's `(a)(b)` is a call, `(a)(int)b` a cast of a cast.
+            L::Op("(") if self.cpp() => !self.is(n + 1, ")"),
+            L::Op("(") => self.scan_type_descriptor(n + 1).is_some_and(|e| {
+                self.is(e, ")") && self.clearly_type(n + 1, e) && self.cast_value_start(e + 1)
+            }),
             L::Op("!" | "~") => true,
             _ => false,
         }
@@ -371,6 +398,13 @@ impl Parser<'_> {
                 .scan_type_descriptor(self.i + 1)
                 .is_some_and(|e| self.is(e, ")") && self.type_in_parens(self.i + 1, e))
             && !self.is(self.scan_balanced(self.i).unwrap_or(0), "{")
+            // tree-sitter-c's `sizeof(T)-1` takes the cast `(T)-1`.
+            && !(!self.cpp()
+                && self.scan_balanced(self.i).is_some_and(|e| {
+                    matches!(self.kind_at(e), L::Op("-" | "+"))
+                        && self.adjacent(e)
+                        && self.kind_at(e + 1) == L::Number
+                }))
         {
             let items = vec![
                 kw,
@@ -432,6 +466,16 @@ impl Parser<'_> {
                     let args = self.argument_list().with("arguments");
                     e = node("call_expression", vec![e.with("function"), args]);
                 }
+                // C: `a[i]`, the index a field of the expression's own.
+                L::Op("[") if !self.cpp() => {
+                    let open = self.punct();
+                    let index = self.nested(Self::comma_expression).with("index");
+                    let close = self.expect("]");
+                    e = node(
+                        "subscript_expression",
+                        vec![e.with("argument"), open, index, close],
+                    );
+                }
                 L::Op("[") if !self.at_attribute() => {
                     let mut items = vec![self.punct()];
                     self.nested(|p| {
@@ -465,6 +509,9 @@ impl Parser<'_> {
     /// A field expression's field: a name, `~T`, `f<T>`, `A::b`,
     /// `template f<T>`.
     fn field_name(&mut self) -> Item {
+        if !self.cpp() {
+            return self.ident_as("field_identifier");
+        }
         if self.at("~") {
             let t = self.punct();
             let id = self.identifier();
@@ -544,7 +591,7 @@ impl Parser<'_> {
                 self.with_suffix(c)
             }
             L::Op("(") => self.paren_primary(),
-            L::Op("[") if !self.at_attribute() => self.lambda(),
+            L::Op("[") if !self.at_attribute() && self.cpp() => self.lambda(),
             L::Op("{") => self.initializer_list(),
             L::Op("::") => self.name_primary(),
             L::Name => self.word_primary(),
@@ -560,9 +607,9 @@ impl Parser<'_> {
                 let t = self.punct();
                 return node("null", vec![t]);
             }
-            "this" => return self.leaf("this"),
-            "requires" => return self.requires_expression(),
-            "decltype" => {
+            "this" if self.cpp() => return self.leaf("this"),
+            "requires" if self.cpp() => return self.requires_expression(),
+            "decltype" if self.cpp() => {
                 let d = self.type_specifier();
                 return d;
             }
@@ -571,6 +618,11 @@ impl Parser<'_> {
                 if self.is(self.i + 1, "(") || self.is(self.i + 1, "volatile") =>
             {
                 return self.gnu_asm();
+            }
+            // tree-sitter-c reads a primitive in an expression as a name
+            // (`va_arg(ap, int)`).
+            w if (PRIMITIVES.contains(&w) || super::SIZED.contains(&w)) && !self.cpp() => {
+                return self.leaf("identifier");
             }
             w if PRIMITIVES.contains(&w) => {
                 let t = self.leaf("primitive_type");
@@ -599,6 +651,9 @@ impl Parser<'_> {
             && matches!(self.kind_at(self.i + 1), L::StrOpen(_) | L::RawOpen(_))
         {
             return self.string_or_concatenation();
+        }
+        if !self.cpp() {
+            return self.identifier();
         }
         let start = self.i;
         let name = self.expr_name(true);
@@ -1226,11 +1281,13 @@ impl Parser<'_> {
                     parts.push(self.string_part());
                     strings += 1;
                 }
+                // C++'s second part must be a string; C's may be a word
+                // (`"a" PRIu64 "b"`).
                 L::Name
                     if self.is_ident(self.i)
-                        && parts.len() >= 2
+                        && (parts.len() >= 2 || !self.cpp())
                         && strings >= 1
-                        && self.peek() == L::Name =>
+                        && !self.is(self.i + 1, "(") =>
                 {
                     parts.push(self.leaf("identifier"));
                 }

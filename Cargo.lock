@@ -348,9 +348,9 @@ name = "colab-lang-c"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-c",
  "colab-rewrite",
- "tree-sitter",
- "tree-sitter-c",
+ "colab-syntax",
 ]
 
 [[package]]

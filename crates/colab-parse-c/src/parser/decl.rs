@@ -1,7 +1,7 @@
 //! Declarations: their specifiers and types, declarators, classes,
 //! enums, templates, namespaces, and the scans that look ahead over them.
 
-use super::{Ctx, Dialect, Item, PRIMITIVES, Parser, QUALIFIERS, SIZED, STORAGE, node};
+use super::{Ctx, Dialect, Item, PRIMITIVES, Parser, QUALIFIERS, SIZED, node};
 use crate::lexer::L;
 
 /// What a declarator declares: its name's kind, and whether it may lack
@@ -83,6 +83,21 @@ impl Parser<'_> {
     /// token after it. Stops before a `::` that a destructor's `~` or an
     /// `operator` follows.
     pub(crate) fn scan_type_name(&self, n: usize) -> Option<usize> {
+        if !self.cpp() {
+            // C: a name, or a macro's type `NAME(T)`.
+            if !self.is_ident(n) {
+                return None;
+            }
+            if self.macro_type_at(n) {
+                return self.scan_balanced(n + 1);
+            }
+            // `MAYBE_UNUSED unsigned x`: sized words after the name.
+            let mut k = n + 1;
+            while SIZED.contains(&self.word_at(k)) {
+                k += 1;
+            }
+            return Some(k);
+        }
         let mut k = n;
         if self.is(k, "::") {
             k += 1;
@@ -111,10 +126,42 @@ impl Parser<'_> {
         }
     }
 
+    /// C's `NAME(T)` at `n` before a declarator (`STACK_OF(X509) *x;`): a
+    /// `macro_type_specifier`.
+    pub(crate) fn macro_type_at(&self, n: usize) -> bool {
+        if self.cpp() || !self.is_ident(n) || !self.is(n + 1, "(") {
+            return false;
+        }
+        let Some(e) = self.scan_balanced(n + 1) else {
+            return false;
+        };
+        let inner_ok = {
+            let mut k = n + 2;
+            while QUALIFIERS.contains(&self.word_at(k)) {
+                k += 1;
+            }
+            self.scan_type_specifier(k).is_some_and(|t| {
+                let mut t = t;
+                while matches!(self.kind_at(t), L::Op("*")) || QUALIFIERS.contains(&self.word_at(t))
+                {
+                    t += 1;
+                }
+                t + 1 == e
+            })
+        };
+        // `;` after it: a field's type alone (`BIT(persist);`); a block's
+        // `F(x);` is not a declaration for `c_declaration_at`.
+        inner_ok
+            && (self.is_ident(e)
+                || self.is(e, ";")
+                || (self.is(e, "*")
+                    && (self.is_ident(e + 1) || self.is(e + 1, "*") || self.is(e + 1, "("))))
+    }
+
     /// A type specifier at `n`: the token after it.
     pub(crate) fn scan_type_specifier(&self, n: usize) -> Option<usize> {
         let w = self.word_at(n);
-        if PRIMITIVES.contains(&w) || w == "auto" {
+        if PRIMITIVES.contains(&w) || (w == "auto" && self.cpp()) {
             return Some(n + 1);
         }
         if SIZED.contains(&w) {
@@ -122,8 +169,18 @@ impl Parser<'_> {
             while SIZED.contains(&self.word_at(k)) || PRIMITIVES.contains(&self.word_at(k)) {
                 k += 1;
             }
+            // C's `unsigned T x`.
+            if !self.cpp() && self.is_ident(k) && self.is_ident(k + 1) {
+                k += 1;
+            }
             return Some(k);
         }
+        // C++'s keywords are C's names.
+        let w = if !self.cpp() && matches!(w, "class" | "typename" | "decltype") {
+            ""
+        } else {
+            w
+        };
         match w {
             "struct" | "class" | "union" | "enum" => {
                 let mut k = n + 1;
@@ -206,9 +263,9 @@ impl Parser<'_> {
             {
                 return true;
             }
-            if STORAGE.contains(&w)
+            if self.storage(w)
                 || QUALIFIERS.contains(&w)
-                || matches!(w, "virtual" | "explicit")
+                || (self.cpp() && matches!(w, "virtual" | "explicit"))
                 || MS_CALL.contains(&w)
             {
                 return true;
@@ -216,6 +273,9 @@ impl Parser<'_> {
             break;
         }
         let w = self.word_at(n);
+        if !self.cpp() {
+            return self.c_declaration_at(n, w, ctx);
+        }
         if PRIMITIVES.contains(&w)
             || SIZED.contains(&w)
             || matches!(
@@ -269,6 +329,43 @@ impl Parser<'_> {
             });
         }
         self.declarator_follows(t)
+    }
+
+    /// C: after specifiers at `n`, whether a declaration starts (a type
+    /// word, or a name or macro type before a declarator).
+    fn c_declaration_at(&self, n: usize, w: &str, ctx: Ctx) -> bool {
+        if PRIMITIVES.contains(&w) || SIZED.contains(&w) || matches!(w, "struct" | "union" | "enum")
+        {
+            return true;
+        }
+        if !self.is_ident(n) {
+            return false;
+        }
+        let Some(t) = self.scan_type_name(n) else {
+            return false;
+        };
+        let macro_type = t > n + 1;
+        match self.kind_at(t) {
+            L::Name => self.is_ident(t) || QUALIFIERS.contains(&self.word_at(t)),
+            // A block's `M(T) * x;` multiplies (a macro type loses there).
+            L::Op("*") if macro_type && ctx == Ctx::Block => false,
+            L::Op("*") => {
+                let mut k = t;
+                while self.is(k, "*") || QUALIFIERS.contains(&self.word_at(k)) {
+                    k += 1;
+                }
+                if self.is(k, "(") {
+                    return self.is(k + 1, "*");
+                }
+                self.is_ident(k)
+                    && matches!(
+                        self.kind_at(k + 1),
+                        L::Op(";" | "=" | "," | "[" | "(" | ")")
+                    )
+            }
+            // `T (*f)(…);` is a call to tree-sitter-c, in a file too.
+            _ => false,
+        }
     }
 
     /// At `(` after a name: whether a constructor's definition follows
@@ -394,7 +491,7 @@ impl Parser<'_> {
                 continue;
             }
             if self.peek() == L::Name {
-                if STORAGE.contains(&w) {
+                if self.storage(w) {
                     items.push(self.wrapped("storage_class_specifier"));
                     continue;
                 }
@@ -408,7 +505,7 @@ impl Parser<'_> {
                         items.push(node("type_qualifier", vec![a]));
                         continue;
                     }
-                    "virtual" => {
+                    "virtual" if self.cpp() => {
                         items.push(self.punct());
                         continue;
                     }
@@ -452,6 +549,22 @@ impl Parser<'_> {
     /// name, nor a declarator).
     fn type_specifier_here(&self, ctx: Ctx) -> bool {
         let w = self.word();
+        if !self.cpp() {
+            if PRIMITIVES.contains(&w)
+                || SIZED.contains(&w)
+                || matches!(w, "struct" | "union" | "enum")
+            {
+                return true;
+            }
+            // A name, or `NAME(T)`, or a name before a parenthesized
+            // declarator (`T (*f)(…)`, `T (MACRO *f)(…)`); `f(` alone is a
+            // declarator's.
+            return self.is_ident(self.i)
+                && (!self.is(self.i + 1, "(")
+                    || self.macro_type_at(self.i)
+                    || self.is(self.i + 2, "*")
+                    || (self.is_ident(self.i + 2) && self.is(self.i + 3, "*")));
+        }
         if PRIMITIVES.contains(&w)
             || SIZED.contains(&w)
             || matches!(
@@ -493,6 +606,9 @@ impl Parser<'_> {
 
     pub(crate) fn type_specifier(&mut self) -> Item {
         let w = self.word();
+        if !self.cpp() {
+            return self.c_type_specifier();
+        }
         match w {
             "struct" | "class" | "union" => return self.class_specifier(),
             "enum" => return self.enum_specifier(),
@@ -539,6 +655,38 @@ impl Parser<'_> {
         name
     }
 
+    /// C's type specifiers: `struct` / `union` / `enum`, sized and
+    /// primitive types, `NAME(T)` and a name.
+    fn c_type_specifier(&mut self) -> Item {
+        let w = self.word();
+        match w {
+            "struct" | "union" => return self.class_specifier(),
+            "enum" => return self.enum_specifier(),
+            _ => {}
+        }
+        if SIZED.contains(&w) {
+            return self.sized_type_specifier();
+        }
+        if PRIMITIVES.contains(&w) {
+            return self.leaf("primitive_type");
+        }
+        if self.macro_type_at(self.i) {
+            let name = self.leaf("identifier").with("name");
+            let open = self.punct();
+            let ty = self.type_descriptor().with("type");
+            let close = self.expect(")");
+            return node("macro_type_specifier", vec![name, open, ty, close]);
+        }
+        if SIZED.contains(&self.word_at(self.i + 1)) {
+            let mut items = vec![self.leaf("type_identifier").with("type")];
+            while SIZED.contains(&self.word()) {
+                items.push(self.punct());
+            }
+            return node("sized_type_specifier", items);
+        }
+        self.ident_as("type_identifier")
+    }
+
     fn decltype(&mut self) -> Item {
         if self.is(self.i + 2, "auto") && self.is(self.i + 3, ")") {
             let d = self.decltype_auto();
@@ -568,17 +716,28 @@ impl Parser<'_> {
         while SIZED.contains(&self.word()) {
             items.push(self.punct());
         }
-        if PRIMITIVES.contains(&self.word()) {
+        // C's `typedef short int16_t;`: a primitive name (not a base word)
+        // just before the end is the declarator.
+        let declarator_next = !self.cpp()
+            && !matches!(self.word(), "int" | "char" | "double" | "float")
+            && matches!(self.kind_at(self.i + 1), L::Op(";" | "[" | "="));
+        if PRIMITIVES.contains(&self.word()) && !declarator_next {
             items.push(self.leaf("primitive_type").with("type"));
             while SIZED.contains(&self.word()) {
                 items.push(self.punct());
             }
+        } else if !self.cpp() && self.is_ident(self.i) && self.is_ident(self.i + 1) {
+            // C's `unsigned T x`: a type name after the sized words.
+            items.push(self.leaf("type_identifier").with("type"));
         }
         node("sized_type_specifier", items)
     }
 
     /// A type's name: `T`, `A<B>`, `ns::T`, `::T`.
     pub(crate) fn type_name(&mut self) -> Item {
+        if !self.cpp() {
+            return self.ident_as("type_identifier");
+        }
         if self.at("::") {
             let colons = self.punct();
             let name = self.type_name_segment(true).with("name");
@@ -672,7 +831,7 @@ impl Parser<'_> {
         {
             items.push(self.type_name().with("name"));
         }
-        if self.at("final") || self.at("override") {
+        if self.cpp() && (self.at("final") || self.at("override")) {
             items.push(self.wrapped("virtual_specifier"));
         }
         let body_follows = |p: &Self| {
@@ -744,7 +903,8 @@ impl Parser<'_> {
 
     /// One member of a class.
     pub(crate) fn field_item(&mut self) -> Item {
-        match self.word() {
+        let w = if self.cpp() { self.word() } else { "" };
+        match w {
             "public" | "private" | "protected" if self.is(self.i + 1, ":") => {
                 let a = self.wrapped("access_specifier");
                 let c = self.punct();
@@ -792,7 +952,7 @@ impl Parser<'_> {
 
     fn enum_specifier(&mut self) -> Item {
         let mut items = vec![self.punct()];
-        if self.at("class") || self.at("struct") {
+        if self.cpp() && (self.at("class") || self.at("struct")) {
             items.push(self.punct());
         }
         while self.at_attribute() {
@@ -800,7 +960,16 @@ impl Parser<'_> {
         }
         if self.at("::") || self.is_ident(self.i) {
             items.push(self.type_name().with("name"));
-            if self.at(":") && !self.is(self.i + 1, ":") {
+            if self.at(":") && !self.is(self.i + 1, ":") && !self.cpp() {
+                // C: `: primitive` as `underlying_type`.
+                items.push(self.punct());
+                let base = if SIZED.contains(&self.word()) {
+                    self.sized_type_specifier()
+                } else {
+                    self.leaf("primitive_type")
+                };
+                items.push(base.with("underlying_type"));
+            } else if self.at(":") && !self.is(self.i + 1, ":") {
                 items.push(self.punct());
                 let base = if SIZED.contains(&self.word()) {
                     self.sized_type_specifier()
@@ -1242,7 +1411,12 @@ impl Parser<'_> {
         loop {
             let w = self.word();
             if let Some(&(_, kind)) = MS_POINTER.iter().find(|(m, _)| *m == w) {
-                let m = self.wrapped(kind);
+                // `__restrict` is a token of its own; the others wrap theirs.
+                let m = if kind == "ms_restrict_modifier" {
+                    self.leaf(kind)
+                } else {
+                    self.wrapped(kind)
+                };
                 items.push(node("ms_pointer_modifier", vec![m]));
                 continue;
             }
@@ -1277,25 +1451,33 @@ impl Parser<'_> {
                 };
                 Some(node(kind, items))
             }
-            L::Op("[") if dk == Dk::Normal && !self.at_attribute() => {
+            L::Op("[") if dk == Dk::Normal && !self.at_attribute() && self.cpp() => {
                 // `auto [a, b] = …`
                 let mut items = vec![self.punct()];
                 self.comma_list(&mut items, "]", false, Self::identifier);
                 items.push(self.expect("]"));
                 Some(node("structured_binding_declarator", items))
             }
-            L::Op("~") if dk != Dk::Abstract => {
+            L::Op("~") if dk != Dk::Abstract && self.cpp() => {
                 let t = self.punct();
                 let id = self.identifier();
                 Some(node("destructor_name", vec![t, id]))
             }
-            L::Op("::") => Some(self.expr_name(false)),
-            L::Name if self.at("operator") => Some(self.operator_name()),
+            L::Op("::") if self.cpp() => Some(self.expr_name(false)),
+            L::Name if self.at("operator") && self.cpp() => Some(self.operator_name()),
             L::Name if dk == Dk::Type && PRIMITIVES.contains(&self.word()) => {
                 Some(self.leaf("primitive_type"))
             }
             L::Name if dk == Dk::Type && SIZED.contains(&self.word()) => {
                 Some(self.leaf("primitive_type"))
+            }
+            L::Name if self.is_ident(self.i) && !self.cpp() => {
+                let kind = match dk {
+                    Dk::Field => "field_identifier",
+                    Dk::Type => "type_identifier",
+                    _ => "identifier",
+                };
+                Some(self.leaf(kind))
             }
             L::Name if self.is_ident(self.i) => {
                 let scoped = {
@@ -1354,7 +1536,8 @@ impl Parser<'_> {
             match self.peek() {
                 L::Op("(") => {
                     // A declaration's `x(a + 1)` is an initializer.
-                    if init && dk == Dk::Normal && !self.params_like(self.i) {
+                    // C has no constructor syntax: always parameters.
+                    if init && dk == Dk::Normal && self.cpp() && !self.params_like(self.i) {
                         break;
                     }
                     let mut items = Vec::new();
@@ -1433,7 +1616,7 @@ impl Parser<'_> {
             } else {
                 // Specifiers, a type, then a declarator's tokens.
                 let mut any = false;
-                while QUALIFIERS.contains(&self.word_at(k)) || STORAGE.contains(&self.word_at(k)) {
+                while QUALIFIERS.contains(&self.word_at(k)) || self.storage(self.word_at(k)) {
                     k += 1;
                     any = true;
                 }
@@ -1491,6 +1674,9 @@ impl Parser<'_> {
     /// qualifier, `noexcept` / `throw(…)`, attributes, a trailing return
     /// type, `override` / `final` or a `requires` clause.
     fn function_declarator_seq(&mut self, items: &mut Vec<Item>) {
+        if !self.cpp() {
+            return self.c_function_declarator_tail(items);
+        }
         loop {
             let w = self.word();
             match self.peek() {
@@ -1538,6 +1724,52 @@ impl Parser<'_> {
         }
     }
 
+    /// C: `asm(…)`, attribute specifiers, and (a definition's, before its
+    /// body) macro words and calls.
+    fn c_function_declarator_tail(&mut self, items: &mut Vec<Item>) {
+        if matches!(self.word(), "asm" | "__asm__" | "__asm") && self.is(self.i + 1, "(") {
+            items.push(self.gnu_asm());
+        }
+        let body_after = |p: &Self| {
+            let mut k = p.i;
+            loop {
+                if matches!(p.word_at(k), "__attribute__" | "__attribute") && p.is(k + 1, "(") {
+                    match p.scan_balanced(k + 1) {
+                        Some(e) => k = e,
+                        None => return false,
+                    }
+                } else if p.is_ident(k) {
+                    k += 1;
+                    if p.is(k, "(") {
+                        match p.scan_balanced(k) {
+                            Some(e) => k = e,
+                            None => return false,
+                        }
+                    }
+                } else {
+                    return p.is(k, "{");
+                }
+            }
+        };
+        let words = body_after(self);
+        loop {
+            let w = self.word();
+            if matches!(w, "__attribute__" | "__attribute") && self.is(self.i + 1, "(") {
+                items.push(self.attribute_specifier());
+            } else if words && self.is_ident(self.i) {
+                if self.is(self.i + 1, "(") {
+                    let f = self.leaf("identifier").with("function");
+                    let args = self.argument_list().with("arguments");
+                    items.push(node("call_expression", vec![f, args]));
+                } else {
+                    items.push(self.leaf("identifier"));
+                }
+            } else {
+                return;
+            }
+        }
+    }
+
     pub(crate) fn parameter_list(&mut self) -> Item {
         let mut items = vec![self.expect("(")];
         self.comma_list(&mut items, ")", false, Self::parameter);
@@ -1548,12 +1780,17 @@ impl Parser<'_> {
     fn parameter(&mut self) -> Item {
         if self.at("...") {
             if self.dialect == Dialect::C {
-                return self.leaf("variadic_parameter");
+                let dots = self.punct();
+                return node("variadic_parameter", vec![dots]);
             }
             return self.punct();
         }
         let mut items = Vec::new();
-        self.decl_specifiers(&mut items, Ctx::Block);
+        let typed = self.decl_specifiers(&mut items, Ctx::Block);
+        // A C parameter has a type: `f(T(int))`'s `T` is one.
+        if !typed && !self.cpp() && self.is_ident(self.i) {
+            items.push(self.ident_as("type_identifier").with("type"));
+        }
         // `T... xs`, `T&&... xs`.
         if self.at("...")
             || (matches!(self.peek(), L::Op("&" | "&&")) && self.is(self.i + 1, "..."))

@@ -83,7 +83,7 @@ pub(crate) struct Lexed {
     pub errors: bool,
 }
 
-pub(crate) fn lex(src: &str) -> Lexed {
+pub(crate) fn lex(src: &str, c: bool) -> Lexed {
     let mut lx = Lexer {
         src,
         b: src.as_bytes(),
@@ -92,6 +92,7 @@ pub(crate) fn lex(src: &str) -> Lexed {
         extras: Vec::new(),
         errors: false,
         line: Line::Code,
+        c,
     };
     if src.starts_with('\u{feff}') {
         lx.at = 3;
@@ -129,6 +130,8 @@ struct Lexer<'s> {
     extras: Vec<Extra>,
     errors: bool,
     line: Line,
+    /// Lexing C: no raw strings or literal suffixes, C's number suffixes.
+    c: bool,
 }
 
 fn is_ident_start(c: char) -> bool {
@@ -201,6 +204,15 @@ impl Lexer<'_> {
         match c {
             b'\n' => {
                 match self.line {
+                    // tree-sitter-c's token is `\n+`.
+                    Line::Condition if self.c => {
+                        let mut end = start + 1;
+                        while self.byte(end) == b'\n' {
+                            end += 1;
+                        }
+                        self.push(L::Newline, start, end);
+                        self.at = end - 1;
+                    }
                     Line::Condition => self.push(L::Newline, start, start + 1),
                     Line::Directive | Line::Include => self.push(L::LineEnd, start, start + 1),
                     Line::Code => {}
@@ -335,7 +347,7 @@ impl Lexer<'_> {
                 };
                 return self.char_literal(start, i, open);
             }
-            ("R" | "LR" | "uR" | "UR" | "u8R", b'"') => {
+            ("R" | "LR" | "uR" | "UR" | "u8R", b'"') if !self.c => {
                 let open = match w {
                     "R" => "R\"",
                     "LR" => "LR\"",
@@ -404,9 +416,14 @@ impl Lexer<'_> {
                 i = digits(k, false);
             }
         }
-        // The suffixes tree-sitter-cpp's number takes.
+        // The suffixes tree-sitter-cpp's number takes; C's takes any run of
+        // `uUlLwWfFbBdD`.
         let rest = &self.src[i..];
-        let suffix = if float || exp {
+        let suffix = if self.c {
+            rest.bytes()
+                .take_while(|b| b"uUlLwWfFbBdD".contains(b))
+                .count()
+        } else if float || exp {
             [
                 "f128", "F128", "f16", "F16", "f32", "F32", "f64", "F64", "bf16", "BF16", "f", "F",
                 "l", "L",
@@ -432,6 +449,9 @@ impl Lexer<'_> {
 
     /// A word touching the literal just lexed: `literal_suffix`.
     fn literal_suffix(&mut self) {
+        if self.c {
+            return;
+        }
         let i = self.at;
         if self
             .char_at(i)

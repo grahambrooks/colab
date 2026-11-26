@@ -744,7 +744,26 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    label; `(f)(x)` is a cast, `(f)()` a call; `sizeof(x)` takes a
    parenthesized value, `sizeof(ns::T)` a type. The 91 left are more of the
    same. `cpp` runs on it (`includes.rs` and `namespaces.rs` ported);
-   tree-sitter-cpp is a test dependency. C next, as its dialect.
+   tree-sitter-cpp is a test dependency.
+   **C, done 2026-11-26:** `Dialect::C` of `colab-parse-c`, about 400
+   lines on the C++ parser: C's keyword list (C++'s `class`, `new`,
+   `template` are names), no `::`, templates, references, lambdas or
+   constructors; `macro_type_specifier` (`STACK_OF(X509) *x;`, a field's
+   `BIT(flag);`), `MACRO unsigned x`, `unsigned T x`, a subscript's single
+   `index`, an enum's `underlying_type`, `variadic_parameter`, K&R-free
+   parameter lists (a parameter always has a type: `f(T(int))`), macro
+   words and calls between a definition's declarator and its body, and
+   `"a" PRIu64 "b"` concatenations. Held to curl, git, redis and lua
+   (2,984 files, 1,844 clean to tree-sitter): 1,832 the same (99.3%), in
+   1.5 s against 3.8 s. tree-sitter-c's own readings copied: `T (*f)(…);`
+   and `free(*p);` are calls, in a file too; `(a)(b)` is a call, `(A)(int)b`
+   a cast of a cast; `!b++` is `(!b)++`; `sizeof(T)-1` is the size of
+   `(T)-1`; a primitive in an expression is a name (`va_arg(ap, int)`);
+   `typedef short int16_t;` declares a primitive's name; an `#if`
+   condition's newline token is `\n+`. The 12 left are tie-breaks and
+   macros (`LUALIB_API int (f) (lua_State *L);`, a `#define` in an enum).
+   `c` runs on it (`includes.rs` ported); tree-sitter-c is a test
+   dependency. PHP next.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

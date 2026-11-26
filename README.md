@@ -335,7 +335,7 @@ crates/
   colab-syntax/       # colab's own lossless syntax tree and structural matcher
   colab-backends/     # registry(): the one place every backend is registered
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR
-  colab-lang-c/       # C backend
+  colab-lang-c/       # C backend (colab's own parser, colab-parse-c's C dialect)
   colab-lang-cpp/     # C++ backend (colab's own parser, colab-parse-c)
   colab-lang-csharp/  # C# backend (colab's own parser, colab-parse-csharp)
   colab-lang-go/      # Go backend

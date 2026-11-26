@@ -219,6 +219,63 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "xor_eq",
 ];
 
+/// C's words that are never identifiers.
+pub(crate) const C_KEYWORDS: &[&str] = &[
+    "auto",
+    "break",
+    "case",
+    "char",
+    "const",
+    "continue",
+    "default",
+    "do",
+    "double",
+    "else",
+    "enum",
+    "extern",
+    "float",
+    "for",
+    "goto",
+    "if",
+    "inline",
+    "int",
+    "long",
+    "register",
+    "restrict",
+    "return",
+    "short",
+    "signed",
+    "sizeof",
+    "static",
+    "struct",
+    "switch",
+    "typedef",
+    "union",
+    "unsigned",
+    "void",
+    "volatile",
+    "while",
+    "bool",
+    "true",
+    "false",
+    "NULL",
+    "nullptr",
+    "_Atomic",
+    "_Noreturn",
+    "_Alignas",
+    "_Alignof",
+    "_Generic",
+    "alignas",
+    "alignof",
+    "constexpr",
+    "thread_local",
+    "offsetof",
+    "__attribute__",
+    "__attribute",
+    "__declspec",
+    "__extension__",
+];
+
 pub(crate) const PRIMITIVES: &[&str] = &[
     "bool",
     "char",
@@ -355,9 +412,20 @@ impl<'s> Parser<'s> {
         self.is(self.i, s)
     }
 
-    /// Whether token `n` can be an identifier.
+    /// Whether token `n` can be an identifier (C++'s keywords are C's
+    /// identifiers: `int class = 1;`).
     fn is_ident(&self, n: usize) -> bool {
-        self.kind_at(n) == L::Name && !KEYWORDS.contains(&self.word_at(n))
+        let keywords = if self.cpp() { KEYWORDS } else { C_KEYWORDS };
+        self.kind_at(n) == L::Name && !keywords.contains(&self.word_at(n))
+    }
+
+    pub(crate) fn cpp(&self) -> bool {
+        self.dialect == Dialect::Cpp
+    }
+
+    /// A storage class's word (C's `auto` among them).
+    pub(crate) fn storage(&self, w: &str) -> bool {
+        STORAGE.contains(&w) || (w == "auto" && !self.cpp())
     }
 
     fn eof(&self) -> bool {
@@ -635,16 +703,17 @@ impl<'s> Parser<'s> {
             return self.field_item();
         }
         match self.word() {
-            "namespace" => return self.namespace(),
-            "inline" if self.is(self.i + 1, "namespace") => return self.namespace(),
-            "using" => return self.using(),
-            "template" => return self.template(),
-            "static_assert" => return self.static_assert(),
             "typedef" => return self.type_definition(),
             "__extension__" if self.is(self.i + 1, "typedef") => return self.type_definition(),
             "extern" if matches!(self.kind_at(self.i + 1), L::StrOpen(_)) => {
                 return self.linkage();
             }
+            _ if !self.cpp() => {}
+            "namespace" => return self.namespace(),
+            "inline" if self.is(self.i + 1, "namespace") => return self.namespace(),
+            "using" => return self.using(),
+            "template" => return self.template(),
+            "static_assert" => return self.static_assert(),
             "concept" => return self.concept(),
             _ => {}
         }
@@ -949,6 +1018,12 @@ impl<'s> Parser<'s> {
             _ => return self.expression_statement(),
         }
         let w = self.word();
+        // C++'s statement keywords are C's identifiers.
+        let w = if !self.cpp() && matches!(w, "try" | "throw" | "co_return" | "co_yield") {
+            ""
+        } else {
+            w
+        };
         match w {
             "if" => self.if_statement(),
             "while" => {
@@ -981,7 +1056,7 @@ impl<'s> Parser<'s> {
             "case" | "default" if w == "case" || self.is(self.i + 1, ":") => self.case_statement(),
             "return" => {
                 let mut items = vec![self.punct()];
-                if self.at("{") {
+                if self.at("{") && self.cpp() {
                     items.push(self.initializer_list());
                 } else if !self.at(";") {
                     items.push(self.comma_expression());
@@ -1264,10 +1339,11 @@ impl<'s> Parser<'s> {
             && !self.at("case")
             && !(self.at("default") && self.is(self.i + 1, ":"))
             && !matches!(self.peek(), L::Directive(_) | L::OtherDirective)
-            && !matches!(
-                self.word(),
-                "using" | "template" | "static_assert" | "namespace" | "concept"
-            )
+            && !(self.cpp()
+                && matches!(
+                    self.word(),
+                    "using" | "template" | "static_assert" | "namespace" | "concept"
+                ))
         {
             let before = self.i;
             items.push(self.item(Ctx::Block));
