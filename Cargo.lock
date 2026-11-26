@@ -572,13 +572,15 @@ name = "colab-rewrite"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-go",
+ "colab-parse-python",
  "colab-parse-rust",
  "colab-syntax",
  "regex",
  "similar",
  "tree-sitter",
  "tree-sitter-go",
- "tree-sitter-python",
+ "tree-sitter-javascript",
 ]
 
 [[package]]

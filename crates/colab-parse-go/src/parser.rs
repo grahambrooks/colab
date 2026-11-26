@@ -225,6 +225,39 @@ impl<'s> Parser<'s> {
         })
     }
 
+    /// A list's closing `close`, into `items`. When it is not next but
+    /// comes later at the same nesting, before the line ends, the tokens
+    /// before it are an `ERROR` inside the list (`f(x :: y)` stays one
+    /// call, as tree-sitter reads it); otherwise it is missing.
+    fn close(&mut self, items: &mut Vec<Item>, close: &'static str) {
+        if !self.at(close) {
+            let mut depth = 0usize;
+            let mut j = self.i;
+            let found = loop {
+                let t = self.toks[j];
+                match t.k {
+                    L::Eof => break false,
+                    L::Term if depth == 0 => break false,
+                    L::Op(o) if o == close && depth == 0 => break true,
+                    L::Op("(" | "[" | "{") => depth += 1,
+                    L::Op(")" | "]" | "}") if depth == 0 => break false,
+                    L::Op(")" | "]" | "}") => depth -= 1,
+                    _ => {}
+                }
+                j += 1;
+            };
+            if found {
+                self.errors = true;
+                let mut bad = Vec::new();
+                while self.i < j {
+                    bad.push(self.take());
+                }
+                items.push(node("ERROR", bad));
+            }
+        }
+        items.push(self.expect(close));
+    }
+
     /// The keyword or punctuation `s`, or a missing one.
     fn expect(&mut self, s: &'static str) -> Item {
         if self.at(s) {
@@ -1834,7 +1867,7 @@ impl<'s> Parser<'s> {
                 break;
             }
         }
-        items.push(self.expect(")"));
+        self.close(&mut items, ")");
         self.no_literal = saved;
         node("argument_list", items)
     }
@@ -1854,7 +1887,7 @@ impl<'s> Parser<'s> {
                 items.push(self.expr());
             }
         }
-        items.push(self.expect(")"));
+        self.close(&mut items, ")");
         self.no_literal = saved;
         node("argument_list", items)
     }

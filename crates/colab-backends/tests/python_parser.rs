@@ -85,7 +85,7 @@ fn colab_python_trees_are_lossless_and_tree_sitters() {
             continue;
         }
         let started = Instant::now();
-        let theirs = common::tree("python", &text);
+        let theirs = common::tree_sitter_tree("python", &text);
         theirs_time += started.elapsed();
         if theirs.has_error() {
             continue;

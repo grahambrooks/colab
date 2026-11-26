@@ -84,7 +84,7 @@ fn colab_go_trees_are_lossless_and_tree_sitters() {
             continue;
         }
         let started = Instant::now();
-        let theirs = common::tree("go", &text);
+        let theirs = common::tree_sitter_tree("go", &text);
         theirs_time += started.elapsed();
         if theirs.has_error() {
             continue;

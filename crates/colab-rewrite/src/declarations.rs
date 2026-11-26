@@ -201,19 +201,20 @@ mod tests {
     use super::*;
     use colab_core::symbols::{flatten, resolve};
 
-    fn paths(grammar: tree_sitter::Language, source: &str) -> Vec<String> {
-        let decls = declarations(&grammar, source);
+    fn paths(tree: &Tree) -> Vec<String> {
+        let decls = declarations_in(tree);
         flatten(&decls).iter().map(|f| f.path.join("/")).collect()
     }
 
     // Rust's declarations come from rust-analyzer's typed AST
-    // (`colab-lang-rust/src/own.rs`, which has the Rust cases).
+    // (`colab-lang-rust/src/own.rs`, which has the Rust cases). Go's and
+    // Python's are read from colab's own parsers' trees, as the backends
+    // read them.
 
     #[test]
     fn go_methods_sit_under_their_receiver_type() {
         let src = "package p\n\ntype Config struct{}\n\n// Load reads it.\nfunc (c *Config) Load() error { return nil }\n\nfunc main() {}\n";
-        let grammar: tree_sitter::Language = tree_sitter_go::LANGUAGE.into();
-        let decls = declarations(&grammar, src);
+        let decls = declarations_in(&colab_parse_go::parse(src).unwrap());
         let load = resolve(&decls, "Config/Load", src).unwrap();
         assert!(
             src[load.declaration.range.clone()].starts_with("// Load reads it.\nfunc (c *Config)")
@@ -225,9 +226,9 @@ mod tests {
     fn python_decorators_and_classes() {
         let src =
             "class A:\n    @property\n    def x(self):\n        return 1\n\ndef f():\n    pass\n";
-        let grammar: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
-        assert_eq!(paths(grammar.clone(), src), ["A", "A/x", "f"]);
-        let decls = declarations(&grammar, src);
+        let tree = colab_parse_python::parse(src).unwrap();
+        assert_eq!(paths(&tree), ["A", "A/x", "f"]);
+        let decls = declarations_in(&tree);
         let x = resolve(&decls, "A/x", src).unwrap();
         assert!(src[x.declaration.range.clone()].starts_with("@property\n    def x"));
     }

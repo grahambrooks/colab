@@ -65,7 +65,7 @@ impl StructuralPattern {
 
 fn go() -> PatternLanguage {
     PatternLanguage {
-        syntax: Syntax::TreeSitter(tree_sitter_go::LANGUAGE.into()),
+        syntax: Syntax::Own(&colab_parse_go::PARSER),
         expando: 'µ',
         contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
         also: &[],
@@ -79,9 +79,19 @@ fn go() -> PatternLanguage {
     }
 }
 
+/// Go on tree-sitter-go, which reads a fragment without its final newline
+/// as an error: the setup for the tests of how contexts are chosen, which
+/// need a fragment that parses only in one.
+fn go_tree_sitter() -> PatternLanguage {
+    PatternLanguage {
+        syntax: Syntax::TreeSitter(tree_sitter_go::LANGUAGE.into()),
+        ..go()
+    }
+}
+
 fn python() -> PatternLanguage {
     PatternLanguage {
-        syntax: Syntax::TreeSitter(tree_sitter_python::LANGUAGE.into()),
+        syntax: Syntax::Own(&colab_parse_python::PARSER),
         expando: 'µ',
         contexts: &[],
         also: &["def _(x: @@PATTERN@@): pass\n"],
@@ -699,7 +709,7 @@ fn an_also_context_matches_the_same_text_parsed_another_way() {
 #[test]
 fn a_multi_line_template_follows_tab_indentation() {
     let go = PatternLanguage {
-        syntax: Syntax::TreeSitter(tree_sitter_go::LANGUAGE.into()),
+        syntax: Syntax::Own(&colab_parse_go::PARSER),
         expando: 'µ',
         contexts: &["package p\nfunc _() {\n@@PATTERN@@\n}\n"],
         also: &[],
@@ -970,7 +980,7 @@ fn all_metavariable_pattern_has_no_prefilter() {
 
 #[test]
 fn pattern_tree_shows_metavariables_and_the_context_used() {
-    let p = StructuralPattern::compile(&go(), "errors.Wrap($ERR, $MSG)").unwrap();
+    let p = StructuralPattern::compile(&go_tree_sitter(), "errors.Wrap($ERR, $MSG)").unwrap();
     assert!(p.context().unwrap().contains("func _()"));
     let tree = p.tree();
     assert!(tree.starts_with("call_expression"), "{tree}");
@@ -999,7 +1009,7 @@ fn a_context_whose_wrapper_shadows_the_pattern_kind_is_refused() {
     // `x` alone selects an `identifier`; in Go's function-body wrapper the
     // function name `_` is an earlier `identifier`, so using that context
     // would silently match `_` instead. It must be refused, not used.
-    let err = StructuralPattern::compile(&go(), "x").unwrap_err();
+    let err = StructuralPattern::compile(&go_tree_sitter(), "x").unwrap_err();
     assert!(err.contains("earlier `identifier`"), "{err}");
 }
 

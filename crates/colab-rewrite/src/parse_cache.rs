@@ -257,19 +257,19 @@ mod tests {
 
     #[test]
     fn the_same_text_is_parsed_once_and_a_changed_one_again() {
-        let python: Language = tree_sitter_python::LANGUAGE.into();
+        let js: Language = tree_sitter_javascript::LANGUAGE.into();
         let go: Language = tree_sitter_go::LANGUAGE.into();
-        let a = parse(&python, "def a(): pass\n").unwrap();
-        let again = parse(&python, "def a(): pass\n").unwrap();
+        let a = parse(&js, "function a() {}\n").unwrap();
+        let again = parse(&js, "function a() {}\n").unwrap();
         // The cached tree is the one parsed: same root, same text.
         assert_eq!(a.root_node().to_sexp(), again.root_node().to_sexp());
-        let b = parse(&python, "def b(): pass\n").unwrap();
+        let b = parse(&js, "function b() {}\n").unwrap();
         assert_eq!(b.root_node().to_sexp(), a.root_node().to_sexp());
         // A different grammar on the same text is its own parse.
-        let as_go = parse(&go, "def a(): pass\n").unwrap();
+        let as_go = parse(&go, "function a() {}\n").unwrap();
         assert!(as_go.root_node().has_error());
         assert!(
-            !parse(&python, "def a(): pass\n")
+            !parse(&js, "function a() {}\n")
                 .unwrap()
                 .root_node()
                 .has_error()

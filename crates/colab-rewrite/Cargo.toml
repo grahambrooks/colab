@@ -16,10 +16,14 @@ regex = { workspace = true }
 similar = { workspace = true }
 
 [dev-dependencies]
+# The parse cache's tests: it caches tree-sitter parses.
 tree-sitter-go = { workspace = true }
-tree-sitter-python = { workspace = true }
-# Rust patterns in the engine's own tests, on rust-analyzer's trees.
+tree-sitter-javascript = { workspace = true }
+# The engine's own tests, on the parsers the backends use: Rust on
+# rust-analyzer's, Go and Python on colab's.
 colab-parse-rust = { workspace = true }
+colab-parse-go = { workspace = true }
+colab-parse-python = { workspace = true }
 
 [lints]
 workspace = true
