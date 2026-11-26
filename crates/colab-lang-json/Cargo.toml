@@ -6,14 +6,12 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "JSON config edits for colab: set, insert or delete a member by JSON Pointer, editing text in place via tree-sitter-json."
+description = "JSON config edits for colab: set, insert or delete a member by JSON Pointer, editing text in place."
 
 [dependencies]
 colab-core = { workspace = true }
 colab-rewrite = { workspace = true }
 serde_json = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-json = { workspace = true }
 
 [lints]
 workspace = true

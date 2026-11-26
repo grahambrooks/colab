@@ -620,6 +620,13 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    took it, leaving nothing to strip). The backend runs on it and
    tree-sitter-md leaves the shipped binary (a test dependency, for the
    comparison).
+   **JSON, done 2026-11-25:** no syntax tree at all. `json::key` needs
+   values, members with decoded keys and byte ranges, so
+   `colab-lang-json/src/tree.rs` (~250 lines) reads exactly that, with
+   comments allowed as tree-sitter-json allowed them. Over the
+   workspace's 14,855 `.json` files it reads what serde_json reads, with
+   the same top-level keys, every one. tree-sitter-json is gone from the
+   workspace.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

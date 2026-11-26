@@ -127,7 +127,7 @@ adding `replace` (section, item, link, text, column) and `ensure` (item) (see
 
 | Crate | Namespace | Module | Address | Files |
 | ----- | --------- | ------ | ------- | ----- |
-| `colab-lang-json`     | `json`     | `key`   | JSON Pointer (`/a/b`) | `.json` |
+| `colab-lang-json`     | `json`     | `key`   | JSON Pointer (`/a/b`) | `.json` (no tree-sitter: `tree.rs`, its own reader of values and decoded keys with byte ranges, comments allowed; an ignored test holds it to serde_json, `COLAB_JSON_FILES=<dir>`) |
 | `colab-lang-markdown` | `markdown` | `section`, `row`, `column`, `item`, `text`, `link`, `frontmatter`, `block` | heading path `"Parent > Child"` or `"#anchor"` (`"New < Sibling"`, `"New before Sibling"` or `"New after Sibling"` to place a new one); `"Section[Col=value]"` (row; `< [Col=value]` before a row); `"Section[Header]"` (column; `< [Header]` before a column); `"Section[item text]"` (item); `"Section[phrase]"` (text); a link destination; a front-matter key; a managed-block name | `.md`, `.markdown` |
 | `colab-lang-toml`     | `toml`     | `key`   | dotted path, `name[field=value]` selects an array element | `.toml` |
 

@@ -2,31 +2,16 @@
 //!
 //! One module, `json::key`, addresses a member by JSON Pointer (RFC 6901,
 //! `/enabledPlugins/name@marketplace`) and `set`s, `insert`s or `delete`s
-//! it. Edits are made to the text in place, located with tree-sitter-json,
-//! so key order, indentation and everything else in the file is kept.
-//! `set` and `insert` create what is missing, so scope them with
-//! `in "<glob>"` or run them on named files.
+//! it. Edits are made to the text in place, located by colab's own JSON
+//! reader (`tree`), so key order, indentation and everything else in the
+//! file is kept. `set` and `insert` create what is missing, so scope them
+//! with `in "<glob>"` or run them on named files.
 
 pub mod key;
 pub mod pointer;
-
-use std::cell::RefCell;
+mod tree;
 
 use colab_core::{ActionCapability, Capability, LanguageBackend, Operation, Result, RuleSpec};
-use tree_sitter::{Parser, Tree};
-
-thread_local! {
-    static PARSER: RefCell<Parser> = RefCell::new({
-        let mut p = Parser::new();
-        p.set_language(&tree_sitter_json::LANGUAGE.into())
-            .expect("failed to load tree-sitter JSON grammar");
-        p
-    });
-}
-
-pub(crate) fn parse(source: &str) -> Option<Tree> {
-    PARSER.with_borrow_mut(|p| p.parse(source, None))
-}
 
 /// Plug-in entry point for the `json` namespace.
 pub struct JsonBackend;
@@ -56,7 +41,7 @@ impl LanguageBackend for JsonBackend {
     }
 
     fn description(&self) -> &'static str {
-        "JSON config edits by JSON Pointer, in place via tree-sitter-json."
+        "JSON config edits by JSON Pointer, in place."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

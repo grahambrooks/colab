@@ -3795,10 +3795,13 @@ match json::key "/enabledPlugins/code-intelligence@gb-agent-skills" in ".claude/
 ```
 
 - RFC 6901: `~1` is `/` inside a key, `~0` is `~`.
-- The edit is a single splice of the file's text, located with
-  tree-sitter-json: key order, indentation and every other byte are kept. A
+- The edit is a single splice of the file's text, located by colab's own
+  JSON reader: key order, indentation and every other byte are kept. A
   new member follows the last one, one per line or inline to match the
   object; missing parent objects are written compactly on one line.
+- `//` and `/* */` comments are allowed between tokens (`tsconfig.json`,
+  editor settings). A file that is not JSON otherwise, a trailing comma
+  included, is left alone.
 - An array step must be an existing index; `set` and `insert` never grow
   arrays, and `delete` does not remove array elements.
 

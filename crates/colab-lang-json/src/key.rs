@@ -1,7 +1,7 @@
 //! `json::key`: set, insert or delete an object member by JSON Pointer.
 //!
-//! The document is parsed with tree-sitter-json only to locate spans; the
-//! edit itself is one splice of text, so nothing else in the file moves.
+//! The document is parsed (`crate::tree`) only to locate spans; the edit
+//! itself is one splice of text, so nothing else in the file moves.
 //!
 //! - A new member goes after the object's last member, on its own line
 //!   with the same indentation when members are one per line, or after a
@@ -16,9 +16,9 @@ use std::path::Path;
 use colab_core::{Error, Operation, Result};
 use colab_rewrite::{Edit, apply_edits};
 use serde_json::Value;
-use tree_sitter::Node;
 
 use crate::pointer;
+use crate::tree::{self, Kind, Value as Node};
 
 #[derive(Debug, Clone)]
 enum Mode {
@@ -99,7 +99,7 @@ impl Operation for MemberEdit {
     // written with escapes, so no literal is a safe necessary condition.
 
     fn why_unchanged(&self, source: &str) -> Option<String> {
-        if crate::parse(source).is_none_or(|t| t.root_node().has_error()) {
+        if tree::parse(source).is_none() {
             return Some("the file does not parse as JSON, so it is left alone".into());
         }
         (!matches!(self.mode, Mode::Delete) && self.edit(source).is_none()).then(|| {
@@ -114,25 +114,24 @@ impl MemberEdit {
     /// array without that element, or a scalar. `None` when every step
     /// resolves or would be created (an object's missing member).
     fn blocked(&self, source: &str) -> Option<String> {
-        let tree = crate::parse(source)?;
-        let root = tree.root_node();
-        let mut node = root.named_children(&mut root.walk()).find(is_value)?;
+        let root = tree::parse(source)?;
+        let mut node = &root;
         for (depth, token) in self.tokens.iter().enumerate() {
             let at = || {
                 let path: Vec<&str> = self.tokens[..depth].iter().map(String::as_str).collect();
                 format!("/{}", path.join("/"))
             };
-            match child(node, token, source) {
+            match child(node, token) {
                 Some(Child::Member { value, .. } | Child::Element(value)) => node = value,
                 Some(Child::Missing) => return None,
-                None if node.kind() == "array" => {
+                None if node.kind == Kind::Array => {
                     return Some(format!("`{}` is an array with no element `{token}`", at()));
                 }
                 None => {
                     return Some(format!(
                         "`{}` holds a {}, so nothing can go under it",
                         at(),
-                        node.kind()
+                        node.kind.name()
                     ));
                 }
             }
@@ -142,16 +141,12 @@ impl MemberEdit {
 
     /// The one splice this rule makes, or `None` when nothing changes.
     fn edit(&self, source: &str) -> Option<Edit> {
-        let tree = crate::parse(source)?;
-        let root = tree.root_node();
-        // A file that does not parse cleanly is left alone.
-        if root.has_error() {
-            return None;
-        }
-        let mut node = root.named_children(&mut root.walk()).find(is_value)?;
+        // A file that does not parse is left alone.
+        let root = tree::parse(source)?;
+        let mut node = &root;
         let (last, parents) = self.tokens.split_last()?;
         for (depth, token) in parents.iter().enumerate() {
-            match child(node, token, source) {
+            match child(node, token) {
                 Some(Child::Member { value, .. } | Child::Element(value)) => node = value,
                 Some(Child::Missing) => {
                     // Create the rest of the path as nested objects.
@@ -168,7 +163,7 @@ impl MemberEdit {
                 None => return None,
             }
         }
-        match (child(node, last, source)?, &self.mode) {
+        match (child(node, last)?, &self.mode) {
             (Child::Missing, Mode::Delete) => None,
             (Child::Missing, Mode::Set { text, .. } | Mode::Insert { text, .. }) => {
                 insert_member(node, last, text, source)
@@ -181,16 +176,17 @@ impl MemberEdit {
                     value: wanted,
                 },
             ) => {
-                let current: Value = serde_json::from_str(text_of(value, source)).ok()?;
+                let current: Value = serde_json::from_str(&source[value.range.clone()]).ok()?;
                 if current == *wanted {
                     return None;
                 }
-                Some(Edit::replacing(
-                    value,
-                    reindent(text, indent_at(source, value.start_byte())),
+                Some(Edit::new(
+                    value.range.start,
+                    value.range.end,
+                    reindent(text, indent_at(source, value.range.start)),
                 ))
             }
-            (Child::Member { pair, .. }, Mode::Delete) => Some(delete_member(node, pair)),
+            (Child::Member { index, .. }, Mode::Delete) => Some(delete_member(node, index)),
             // Removing an array element is not a member edit.
             (Child::Element(_), Mode::Delete) => None,
         }
@@ -198,64 +194,34 @@ impl MemberEdit {
 }
 
 enum Child<'t> {
+    /// The object's member `index`.
     Member {
-        pair: Node<'t>,
-        value: Node<'t>,
+        index: usize,
+        value: &'t Node,
     },
-    Element(Node<'t>),
+    Element(&'t Node),
     /// The node is an object without this member.
     Missing,
-}
-
-fn is_value(node: &Node) -> bool {
-    matches!(
-        node.kind(),
-        "object" | "array" | "string" | "number" | "true" | "false" | "null"
-    )
 }
 
 /// The member `token` of an object, or element `token` of an array. `None`
 /// when the node cannot hold it: a scalar, or an array index that is not a
 /// number or is out of range.
-fn child<'t>(node: Node<'t>, token: &str, source: &str) -> Option<Child<'t>> {
-    match node.kind() {
-        "object" => {
-            let found = pairs(node).find(|pair| {
-                pair.child_by_field_name("key")
-                    .and_then(|key| serde_json::from_str::<String>(text_of(key, source)).ok())
-                    .is_some_and(|key| key == token)
-            });
-            Some(match found {
-                Some(pair) => Child::Member {
-                    pair,
-                    value: pair.child_by_field_name("value")?,
-                },
-                None => Child::Missing,
-            })
-        }
-        "array" => {
+fn child<'t>(node: &'t Node, token: &str) -> Option<Child<'t>> {
+    match node.kind {
+        Kind::Object => Some(match node.members.iter().position(|m| m.key == token) {
+            Some(index) => Child::Member {
+                index,
+                value: &node.members[index].value,
+            },
+            None => Child::Missing,
+        }),
+        Kind::Array => {
             let index: usize = token.parse().ok()?;
-            let element = node
-                .named_children(&mut node.walk())
-                .filter(is_value)
-                .nth(index)?;
-            Some(Child::Element(element))
+            Some(Child::Element(node.elements.get(index)?))
         }
         _ => None,
     }
-}
-
-fn pairs(object: Node<'_>) -> impl Iterator<Item = Node<'_>> {
-    let mut cursor = object.walk();
-    object
-        .named_children(&mut cursor)
-        .filter(|n| n.kind() == "pair")
-        .collect::<Vec<_>>()
-        .into_iter()
-}
-
-fn text_of<'s>(node: Node<'_>, source: &'s str) -> &'s str {
-    &source[node.start_byte()..node.end_byte()]
 }
 
 fn quote(key: &str) -> String {
@@ -291,54 +257,50 @@ fn indent_unit(source: &str) -> &str {
         .unwrap_or("  ")
 }
 
-fn insert_member(object: Node<'_>, key: &str, value: &str, source: &str) -> Option<Edit> {
-    if object.kind() != "object" {
+fn insert_member(object: &Node, key: &str, value: &str, source: &str) -> Option<Edit> {
+    if object.kind != Kind::Object {
         return None;
     }
-    let members: Vec<Node> = pairs(object).collect();
-    match members.last() {
+    match object.members.last() {
         Some(last) => {
-            let one_line = object.start_position().row == last.start_position().row;
-            let at = last.end_byte();
+            let one_line = !source[object.range.start..last.range.start].contains('\n');
+            let at = last.range.end;
             let text = if one_line {
                 format!(", {}: {value}", quote(key))
             } else {
-                let indent = indent_at(source, last.start_byte());
+                let indent = indent_at(source, last.range.start);
                 format!(",\n{indent}{}: {}", quote(key), reindent(value, indent))
             };
             Some(Edit::new(at, at, text))
         }
         None => {
             // An empty object: open it up onto its own lines.
-            let base = indent_at(source, object.start_byte());
+            let base = indent_at(source, object.range.start);
             let inner = format!("{base}{}", indent_unit(source));
             let text = format!(
                 "{{\n{inner}{}: {}\n{base}}}",
                 quote(key),
                 reindent(value, &inner)
             );
-            Some(Edit::new(object.start_byte(), object.end_byte(), text))
+            Some(Edit::new(object.range.start, object.range.end, text))
         }
     }
 }
 
-/// Removes a member with the comma that separates it from a neighbour.
-fn delete_member(object: Node<'_>, pair: Node<'_>) -> Edit {
-    let members: Vec<Node> = pairs(object).collect();
-    let index = members
-        .iter()
-        .position(|m| m.id() == pair.id())
-        .unwrap_or(0);
+/// Removes member `index` with the comma that separates it from a neighbour.
+fn delete_member(object: &Node, index: usize) -> Edit {
+    let members = &object.members;
+    let pair = &members[index].range;
     if let Some(next) = members.get(index + 1) {
         // Up to the next member, taking the comma and the line break.
-        return Edit::new(pair.start_byte(), next.start_byte(), "");
+        return Edit::new(pair.start, next.range.start, "");
     }
     if index > 0 {
         // The last member: from the end of the previous one.
-        return Edit::new(members[index - 1].end_byte(), pair.end_byte(), "");
+        return Edit::new(members[index - 1].range.end, pair.end, "");
     }
     // The only member: the object becomes `{}`.
-    Edit::new(object.start_byte(), object.end_byte(), "{}")
+    Edit::new(object.range.start, object.range.end, "{}")
 }
 
 #[cfg(test)]
