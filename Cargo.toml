@@ -30,6 +30,7 @@ members = [
     "crates/colab-parse-js",
     "crates/colab-parse-csharp",
     "crates/colab-parse-c",
+    "crates/colab-parse-php",
     "crates/colab-parse-markdown",
     "crates/colab-lsp-client",
     "crates/colab-mcp",
@@ -75,6 +76,7 @@ colab-parse-java = { path = "crates/colab-parse-java" }
 colab-parse-js = { path = "crates/colab-parse-js" }
 colab-parse-csharp = { path = "crates/colab-parse-csharp" }
 colab-parse-c = { path = "crates/colab-parse-c" }
+colab-parse-php = { path = "crates/colab-parse-php" }
 colab-parse-markdown = { path = "crates/colab-parse-markdown" }
 colab-lsp-client = { path = "crates/colab-lsp-client" }
 

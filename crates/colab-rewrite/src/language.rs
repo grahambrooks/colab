@@ -62,10 +62,11 @@ pub enum CallShape {
         /// parentheses survives (Kotlin, Swift).
         through_arguments: bool,
     },
-    /// One node kind whose callee is its text before its `arguments`
-    /// field, receiver included (`Old.run`): Java's `method_invocation`,
-    /// on a parser of colab's own.
-    Prefixed(&'static str),
+    /// Node kinds whose callee is their text before their `arguments`
+    /// field, receiver included (`Old.run`, `$o->run`, `Old::run`): Java's
+    /// `method_invocation`, PHP's four call kinds, on parsers of colab's
+    /// own.
+    Prefixed(&'static [&'static str]),
 }
 
 /// What a language with a parser of its own ([`crate::pattern::Syntax::Own`])
@@ -184,15 +185,15 @@ impl SourceLanguage {
     /// `arguments` field) or `Prefixed` (the text before `arguments`),
     /// outermost first.
     fn own_calls(&self, source: &str) -> Option<Vec<Call>> {
-        let (kind, prefixed) = match self.calls {
-            CallShape::Fields(kind) => (kind, false),
-            CallShape::Prefixed(kind) => (kind, true),
+        let (kinds, prefixed): (&[&str], bool) = match &self.calls {
+            CallShape::Fields(kind) => (std::slice::from_ref(kind), false),
+            CallShape::Prefixed(kinds) => (kinds, true),
             CallShape::Located { .. } => return None,
         };
         let tree = self.own_tree(source)?;
         Some(
             tree.nodes()
-                .filter(|n| n.kind_name() == kind)
+                .filter(|n| kinds.contains(&n.kind_name()))
                 .filter_map(|n| {
                     let args = n.child_by_field("arguments")?;
                     let callee = if prefixed {

@@ -763,7 +763,25 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    condition's newline token is `\n+`. The 12 left are tie-breaks and
    macros (`LUALIB_API int (f) (lua_State *L);`, a `#define` in an enum).
    `c` runs on it (`includes.rs` ported); tree-sitter-c is a test
-   dependency. PHP next.
+   dependency.
+   **PHP, done 2026-11-26:** `colab-parse-php`, 3,868 lines (lexer 760,
+   expressions and strings 980, declarations 720, statements 760, names
+   370, emission 260), no dependency but `colab-syntax`. It reads
+   tree-sitter-php's `php_only` grammar, which the backend read for
+   files and patterns alike. Held to laravel/framework, composer,
+   phpunit, guzzle, doctrine/orm, monolog, symfony/console and
+   PHP-Parser (10,816 files, 10,674 clean to tree-sitter), then to
+   symfony/symfony, wordpress-develop, phpstan-src and psalm (29,284
+   files, 28,481 clean): every clean file the same, in 1.7 s against
+   4.1 s and 7.1 s against 22.3 s. The first run had 99.8%; the rest
+   were the scanner's cuts (a heredoc word after `<<< `, a nowdoc's
+   leading blank lines, `??` in a line comment, a heredoc's last line
+   that is a comment) and tree-sitter's GLR choices, copied: a dangling
+   `else` goes to the outermost `if` without one, `clone($a, …)` and
+   `clone(?)` take arguments, `Foo::{$x}` holds its expression in a
+   `name`. `php` runs on it (`uses.rs` and `namespaces.rs` ported;
+   `CallShape::Prefixed` takes several kinds, PHP's four calls);
+   tree-sitter-php is a test dependency. Kotlin next.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

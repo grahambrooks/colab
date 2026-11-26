@@ -6,13 +6,13 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "PHP source rewrites via tree-sitter-php."
+description = "PHP source rewrites via colab's own PHP parser."
 
 [dependencies]
 colab-core = { workspace = true }
 colab-rewrite = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-php = { workspace = true }
+colab-syntax = { workspace = true }
+colab-parse-php = { workspace = true }
 
 [lints]
 workspace = true

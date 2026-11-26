@@ -30,7 +30,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
         "string_fragment",
         "multiline_string_fragment",
     ],
-    calls: CallShape::Prefixed("method_invocation"),
+    calls: CallShape::Prefixed(&["method_invocation"]),
     qualifiers: None,
     own: None,
 };

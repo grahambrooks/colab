@@ -13,9 +13,18 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::Node;
 
-const NAMESPACE_KINDS: &[&str] = &["namespace_definition"];
+/// Each `namespace_definition`'s name node's range.
+fn declared_names(source: &str) -> Vec<std::ops::Range<usize>> {
+    let Some(tree) = crate::tree(source) else {
+        return Vec::new();
+    };
+    tree.nodes()
+        .filter(|n| n.is_named() && n.kind_name() == "namespace_definition")
+        .filter_map(|n| n.child_by_field("name"))
+        .map(|n| n.range())
+        .collect()
+}
 
 #[derive(Debug)]
 pub struct NamespaceRename {
@@ -47,35 +56,20 @@ impl Operation for NamespaceRename {
     }
 
     fn observed_targets(&self, source: &str) -> Vec<String> {
-        crate::LANG.parse(source).map_or_default(|tree| {
-            colab_rewrite::field_texts(&tree, source, NAMESPACE_KINDS, Some("name"), &[])
-        })
+        declared_names(source)
+            .into_iter()
+            .map(|r| source[r].to_string())
+            .collect()
     }
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
-        return source_code.to_string();
-    };
-    let mut edits: Vec<(usize, usize)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, from, &mut edits));
-    colab_rewrite::apply_edits(
-        source_code,
-        edits
-            .into_iter()
-            .map(|(start, end)| colab_rewrite::Edit::new(start, end, to))
-            .collect(),
-    )
-}
-
-fn collect(node: Node<'_>, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
-    if NAMESPACE_KINDS.contains(&node.kind())
-        && let Some(name) = node.child_by_field_name("name")
-        && let Ok(text) = name.utf8_text(source.as_bytes())
-        && text == from
-    {
-        out.push((name.start_byte(), name.end_byte()));
-    }
+    let edits = declared_names(source_code)
+        .into_iter()
+        .filter(|r| &source_code[r.clone()] == from)
+        .map(|r| colab_rewrite::Edit::new(r.start, r.end, to))
+        .collect();
+    colab_rewrite::apply_edits(source_code, edits)
 }
 
 #[cfg(test)]

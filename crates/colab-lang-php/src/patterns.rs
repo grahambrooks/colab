@@ -9,10 +9,10 @@ use colab_rewrite::pattern::PatternLanguage;
 /// `$x` is a PHP variable, so metavariables are `$UPPER` and parse as `µ`
 /// (a PHP name); a lower-case `$x` stays a variable.
 ///
-/// This uses the PHP-only grammar, not the HTML-embedding one the other
-/// `php::` operations use: under that grammar any text outside `<?php` is
-/// inline HTML, so a bare pattern would "parse" as one opaque text node. The
-/// PHP-only grammar still accepts a leading `<?php` tag, so ordinary files
+/// colab's parser (`colab-parse-php`) reads tree-sitter-php's PHP-only
+/// grammar, not the HTML-embedding one: under that one any text outside
+/// `<?php` is inline HTML, so a bare pattern would "parse" as one opaque
+/// text node. The PHP-only grammar still accepts a leading `<?php` tag, so ordinary files
 /// match normally; only inline HTML around the code is seen as an error
 /// region (matches elsewhere in the file are unaffected). Contexts, in
 /// order: an expression made a statement with `;`, a class member, a
@@ -20,9 +20,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// `echo` prints (`$A, "\n"`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(
-            tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
-        ),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_php::PARSER),
         expando: 'µ',
         contexts: &[
             "@@PATTERN@@;",

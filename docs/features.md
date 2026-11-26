@@ -647,7 +647,8 @@ declarations identically.
 
 ## PHP (`colab-lang-php`)
 
-Powered by `tree-sitter-php`.
+Powered by colab's own parser (`colab-parse-php`), with tree-sitter-php's
+`php_only` node kinds.
 
 **Backslashes are literal.** DSL string literals have no escape
 sequences, so a PHP namespace separator is written as a single

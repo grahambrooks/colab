@@ -277,6 +277,7 @@ dependencies = [
  "colab-parse-java",
  "colab-parse-js",
  "colab-parse-markdown",
+ "colab-parse-php",
  "colab-parse-python",
  "colab-parse-rust",
  "colab-rewrite",
@@ -437,9 +438,9 @@ name = "colab-lang-php"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-php",
  "colab-rewrite",
- "tree-sitter",
- "tree-sitter-php",
+ "colab-syntax",
 ]
 
 [[package]]
@@ -565,6 +566,13 @@ dependencies = [
 
 [[package]]
 name = "colab-parse-markdown"
+version = "2026.11.24"
+dependencies = [
+ "colab-syntax",
+]
+
+[[package]]
+name = "colab-parse-php"
 version = "2026.11.24"
 dependencies = [
  "colab-syntax",

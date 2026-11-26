@@ -27,13 +27,15 @@ pub static LANG: SourceLanguage = SourceLanguage {
     pattern: patterns::language,
     rename_kinds: symbols::RENAME_KINDS,
     prose_kinds: &["comment", "string_content"],
-    calls: CallShape::Located {
-        locate: calls::callee,
-        through_arguments: false,
-    },
+    calls: CallShape::Prefixed(calls::CALL_KINDS),
     qualifiers: None,
     own: None,
 };
+
+/// `source` as colab's PHP tree (`colab-parse-php`).
+pub(crate) fn tree(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_php::parse(source).ok()
+}
 
 /// Plug-in entry point for the `php` namespace.
 pub struct PhpBackend;
@@ -113,7 +115,7 @@ impl LanguageBackend for PhpBackend {
     }
 
     fn description(&self) -> &'static str {
-        "PHP source rewrites via tree-sitter-php."
+        "PHP source rewrites via colab's own PHP parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {
