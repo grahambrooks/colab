@@ -1,7 +1,7 @@
 //! `python::pattern`: code-shaped structural rewrites with metavariables.
 //!
 //! All matching lives in [`colab_rewrite::pattern`]; this module only
-//! supplies Python's grammar, expando character, and the contexts that
+//! supplies Python's parser (colab's own), expando character, and the contexts that
 //! let a fragment that is not a valid Python *file* on its own parse.
 
 use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
@@ -11,7 +11,7 @@ use colab_rewrite::pattern::{PatternLanguage, Qualifiers};
 /// is a function body, for a single-line statement that needs one.
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_python::LANGUAGE.into()),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_python::PARSER),
         expando: 'µ',
         contexts: &["def _():\n    @@PATTERN@@\n"],
         // In an annotation `Optional[str]` is a `generic_type`, not the

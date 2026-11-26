@@ -274,6 +274,7 @@ dependencies = [
  "colab-lang-tsx",
  "colab-parse-go",
  "colab-parse-markdown",
+ "colab-parse-python",
  "colab-parse-rust",
  "colab-rewrite",
  "colab-syntax",
@@ -444,9 +445,9 @@ name = "colab-lang-python"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-python",
  "colab-rewrite",
- "tree-sitter",
- "tree-sitter-python",
+ "colab-syntax",
 ]
 
 [[package]]
@@ -546,6 +547,13 @@ dependencies = [
 
 [[package]]
 name = "colab-parse-markdown"
+version = "2026.11.24"
+dependencies = [
+ "colab-syntax",
+]
+
+[[package]]
+name = "colab-parse-python"
 version = "2026.11.24"
 dependencies = [
  "colab-syntax",

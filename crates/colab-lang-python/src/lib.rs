@@ -29,6 +29,11 @@ pub static LANG: SourceLanguage = SourceLanguage {
     own: None,
 };
 
+/// `source` as colab's Python tree (`colab-parse-python`).
+pub(crate) fn tree(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_python::parse(source).ok()
+}
+
 /// Plug-in entry point for the `python` namespace.
 pub struct PythonBackend;
 
@@ -103,7 +108,7 @@ impl LanguageBackend for PythonBackend {
     }
 
     fn description(&self) -> &'static str {
-        "Python source rewrites via tree-sitter-python."
+        "Python source rewrites, on colab's own Python parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

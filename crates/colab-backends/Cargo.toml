@@ -40,6 +40,7 @@ colab-rewrite = { workspace = true }
 colab-parse-rust = { workspace = true }
 # tests/go_parser.rs holds colab's Go parser to tree-sitter-go's trees.
 colab-parse-go = { workspace = true }
+colab-parse-python = { workspace = true }
 # tests/markdown_parser.rs holds colab's Markdown parser to what the
 # backend read from tree-sitter-md.
 colab-parse-markdown = { workspace = true }

@@ -52,7 +52,8 @@ crates/
   colab-lang-js/      # JS/TS backend (tree-sitter-javascript).
   colab-lang-kotlin/  # Kotlin backend (tree-sitter-kotlin-ng).
   colab-lang-php/     # PHP backend (tree-sitter-php).
-  colab-lang-python/  # Python backend (tree-sitter-python).
+  colab-lang-python/  # Python backend (colab's own parser, colab-parse-python).
+  colab-parse-python/ # Python as colab's own tree: a lexer with the offside rule, and a recursive-descent parser.
   colab-lang-ruby/    # Ruby backend (tree-sitter-ruby).
   colab-lang-rust/    # Rust backend (rust-analyzer's parser via colab-parse-rust + toml_edit).
   colab-parse-rust/   # Rust as colab's own tree from ra_ap_syntax: tree-sitter's kind names as aliases, its fields.

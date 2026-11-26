@@ -398,7 +398,13 @@ Powered by `tree-sitter-java`.
 
 ## Python (`colab-lang-python`)
 
-Powered by `tree-sitter-python`.
+Read by colab's own parser (`colab-parse-python`), whose trees hold
+tree-sitter-python's kinds and fields: over 8,763 Python files it reads
+99.6% exactly as tree-sitter did, and the rest are where tree-sitter
+misreads Python and colab does not copy it. `type(x).name = v` is an
+assignment, not a type alias; `*f(x)` stars the call (`list_splat` of a
+`call`), not a call of `*f`; `a := b if c else d` binds `a` to the whole
+conditional.
 
 ### `python::import`
 

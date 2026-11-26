@@ -627,6 +627,20 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    workspace's 14,855 `.json` files it reads what serde_json reads, with
    the same top-level keys, every one. tree-sitter-json is gone from the
    workspace.
+   **Python, done 2026-11-26:** `colab-parse-python`, built as Go's is
+   (~3,100 lines, no dependency but `colab-syntax`), tree-sitter-python's
+   kinds and fields for the transition. Layout follows tree-sitter's
+   scanner, since it decides where blocks end (a block reaches over the
+   comments after it indented as deep as it is). Over the repo's 33 files
+   the trees are tree-sitter's node for node; over the workspace's 8,763
+   that tree-sitter reads cleanly, 8,728 (99.6%), in 1.4 s against
+   tree-sitter's 3.5 s. The other 35 are tree-sitter misreading Python
+   (`type(x).a = v` as a type alias in 20; `*f(x)` as a call of `*f` in
+   12; `a := b if c else d` as a conditional). Its invalid fixtures (ruff's)
+   read as tree-sitter reads them, newline-as-whitespace after a dangling
+   operator included. tree-sitter-python is a test dependency only.
+   Go over the module cache (186,104 files, 185,743 clean to
+   tree-sitter): 184,382 the same (99.3%).
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

@@ -1,6 +1,6 @@
 //! Python `import` operations.
 //!
-//! Tree-sitter-python exposes:
+//! Python's tree (`colab-parse-python`, tree-sitter-python's names) holds:
 //! - `import_statement` with `name` field(s) → `dotted_name` or
 //!   `aliased_import` (which itself has a `name: dotted_name` field).
 //! - `import_from_statement` with `module_name` field → `dotted_name`
@@ -12,7 +12,7 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Tree};
+use colab_syntax::{Node, Tree};
 
 /// If `text` segment-prefix matches `from`, return the matched length.
 fn match_path_prefix(text: &str, from: &str) -> Option<usize> {
@@ -49,7 +49,7 @@ fn for_each_import<F>(tree: &Tree, source: &str, mut visit: F)
 where
     F: FnMut(Node<'_>, Node<'_>, &str),
 {
-    colab_rewrite::visit_all(tree, |node| match node.kind() {
+    tree.nodes().for_each(|node| match node.kind_name() {
         "import_statement" => visit_import_statement(node, source, &mut visit),
         "import_from_statement" => visit_import_from(node, source, &mut visit),
         _ => {}
@@ -59,7 +59,7 @@ where
 /// Every module path in `source`, for near-miss reporting. These are
 /// full dotted names; the matcher accepts any segment prefix of them.
 pub(crate) fn module_paths(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -71,31 +71,30 @@ pub(crate) fn module_paths(source: &str) -> Vec<String> {
 /// alias for `import json as j`, `c` for `from a import c`. A wildcard
 /// import binds names no one can list, so it is reported as `*`.
 pub(crate) fn imported_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return vec!["*".into()];
     };
-    let text = |node: Node<'_>| source[node.byte_range()].to_string();
+    let text = |node: Node<'_>| source[node.range()].to_string();
     let mut out = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        let from = match node.kind() {
+    tree.nodes().for_each(|node| {
+        let from = match node.kind_name() {
             "import_statement" => false,
             "import_from_statement" => true,
             _ => return,
         };
-        let mut cursor = node.walk();
-        for child in node.children_by_field_name("name", &mut cursor) {
-            match child.kind() {
-                "aliased_import" => out.extend(child.child_by_field_name("alias").map(text)),
+        for child in node.children_by_field("name") {
+            match child.kind_name() {
+                "aliased_import" => out.extend(child.child_by_field("alias").map(text)),
                 // `import a.b` binds `a`; `from m import a` binds `a`.
                 "dotted_name" if from => out.push(text(child)),
-                "dotted_name" => out.extend(child.named_child(0).map(text)),
+                "dotted_name" => out.extend(child.named_children().next().map(text)),
                 _ => {}
             }
         }
         if from
             && node
-                .named_children(&mut node.walk())
-                .any(|c| c.kind() == "wildcard_import")
+                .named_children()
+                .any(|c| c.kind_name() == "wildcard_import")
         {
             out.push("*".into());
         }
@@ -108,19 +107,16 @@ where
     F: FnMut(Node<'a>, Node<'a>, &'a str),
 {
     // `import_statement` has multiple `name` children.
-    for child in node.named_children(&mut node.walk()) {
-        let dotted = match child.kind() {
+    for child in node.named_children() {
+        let dotted = match child.kind_name() {
             "dotted_name" => child,
-            "aliased_import" => match child.child_by_field_name("name") {
-                Some(n) if n.kind() == "dotted_name" => n,
+            "aliased_import" => match child.child_by_field("name") {
+                Some(n) if n.kind_name() == "dotted_name" => n,
                 _ => continue,
             },
             _ => continue,
         };
-        let Ok(text) = dotted.utf8_text(source.as_bytes()) else {
-            continue;
-        };
-        visit(node, dotted, text);
+        visit(node, dotted, &source[dotted.range()]);
     }
 }
 
@@ -128,16 +124,13 @@ fn visit_import_from<'a, F>(node: Node<'a>, source: &'a str, visit: &mut F)
 where
     F: FnMut(Node<'a>, Node<'a>, &'a str),
 {
-    let Some(module) = node.child_by_field_name("module_name") else {
+    let Some(module) = node.child_by_field("module_name") else {
         return;
     };
-    if module.kind() != "dotted_name" {
+    if module.kind_name() != "dotted_name" {
         return;
     }
-    let Ok(text) = module.utf8_text(source.as_bytes()) else {
-        return;
-    };
-    visit(node, module, text);
+    visit(node, module, &source[module.range()]);
 }
 
 // ---------------------------------------------------------------------------
@@ -179,12 +172,12 @@ impl Operation for ImportRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     for_each_matching_import(&tree, source_code, from, |_stmt, dotted, prefix_len| {
-        let start = dotted.start_byte();
+        let start = dotted.start();
         edits.push((start, start + prefix_len, to.to_string()));
     });
     colab_rewrite::apply_edits(
@@ -234,13 +227,13 @@ impl Operation for ImportDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for_each_matching_import(&tree, source_code, target, |stmt, _, _| {
         // `delete_lines` widens each range to whole lines.
-        spans.push((stmt.start_byte(), stmt.end_byte()));
+        spans.push((stmt.start(), stmt.end()));
     });
     // `delete_lines` dedups *after* widening to whole lines, which is
     // what `import a, b` needs: two matches on one statement collapse to
@@ -276,7 +269,7 @@ impl Operation for ImportEnsure {
 }
 
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut already_present = false;
@@ -301,24 +294,26 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 /// Skip over leading file-prologue nodes (module docstring,
 /// `from __future__` imports). Returns the byte offset to insert at.
 fn leading_header_end(tree: &Tree, source: &str) -> usize {
-    let root = tree.root_node();
+    let root = tree.root();
     let mut last_end = 0usize;
-    for child in root.named_children(&mut root.walk()) {
-        let is_header = match child.kind() {
+    for child in root.named_children() {
+        let is_header = match child.kind_name() {
             "expression_statement" => {
                 // Module docstring: a single string literal as the
                 // first statement.
-                child.named_child(0).is_some_and(|c| c.kind() == "string")
+                child
+                    .named_children()
+                    .next()
+                    .is_some_and(|c| c.kind_name() == "string")
             }
             "future_import_statement" => true,
             "import_from_statement" => child
-                .child_by_field_name("module_name")
-                .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-                .is_some_and(|t| t == "__future__"),
+                .child_by_field("module_name")
+                .is_some_and(|n| &source[n.range()] == "__future__"),
             _ => false,
         };
         if is_header {
-            let end = child.end_byte();
+            let end = child.end();
             last_end = source[end..].find('\n').map_or(end, |p| end + p + 1);
         } else {
             break;
