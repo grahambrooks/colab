@@ -45,6 +45,7 @@ colab-parse-js = { workspace = true }
 colab-parse-csharp = { workspace = true }
 colab-parse-c = { workspace = true }
 colab-parse-php = { workspace = true }
+colab-parse-kotlin = { workspace = true }
 # tests/markdown_parser.rs holds colab's Markdown parser to what the
 # backend read from tree-sitter-md.
 colab-parse-markdown = { workspace = true }

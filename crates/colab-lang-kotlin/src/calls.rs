@@ -13,29 +13,14 @@
 //! Idempotency: templates that keep the callee text match their own
 //! output. Rename the function to stay re-runnable.
 
-use std::borrow::Cow;
-use tree_sitter::Node;
+//!
+//! The callee is everything before the argument list, trailing whitespace
+//! trimmed, and the call is replaced through the argument list, so a
+//! trailing lambda after it survives (`CallShape::Through`).
 
 #[cfg(test)]
 fn rewrite(function: &str, template: &str, source_code: &str) -> String {
     crate::LANG.rewrite_calls(function, template, source_code)
-}
-
-/// The `value_arguments` child of a call, if it has one.
-fn value_arguments(node: Node<'_>) -> Option<Node<'_>> {
-    node.named_children(&mut node.walk())
-        .find(|c| c.kind() == "value_arguments")
-}
-
-/// The argument list of a `call_expression` and its callee: everything
-/// before the argument list, trailing whitespace trimmed.
-pub(crate) fn callee<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, Cow<'a, str>)> {
-    if node.kind() != "call_expression" {
-        return None;
-    }
-    let args = value_arguments(node)?;
-    let callee = source.get(node.start_byte()..args.start_byte())?;
-    Some((args, callee.trim_end().into()))
 }
 
 #[cfg(test)]

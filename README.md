@@ -341,7 +341,7 @@ crates/
   colab-lang-go/      # Go backend
   colab-lang-java/    # Java backend
   colab-lang-js/      # JS/TS backend
-  colab-lang-kotlin/  # Kotlin backend
+  colab-lang-kotlin/  # Kotlin backend (colab's own parser, colab-parse-kotlin)
   colab-lang-php/     # PHP backend (colab's own parser, colab-parse-php)
   colab-lang-python/  # Python backend
   colab-lang-rust/    # Rust backend

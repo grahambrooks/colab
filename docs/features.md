@@ -664,7 +664,11 @@ and `"$obj->run"` are three distinct targets.
 
 ## Kotlin (`colab-lang-kotlin`)
 
-Powered by `tree-sitter-kotlin-ng`.
+Powered by colab's own parser (`colab-parse-kotlin`), with
+tree-sitter-kotlin-ng's node kinds. One difference from tree-sitter-kotlin:
+annotations before a declaration are always its `modifiers`, where
+tree-sitter's parse sometimes read them (and the declaration) as an
+`annotated_expression`.
 
 For an aliased import (`import a.b.C as D`) the target is the qualified
 name `a.b.C`, not the alias.

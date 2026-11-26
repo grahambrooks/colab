@@ -3664,7 +3664,11 @@ and `"$obj->run"` are three distinct targets.
 
 ## Kotlin (`colab-lang-kotlin`)
 
-Powered by `tree-sitter-kotlin-ng`.
+Powered by colab's own parser (`colab-parse-kotlin`), with
+tree-sitter-kotlin-ng's node kinds. One difference from tree-sitter-kotlin:
+annotations before a declaration are always its `modifiers`, where
+tree-sitter's parse sometimes read them (and the declaration) as an
+`annotated_expression`.
 
 For an aliased import (`import a.b.C as D`) the target is the qualified
 name `a.b.C`, not the alias.
@@ -4787,7 +4791,7 @@ crates/
   colab-lang-go/      # Go backend
   colab-lang-java/    # Java backend
   colab-lang-js/      # JS/TS backend
-  colab-lang-kotlin/  # Kotlin backend
+  colab-lang-kotlin/  # Kotlin backend (colab's own parser, colab-parse-kotlin)
   colab-lang-php/     # PHP backend (colab's own parser, colab-parse-php)
   colab-lang-python/  # Python backend
   colab-lang-rust/    # Rust backend

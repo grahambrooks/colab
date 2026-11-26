@@ -12,7 +12,6 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::Node;
 
 #[derive(Debug)]
 pub struct PackageRename {
@@ -48,53 +47,37 @@ impl Operation for PackageRename {
     }
 }
 
-/// The name in every `package` header in `source`, for near-miss reporting.
-fn package_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+/// Each `package` header's name: its range.
+fn package_ranges(source: &str) -> Vec<std::ops::Range<usize>> {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        if node.kind() != "package_header" {
-            return;
-        }
-        for child in node.named_children(&mut node.walk()) {
-            if matches!(child.kind(), "qualified_identifier")
-                && let Ok(text) = child.utf8_text(source.as_bytes())
-            {
-                out.push(text.to_string());
-            }
-        }
-    });
-    out
+    tree.nodes()
+        .filter(|n| n.is_named() && n.kind_name() == "package_header")
+        .flat_map(|n| {
+            n.named_children()
+                .filter(|c| c.kind_name() == "qualified_identifier")
+                .map(|c| c.range())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// The name in every `package` header in `source`, for near-miss reporting.
+fn package_names(source: &str) -> Vec<String> {
+    package_ranges(source)
+        .into_iter()
+        .map(|r| source[r].to_string())
+        .collect()
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
-        return source_code.to_string();
-    };
-    let mut edits: Vec<(usize, usize)> = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| collect(node, source_code, from, &mut edits));
-    colab_rewrite::apply_edits(
-        source_code,
-        edits
-            .into_iter()
-            .map(|(start, end)| colab_rewrite::Edit::new(start, end, to))
-            .collect(),
-    )
-}
-
-fn collect(node: Node<'_>, source: &str, from: &str, out: &mut Vec<(usize, usize)>) {
-    if node.kind() == "package_header" {
-        for child in node.named_children(&mut node.walk()) {
-            if child.kind() == "qualified_identifier"
-                && let Ok(text) = child.utf8_text(source.as_bytes())
-                && text == from
-            {
-                out.push((child.start_byte(), child.end_byte()));
-            }
-        }
-    }
+    let edits = package_ranges(source_code)
+        .into_iter()
+        .filter(|r| &source_code[r.clone()] == from)
+        .map(|r| colab_rewrite::Edit::new(r.start, r.end, to))
+        .collect();
+    colab_rewrite::apply_edits(source_code, edits)
 }
 
 #[cfg(test)]

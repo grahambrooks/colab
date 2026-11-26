@@ -27,13 +27,18 @@ pub static LANG: SourceLanguage = SourceLanguage {
     rename_kinds: symbols::RENAME_KINDS,
     prose_kinds: &["line_comment", "block_comment", "string_content"],
     // A trailing lambda after the parentheses is left in place.
-    calls: CallShape::Located {
-        locate: calls::callee,
-        through_arguments: true,
+    calls: CallShape::Through {
+        kinds: &["call_expression"],
+        arguments: "value_arguments",
     },
     qualifiers: None,
     own: None,
 };
+
+/// `source` as colab's Kotlin tree (`colab-parse-kotlin`).
+pub(crate) fn tree(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_kotlin::parse(source).ok()
+}
 
 /// Plug-in entry point for the `kotlin` namespace.
 pub struct KotlinBackend;
@@ -117,7 +122,7 @@ impl LanguageBackend for KotlinBackend {
     }
 
     fn description(&self) -> &'static str {
-        "Kotlin source rewrites via tree-sitter-kotlin-ng."
+        "Kotlin source rewrites via colab's own Kotlin parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

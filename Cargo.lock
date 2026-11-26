@@ -276,6 +276,7 @@ dependencies = [
  "colab-parse-go",
  "colab-parse-java",
  "colab-parse-js",
+ "colab-parse-kotlin",
  "colab-parse-markdown",
  "colab-parse-php",
  "colab-parse-python",
@@ -418,9 +419,9 @@ name = "colab-lang-kotlin"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-kotlin",
  "colab-rewrite",
- "tree-sitter",
- "tree-sitter-kotlin-ng",
+ "colab-syntax",
 ]
 
 [[package]]
@@ -559,6 +560,13 @@ dependencies = [
 
 [[package]]
 name = "colab-parse-js"
+version = "2026.11.24"
+dependencies = [
+ "colab-syntax",
+]
+
+[[package]]
+name = "colab-parse-kotlin"
 version = "2026.11.24"
 dependencies = [
  "colab-syntax",

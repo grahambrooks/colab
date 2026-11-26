@@ -54,7 +54,8 @@ crates/
   colab-parse-java/   # Java as colab's own tree: a lexer and recursive-descent parser.
   colab-lang-js/      # JS/TS backend (colab's own parser, colab-parse-js).
   colab-parse-js/     # JavaScript (JSX) as colab's own tree: a lexer pulled by the parser, recursive descent.
-  colab-lang-kotlin/  # Kotlin backend (tree-sitter-kotlin-ng).
+  colab-lang-kotlin/  # Kotlin backend (colab's own parser, colab-parse-kotlin).
+  colab-parse-kotlin/ # Kotlin as colab's own tree: a lexer noting line ends, recursive descent ending statements as tree-sitter-kotlin's scanner does.
   colab-lang-php/     # PHP backend (colab's own parser, colab-parse-php).
   colab-parse-php/    # PHP as colab's own tree: a lexer cutting strings as tree-sitter-php's scanner does, recursive descent.
   colab-lang-python/  # Python backend (colab's own parser, colab-parse-python).

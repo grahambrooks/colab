@@ -67,6 +67,15 @@ pub enum CallShape {
     /// `method_invocation`, PHP's four call kinds, on parsers of colab's
     /// own.
     Prefixed(&'static [&'static str]),
+    /// Node kinds whose callee is their text before an argument list child
+    /// of kind `arguments` (Kotlin's `value_arguments`), on parsers of
+    /// colab's own. The call is replaced up to the end of that list, so a
+    /// trailing lambda after it survives; a call without one (a lambda
+    /// only) is no call to rewrite.
+    Through {
+        kinds: &'static [&'static str],
+        arguments: &'static str,
+    },
 }
 
 /// What a language with a parser of its own ([`crate::pattern::Syntax::Own`])
@@ -185,24 +194,32 @@ impl SourceLanguage {
     /// `arguments` field) or `Prefixed` (the text before `arguments`),
     /// outermost first.
     fn own_calls(&self, source: &str) -> Option<Vec<Call>> {
-        let (kinds, prefixed): (&[&str], bool) = match &self.calls {
-            CallShape::Fields(kind) => (std::slice::from_ref(kind), false),
-            CallShape::Prefixed(kinds) => (kinds, true),
+        let (kinds, prefixed, through): (&[&str], bool, Option<&str>) = match &self.calls {
+            CallShape::Fields(kind) => (std::slice::from_ref(kind), false, None),
+            CallShape::Prefixed(kinds) => (kinds, true, None),
+            CallShape::Through { kinds, arguments } => (kinds, true, Some(arguments)),
             CallShape::Located { .. } => return None,
         };
         let tree = self.own_tree(source)?;
         Some(
             tree.nodes()
-                .filter(|n| kinds.contains(&n.kind_name()))
+                .filter(|n| !n.is_trivia() && kinds.contains(&n.kind_name()))
                 .filter_map(|n| {
-                    let args = n.child_by_field("arguments")?;
+                    let args = match through {
+                        Some(kind) => n.named_children().find(|c| c.kind_name() == kind)?,
+                        None => n.child_by_field("arguments")?,
+                    };
+                    let range = match through {
+                        Some(_) => n.start()..args.end(),
+                        None => n.range(),
+                    };
                     let callee = if prefixed {
                         source.get(n.start()..args.start())?.trim_end().to_string()
                     } else {
                         n.child_by_field("function")?.text().to_string()
                     };
                     Some(Call {
-                        range: n.range(),
+                        range,
                         callee,
                         arguments: args
                             .named_children()
@@ -329,7 +346,7 @@ impl SourceLanguage {
                 template,
             ),
             // Read only from a parser of colab's own (`calls_of` above).
-            CallShape::Prefixed(_) => source.to_string(),
+            CallShape::Prefixed(_) | CallShape::Through { .. } => source.to_string(),
         }
     }
 
@@ -348,7 +365,7 @@ impl SourceLanguage {
             CallShape::Located { locate, .. } => {
                 crate::calls::callees_located(&tree, source, locate)
             }
-            CallShape::Prefixed(_) => Vec::new(),
+            CallShape::Prefixed(_) | CallShape::Through { .. } => Vec::new(),
         }
     }
 

@@ -781,7 +781,31 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    `clone(?)` take arguments, `Foo::{$x}` holds its expression in a
    `name`. `php` runs on it (`uses.rs` and `namespaces.rs` ported;
    `CallShape::Prefixed` takes several kinds, PHP's four calls);
-   tree-sitter-php is a test dependency. Kotlin next.
+   tree-sitter-php is a test dependency.
+   **Kotlin, done 2026-11-26:** `colab-parse-kotlin`, 3,339 lines, no
+   dependency but `colab-syntax`. Held to kotlinx.coroutines, ktor,
+   Exposed, okhttp, koin, nowinandroid, detekt and kotlinx.serialization
+   (8,172 files, 7,944 clean to tree-sitter): 7,367 the same (92.7%), in
+   1.0 s against 4.1 s. The first run had 75%. Statements end where
+   tree-sitter-kotlin's scanner inserts its semicolon, from the next
+   line's first word or operator (`else`, `in` in a `when`, `get` / `set`
+   after a property, `?.`, `.`, binary operators continue; `++`, `+1`,
+   `!x` do not). tree-sitter-kotlin's grammar is ambiguous and its GLR
+   parse is copied where it is consistent: prefix operators bind before
+   postfix ones (`!a.isEmpty()` is `(!a).isEmpty()`), any name between two
+   expressions is an infix call, `f(x) { }` is two calls, `"$x"` holds `$`
+   as content (only `${…}` interpolates), `A` is content, `f<T>(x)` is
+   a comparison unless something binding tighter than one follows, a
+   generic call after an operator binding tighter calls the operation
+   (`a ?: b<T>()` is `(a ?: b)<T>()`), the comments after a `when` entry
+   are the entry's. Not copied where tree-sitter keeps one of two valid
+   readings by how many versions it holds at the time: annotations before
+   a declaration are its modifiers (about 470 files read an annotated
+   expression, some a class body as a lambda), and a class body after `by`
+   is a lambda only at the file's top (about 30). `kotlin` runs on it
+   (`imports.rs` and `packages.rs` ported; `CallShape::Through` replaces a
+   call through its `value_arguments`, a trailing lambda kept);
+   tree-sitter-kotlin-ng is a test dependency. Swift next, the last.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

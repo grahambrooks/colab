@@ -15,50 +15,42 @@ use std::fmt;
 use std::path::Path;
 
 use colab_core::Operation;
-use tree_sitter::{Node, Tree};
+use colab_syntax::{Node, Tree};
 
 /// The qualified-name node of an `import`, plus its text.
-fn import_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str)> {
-    if node.kind() != "import" {
+fn import_name(node: Node<'_>) -> Option<(Node<'_>, &str)> {
+    if !node.is_named() || node.kind_name() != "import" {
         return None;
     }
     // The first qualified_identifier is the imported path; a trailing
     // bare identifier, if present, is the alias.
-    for child in node.named_children(&mut node.walk()) {
-        if child.kind() == "qualified_identifier"
-            && let Ok(text) = child.utf8_text(source.as_bytes())
-        {
-            return Some((child, text));
-        }
-    }
-    None
+    node.named_children()
+        .find(|c| c.kind_name() == "qualified_identifier")
+        .map(|c| (c, c.text()))
 }
 
-fn for_each_matching_import<F>(tree: &Tree, source: &str, target: &str, mut visit: F)
+fn for_each_matching_import<F>(tree: &Tree, _source: &str, target: &str, mut visit: F)
 where
     F: FnMut(Node<'_>, Node<'_>),
 {
-    colab_rewrite::visit_all(tree, |node| {
-        if let Some((name_node, text)) = import_name(node, source)
+    for node in tree.nodes() {
+        if let Some((name_node, text)) = import_name(node)
             && text == target
         {
             visit(node, name_node);
         }
-    });
+    }
 }
 
 /// Every name this module matches against in `source`, for near-miss reporting.
 pub(crate) fn import_names(source: &str) -> Vec<String> {
-    let Some(tree) = crate::LANG.parse(source) else {
+    let Some(tree) = crate::tree(source) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    colab_rewrite::visit_all(&tree, |node| {
-        if let Some((_, text)) = import_name(node, source) {
-            out.push(text.to_string());
-        }
-    });
-    out
+    tree.nodes()
+        .filter_map(import_name)
+        .map(|(_, text)| text.to_string())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -100,12 +92,12 @@ impl Operation for ImportRename {
 }
 
 pub fn rename(from: &str, to: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     for_each_matching_import(&tree, source_code, from, |_import, name_node| {
-        edits.push((name_node.start_byte(), name_node.end_byte(), to.to_string()));
+        edits.push((name_node.start(), name_node.end(), to.to_string()));
     });
     colab_rewrite::apply_edits(
         source_code,
@@ -154,13 +146,13 @@ impl Operation for ImportDelete {
 }
 
 pub fn delete(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for_each_matching_import(&tree, source_code, target, |import, _name| {
         // `delete_lines` widens each range to whole lines.
-        spans.push((import.start_byte(), import.end_byte()));
+        spans.push((import.start(), import.end()));
     });
     colab_rewrite::delete_lines(source_code, spans)
 }
@@ -195,7 +187,7 @@ impl Operation for ImportEnsure {
 /// Insert `import <target>` after the last existing import, else after
 /// the `package` header, else at the top of the file.
 pub fn ensure(target: &str, source_code: &str) -> String {
-    let Some(tree) = crate::LANG.parse(source_code) else {
+    let Some(tree) = crate::tree(source_code) else {
         return source_code.to_string();
     };
 
@@ -207,14 +199,14 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         return source_code.to_string();
     }
 
-    let root = tree.root_node();
+    let root = tree.root();
     let (mut after_import, mut after_package) = (None, None);
-    for child in root.named_children(&mut root.walk()) {
-        let end = child.end_byte();
+    for child in root.named_children() {
+        let end = child.end();
         let line_end = source_code[end..]
             .find('\n')
             .map_or(source_code.len(), |p| end + p + 1);
-        match child.kind() {
+        match child.kind_name() {
             "import" => after_import = Some(line_end),
             "package_header" => after_package = after_package.or(Some(line_end)),
             _ => {}

@@ -39,6 +39,7 @@ pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
         "csharp" => colab_parse_csharp::parse(text).expect("colab's C# tree builds"),
         "cpp" => colab_parse_c::parse(text).expect("colab's C++ tree builds"),
         "php" => colab_parse_php::parse(text).expect("colab's PHP tree builds"),
+        "kotlin" => colab_parse_kotlin::parse(text).expect("colab's Kotlin tree builds"),
         "c" => {
             colab_parse_c::parse_as(text, colab_parse_c::Dialect::C).expect("colab's C tree builds")
         }

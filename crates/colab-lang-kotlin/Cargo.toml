@@ -6,13 +6,13 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Kotlin source rewrites via tree-sitter-kotlin-ng."
+description = "Kotlin source rewrites via colab's own Kotlin parser."
 
 [dependencies]
 colab-core = { workspace = true }
 colab-rewrite = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-kotlin-ng = { workspace = true }
+colab-syntax = { workspace = true }
+colab-parse-kotlin = { workspace = true }
 
 [lints]
 workspace = true

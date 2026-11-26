@@ -11,7 +11,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// body, a class member, then a `when` entry (`1 -> $E`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_kotlin_ng::LANGUAGE.into()),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_kotlin::PARSER),
         expando: 'µ',
         contexts: &[
             "fun f() {\n@@PATTERN@@\n}\n",
@@ -20,12 +20,10 @@ pub(crate) fn language() -> PatternLanguage {
         ],
         also: &[],
         qualified_calls: None,
-        // KDoc documents the declaration after it. tree-sitter-kotlin reads
-        // an annotation with arguments on its own line before a top-level
-        // `fun` (`@Deprecated("x")`) as an `annotated_expression` sibling,
-        // `@Deprecated` applied to `("x")`, not as the function's
-        // `modifiers`; no expression stands there in Kotlin, so it is the
-        // function's annotation.
+        // KDoc documents the declaration after it. An annotated expression
+        // before a declaration is the declaration's too: tree-sitter-kotlin
+        // read `@Deprecated("x")` on its own line before a top-level `fun`
+        // as one (colab's parser reads it as the function's `modifiers`).
         leading: colab_rewrite::pattern::Leading {
             kinds: &["annotated_expression"],
             doc_comments: &["/**"],
