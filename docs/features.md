@@ -473,8 +473,9 @@ matched as written.
 
 ## TypeScript (`colab-lang-ts`)
 
-Powered by `tree-sitter-typescript` (0.23), on `.ts`, `.mts` and `.cts`
-files. Type annotations, interfaces, generics, enums and member
+Powered by colab's own TypeScript parser (`colab-parse-js`'s TypeScript
+dialect, with tree-sitter-typescript's node kinds), on `.ts`, `.mts` and
+`.cts` files. Type annotations, interfaces, generics, enums and member
 modifiers parse, so a pattern can name them: `function $F($$$A):
 Promise<$T> { $$$B }`, `interface $I { $$$M }`, `Promise<$T>`, `port:
 number`. `.tsx` files are [`tsx::`](#tsx-colab-lang-tsx)'s: one backend
@@ -506,7 +507,8 @@ files picks `ts`.
 
 ## TSX (`colab-lang-tsx`)
 
-Powered by `tree-sitter-typescript`'s TSX grammar, on `.tsx` files:
+Powered by colab's own TSX parser (`colab-parse-js`'s TSX dialect, with
+tree-sitter-typescript's TSX node kinds), on `.tsx` files:
 TypeScript with JSX elements. Everything [`ts::`](#typescript-colab-lang-ts)
 reads parses here too, with the same pattern contexts, modifiers and
 rename kinds (this crate takes them from `colab-lang-ts`), and JSX parses

@@ -12,9 +12,8 @@ description = "TSX language backend for colab: module specifiers, symbols, calls
 colab-core = { workspace = true }
 colab-lang-js = { workspace = true }
 colab-lang-ts = { workspace = true }
+colab-parse-js = { workspace = true }
 colab-rewrite = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-typescript = { workspace = true }
 
 [lints]
 workspace = true

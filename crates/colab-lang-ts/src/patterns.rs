@@ -23,9 +23,7 @@ pub const ALSO: [&str; 4] = [
 
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        ),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_js::TS_PARSER),
         expando: '$',
         contexts: &[
             "class C {\n@@PATTERN@@\n}\n",

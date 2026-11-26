@@ -350,8 +350,8 @@ crates/
   colab-lang-markdown/  # Markdown by structure (sections, rows, items, links, …)
   colab-lang-text/    # Any text file: a literal string or whole word
   colab-lang-toml/    # TOML (key by dotted path)
-  colab-lang-ts/      # TypeScript backend (tree-sitter-typescript; import from colab-lang-js)
-  colab-lang-tsx/     # TSX backend (TSX grammar; patterns from colab-lang-ts, import from colab-lang-js)
+  colab-lang-ts/      # TypeScript backend (colab-parse-js's TypeScript dialect; import from colab-lang-js)
+  colab-lang-tsx/     # TSX backend (colab-parse-js's TSX dialect; patterns from colab-lang-ts, import from colab-lang-js)
   colab-lsp-client/   # colab as an LSP client: rename, mv, action, references, tidy, lsp-daemon
     colab-mcp/          # MCP server (20 tools; see docs/cli.md#colab-mcp)
   colab-cli/          # The `colab` binary: commands, colab fix, LSP server, `colab mcp`

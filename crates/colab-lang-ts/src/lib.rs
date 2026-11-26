@@ -1,7 +1,7 @@
-//! TypeScript backend for colab, on `tree-sitter-typescript`.
+//! TypeScript backend for colab, on colab's own TypeScript parser
+//! (`colab_parse_js::TS_PARSER`, tree-sitter-typescript's kinds).
 //!
-//! The `js` backend also runs over `.ts` files, with the JavaScript
-//! grammar, which reads type annotations, interfaces, generics and member
+//! The `js` backend also runs over `.ts` files, as JavaScript, which reads type annotations, interfaces, generics and member
 //! modifiers as errors. `ts::` parses them: `ts::pattern 'private $F() {}'`
 //! means a method, and an item pattern written without modifiers matches
 //! a member with any (`private static async`). The `import` module is
@@ -120,7 +120,7 @@ impl LanguageBackend for TsBackend {
     }
 
     fn description(&self) -> &'static str {
-        "TypeScript module specifiers, symbols, calls and patterns via tree-sitter-typescript."
+        "TypeScript module specifiers, symbols, calls and patterns via colab's own TypeScript parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

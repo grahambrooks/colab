@@ -59,8 +59,8 @@ crates/
   colab-lang-rust/    # Rust backend (rust-analyzer's parser via colab-parse-rust + toml_edit).
   colab-parse-rust/   # Rust as colab's own tree from ra_ap_syntax: tree-sitter's kind names as aliases, its fields.
   colab-lang-swift/   # Swift backend (tree-sitter-swift).
-  colab-lang-ts/      # TypeScript backend (tree-sitter-typescript); import via colab-lang-js.
-  colab-lang-tsx/     # TSX backend (the TSX grammar); patterns via colab-lang-ts, import via colab-lang-js.
+  colab-lang-ts/      # TypeScript backend (colab-parse-js, TypeScript dialect); import via colab-lang-js.
+  colab-lang-tsx/     # TSX backend (colab-parse-js, TSX dialect); patterns via colab-lang-ts, import via colab-lang-js.
   colab-lang-json/    # JSON config (its own reader, tree.rs): key by JSON Pointer.
   colab-lang-markdown/  # Markdown by structure (colab-parse-markdown): section,
                       # row, item, text, link, frontmatter, block.

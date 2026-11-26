@@ -12,6 +12,8 @@
 use crate::lexer::{Extra, L, Lexer, Lx, Mode, State};
 use crate::names;
 
+mod ts;
+
 /// A node or a token of the tree being built.
 #[derive(Debug, Clone)]
 pub(crate) enum Item {
@@ -149,6 +151,15 @@ const AUGMENTED: &[&str] = &[
     "??=",
 ];
 
+/// Which language the parser reads: JavaScript (with JSX), TypeScript, or
+/// TSX (TypeScript with JSX).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dialect {
+    Js,
+    Ts,
+    Tsx,
+}
+
 pub(crate) struct Parser<'s> {
     src: &'s str,
     lx: Lexer<'s>,
@@ -160,10 +171,11 @@ pub(crate) struct Parser<'s> {
     pub errors: bool,
     /// Inside a `for (…` head, where `in` ends the left side.
     no_in: bool,
+    dialect: Dialect,
 }
 
 impl<'s> Parser<'s> {
-    pub fn new(src: &'s str) -> Self {
+    pub fn new(src: &'s str, dialect: Dialect) -> Self {
         Self {
             src,
             lx: Lexer::new(src),
@@ -173,7 +185,76 @@ impl<'s> Parser<'s> {
             extras: Vec::new(),
             errors: false,
             no_in: false,
+            dialect,
         }
+    }
+
+    /// TypeScript or TSX: types are read.
+    fn ts(&self) -> bool {
+        self.dialect != Dialect::Js
+    }
+
+    /// JavaScript or TSX: `<` in an expression starts JSX.
+    fn jsx(&self) -> bool {
+        self.dialect != Dialect::Ts
+    }
+
+    /// Tokens `self.i .. self.i + n`, which touch, as one anonymous token
+    /// of `kind` (`?:`, `-?:`).
+    fn joined(&mut self, n: usize, kind: &'static str) -> Item {
+        let start = self.tk(0).start;
+        let mut end = start;
+        for _ in 0..n {
+            end = self.advance().end;
+        }
+        Item::Tok(Tok {
+            kind,
+            named: false,
+            start,
+            end,
+            field: None,
+            missing: false,
+            extra: false,
+            hidden: false,
+        })
+    }
+
+    /// Whether tokens `n` and `n + 1` touch.
+    fn adjacent(&mut self, n: usize) -> bool {
+        let a = self.tk(n);
+        let b = self.tk(n + 1);
+        a.end == b.start
+    }
+
+    /// A `>` closing type arguments or parameters, splitting `>>`, `>=`
+    /// and the like, which the lexer took whole.
+    fn close_angle(&mut self) -> Item {
+        let t = self.tk(0);
+        let rest = match t.k {
+            L::Op(">") => return self.punct(),
+            L::Op(">>") => ">",
+            L::Op(">>>") => ">>",
+            L::Op(">=") => "=",
+            L::Op(">>=") => ">=",
+            L::Op(">>>=") => ">>=",
+            _ => return self.missing(">", false),
+        };
+        let k = self.i;
+        let first = Item::Tok(Tok {
+            kind: ">",
+            named: false,
+            start: t.start,
+            end: t.start + 1,
+            field: None,
+            missing: false,
+            extra: false,
+            hidden: false,
+        });
+        self.toks[k].0.start += 1;
+        self.toks[k].0.k = L::Op(rest);
+        self.toks[k].0.nl = false;
+        self.toks[k].1.pos += 1;
+        first
     }
 
     // ---- tokens ----------------------------------------------------------
@@ -372,12 +453,24 @@ impl<'s> Parser<'s> {
         }
     }
 
-    /// Whether an automatic semicolon goes before the current token
-    /// (tree-sitter-javascript's scanner): before `}` and at the end, and
-    /// after a line end unless the next line continues the statement.
-    fn asi(&mut self) -> bool {
+    /// Whether an automatic semicolon goes before the current token, as
+    /// tree-sitter's scanners put one: before `}` and at the end, and after
+    /// a line end unless the next line continues the statement.
+    /// `after_expression` says whether an expression ends here (`||` could
+    /// follow), which tree-sitter-typescript's scanner asks: after one a
+    /// `(` or `[` on the next line continues the statement, after a type it
+    /// starts the next member.
+    fn asi_after(&mut self, after_expression: bool) -> bool {
         let t = self.tk(0);
-        if t.k == L::Eof || (t.k == L::Op("}")) {
+        if t.k == L::Eof {
+            return true;
+        }
+        if t.k == L::Op("}") {
+            // TypeScript: `}` then `:` (`({a}: T) => …`) only after an
+            // expression.
+            if self.ts() && self.is(1, ":") {
+                return after_expression;
+            }
             return true;
         }
         if !t.nl {
@@ -385,6 +478,25 @@ impl<'s> Parser<'s> {
         }
         let s = &self.src[t.start..];
         let b = s.as_bytes();
+        if self.ts() {
+            return match b.first().copied().unwrap_or(0) {
+                b'`' | b',' | b'.' | b';' | b'*' | b'%' | b'>' | b'<' | b'=' | b'?' | b'^'
+                | b'|' | b'&' | b'/' | b':' => false,
+                b'(' | b'[' => !after_expression,
+                b'+' => b.get(1) == Some(&b'+'),
+                b'-' => b.get(1) == Some(&b'-'),
+                b'!' => b.get(1) != Some(&b'='),
+                b'i' => {
+                    let w = if t.k == L::Name {
+                        &self.src[t.start..t.end]
+                    } else {
+                        ""
+                    };
+                    !(w == "in" || w == "instanceof")
+                }
+                _ => true,
+            };
+        }
         match b.first().copied().unwrap_or(0) {
             b'`' | b',' | b':' | b';' | b'*' | b'%' | b'>' | b'<' | b'=' | b'[' | b'(' | b'?'
             | b'^' | b'|' | b'&' | b'/' => false,
@@ -419,12 +531,14 @@ impl<'s> Parser<'s> {
             items.push(self.punct());
             return;
         }
-        if !self.asi() {
+        if !self.asi_after(after_expression) {
             items.push(self.missing(";", false));
             return;
         }
         let t = self.tk(0);
-        if !t.nl || !after_expression || t.k == L::Op("}") {
+        // tree-sitter-typescript's (older) scanner gives up at any comment
+        // left on the line, so its statements always hold it.
+        if !self.ts() && (!t.nl || !after_expression || t.k == L::Op("}")) {
             return;
         }
         let from = self.prev_end();
@@ -513,8 +627,9 @@ impl<'s> Parser<'s> {
     /// tree-sitter reads a file that is one object.
     fn object_statement_at(&mut self) -> bool {
         // `{ a = 1 } = o`: a destructuring assignment.
+        // TypeScript: `{ … } as T` / `satisfies T`, which a block cannot be.
         if let Some(k) = self.scan_balanced(0)
-            && self.is(k, "=")
+            && (self.is(k, "=") || (self.ts() && (self.is(k, "as") || self.is(k, "satisfies"))))
         {
             return true;
         }
@@ -597,6 +712,25 @@ impl<'s> Parser<'s> {
         if self.at("@") {
             return self.decorated();
         }
+        if self.ts() && self.peek() == L::Name {
+            if let Some(d) = self.ts_declaration() {
+                return d;
+            }
+            if self.at("namespace")
+                && !self.tk(1).nl
+                && (self.is_ident(1) || self.tk(1).k == L::Quote)
+            {
+                let mut items = vec![self.module_declaration("internal_module")];
+                self.semicolon(&mut items);
+                return node("expression_statement", items);
+            }
+            if self.at("import") && self.is_ident(1) && self.is(2, "=") && !self.is(3, "require") {
+                let mut items = vec![self.punct(), self.binding_identifier(), self.punct()];
+                items.push(self.nested_identifier());
+                self.semicolon(&mut items);
+                return node("import_alias", items);
+            }
+        }
         if self.peek() == L::Name {
             match self.word() {
                 "import" if !self.is(1, "(") && !self.is(1, ".") => return self.import_statement(),
@@ -606,15 +740,18 @@ impl<'s> Parser<'s> {
                     return self.lexical_declaration();
                 }
                 "const" => return self.lexical_declaration(),
+                // `using` is JavaScript's (tree-sitter-typescript's older
+                // base grammar has none).
                 "using"
-                    if self.is_ident(1)
+                    if !self.ts()
+                        && self.is_ident(1)
                         && !self.tk(1).nl
                         && !self.is(1, "in")
                         && !self.is(1, "of") =>
                 {
                     return self.using_declaration();
                 }
-                "await" if self.is(1, "using") && self.is_ident(2) => {
+                "await" if !self.ts() && self.is(1, "using") && self.is_ident(2) => {
                     return self.using_declaration();
                 }
                 "function" => return self.function(true),
@@ -672,7 +809,7 @@ impl<'s> Parser<'s> {
                 }
                 "return" => {
                     let mut items = vec![self.punct()];
-                    let value = !self.at(";") && !self.asi();
+                    let value = !self.at(";") && !self.asi_after(false);
                     if value {
                         items.push(self.expressions());
                     }
@@ -715,7 +852,47 @@ impl<'s> Parser<'s> {
         self.statements(&mut items, None);
         items.push(self.expect("}"));
         self.no_in = saved;
+        // tree-sitter-typescript's block ends with an optional automatic
+        // semicolon, which its scanner puts after a comment left on the
+        // line: the block holds the comment.
+        if self.ts() {
+            self.trailing_comment(&mut items);
+        }
         node("statement_block", items)
+    }
+
+    /// A zero-width mark after the comments left on the line, when an
+    /// automatic semicolon could follow them.
+    fn trailing_comment(&mut self, items: &mut Vec<Item>) {
+        let t = self.tk(0);
+        if !t.nl && t.k != L::Eof {
+            return;
+        }
+        if !self.asi_after(false) {
+            return;
+        }
+        let from = self.prev_end();
+        let mut end = None;
+        for e in &self.extras {
+            if e.start >= from
+                && e.end <= t.start
+                && !self.src[from..e.start].contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+            {
+                end = Some(end.map_or(e.end, |x: usize| x.max(e.end)));
+            }
+        }
+        if let Some(end) = end {
+            items.push(Item::Tok(Tok {
+                kind: "",
+                named: false,
+                start: end,
+                end,
+                field: None,
+                missing: false,
+                extra: false,
+                hidden: true,
+            }));
+        }
     }
 
     /// Statements up to a `}` (or, `case`, a `case` / `default` label),
@@ -791,7 +968,16 @@ impl<'s> Parser<'s> {
     fn declarators(&mut self, items: &mut Vec<Item>) -> bool {
         loop {
             let mut d = vec![self.binding().with("name")];
-            self.skip_type_annotation(&mut d);
+            if self.ts() {
+                if self.at("!") {
+                    d.push(self.punct());
+                }
+                if self.at(":") {
+                    d.push(self.type_annotation().with("type"));
+                }
+            } else {
+                self.skip_type_annotation(&mut d);
+            }
             let value = self.at("=");
             if value {
                 d.push(self.punct());
@@ -857,6 +1043,9 @@ impl<'s> Parser<'s> {
             if self.at("(") {
                 c.push(self.punct());
                 c.push(self.binding().with("parameter"));
+                if self.ts() && self.at(":") {
+                    c.push(self.type_annotation().with("type"));
+                }
                 c.push(self.expect(")"));
             }
             c.push(self.statement_block().with("body"));
@@ -880,7 +1069,8 @@ impl<'s> Parser<'s> {
         let kw = self.word();
         let declares = matches!(kw, "var" | "let" | "const")
             && (self.is_ident(1) || self.is(1, "[") || self.is(1, "{"));
-        let using = (kw == "using" && self.is_ident(1)) || (kw == "await" && self.is(1, "using"));
+        let using = !self.ts()
+            && ((kw == "using" && self.is_ident(1)) || (kw == "await" && self.is(1, "using")));
         if declares || using {
             // Look past the binding for `in` / `of`.
             let save = self.i;
@@ -962,6 +1152,18 @@ impl<'s> Parser<'s> {
 
     fn import_statement(&mut self) -> Item {
         let mut items = vec![self.punct()];
+        if self.ts() && (self.at("type") || self.at("typeof")) && self.import_modifier_at(1) {
+            items.push(self.punct());
+        }
+        if self.ts() && self.is_ident(0) && self.is(1, "=") && self.is(2, "require") {
+            let mut c = vec![self.binding_identifier(), self.punct(), self.punct()];
+            c.push(self.expect("("));
+            c.push(self.string().with("source"));
+            c.push(self.expect(")"));
+            items.push(node("import_require_clause", c));
+            self.semicolon(&mut items);
+            return node("import_statement", items);
+        }
         if self.peek() == L::Quote {
             items.push(self.string().with("source"));
         } else {
@@ -993,6 +1195,18 @@ impl<'s> Parser<'s> {
         node("import_statement", items)
     }
 
+    /// After `import type`: whether `type` modifies the import (rather
+    /// than being the default import's name).
+    fn import_modifier_at(&mut self, n: usize) -> bool {
+        if self.is(n, "{") || self.is(n, "*") {
+            return true;
+        }
+        if self.is(n, "from") {
+            return self.is(n + 1, "from");
+        }
+        self.is_ident(n) && !self.is(n, "=")
+    }
+
     fn namespace_import(&mut self) -> Item {
         let items = vec![self.punct(), self.expect("as"), self.binding_identifier()];
         node("namespace_import", items)
@@ -1002,17 +1216,19 @@ impl<'s> Parser<'s> {
         let mut items = vec![self.expect("{")];
         while !self.at("}") && !self.eof() {
             let before = self.i;
+            let mut spec = Vec::new();
+            self.specifier_modifier(&mut spec);
             let name = self.module_export_name();
-            let spec = if self.at("as") {
+            if self.at("as") {
                 let a = self.punct();
                 let alias = self.binding_identifier().with("alias");
-                vec![name.with("name"), a, alias]
+                spec.extend([name.with("name"), a, alias]);
             } else {
-                vec![
+                spec.push(
                     name.renamed_if("property_identifier", "identifier")
                         .with("name"),
-                ]
-            };
+                );
+            }
             items.push(node("import_specifier", spec));
             if self.i == before || !self.at(",") {
                 break;
@@ -1023,12 +1239,25 @@ impl<'s> Parser<'s> {
         node("named_imports", items)
     }
 
-    /// An identifier, a string, or `default`, naming an export.
+    /// TypeScript's `type` / `typeof` before an import or export
+    /// specifier's name.
+    fn specifier_modifier(&mut self, spec: &mut Vec<Item>) {
+        if self.ts()
+            && (self.at("type") || self.at("typeof"))
+            && matches!(self.tk(1).k, L::Name | L::Quote)
+            && !self.is(1, "as")
+        {
+            spec.push(self.punct());
+        }
+    }
+
+    /// An identifier, a string, or `default`, naming an export
+    /// (TypeScript's older base grammar reads `default` as an identifier).
     fn module_export_name(&mut self) -> Item {
         if self.peek() == L::Quote {
             return self.string();
         }
-        if self.at("default") {
+        if self.at("default") && !self.ts() {
             return self.punct();
         }
         if self.peek() == L::Name {
@@ -1039,6 +1268,35 @@ impl<'s> Parser<'s> {
 
     fn export_statement(&mut self, mut items: Vec<Item>) -> Item {
         items.push(self.punct());
+        if self.ts() {
+            if self.at("=") {
+                items.push(self.punct());
+                items.push(self.expression());
+                self.semicolon_after(&mut items, true);
+                return node("export_statement", items);
+            }
+            if self.at("as") && self.is(1, "namespace") {
+                items.push(self.punct());
+                items.push(self.punct());
+                items.push(self.binding_identifier());
+                self.semicolon(&mut items);
+                return node("export_statement", items);
+            }
+            if self.at("type") && self.is(1, "{") {
+                items.push(self.punct());
+            }
+            if self.at("namespace") && (self.is_ident(1) || self.tk(1).k == L::Quote) {
+                items.push(
+                    self.module_declaration("internal_module")
+                        .with("declaration"),
+                );
+                return node("export_statement", items);
+            }
+            if self.at("import") && self.is_ident(1) && self.is(2, "=") {
+                items.push(self.statement().with("declaration"));
+                return node("export_statement", items);
+            }
+        }
         if self.at("*") {
             let star = self.punct();
             if self.at("as") {
@@ -1057,7 +1315,9 @@ impl<'s> Parser<'s> {
             let mut clause = vec![self.punct()];
             while !self.at("}") && !self.eof() {
                 let before = self.i;
-                let mut s = vec![self.module_export_name().with("name")];
+                let mut s = Vec::new();
+                self.specifier_modifier(&mut s);
+                s.push(self.module_export_name().with("name"));
                 if self.at("as") {
                     s.push(self.punct());
                     s.push(self.module_export_name().with("alias"));
@@ -1084,8 +1344,14 @@ impl<'s> Parser<'s> {
                 || (self.at("async")
                     && self.is(1, "function")
                     && (self.is_ident(2) || self.is(2, "*")));
-            let named_class = self.at("class") && self.is_ident(1) && !self.is(1, "extends");
-            if named_fn || named_class {
+            let named_class = self.at("class")
+                && self.is_ident(1)
+                && !self.is(1, "extends")
+                && !self.is(1, "implements");
+            let ts_declaration = self.ts()
+                && ((self.at("interface") && self.is_ident(1))
+                    || (self.at("abstract") && self.is(1, "class")));
+            if named_fn || named_class || ts_declaration {
                 items.push(self.statement().with("declaration"));
                 return node("export_statement", items);
             }
@@ -1136,6 +1402,18 @@ impl<'s> Parser<'s> {
         self.tk(n).k == L::Name
     }
 
+    /// `a`, or `a.b.c`: a `nested_identifier` whose inner links are
+    /// `member_expression`s (tree-sitter's alias).
+    fn nested_identifier(&mut self) -> Item {
+        let mut e = self.binding_identifier();
+        while self.at(".") && self.peek_name(1) {
+            let dot = self.punct();
+            let p = self.leaf("property_identifier").with("property");
+            e = node("member_expression", vec![e.with("object"), dot, p]);
+        }
+        e.renamed_if("member_expression", "nested_identifier")
+    }
+
     // ---- functions and classes ---------------------------------------------
 
     /// `function` (async, generator), as a declaration or an expression.
@@ -1154,7 +1432,16 @@ impl<'s> Parser<'s> {
         } else if declaration {
             items.push(self.missing("identifier", true).with("name"));
         }
-        items.push(self.formal_parameters().with("parameters"));
+        if self.ts() {
+            self.call_signature(&mut items);
+            // An overload's signature: no body.
+            if declaration && !self.at("{") {
+                self.semicolon(&mut items);
+                return node("function_signature", items);
+            }
+        } else {
+            items.push(self.formal_parameters().with("parameters"));
+        }
         items.push(self.statement_block().with("body"));
         let kind = match (declaration, generator) {
             (true, false) => "function_declaration",
@@ -1169,7 +1456,12 @@ impl<'s> Parser<'s> {
         let mut items = vec![self.expect("(")];
         while !self.at(")") && !self.eof() {
             let before = self.i;
-            items.push(self.parameter());
+            let p = if self.ts() {
+                self.ts_parameter()
+            } else {
+                self.parameter()
+            };
+            items.push(p);
             if self.i == before || !self.at(",") {
                 break;
             }
@@ -1202,6 +1494,14 @@ impl<'s> Parser<'s> {
     }
 
     fn class(&mut self, declaration: bool, mut items: Vec<Item>) -> Item {
+        if self.ts() {
+            let kind = if declaration {
+                "class_declaration"
+            } else {
+                "class"
+            };
+            return self.class_ts(declaration, items, kind);
+        }
         items.push(self.punct());
         let named = self.is_ident(0) && !self.at("extends");
         if named {
@@ -1405,11 +1705,23 @@ impl<'s> Parser<'s> {
     }
 
     fn expression(&mut self) -> Item {
-        if self.arrow_at(0) {
+        let arrow = if self.ts() {
+            self.ts_arrow_at(0)
+        } else {
+            self.arrow_at(0)
+        };
+        if arrow {
             return self.arrow();
         }
         if self.at("yield") && !self.is(1, "=") && !self.is(1, ")") {
             return self.yield_expression();
+        }
+        if self.ts() && self.at("using") && self.is_ident(1) && self.is(2, "=") {
+            let using = self.punct();
+            let left = self.binding_identifier().with("left");
+            let eq = self.punct();
+            let right = self.expression().with("right");
+            return node("assignment_expression", vec![using, left, eq, right]);
         }
         let left = self.ternary();
         if self.at("=") {
@@ -1438,7 +1750,7 @@ impl<'s> Parser<'s> {
         if self.at("*") {
             items.push(self.punct());
             items.push(self.expression());
-        } else if !self.asi()
+        } else if !self.asi_after(false)
             && !matches!(self.peek(), L::Op(")" | "]" | "}" | "," | ";" | ":"))
             && !self.tk(0).nl
         {
@@ -1452,8 +1764,12 @@ impl<'s> Parser<'s> {
         if self.at("async") && !self.is(1, "=>") {
             items.push(self.punct());
         }
-        if self.at("(") {
-            items.push(self.formal_parameters().with("parameters"));
+        if self.at("(") || (self.ts() && self.at("<")) {
+            if self.ts() {
+                self.call_signature(&mut items);
+            } else {
+                items.push(self.formal_parameters().with("parameters"));
+            }
         } else {
             items.push(self.leaf("identifier").with("parameter"));
         }
@@ -1512,6 +1828,7 @@ impl<'s> Parser<'s> {
             L::Name => match self.text(t) {
                 "instanceof" => 8,
                 "in" if !self.no_in => 8,
+                "as" | "satisfies" if self.dialect != Dialect::Js && !t.nl => 8,
                 _ => return None,
             },
             _ => return None,
@@ -1528,6 +1845,21 @@ impl<'s> Parser<'s> {
         while let Some((prec, right_assoc)) = self.binop() {
             if prec < min {
                 break;
+            }
+            if self.ts() && (self.at("as") || self.at("satisfies")) {
+                let kind = if self.at("as") {
+                    "as_expression"
+                } else {
+                    "satisfies_expression"
+                };
+                let kw = self.punct();
+                let t = if kind == "as_expression" && self.at("const") {
+                    self.punct()
+                } else {
+                    self.ty()
+                };
+                left = node(kind, vec![left, kw, t]);
+                continue;
             }
             let op = self.punct().with("operator");
             let right = self.binary(if right_assoc { prec } else { prec + 1 });
@@ -1550,13 +1882,28 @@ impl<'s> Parser<'s> {
         }
         if w == "await" && self.await_operand_at(1) {
             let kw = self.punct();
-            let arg = self.unary();
+            // TypeScript's base grammar has `using` only as an
+            // assignment's prefix: `await using x = f()`.
+            let arg = if self.ts() && self.at("using") && self.is_ident(1) && self.is(2, "=") {
+                let using = self.punct();
+                let left = self.binding_identifier().with("left");
+                let eq = self.punct();
+                let right = self.expression().with("right");
+                node("assignment_expression", vec![using, left, eq, right])
+            } else {
+                self.unary()
+            };
             return node("await_expression", vec![kw, arg]);
         }
         if self.at("++") || self.at("--") {
             let op = self.punct().with("operator");
             let arg = self.unary().with("argument");
             return node("update_expression", vec![op, arg]);
+        }
+        if self.dialect == Dialect::Ts && self.at("<") {
+            let args = self.type_arguments();
+            let e = self.unary();
+            return node("type_assertion", vec![args, e]);
         }
         let mut e = self.postfix();
         while (self.at("++") || self.at("--")) && !self.tk(0).nl {
@@ -1591,8 +1938,41 @@ impl<'s> Parser<'s> {
                     let p = self.member_property();
                     node("member_expression", vec![e.with("object"), dot, p])
                 }
+                L::Op("?.") if self.ts() && (self.is(1, "(") || self.is(1, "<")) => {
+                    // TypeScript's optional call: a bare `?.`.
+                    let q = self.punct();
+                    let mut items = vec![e.with("function"), q];
+                    if self.at("<") {
+                        items.push(self.type_arguments().with("type_arguments"));
+                    }
+                    items.push(self.arguments().with("arguments"));
+                    node("call_expression", items)
+                }
+                L::Op("!") if self.ts() && !self.tk(0).nl => {
+                    let bang = self.punct();
+                    node("non_null_expression", vec![e, bang])
+                }
+                L::Op("<") if self.ts() => match self.scan_type_arguments(0) {
+                    Some(k) if self.is(k, "(") => {
+                        let args = self.type_arguments().with("type_arguments");
+                        let call = self.arguments().with("arguments");
+                        node("call_expression", vec![e.with("function"), args, call])
+                    }
+                    Some(k) if self.instantiation_follows(k) => {
+                        let args = self.type_arguments().with("type_arguments");
+                        node("instantiation_expression", vec![e, args])
+                    }
+                    _ => return e,
+                },
                 L::Op("?.") => {
-                    let q = self.leaf("optional_chain").with("optional_chain");
+                    // tree-sitter-typescript's older base grammar wraps the
+                    // token; tree-sitter-javascript 0.25's is a leaf.
+                    let q = if self.ts() {
+                        node("optional_chain", vec![self.punct()])
+                    } else {
+                        self.leaf("optional_chain")
+                    }
+                    .with("optional_chain");
                     if self.at("(") {
                         let args = self.arguments().with("arguments");
                         node("call_expression", vec![e.with("function"), q, args])
@@ -1632,6 +2012,16 @@ impl<'s> Parser<'s> {
                 _ => return e,
             };
         }
+    }
+
+    /// After type arguments that end before token `n`: whether they make an
+    /// instantiation expression (`f<T>;`), not a comparison (`a < b > c`).
+    fn instantiation_follows(&mut self, n: usize) -> bool {
+        let t = self.tk(n);
+        t.nl || matches!(
+            t.k,
+            L::Eof | L::Op(")" | "]" | "}" | "," | ";" | "." | "?." | ":" | "=")
+        )
     }
 
     fn member_property(&mut self) -> Item {
@@ -1689,7 +2079,7 @@ impl<'s> Parser<'s> {
             L::Op("(") => self.parenthesized(),
             L::Op("[") => self.array(),
             L::Op("{") => self.object(),
-            L::Op("<") => self.jsx_element(),
+            L::Op("<") if self.jsx() => self.jsx_element(),
             L::Op("@") => {
                 let mut decorators = Vec::new();
                 while self.at("@") {
@@ -1768,6 +2158,9 @@ impl<'s> Parser<'s> {
             }
         };
         let mut items = vec![kw, constructor.with("constructor")];
+        if self.ts() && self.at("<") && self.scan_type_arguments(0).is_some() {
+            items.push(self.type_arguments().with("type_arguments"));
+        }
         if self.at("(") {
             items.push(self.arguments().with("arguments"));
         }
@@ -1854,9 +2247,13 @@ impl<'s> Parser<'s> {
         let mut items = Vec::new();
         self.method_modifiers(&mut items);
         let key = self.property_name();
-        if self.at("(") {
+        if self.at("(") || (self.ts() && self.at("<")) {
             items.push(key.with("name"));
-            items.push(self.formal_parameters().with("parameters"));
+            if self.ts() {
+                self.call_signature(&mut items);
+            } else {
+                items.push(self.formal_parameters().with("parameters"));
+            }
             items.push(self.statement_block().with("body"));
             return node("method_definition", items);
         }
@@ -1995,6 +2392,11 @@ impl<'s> Parser<'s> {
             return self.jsx_children(opening);
         }
         let mut items = vec![open, self.jsx_element_name().with("name")];
+        // TSX: `<Select<Option> …>`.
+        self.relex(Mode::JsxTag);
+        if self.ts() && self.at("<") {
+            items.push(self.type_arguments().with("type_arguments"));
+        }
         loop {
             self.relex(Mode::JsxTag);
             if self.at("/>") {

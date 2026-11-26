@@ -1,4 +1,5 @@
-//! TSX backend for colab, on `tree-sitter-typescript`'s TSX grammar.
+//! TSX backend for colab, on colab's own TSX parser
+//! (`colab_parse_js::TSX_PARSER`, tree-sitter-typescript's TSX kinds).
 //!
 //! TypeScript with JSX: `tsx::pattern '<Button onClick={$H} />'` is an
 //! element, and the rest is TypeScript as the `ts` backend reads it. The
@@ -105,7 +106,7 @@ impl LanguageBackend for TsxBackend {
     }
 
     fn description(&self) -> &'static str {
-        "TSX (TypeScript with JSX) module specifiers, symbols, calls and patterns via tree-sitter-typescript's TSX grammar."
+        "TSX (TypeScript with JSX) module specifiers, symbols, calls and patterns via colab's own TSX parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

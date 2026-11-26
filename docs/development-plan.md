@@ -683,6 +683,24 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    through colab's tree whatever the parser); tree-sitter-javascript is a
    test dependency (and the parse cache's). TypeScript and TSX next, as
    dialects of the same parser.
+   **TypeScript and TSX, done 2026-11-26:** dialects of `colab-parse-js`
+   (`Dialect::Ts` / `Tsx`), adding 1,567 lines (5,127 in all: the types,
+   declarations and class members in `parser/ts.rs`, 1,147, the rest
+   hooks in the shared parser). `>>` stays one token and the type parser
+   splits it where a type-argument list ends; automatic semicolons follow
+   tree-sitter-typescript's older scanner, which differs from
+   JavaScript's (`(` / `[` on the next line continues only after an
+   expression, and a statement or block always holds the comment left on
+   its line). Over the workspace's 9,586 TypeScript files (9,550 clean to
+   tree-sitter): 9,354 the same (97.9%), in 1.9 s against 3.6 s; TSX's
+   6,853 (6,804 clean): 6,757 the same (99.3%), in 1.1 s against 1.7 s.
+   All but two of the 243 left are where tree-sitter misreads TypeScript
+   and colab does not copy it: a non-null `!` bound looser than a binary
+   operator (`a! - b!` as `(a! - b)!`, `x!.a + y!.b` as `(x!.a + y!).b`),
+   and `await f<T>(x)` as a comparison. The first run had 96.6% for
+   TypeScript; TSX's 63 error files were all JSX tags with type arguments
+   (`<Select<Option> …>`). `ts` and `tsx` run on it; tree-sitter-typescript
+   is a test dependency.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

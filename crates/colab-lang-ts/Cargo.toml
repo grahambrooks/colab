@@ -11,9 +11,8 @@ description = "TypeScript language backend for colab: module specifiers, symbols
 [dependencies]
 colab-core = { workspace = true }
 colab-lang-js = { workspace = true }
+colab-parse-js = { workspace = true }
 colab-rewrite = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-typescript = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,7 +1,7 @@
 //! ES module specifier rewriting.
 //!
-//! The trees (colab's own JavaScript parser's, or tree-sitter-typescript's
-//! for TypeScript and TSX, both read as colab's tree) hold:
+//! The trees (colab's own parser's, in the JavaScript, TypeScript or TSX
+//! dialect) hold:
 //! - `import_statement` with a `source` field → `string`
 //! - `export_statement` with an optional `source` field → `string`
 //!

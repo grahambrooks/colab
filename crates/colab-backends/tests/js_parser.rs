@@ -1,17 +1,20 @@
-//! `colab_parse_js`, colab's own JavaScript parser, held to
-//! tree-sitter-javascript's trees while JavaScript moves off tree-sitter:
-//! over every `.js` / `.jsx` / `.mjs` / `.cjs` file in the repo (or under
-//! `COLAB_JS_FILES`, a directory, for a wider run), each tree must be
-//! lossless, and where tree-sitter reads a file cleanly the two trees must
-//! hold the same nodes, in the same order, with the same kinds, fields,
-//! named flags and ranges. `COLAB_JS_SHOW=<n>` lists the first n
-//! differences.
+//! `colab_parse_js`, colab's own JavaScript / TypeScript / TSX parser,
+//! held to tree-sitter's trees while those languages move off
+//! tree-sitter: over every file of a dialect in the repo (or under
+//! `COLAB_JS_FILES` / `COLAB_TS_FILES` / `COLAB_TSX_FILES`, a directory,
+//! for a wider run), each tree must be lossless, and where tree-sitter
+//! reads a file cleanly the two trees must hold the same nodes, in the same
+//! order, with the same kinds, fields, named flags and ranges.
+//! `COLAB_JS_SHOW=<n>` lists the first n differences (and clean files read
+//! with an error).
 
 mod common;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+use colab_parse_js::Dialect;
 
 type Shape = (String, Option<String>, Range<usize>, bool);
 
@@ -30,7 +33,7 @@ fn shape(tree: &colab_syntax::Tree) -> Vec<Shape> {
         .collect()
 }
 
-fn js_files(dir: &Path, out: &mut Vec<PathBuf>) {
+fn files(dir: &Path, exts: &[&str], out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -41,33 +44,34 @@ fn js_files(dir: &Path, out: &mut Vec<PathBuf>) {
             continue;
         }
         if path.is_dir() {
-            js_files(&path, out);
+            files(&path, exts, out);
         } else if path
             .extension()
-            .is_some_and(|e| e == "js" || e == "jsx" || e == "mjs" || e == "cjs")
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| exts.contains(&e))
         {
             out.push(path);
         }
     }
 }
 
-#[test]
-fn colab_js_trees_are_lossless_and_tree_sitters() {
-    let wide = std::env::var_os("COLAB_JS_FILES");
+/// Compare colab's `dialect` trees with tree-sitter's grammar `lang` over
+/// the files with `exts`, under `$env` or the repo.
+fn compare(dialect: Dialect, lang: &str, exts: &[&str], env: &str) {
+    let wide = std::env::var_os(env);
     let root = wide.clone().map_or_else(
         || Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
         PathBuf::from,
     );
-    let mut files = Vec::new();
-    js_files(&root, &mut files);
-    files.sort();
+    let mut found = Vec::new();
+    files(&root, exts, &mut found);
+    found.sort();
     let (mut ours_time, mut theirs_time) = (Duration::ZERO, Duration::ZERO);
     let (mut checked, mut clean, mut same) = (0usize, 0usize, 0usize);
     let mut lossy = Vec::new();
     let mut differ: Vec<String> = Vec::new();
-    let mut ours_errors = 0usize;
     let mut error_files: Vec<String> = Vec::new();
-    for path in &files {
+    for path in &found {
         let Ok(text) = std::fs::read_to_string(path) else {
             continue;
         };
@@ -78,7 +82,7 @@ fn colab_js_trees_are_lossless_and_tree_sitters() {
             .display()
             .to_string();
         let started = Instant::now();
-        let ours = colab_parse_js::parse(&text);
+        let ours = colab_parse_js::parse_as(&text, dialect);
         ours_time += started.elapsed();
         let Ok(ours) = ours else {
             lossy.push(format!("{shown}: no tree"));
@@ -90,14 +94,13 @@ fn colab_js_trees_are_lossless_and_tree_sitters() {
             continue;
         }
         let started = Instant::now();
-        let theirs = common::tree_sitter_tree("js", &text);
+        let theirs = common::tree_sitter_tree(lang, &text);
         theirs_time += started.elapsed();
         if theirs.has_error() {
             continue;
         }
         clean += 1;
         if ours.has_error() {
-            ours_errors += 1;
             let at = ours
                 .nodes()
                 .find(|n| n.is_error() || n.is_missing())
@@ -138,8 +141,9 @@ fn colab_js_trees_are_lossless_and_tree_sitters() {
         ));
     }
     eprintln!(
-        "{checked} files ({clean} clean to tree-sitter): {same} the same, {} differ, {ours_errors} clean ones we read with an error; ours {ours_time:?}, tree-sitter {theirs_time:?}",
-        differ.len()
+        "{lang}: {checked} files ({clean} clean to tree-sitter): {same} the same, {} differ, {} clean ones we read with an error; ours {ours_time:?}, tree-sitter {theirs_time:?}",
+        differ.len(),
+        error_files.len()
     );
     let show = std::env::var("COLAB_JS_SHOW")
         .ok()
@@ -155,8 +159,28 @@ fn colab_js_trees_are_lossless_and_tree_sitters() {
     if wide.is_none() {
         assert!(
             differ.is_empty(),
-            "{} files differ from tree-sitter",
+            "{} {lang} files differ from tree-sitter",
             differ.len()
         );
     }
+}
+
+#[test]
+fn colab_js_trees_are_lossless_and_tree_sitters() {
+    compare(
+        Dialect::Js,
+        "js",
+        &["js", "jsx", "mjs", "cjs"],
+        "COLAB_JS_FILES",
+    );
+}
+
+#[test]
+fn colab_ts_trees_are_lossless_and_tree_sitters() {
+    compare(Dialect::Ts, "ts", &["ts", "mts", "cts"], "COLAB_TS_FILES");
+}
+
+#[test]
+fn colab_tsx_trees_are_lossless_and_tree_sitters() {
+    compare(Dialect::Tsx, "tsx", &["tsx"], "COLAB_TSX_FILES");
 }

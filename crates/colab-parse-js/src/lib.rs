@@ -1,13 +1,14 @@
-//! JavaScript (with JSX) as a [`colab_syntax::Tree`], read by a parser of
-//! colab's own: pure Rust, lossless, error-tolerant. Step 3 of the move
-//! off tree-sitter (docs/development-plan.md); TypeScript and TSX are to
-//! follow as dialects of the same parser.
+//! JavaScript (with JSX), TypeScript and TSX as [`colab_syntax::Tree`]s,
+//! read by a parser of colab's own: pure Rust, lossless, error-tolerant.
+//! Step 3 of the move off tree-sitter (docs/development-plan.md).
 //!
 //! `lexer.rs` lexes on demand, in the mode the parser is in (a regex or a
 //! division, JSX text, a template's text); `parser.rs` reads
-//! tree-sitter-javascript's grammar by recursive descent, its kinds and
-//! fields named as `names.rs` says. Comments are put in the deepest node
-//! with code on both sides of them; whitespace is trivia.
+//! tree-sitter-javascript's grammar by recursive descent, and
+//! `parser/ts.rs` tree-sitter-typescript's additions for the TypeScript
+//! dialects, kinds and fields named as `names.rs` says. Comments are put
+//! in the deepest node with code on both sides of them; whitespace is
+//! trivia.
 
 mod lexer;
 mod names;
@@ -18,16 +19,22 @@ use std::sync::{Arc, OnceLock};
 
 use colab_syntax::{BuildError, Builder, Field, Flags, Grammar, Kind, SourceParser, Tree};
 
+pub use parser::Dialect;
 use parser::{Item, Node, Tok};
 
-/// colab's JavaScript parser.
-pub struct JsParser;
+/// colab's parser for one dialect: JavaScript, TypeScript or TSX.
+pub struct JsParser(Dialect);
 
-/// The one parser; it holds nothing but its grammar.
-pub static PARSER: JsParser = JsParser;
+/// JavaScript (with JSX).
+pub static PARSER: JsParser = JsParser(Dialect::Js);
+/// TypeScript.
+pub static TS_PARSER: JsParser = JsParser(Dialect::Ts);
+/// TSX: TypeScript with JSX.
+pub static TSX_PARSER: JsParser = JsParser(Dialect::Tsx);
 
 struct Names {
-    grammar: Arc<Grammar>,
+    /// One grammar per dialect: the same kinds, named as tree-sitter's.
+    grammars: [Arc<Grammar>; 3],
     kinds: HashMap<(&'static str, bool), Kind>,
 }
 
@@ -43,12 +50,22 @@ fn names() -> &'static Names {
                 kinds.push(((*name).into(), named));
             }
         }
-        let fields = names::FIELDS.iter().map(|f| (*f).into()).collect();
+        let fields: Vec<Box<str>> = names::FIELDS.iter().map(|f| (*f).into()).collect();
+        let grammar = |name: &str| Arc::new(Grammar::new(name, kinds.clone(), fields.clone()));
         Names {
-            grammar: Arc::new(Grammar::new("javascript", kinds, fields)),
+            grammars: [grammar("javascript"), grammar("typescript"), grammar("tsx")],
             kinds: ids,
         }
     })
+}
+
+fn grammar(dialect: Dialect) -> Arc<Grammar> {
+    let k = match dialect {
+        Dialect::Js => 0,
+        Dialect::Ts => 1,
+        Dialect::Tsx => 2,
+    };
+    names().grammars[k].clone()
 }
 
 fn kind_of(name: &'static str, named: bool) -> Kind {
@@ -68,9 +85,14 @@ fn field_of(name: Option<&'static str>) -> Option<Field> {
     u16::try_from(i).ok().map(Field)
 }
 
-/// `text` as a colab tree.
+/// `text`, JavaScript, as a colab tree.
 pub fn parse(text: &str) -> Result<Tree, BuildError> {
-    let mut p = parser::Parser::new(text);
+    parse_as(text, Dialect::Js)
+}
+
+/// `text` in `dialect` as a colab tree.
+pub fn parse_as(text: &str, dialect: Dialect) -> Result<Tree, BuildError> {
+    let mut p = parser::Parser::new(text, dialect);
     let mut root = match p.program() {
         Item::Node(n) => n,
         Item::Tok(_) => unreachable!("a file is a node"),
@@ -86,7 +108,7 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
         .iter()
         .any(|(s, e, _)| text[*s..*e].starts_with("/*") && !text[*s..*e].ends_with("*/"));
     place_extras(&mut root, extras);
-    let mut b = Builder::new(text, names().grammar.clone());
+    let mut b = Builder::new(text, grammar(dialect));
     if p.errors || unclosed_comment {
         b.error_seen();
     }
@@ -211,12 +233,12 @@ fn emit(b: &mut Builder, item: &Item) -> Result<(), BuildError> {
 
 impl SourceParser for JsParser {
     fn grammar(&self) -> Arc<Grammar> {
-        names().grammar.clone()
+        grammar(self.0)
     }
 
     fn parse(&self, text: &str) -> Tree {
-        parse(text).unwrap_or_else(|_| {
-            let mut b = Builder::new(text, names().grammar.clone());
+        parse_as(text, self.0).unwrap_or_else(|_| {
+            let mut b = Builder::new(text, grammar(self.0));
             let _ = b.start_node(kind_of("program", true), None, Flags::default());
             b.error_seen();
             b.finish()
