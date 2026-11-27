@@ -4,7 +4,11 @@
 
 CARGO ?= cargo
 
-.PHONY: help check fmt fmt-check lint test licenses licenses-check hooks
+.PHONY: help check fmt fmt-check lint test licenses licenses-check hooks install
+
+# Where `make install` puts the binary: cargo's own root (~/.cargo/bin) unless
+# set, e.g. `make install INSTALL_ROOT=/usr/local`.
+INSTALL_ROOT ?=
 
 help: ## List targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -44,5 +48,9 @@ licenses-check: ## Fail when THIRD-PARTY-LICENSES.txt is stale
 
 hooks: ## Install the git hooks (prek: pre-commit and pre-push)
 	prek install
+
+install: ## Build colab in release mode and install it (INSTALL_ROOT=<dir> for <dir>/bin)
+	$(CARGO) install --path crates/colab-cli --locked --force $(if $(INSTALL_ROOT),--root $(INSTALL_ROOT))
+	@command -v colab >/dev/null && echo "colab on PATH: $$(command -v colab) ($$(colab --version))"
 
 include release.mk
