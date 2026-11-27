@@ -20,11 +20,8 @@ pub(crate) enum PatternCtx {
     /// After `is`, and in a subpattern: only operators binding tighter
     /// than `is`.
     Is,
-    /// After `case`, in a switch arm: any binary operator.
+    /// After `case`, in a switch arm.
     Case,
-    /// After an `is` in a chain tree-sitter does not take into it: a
-    /// constant is only its primary expression.
-    Narrow,
 }
 
 /// Words that cannot follow a cast's `)` as its value: operators read as
@@ -112,13 +109,10 @@ impl Parser<'_> {
         (self.is(self.i + 1, "[") && self.adjacent(self.i)).then_some(false)
     }
 
-    /// `f` with no `is` chain in force: a bracketed expression starts
-    /// afresh.
+    /// `f` read afresh: inside brackets, a lambda may start again.
     pub(super) fn nested<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
-        let saved = std::mem::replace(&mut self.chain_end, 0);
         let lambda = std::mem::replace(&mut self.no_lambda, false);
         let r = f(self);
-        self.chain_end = saved;
         self.no_lambda = lambda;
         r
     }
@@ -126,29 +120,6 @@ impl Parser<'_> {
     fn expr_bp(&mut self, min: u8) -> Item {
         let mut left = self.unary();
         loop {
-            // `?.` / `?[` bind as tree-sitter's conditional access does: at
-            // the conditional's precedence on the left (`x + b?.c` is
-            // `(x + b)?.c`), then the access's postfixes.
-            if let Some(binding) = self.conditional_access_at() {
-                if min > 2 {
-                    break;
-                }
-                let q = self.punct();
-                let b = if binding {
-                    let dot = self.punct();
-                    let name = self.simple_name_expr().with("name");
-                    node("member_binding_expression", vec![dot, name])
-                } else {
-                    self.nested(Self::bracketed_argument_list)
-                        .renamed("element_binding_expression")
-                };
-                left = node(
-                    "conditional_access_expression",
-                    vec![left.with("condition"), q, b],
-                );
-                left = self.postfix(left);
-                continue;
-            }
             let (prec, op): (u8, &'static str) = match self.peek() {
                 L::Op(">") => {
                     let (n, kind) = self.joined_greater();
@@ -226,7 +197,7 @@ impl Parser<'_> {
                     let right = self.expr_bp(COALESCING).with("right");
                     left = node("binary_expression", vec![left.with("left"), o, right]);
                 }
-                "is" => left = self.is_expression(left, min <= 2),
+                "is" => left = self.is_expression(left),
                 "as" => {
                     let o = self.punct().with("operator");
                     let right = self.ty_in(TypeCtx::Expression).with("right");
@@ -282,9 +253,9 @@ impl Parser<'_> {
         left
     }
 
-    /// `x is …`; `first` when `x` starts the expression (no operand of a
-    /// binary operator before it).
-    fn is_expression(&mut self, left: Item, first: bool) -> Item {
+    /// `x is …`: a type, or a pattern whose constants bind tighter than a
+    /// relational operator (`x is null || y` is `(x is null) || y`).
+    fn is_expression(&mut self, left: Item) -> Item {
         // `x is int` / `x is int[]` is a type; `x is Foo` a constant
         // pattern, `x is int i` a declaration, and so on.
         let start = self.i + 1;
@@ -307,31 +278,7 @@ impl Parser<'_> {
                 vec![left.with("left"), kw.with("operator"), right],
             );
         }
-        // tree-sitter's parse may take the rest of a chain of `&&` / `||`
-        // into the first `is`'s constant (`x is null || y` is
-        // `x is (null || y)`); the chain's first `is` decides for all.
-        let relational = {
-            let k = if self.at("not") { self.i + 1 } else { self.i };
-            matches!(self.kind_at(k), L::Op("<" | "<=" | ">"))
-        };
-        let swallow = if self.i < self.chain_end {
-            false
-        } else if relational {
-            true
-        } else {
-            let (end, tests, ends_in_test, conditional) = self.is_chain(self.i);
-            self.chain_end = end;
-            !conditional && (tests == 1 || (ends_in_test && first))
-        };
-        if swallow {
-            let pattern = self.pattern_in(PatternCtx::Is).with("pattern");
-            return node(
-                "is_pattern_expression",
-                vec![left.with("expression"), kw, pattern],
-            );
-        }
-        // Not taken: a bare name before `&&` / `||` is a type, other
-        // constants are what binds tightest.
+        // A bare name before `&&` / `||` is a type.
         if self.is_ident(self.i)
             && !matches!(self.word(), "not" | "var" | "_")
             && matches!(self.kind_at(self.i + 1), L::Op("&&" | "||"))
@@ -342,86 +289,11 @@ impl Parser<'_> {
                 vec![left.with("left"), kw.with("operator"), right],
             );
         }
-        let pattern = self.pattern_in(PatternCtx::Narrow).with("pattern");
-        let e = node(
+        let pattern = self.pattern_in(PatternCtx::Is).with("pattern");
+        node(
             "is_pattern_expression",
             vec![left.with("expression"), kw, pattern],
-        );
-        self.postfix(e)
-    }
-
-    /// Whether the pattern at `n`, after an `is`, may be a constant (so
-    /// tree-sitter's parse forks there): not a declaration (`T x`), a
-    /// `var`, a recursive or list pattern, or a type.
-    fn is_forks(&self, n: usize) -> bool {
-        let n = if self.is(n, "not") { n + 1 } else { n };
-        match self.kind_at(n) {
-            L::Op("(" | "{" | "[") => false,
-            L::Name if self.is(n, "var") || PREDEFINED.contains(&self.word_at(n)) => false,
-            L::Name if self.is_ident(n) => match self.scan_type_in(n, TypeCtx::Expression) {
-                Some(t) => {
-                    !(self.is_ident(t) && !matches!(self.word_at(t), "and" | "or" | "when"))
-                        && !self.is(t, "(")
-                        && !self.is(t, "{")
-                }
-                None => true,
-            },
-            _ => true,
-        }
-    }
-
-    /// The chain an `is` at `n` heads: the token it ends at, how many of
-    /// its `is` tests fork tree-sitter's parse, whether it ends in one, and
-    /// whether a `? :` follows. tree-sitter takes the chain into the first
-    /// `is` when it holds one such test, or (heading the expression) ends
-    /// in one, and no `? :` follows.
-    fn is_chain(&self, n: usize) -> (usize, usize, bool, bool) {
-        let mut depth = 0usize;
-        let mut k = n;
-        let mut tests = 1;
-        let mut after_last = false;
-        let mut conditional = false;
-        loop {
-            match self.kind_at(k) {
-                L::Op("(" | "[" | "{") | L::InterpOpen => depth += 1,
-                L::Op(")" | "]" | "}") | L::InterpClose => {
-                    if depth == 0 {
-                        break;
-                    }
-                    depth -= 1;
-                }
-                L::Eof | L::Directive(_) => break,
-                _ if depth > 0 => {}
-                L::Op(";" | "," | "=>" | ":") => break,
-                L::Op("?") => {
-                    let access = (self.is(k + 1, ".") && self.is_ident(k + 2))
-                        || (self.is(k + 1, "[") && self.adjacent(k));
-                    if !access {
-                        conditional = true;
-                        break;
-                    }
-                }
-                L::Op(o) if ASSIGNMENTS.contains(&o) => break,
-                L::Op(
-                    "&&" | "||" | "|" | "&" | "^" | "==" | "!=" | "??" | "<" | ">" | "<=" | "+"
-                    | "-" | "*" | "/" | "%" | "<<",
-                ) => {
-                    let binary = !matches!(self.kind_at(k - 1), L::Op(_))
-                        && !self.is(k - 1, "is")
-                        && !self.is(k - 1, "not");
-                    if binary {
-                        after_last = true;
-                    }
-                }
-                L::Name if self.is(k, "is") && self.is_forks(k + 1) => {
-                    tests += 1;
-                    after_last = false;
-                }
-                _ => {}
-            }
-            k += 1;
-        }
-        (k, tests, !after_last, conditional)
+        )
     }
 
     fn unary(&mut self) -> Item {
@@ -465,98 +337,40 @@ impl Parser<'_> {
             || self.is(n, "(") && self.is_ident(n - 1)
     }
 
-    /// `(T)value`, if this is a cast.
+    /// `(T)value`, if this is a cast, by the C# specification's rule
+    /// (§12.9.7): the parentheses hold a type, and either that type is not
+    /// also an expression (`int`, `List<int>`, `T[]`, `T?`) and a value
+    /// follows, or what follows is `~`, `!`, `(`, a name, a literal or a
+    /// keyword other than `as` and `is`. So `(a) - b` subtracts and `(a)[0]`
+    /// indexes, while `(int)-x` and `(T)x` cast.
     fn cast(&mut self) -> Option<Item> {
         let t = self.scan_type_in(self.i + 1, TypeCtx::Expression)?;
         if !self.is(t, ")") || !self.cast_value_start(t + 1) {
+            return None;
+        }
+        let name_only = (self.i + 1..t).all(|k| self.is_ident(k) || self.is(k, "."));
+        if name_only && !self.cast_after_name(t + 1) {
             return None;
         }
         // `(x) => …` is a lambda, not a cast.
         if self.lambda_at(self.i) {
             return None;
         }
-        let misread = self.cast_misread_at(t + 1);
         let open = self.punct();
         let ty = self.ty_in(TypeCtx::Expression).with("type");
         let close = self.expect(")");
-        if misread {
-            // `(T)a.F<A>(x)`: tree-sitter's parse prefers
-            // `((T)a.F < A) > (x)`, the smaller tree of two with a cast.
-            let value = if self.at("new") {
-                let new = self.punct();
-                let ty = self.identifier().with("type");
-                node("object_creation_expression", vec![new, ty])
-            } else {
-                let mut e = self.identifier();
-                while self.at(".") {
-                    let dot = self.punct();
-                    let name = self.identifier().with("name");
-                    e = node(
-                        "member_access_expression",
-                        vec![e.with("expression"), dot, name],
-                    );
-                }
-                e
-            };
-            let cast = node(
-                "cast_expression",
-                vec![open, ty, close, value.with("value")],
-            );
-            let lt = self.punct().with("operator");
-            let arg = if self.at("(") {
-                self.paren_expression()
-            } else {
-                self.name_expression()
-            };
-            let left = node(
-                "binary_expression",
-                vec![cast.with("left"), lt, arg.with("right")],
-            );
-            let gt = self.punct().with("operator");
-            let right = self.expr_bp(REL + 1).with("right");
-            return Some(node(
-                "binary_expression",
-                vec![left.with("left"), gt, right],
-            ));
-        }
         let value = self.unary().with("value");
         Some(node("cast_expression", vec![open, ty, close, value]))
     }
 
-    /// At a cast's value: `a.b.F<A>(x)` or `new X<A>(x)`, with one type
-    /// argument that reads as an expression and one parenthesized
-    /// expression after it.
-    fn cast_misread_at(&self, v: usize) -> bool {
-        let mut k = v;
-        if self.is(k, "new") {
-            k += 1;
-            if !self.is_ident(k) {
-                return false;
-            }
-            k += 1;
-        } else {
-            if !self.is_ident(k) {
-                return false;
-            }
-            k += 1;
-            while self.is(k, ".") && self.is_ident(k + 1) {
-                k += 2;
-            }
+    /// After `(A.B)`: whether the token at `n` makes it a cast.
+    fn cast_after_name(&self, n: usize) -> bool {
+        match self.kind_at(n) {
+            L::Op(o) => matches!(o, "~" | "!" | "("),
+            L::Name => !matches!(self.word_at(n), "as" | "is"),
+            L::Int | L::Real | L::Quote | L::Verbatim | L::RawStart | L::InterpStart => true,
+            _ => false,
         }
-        if !self.is(k, "<") {
-            return false;
-        }
-        let arg = k + 1;
-        let close = if self.is(arg, "(") {
-            self.scan_balanced(arg)
-        } else {
-            self.scan_name(arg)
-        };
-        let Some(close) = close else { return false };
-        if !self.is(close, ">") || !self.is(close + 1, "(") || self.is(close + 2, ")") {
-            return false;
-        }
-        !self.paren_has_comma(close + 1)
     }
 
     fn postfix(&mut self, mut e: Item) -> Item {
@@ -590,6 +404,24 @@ impl Parser<'_> {
                     let _ = o;
                     let op = self.punct();
                     e = node("postfix_unary_expression", vec![e, op]);
+                }
+                // `?.` / `?[`: a null-conditional access of the primary
+                // before it (`x + b?.c` adds `b?.c`).
+                L::Op("?") if self.conditional_access_at().is_some() => {
+                    let binding = self.conditional_access_at() == Some(true);
+                    let q = self.punct();
+                    let b = if binding {
+                        let dot = self.punct();
+                        let name = self.simple_name_expr().with("name");
+                        node("member_binding_expression", vec![dot, name])
+                    } else {
+                        self.nested(Self::bracketed_argument_list)
+                            .renamed("element_binding_expression")
+                    };
+                    e = node(
+                        "conditional_access_expression",
+                        vec![e.with("condition"), q, b],
+                    );
                 }
                 _ => return e,
             }
@@ -1010,9 +842,6 @@ impl Parser<'_> {
     // ---- creation --------------------------------------------------------
 
     fn new_expression(&mut self) -> Item {
-        if let Some(e) = self.new_misread() {
-            return e;
-        }
         let new = self.punct();
         let tuple_array = self.at("(")
             && self
@@ -1075,65 +904,6 @@ impl Parser<'_> {
             items.push(self.initializer_expression().with("initializer"));
         }
         node("object_creation_expression", items)
-    }
-
-    /// `new X<Y>(Z) { … }` with one type argument and one name in the
-    /// parentheses: tree-sitter's parse prefers `(new X < Y) > (Z){ … }`,
-    /// a cast's dynamic precedence winning, and so does colab's.
-    fn new_misread(&mut self) -> Option<Item> {
-        let n = self.i + 1;
-        if !self.is_ident(n) || !self.is(n + 1, "<") {
-            return None;
-        }
-        // One type argument that reads as an expression: a name, or a
-        // tuple of declarations.
-        let arg = n + 2;
-        let close = if self.is(arg, "(") {
-            self.scan_balanced(arg)?
-        } else {
-            self.scan_name(arg)?
-        };
-        if !self.is(close, ">") || !self.is(close + 1, "(") {
-            return None;
-        }
-        let paren = close + 1;
-        let inner_end = self.scan_name(paren + 1)?;
-        if !self.is(inner_end, ")") || !self.is(inner_end + 1, "{") {
-            return None;
-        }
-        // `new X<…>` is `new X`, then `<` and `>` as operators.
-        let new = self.punct();
-        let ty = self.identifier().with("type");
-        let creation = node("object_creation_expression", vec![new, ty]);
-        let lt = self.punct().with("operator");
-        let arg = if self.at("(") {
-            self.paren_expression()
-        } else {
-            self.name_expression()
-        }
-        .with("right");
-        let left = node("binary_expression", vec![creation.with("left"), lt, arg]);
-        let gt = self.punct().with("operator");
-        let open = self.punct();
-        let cast_ty = self.name().with("type");
-        let close = self.expect(")");
-        let value = self.initializer_expression().with("value");
-        let cast = node("cast_expression", vec![open, cast_ty, close, value]).with("right");
-        Some(node("binary_expression", vec![left.with("left"), gt, cast]))
-    }
-
-    /// `A.B.C` as an expression: identifiers and member accesses.
-    fn name_expression(&mut self) -> Item {
-        let mut e = self.simple_name_expr();
-        while self.at(".") && self.is_ident(self.i + 1) {
-            let dot = self.punct();
-            let name = self.simple_name_expr().with("name");
-            e = node(
-                "member_access_expression",
-                vec![e.with("expression"), dot, name],
-            );
-        }
-        e
     }
 
     fn stackalloc(&mut self) -> Item {
@@ -1305,13 +1075,10 @@ impl Parser<'_> {
         self.primary_pattern(ctx)
     }
 
-    /// A relational pattern's expression: tree-sitter's takes a whole
-    /// conditional (`x is < 0 ? a : b` is `x is < (0 ? a : b)`).
-    fn relational_operand(&mut self, ctx: PatternCtx) -> Item {
-        if ctx == PatternCtx::Narrow {
-            return self.unary();
-        }
-        self.expr_bp(2)
+    /// A relational pattern's expression: a shift expression, as the
+    /// grammar has it (`x is < 0 ? a : b` tests `< 0`).
+    fn relational_operand(&mut self, _ctx: PatternCtx) -> Item {
+        self.expr_bp(SHIFT)
     }
 
     fn primary_pattern(&mut self, ctx: PatternCtx) -> Item {
@@ -1426,29 +1193,19 @@ impl Parser<'_> {
         node("constant_pattern", vec![e])
     }
 
-    /// A constant's (or a relational pattern's) expression. tree-sitter's
-    /// takes any binary operator, even after `is` (`x is null || y` is
-    /// `x is (null || y)`), unless the `is` chain is not taken; a name
-    /// before `=>` is an arm's, not a lambda's.
+    /// A constant pattern's expression. After `is`, what binds tighter than
+    /// a relational operator (`x is null || y` tests `null`; `x is a + b`
+    /// tests `a + b`), as Roslyn reads it; in a `case` label or a switch
+    /// arm, any expression but a conditional or assignment (`case A | B:`).
+    /// A name before `=>` is an arm's, not a lambda's.
     fn pattern_constant(&mut self, ctx: PatternCtx) -> Item {
-        if ctx == PatternCtx::Narrow {
-            // `x is A.B && …`: tree-sitter's constant is `A` (and `.B`
-            // applies to the `is`); before anything else the whole name.
-            if self.is_ident(self.i) {
-                let mut k = self.i + 1;
-                while self.is(k, ".") && self.is_ident(k + 1) {
-                    k += 2;
-                }
-                if matches!(self.kind_at(k), L::Op("&&" | "||")) {
-                    return self.simple_name_expr();
-                }
-            }
-            return self.unary();
-        }
         if self.is_ident(self.i) && self.is(self.i + 1, "=>") {
             return self.simple_name_expr();
         }
-        self.expr_bp(COALESCING)
+        match ctx {
+            PatternCtx::Is => self.expr_bp(SHIFT),
+            PatternCtx::Case => self.expr_bp(COALESCING),
+        }
     }
 
     /// Whether the parentheses at `t` (after a name, or alone) hold a

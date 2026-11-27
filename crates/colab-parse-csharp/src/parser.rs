@@ -258,9 +258,6 @@ pub(crate) struct Parser<'s> {
     pub errors: bool,
     /// The directives' nodes, extras placed after parsing.
     pub extras: Vec<Item>,
-    /// The token an `is` chain ends at, while one is being read (see
-    /// `is_chain`).
-    chain_end: usize,
     /// A conditional's alternative was a conditional directive holding
     /// the rest of a `return` statement, its `;` included.
     tail_taken: bool,
@@ -278,7 +275,6 @@ impl<'s> Parser<'s> {
             i: 0,
             errors: false,
             extras: Vec::new(),
-            chain_end: 0,
             tail_taken: false,
             no_lambda: false,
             queries: 0,

@@ -3631,7 +3631,12 @@ sees the source as written.
 ## C# (`colab-lang-csharp`)
 
 Powered by colab's own C# parser (`colab-parse-csharp`, with
-tree-sitter-c-sharp's node kinds).
+tree-sitter-c-sharp's node kinds). Expressions follow the C#
+specification where tree-sitter-c-sharp reads otherwise: `(a) - b`
+subtracts and `(a)[0]` indexes (a parenthesized name is a cast only
+before `~`, `!`, `(`, a name or a literal), `x + b?.c` adds a
+null-conditional access, `x is null || y` is `(x is null) || y`, and
+`(T)F<A>(x)` casts a generic call.
 
 `csharp::using` covers all three forms. For the alias form the target is
 the **right-hand side**, since that is the thing being imported:
