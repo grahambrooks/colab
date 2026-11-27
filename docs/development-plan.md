@@ -806,6 +806,31 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    (`imports.rs` and `packages.rs` ported; `CallShape::Through` replaces a
    call through its `value_arguments`, a trailing lambda kept);
    tree-sitter-kotlin-ng is a test dependency. Swift next, the last.
+   **Swift, done 2026-11-26:** `colab-parse-swift`, 4,446 lines, no
+   dependency but `colab-syntax`. Held to swift-argument-parser,
+   Alamofire, vapor, swift-composable-architecture, swift-nio, SwiftLint,
+   swift-format and swift-collections (3,713 files, 3,298 clean to
+   tree-sitter): 2,995 the same (90.8%), 14 clean files read with an
+   error, in 0.7 s against 3.2 s. The first run had 26%. tree-sitter-swift's
+   precedences are unlike Swift's and are copied: a call suffix binds
+   loosest over arithmetic, casts and prefix operators (`a + b.f()` is
+   `(a + b.f)()`, `-(x)` calls `-`), while a comparison's, equality's,
+   conjunction's or custom operator's right side is the rest of the
+   expression (`a == b && c` is `a == (b && c)`); `try`, `await` and
+   `unsafe` end at their operand's first call (`try f().g` is
+   `(try f()).g`, `try f() + 1` is `(try f()) + 1`); `!=`, `<=`, `>=` lex
+   as custom operators; a trailing closure after a property's value calls
+   the whole value; `\.a.b` is navigation around `\`; `[T.U].x`,
+   `B<K, T>.x`, `[K: any V]()` and `R<S, any E> { }` are types; a block
+   comment at the start of a string's text is a comment (the scanner's
+   reading). Most of the rest are readings tree-sitter's GLR parse picks
+   by how many versions it holds (`try` in parentheses takes chained
+   calls, attribute arguments after a space). `swift` runs on it
+   (`imports.rs` ported; `CallShape::Through` follows a path,
+   `call_suffix` › `value_arguments`, so a trailing closure is kept);
+   tree-sitter-swift is a test dependency. No backend reads with
+   tree-sitter now; the runtime is still linked through `colab-rewrite`
+   (`Syntax::TreeSitter`, the parse cache), which goes next.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

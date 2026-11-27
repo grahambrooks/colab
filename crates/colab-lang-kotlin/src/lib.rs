@@ -29,7 +29,7 @@ pub static LANG: SourceLanguage = SourceLanguage {
     // A trailing lambda after the parentheses is left in place.
     calls: CallShape::Through {
         kinds: &["call_expression"],
-        arguments: "value_arguments",
+        arguments: &["value_arguments"],
     },
     qualifiers: None,
     own: None,

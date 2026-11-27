@@ -684,7 +684,15 @@ the parenthesised part is rewritten.
 
 ## Swift (`colab-lang-swift`)
 
-Powered by `tree-sitter-swift`.
+Powered by colab's own parser (`colab-parse-swift`), with
+tree-sitter-swift's node kinds. tree-sitter-swift's readings are kept
+where they are consistent: a call binds loosest, so `a + b.f()` is a call
+of `a + b.f`; `try` and `await` end at their operand's first call
+(`try f().g` is `(try f()).g`); `!=`, `<=` and `>=` are
+`infix_expression`s with a `custom_operator`; a trailing closure after a
+property's value calls the whole value. Where tree-sitter's parse chose
+between readings by how many it held at the time (some `try` operands,
+some attribute arguments after a space), the parser picks one rule.
 
 `swift::import` covers plain, submodule (`UIKit.UIView`), and
 kind-qualified (`import class Old.Thing`) forms; a rename keeps the kind

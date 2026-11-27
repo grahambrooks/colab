@@ -281,6 +281,7 @@ dependencies = [
  "colab-parse-php",
  "colab-parse-python",
  "colab-parse-rust",
+ "colab-parse-swift",
  "colab-rewrite",
  "colab-syntax",
  "similar",
@@ -469,9 +470,9 @@ name = "colab-lang-swift"
 version = "2026.11.24"
 dependencies = [
  "colab-core",
+ "colab-parse-swift",
  "colab-rewrite",
- "tree-sitter",
- "tree-sitter-swift",
+ "colab-syntax",
 ]
 
 [[package]]
@@ -599,6 +600,13 @@ version = "2026.11.24"
 dependencies = [
  "colab-syntax",
  "ra_ap_syntax",
+]
+
+[[package]]
+name = "colab-parse-swift"
+version = "2026.11.24"
+dependencies = [
+ "colab-syntax",
 ]
 
 [[package]]

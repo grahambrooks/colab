@@ -33,13 +33,18 @@ pub static LANG: SourceLanguage = SourceLanguage {
         "multi_line_str_text",
     ],
     // A trailing closure after the parentheses is left in place.
-    calls: CallShape::Located {
-        locate: calls::callee,
-        through_arguments: true,
+    calls: CallShape::Through {
+        kinds: &["call_expression"],
+        arguments: &["call_suffix", "value_arguments"],
     },
     qualifiers: None,
     own: None,
 };
+
+/// `source` as colab's Swift tree (`colab-parse-swift`).
+pub(crate) fn tree(source: &str) -> Option<colab_syntax::Tree> {
+    colab_parse_swift::parse(source).ok()
+}
 
 /// Plug-in entry point for the `swift` namespace.
 pub struct SwiftBackend;
@@ -111,7 +116,7 @@ impl LanguageBackend for SwiftBackend {
     }
 
     fn description(&self) -> &'static str {
-        "Swift source rewrites via tree-sitter-swift."
+        "Swift source rewrites via colab's own Swift parser."
     }
 
     fn capabilities(&self) -> &'static [Capability] {

@@ -62,7 +62,8 @@ crates/
   colab-parse-python/ # Python as colab's own tree: a lexer with the offside rule, and a recursive-descent parser.
   colab-lang-rust/    # Rust backend (rust-analyzer's parser via colab-parse-rust + toml_edit).
   colab-parse-rust/   # Rust as colab's own tree from ra_ap_syntax: tree-sitter's kind names as aliases, its fields.
-  colab-lang-swift/   # Swift backend (tree-sitter-swift).
+  colab-lang-swift/   # Swift backend (colab's own parser, colab-parse-swift).
+  colab-parse-swift/  # Swift as colab's own tree: a lexer noting line ends, recursive descent ending statements as tree-sitter-swift's scanner does.
   colab-lang-ts/      # TypeScript backend (colab-parse-js, TypeScript dialect); import via colab-lang-js.
   colab-lang-tsx/     # TSX backend (colab-parse-js, TSX dialect); patterns via colab-lang-ts, import via colab-lang-js.
   colab-lang-json/    # JSON config (its own reader, tree.rs): key by JSON Pointer.

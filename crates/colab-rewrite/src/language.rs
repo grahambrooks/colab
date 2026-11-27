@@ -67,14 +67,16 @@ pub enum CallShape {
     /// `method_invocation`, PHP's four call kinds, on parsers of colab's
     /// own.
     Prefixed(&'static [&'static str]),
-    /// Node kinds whose callee is their text before an argument list child
-    /// of kind `arguments` (Kotlin's `value_arguments`), on parsers of
-    /// colab's own. The call is replaced up to the end of that list, so a
-    /// trailing lambda after it survives; a call without one (a lambda
-    /// only) is no call to rewrite.
+    /// Node kinds whose callee is their text before an argument list,
+    /// found by following `arguments` from the call, a named child of
+    /// each kind in turn (Kotlin's `["value_arguments"]`, Swift's
+    /// `["call_suffix", "value_arguments"]`), on parsers of colab's own.
+    /// The call is replaced up to the end of that list, so a trailing
+    /// lambda after it survives; a call without one (a lambda only) is no
+    /// call to rewrite.
     Through {
         kinds: &'static [&'static str],
-        arguments: &'static str,
+        arguments: &'static [&'static str],
     },
 }
 
@@ -194,7 +196,7 @@ impl SourceLanguage {
     /// `arguments` field) or `Prefixed` (the text before `arguments`),
     /// outermost first.
     fn own_calls(&self, source: &str) -> Option<Vec<Call>> {
-        let (kinds, prefixed, through): (&[&str], bool, Option<&str>) = match &self.calls {
+        let (kinds, prefixed, through): (&[&str], bool, Option<&[&str]>) = match &self.calls {
             CallShape::Fields(kind) => (std::slice::from_ref(kind), false, None),
             CallShape::Prefixed(kinds) => (kinds, true, None),
             CallShape::Through { kinds, arguments } => (kinds, true, Some(arguments)),
@@ -206,7 +208,9 @@ impl SourceLanguage {
                 .filter(|n| !n.is_trivia() && kinds.contains(&n.kind_name()))
                 .filter_map(|n| {
                     let args = match through {
-                        Some(kind) => n.named_children().find(|c| c.kind_name() == kind)?,
+                        Some(path) => path.iter().try_fold(n, |at, kind| {
+                            at.named_children().find(|c| c.kind_name() == *kind)
+                        })?,
                         None => n.child_by_field("arguments")?,
                     };
                     let range = match through {

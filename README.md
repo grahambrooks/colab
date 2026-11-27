@@ -345,7 +345,7 @@ crates/
   colab-lang-php/     # PHP backend (colab's own parser, colab-parse-php)
   colab-lang-python/  # Python backend
   colab-lang-rust/    # Rust backend
-  colab-lang-swift/   # Swift backend
+  colab-lang-swift/   # Swift backend (colab's own parser, colab-parse-swift)
   colab-lang-json/    # JSON (key by JSON Pointer)
   colab-lang-markdown/  # Markdown by structure (sections, rows, items, links, …)
   colab-lang-text/    # Any text file: a literal string or whole word

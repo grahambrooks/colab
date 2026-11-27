@@ -11,7 +11,7 @@ use colab_rewrite::pattern::PatternLanguage;
 /// then a class member, then a protocol's requirement (`func $F() async`).
 pub(crate) fn language() -> PatternLanguage {
     PatternLanguage {
-        syntax: colab_rewrite::pattern::Syntax::TreeSitter(tree_sitter_swift::LANGUAGE.into()),
+        syntax: colab_rewrite::pattern::Syntax::Own(&colab_parse_swift::PARSER),
         expando: 'µ',
         contexts: &[
             "func f() {\n@@PATTERN@@\n}\n",

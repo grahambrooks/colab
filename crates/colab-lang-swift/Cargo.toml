@@ -6,13 +6,13 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Swift source rewrites via tree-sitter-swift."
+description = "Swift source rewrites via colab's own Swift parser."
 
 [dependencies]
 colab-core = { workspace = true }
 colab-rewrite = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-swift = { workspace = true }
+colab-syntax = { workspace = true }
+colab-parse-swift = { workspace = true }
 
 [lints]
 workspace = true

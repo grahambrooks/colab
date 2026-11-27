@@ -1,8 +1,7 @@
 //! What the tests that parse with the backends' parsers share.
 
-/// The tree-sitter grammar of each language still read with tree-sitter,
-/// and of the ones colab's own parsers are compared against (Go, Python,
-/// Java).
+/// The tree-sitter grammar colab's own parser of each language is compared
+/// against (no backend reads with tree-sitter).
 pub fn grammar(lang: &str) -> tree_sitter::Language {
     match lang {
         "c" => tree_sitter_c::LANGUAGE.into(),
@@ -22,8 +21,7 @@ pub fn grammar(lang: &str) -> tree_sitter::Language {
 }
 
 /// `text` as colab's tree, by the parser `lang`'s backend reads it with:
-/// rust-analyzer's for Rust, colab's own for Go, Python, Java,
-/// JavaScript, TypeScript, TSX, C# and C++, tree-sitter's for the rest.
+/// rust-analyzer's for Rust, colab's own for the rest.
 #[allow(dead_code)] // not every test that shares this module parses
 pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
     match lang {
@@ -40,6 +38,7 @@ pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
         "cpp" => colab_parse_c::parse(text).expect("colab's C++ tree builds"),
         "php" => colab_parse_php::parse(text).expect("colab's PHP tree builds"),
         "kotlin" => colab_parse_kotlin::parse(text).expect("colab's Kotlin tree builds"),
+        "swift" => colab_parse_swift::parse(text).expect("colab's Swift tree builds"),
         "c" => {
             colab_parse_c::parse_as(text, colab_parse_c::Dialect::C).expect("colab's C tree builds")
         }
