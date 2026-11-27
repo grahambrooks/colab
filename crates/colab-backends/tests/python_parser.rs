@@ -1,9 +1,10 @@
-//! `colab_parse_python`, colab's own Python parser, held to
-//! tree-sitter-python's trees while Python moves off tree-sitter: over
-//! every `.py` file in the repo (or under `COLAB_PY_FILES`, a directory,
-//! for a wider run), each tree must be lossless, and where tree-sitter
-//! reads a file cleanly the two trees must hold the same nodes, in the same
-//! order, with the same kinds, fields, named flags and ranges.
+//! `colab_parse_python`, colab's own Python parser, compared with
+//! tree-sitter-python's trees: over every `.py` file in the repo (or under
+//! `COLAB_PY_FILES`, a directory, for a wider run), each tree must be
+//! lossless; where tree-sitter reads a repo file cleanly, the first node at
+//! which the trees differ is held to the reviewed baseline
+//! `tests/parsers/python.diffs` (`COLAB_BLESS=1` rewrites it). tree-sitter
+//! is a reference, not the target.
 //! `COLAB_PY_SHOW=<n>` lists the first n differences.
 
 mod common;
@@ -139,10 +140,6 @@ fn colab_python_trees_are_lossless_and_tree_sitters() {
     }
     assert!(lossy.is_empty(), "not lossless:\n{}", lossy.join("\n"));
     if wide.is_none() {
-        assert!(
-            differ.is_empty(),
-            "{} files differ from tree-sitter",
-            differ.len()
-        );
+        common::baseline("python", &differ);
     }
 }

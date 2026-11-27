@@ -1,10 +1,11 @@
-//! `colab_parse_java`, colab's own Java parser, held to tree-sitter-java's
-//! trees while Java moves off tree-sitter: over every `.java` file in the
-//! repo (or under `COLAB_JAVA_FILES`, a directory, for a wider run), each
-//! tree must be lossless, and where tree-sitter reads a file cleanly the
-//! two trees must hold the same nodes, in the same order, with the same
-//! kinds, fields, named flags and ranges. `COLAB_JAVA_SHOW=<n>` lists the
-//! first n differences.
+//! `colab_parse_java`, colab's own Java parser, compared with
+//! tree-sitter-java's trees: over every `.java` file in the repo (or under
+//! `COLAB_JAVA_FILES`, a directory, for a wider run), each tree must be
+//! lossless; where tree-sitter reads a repo file cleanly, the first node at
+//! which the trees differ is held to the reviewed baseline
+//! `tests/parsers/java.diffs` (`COLAB_BLESS=1` rewrites it). tree-sitter is
+//! a reference, not the target. `COLAB_JAVA_SHOW=<n>` lists the first n
+//! differences.
 
 mod common;
 
@@ -139,10 +140,6 @@ fn colab_java_trees_are_lossless_and_tree_sitters() {
     }
     assert!(lossy.is_empty(), "not lossless:\n{}", lossy.join("\n"));
     if wide.is_none() {
-        assert!(
-            differ.is_empty(),
-            "{} files differ from tree-sitter",
-            differ.len()
-        );
+        common::baseline("java", &differ);
     }
 }

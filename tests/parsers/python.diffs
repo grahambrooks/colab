@@ -1,0 +1,3 @@
+# The repo's python files whose colab tree differs from tree-sitter's: the first
+# differing node of each. Reviewed, not a target; rewrite with
+# COLAB_BLESS=1 cargo test -p colab-backends --test <lang>_parser

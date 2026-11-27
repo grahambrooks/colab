@@ -2,6 +2,7 @@
 
 /// The tree-sitter grammar colab's own parser of each language is compared
 /// against (no backend reads with tree-sitter).
+#[allow(dead_code)]
 pub fn grammar(lang: &str) -> tree_sitter::Language {
     match lang {
         "c" => tree_sitter_c::LANGUAGE.into(),
@@ -46,9 +47,45 @@ pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
     }
 }
 
-/// `text` as tree-sitter reads it, whatever the backend uses: what colab's
-/// own parsers are held to.
+/// `text` as tree-sitter reads it: what colab's own parsers are compared
+/// against.
 #[allow(dead_code)]
 pub fn tree_sitter_tree(lang: &str, text: &str) -> colab_syntax::Tree {
     colab_syntax::Tree::parse_tree_sitter(&grammar(lang), text).expect("tree-sitter parses")
+}
+
+/// Holds `differ`, each repo file's first difference from tree-sitter's
+/// tree, to the reviewed baseline `tests/parsers/<name>.diffs`;
+/// `COLAB_BLESS=1` rewrites it. tree-sitter is a reference, not the
+/// target: colab's parsers read each language's own grammar where
+/// tree-sitter misreads it, and such a change is a reviewed baseline diff.
+#[allow(dead_code)]
+pub fn baseline(name: &str, differ: &[String]) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/parsers")
+        .join(format!("{name}.diffs"));
+    let mut lines = differ.to_vec();
+    lines.sort();
+    let mut text = format!(
+        "# The repo's {name} files whose colab tree differs from tree-sitter's: the first\n\
+         # differing node of each. Reviewed, not a target; rewrite with\n\
+         # COLAB_BLESS=1 cargo test -p colab-backends --test <lang>_parser\n"
+    );
+    for line in &lines {
+        text.push_str(line);
+        text.push('\n');
+    }
+    if std::env::var_os("COLAB_BLESS").is_some() {
+        std::fs::write(&path, &text).expect("the baseline is writable");
+        return;
+    }
+    let blessed = std::fs::read_to_string(&path).unwrap_or_default();
+    if blessed != text {
+        let diff = similar::TextDiff::from_lines(&blessed, &text);
+        panic!(
+            "{name}: the trees' differences from tree-sitter changed; review and bless \
+             (COLAB_BLESS=1):\n{}",
+            diff.unified_diff().context_radius(1)
+        );
+    }
 }

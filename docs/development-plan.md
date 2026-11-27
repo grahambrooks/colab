@@ -892,6 +892,13 @@ is implemented yet; most items change what `<lang>::pattern` matches.
    readings in order of how often patterns meet them: Swift's call and
    loose-operator precedence and `try` scope, Kotlin's prefix operators,
    C#'s casts and `is` chains, then the rest.
+   **Decided 2026-11-27:** the looser approach. A long-term tree-sitter
+   comparison held the parsers to readings that make patterns wrong and
+   had to be compensated for. Parsers read each language's own grammar;
+   tree-sitter is a reference whose differences are a reviewed baseline.
+   **Mechanism done 2026-11-27:** `tests/parsers/<lang>.diffs`
+   (`common::baseline`), blessed empty, and `tests/parsers/corpora.toml`
+   with `scripts/parser-corpora.py` (item 8).
 2. **Parse a pattern by entry point, not in textual wrappers.** A
    pattern that is not a file is tried bare, then in each of the
    backend's context wrappers: 57 `@@PATTERN@@` wrappers across 13

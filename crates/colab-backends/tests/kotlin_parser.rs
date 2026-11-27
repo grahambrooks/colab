@@ -1,11 +1,14 @@
-//! `colab_parse_kotlin`, colab's own Kotlin parser, held to
-//! tree-sitter-kotlin-ng's trees while Kotlin moves off tree-sitter: over
-//! every Kotlin file in the repo (or under `COLAB_KOTLIN_FILES`, a
-//! directory, for a wider run), each tree must be lossless, and where
-//! tree-sitter reads a file cleanly the two trees must hold the same nodes,
-//! in the same order, with the same kinds, fields, named flags and ranges.
+//! `colab_parse_kotlin`, colab's own Kotlin parser, compared with
+//! tree-sitter-kotlin-ng's trees: over every Kotlin file in the repo (or
+//! under `COLAB_KOTLIN_FILES`, a directory, for a wider run), each tree must
+//! be lossless; where tree-sitter reads a repo file cleanly, the first node
+//! at which the trees differ is held to the reviewed baseline
+//! `tests/parsers/kotlin.diffs` (`COLAB_BLESS=1` rewrites it). tree-sitter
+//! is a reference, not the target.
 //! `COLAB_KOTLIN_SHOW=<n>` lists the first n differences (and clean files
 //! read with an error).
+
+mod common;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -155,10 +158,6 @@ fn colab_kotlin_trees_are_lossless_and_tree_sitters() {
     }
     assert!(lossy.is_empty(), "not lossless:\n{}", lossy.join("\n"));
     if wide.is_none() {
-        assert!(
-            differ.is_empty(),
-            "{} Kotlin files differ from tree-sitter",
-            differ.len()
-        );
+        common::baseline("kotlin", &differ);
     }
 }

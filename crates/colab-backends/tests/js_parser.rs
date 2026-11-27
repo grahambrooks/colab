@@ -1,10 +1,11 @@
 //! `colab_parse_js`, colab's own JavaScript / TypeScript / TSX parser,
-//! held to tree-sitter's trees while those languages move off
-//! tree-sitter: over every file of a dialect in the repo (or under
-//! `COLAB_JS_FILES` / `COLAB_TS_FILES` / `COLAB_TSX_FILES`, a directory,
-//! for a wider run), each tree must be lossless, and where tree-sitter
-//! reads a file cleanly the two trees must hold the same nodes, in the same
-//! order, with the same kinds, fields, named flags and ranges.
+//! compared with tree-sitter's trees: over every file of a dialect in the
+//! repo (or under `COLAB_JS_FILES` / `COLAB_TS_FILES` / `COLAB_TSX_FILES`,
+//! a directory, for a wider run), each tree must be lossless; where
+//! tree-sitter reads a repo file cleanly, the first node at which the trees
+//! differ is held to the reviewed baseline `tests/parsers/{js,ts,tsx}.diffs`
+//! (`COLAB_BLESS=1` rewrites it). tree-sitter is a reference, not the
+//! target.
 //! `COLAB_JS_SHOW=<n>` lists the first n differences (and clean files read
 //! with an error).
 
@@ -157,11 +158,7 @@ fn compare(dialect: Dialect, lang: &str, exts: &[&str], env: &str) {
     }
     assert!(lossy.is_empty(), "not lossless:\n{}", lossy.join("\n"));
     if wide.is_none() {
-        assert!(
-            differ.is_empty(),
-            "{} {lang} files differ from tree-sitter",
-            differ.len()
-        );
+        common::baseline(lang, &differ);
     }
 }
 

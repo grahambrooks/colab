@@ -1,11 +1,12 @@
-//! `colab_parse_c`, colab's own C++ and C parser, held to tree-sitter-cpp's
-//! and tree-sitter-c's trees while they move off tree-sitter: over every
-//! C++ (C) file in the repo (or under `COLAB_CPP_FILES` / `COLAB_C_FILES`,
-//! a directory, for a wider run), each tree
-//! must be lossless, and where tree-sitter reads a file cleanly the two
-//! trees must hold the same nodes, in the same order, with the same kinds,
-//! fields, named flags and ranges. `COLAB_CPP_SHOW=<n>` lists the first n
-//! differences (and clean files read with an error).
+//! `colab_parse_c`, colab's own C++ and C parser, compared with
+//! tree-sitter-cpp's and tree-sitter-c's trees: over every C++ (C) file in
+//! the repo (or under `COLAB_CPP_FILES` / `COLAB_C_FILES`, a directory, for
+//! a wider run), each tree must be lossless; where tree-sitter reads a repo
+//! file cleanly, the first node at which the trees differ is held to the
+//! reviewed baseline `tests/parsers/{cpp,c}.diffs` (`COLAB_BLESS=1`
+//! rewrites it). tree-sitter is a reference, not the target.
+//! `COLAB_CPP_SHOW=<n>` lists the first n differences (and clean files read
+//! with an error).
 
 mod common;
 
@@ -169,10 +170,6 @@ fn compare(dialect: colab_parse_c::Dialect, lang: &str, exts: &[&str], env: &str
     }
     assert!(lossy.is_empty(), "not lossless:\n{}", lossy.join("\n"));
     if wide.is_none() {
-        assert!(
-            differ.is_empty(),
-            "{} {lang} files differ from tree-sitter",
-            differ.len()
-        );
+        common::baseline(lang, &differ);
     }
 }

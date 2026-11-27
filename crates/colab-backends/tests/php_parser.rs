@@ -1,10 +1,13 @@
-//! `colab_parse_php`, colab's own PHP parser, held to tree-sitter-php's
-//! (`php_only`) trees while PHP moves off tree-sitter: over every PHP file
-//! in the repo (or under `COLAB_PHP_FILES`, a directory, for a wider run),
-//! each tree must be lossless, and where tree-sitter reads a file cleanly
-//! the two trees must hold the same nodes, in the same order, with the same
-//! kinds, fields, named flags and ranges. `COLAB_PHP_SHOW=<n>` lists the
+//! `colab_parse_php`, colab's own PHP parser, compared with
+//! tree-sitter-php's (`php_only`) trees: over every PHP file in the repo
+//! (or under `COLAB_PHP_FILES`, a directory, for a wider run), each tree
+//! must be lossless; where tree-sitter reads a repo file cleanly, the first
+//! node at which the trees differ is held to the reviewed baseline
+//! `tests/parsers/php.diffs` (`COLAB_BLESS=1` rewrites it). tree-sitter is
+//! a reference, not the target. `COLAB_PHP_SHOW=<n>` lists the
 //! first n differences (and clean files read with an error).
+
+mod common;
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -151,10 +154,6 @@ fn colab_php_trees_are_lossless_and_tree_sitters() {
     }
     assert!(lossy.is_empty(), "not lossless:\n{}", lossy.join("\n"));
     if wide.is_none() {
-        assert!(
-            differ.is_empty(),
-            "{} PHP files differ from tree-sitter",
-            differ.len()
-        );
+        common::baseline("php", &differ);
     }
 }

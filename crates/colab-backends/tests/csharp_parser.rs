@@ -1,9 +1,10 @@
-//! `colab_parse_csharp`, colab's own C# parser, held to
-//! tree-sitter-c-sharp's trees while C# moves off tree-sitter: over every
-//! `.cs` file in the repo (or under `COLAB_CS_FILES`, a directory, for a
-//! wider run), each tree must be lossless, and where tree-sitter reads a
-//! file cleanly the two trees must hold the same nodes, in the same order,
-//! with the same kinds, fields, named flags and ranges.
+//! `colab_parse_csharp`, colab's own C# parser, compared with
+//! tree-sitter-c-sharp's trees: over every `.cs` file in the repo (or under
+//! `COLAB_CS_FILES`, a directory, for a wider run), each tree must be
+//! lossless; where tree-sitter reads a repo file cleanly, the first node at
+//! which the trees differ is held to the reviewed baseline
+//! `tests/parsers/csharp.diffs` (`COLAB_BLESS=1` rewrites it). tree-sitter
+//! is a reference, not the target.
 //! `COLAB_CS_SHOW=<n>` lists the first n differences (and clean files read
 //! with an error).
 
@@ -149,10 +150,6 @@ fn colab_csharp_trees_are_lossless_and_tree_sitters() {
     }
     assert!(lossy.is_empty(), "not lossless:\n{}", lossy.join("\n"));
     if wide.is_none() {
-        assert!(
-            differ.is_empty(),
-            "{} C# files differ from tree-sitter",
-            differ.len()
-        );
+        common::baseline("csharp", &differ);
     }
 }
