@@ -1649,10 +1649,14 @@ impl<'s> Parser<'s> {
                 });
                 body.push(node("switch_rule", r));
             } else {
-                // A label with no statements after it is a group of its own,
-                // as tree-sitter-java reads `case A: case B: f();`.
+                // A group's labels, then its statements: `case A: case B:
+                // f();` is one group, as the JLS has it (tree-sitter-java
+                // makes `case A:` a group of its own).
                 let mut g = Vec::new();
-                if self.at("case") || self.at("default") {
+                while self.at("case")
+                    || (self.at("default")
+                        && (self.is(self.i + 1, ":") || self.is(self.i + 1, "->")))
+                {
                     g.push(self.switch_label());
                     g.push(self.expect(":"));
                 }
