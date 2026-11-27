@@ -1,3 +1,9 @@
 # The repo's csharp files whose colab tree differs from tree-sitter's: the first
 # differing node of each. Reviewed, not a target; rewrite with
 # COLAB_BLESS=1 cargo test -p colab-backends --test <lang>_parser
+tests/corpus/csharp/cast_and_is/expected/Rules.cs: node 40
+    ours   binary_expression None 87..94 l5 "(a) - b"
+    theirs cast_expression None 87..94 l5 "(a) - b"
+tests/corpus/csharp/cast_and_is/input/Rules.cs: node 40
+    ours   binary_expression None 87..94 l5 "(a) - b"
+    theirs cast_expression None 87..94 l5 "(a) - b"

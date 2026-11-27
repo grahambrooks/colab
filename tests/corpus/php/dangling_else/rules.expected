@@ -1,0 +1,1 @@
+1 php::pattern 'if ($C) f(); else g();' -> 'if ($C) f(); else h();'

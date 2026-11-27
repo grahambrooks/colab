@@ -1,0 +1,5 @@
+Rules.cs:6:17: [0] (int)-z
+    $T = int
+    $V = -z
+Rules.cs:7:17: [1] x is null
+    $X = x

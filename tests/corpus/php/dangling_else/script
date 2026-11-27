@@ -1,0 +1,5 @@
+// PHP: a dangling `else` is the nearest `if`'s, so the inner `if` here
+// is the one with an `else`.
+refactor "php-else" {
+    match php::pattern 'if ($C) f(); else g();' { replace 'if ($C) f(); else h();' }
+}

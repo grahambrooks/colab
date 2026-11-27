@@ -1,3 +1,9 @@
 # The repo's php files whose colab tree differs from tree-sitter's: the first
 # differing node of each. Reviewed, not a target; rewrite with
 # COLAB_BLESS=1 cargo test -p colab-backends --test <lang>_parser
+tests/corpus/php/dangling_else/expected/rules.php: node 27
+    ours   if_statement Some("body") 41..63 l4 "if ($b) f(); else h();"
+    theirs if_statement Some("body") 41..53 l4 "if ($b) f();"
+tests/corpus/php/dangling_else/input/rules.php: node 27
+    ours   if_statement Some("body") 41..63 l4 "if ($b) f(); else g();"
+    theirs if_statement Some("body") 41..53 l4 "if ($b) f();"

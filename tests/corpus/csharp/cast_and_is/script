@@ -1,0 +1,6 @@
+// C#: a parenthesized name before `-` is no cast (`(a) - b` subtracts),
+// `(int)-x` is one, and an `is` pattern's constant stops at `||`.
+refactor "csharp-reading" {
+    match csharp::pattern '($T)$V' { replace 'Cast<$T>($V)' }
+    match csharp::pattern '$X is null' { replace '$X == null' }
+}

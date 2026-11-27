@@ -1,0 +1,9 @@
+// Kotlin: a prefix operator takes the whole postfix expression
+// (`$X.isEmpty()` binds `x` in `!x.isEmpty()`), a trailing lambda is its
+// call's (the call's rewrite keeps the lambda), and `listOf<T>()` is a
+// generic call.
+refactor "kotlin-reading" {
+    match kotlin::pattern '$X.isEmpty()' { replace 'isEmpty($X)' }
+    match kotlin::call "tracks.fold" { replace_call "tracks.foldLeft($args)" }
+    match kotlin::pattern 'listOf<$T>()' { replace 'emptyList<$T>()' }
+}

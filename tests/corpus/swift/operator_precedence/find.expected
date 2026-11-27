@@ -1,0 +1,9 @@
+Rules.swift:2:17: [0] b.f()
+    $X = b
+Rules.swift:3:8: [1] p == q && r
+    $A = p == q
+    $B = r
+Rules.swift:6:17: [0] b.f()
+    $X = b
+Rules.swift:7:13: [2] -b.count
+    $X = b

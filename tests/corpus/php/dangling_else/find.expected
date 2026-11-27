@@ -1,0 +1,2 @@
+rules.php:4:13: [0] if ($b) f(); else g();
+    $C = $b

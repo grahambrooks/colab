@@ -1,0 +1,1 @@
+1 java::pattern 'case 1: case 2: $$$B' -> 'case 1, 2: $$$B'

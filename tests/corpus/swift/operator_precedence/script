@@ -1,0 +1,9 @@
+// Swift: patterns bind by Swift's own precedence groups. A call binds
+// tighter than `+` (`$X.f()` finds `b.f()` in `a + b.f()`), `==` tighter
+// than `&&` (`$A && $B` takes the whole condition), and `try` covers the
+// expression after it.
+refactor "swift-precedence" {
+    match swift::pattern '$X.f()' { replace '$X.g()' }
+    match swift::pattern '$A && $B' { replace 'both($A, $B)' }
+    match swift::pattern '-$X.count' { replace '$X.negatedCount' }
+}

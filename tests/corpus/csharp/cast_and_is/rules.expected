@@ -1,0 +1,2 @@
+1 csharp::pattern '($T)$V' -> 'Cast<$T>($V)'
+1 csharp::pattern '$X is null' -> '$X == null'

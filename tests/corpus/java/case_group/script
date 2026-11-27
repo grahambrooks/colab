@@ -1,0 +1,5 @@
+// Java: consecutive case labels are one switch group, so a pattern over
+// the group sees both labels.
+refactor "java-case-group" {
+    match java::pattern 'case 1: case 2: $$$B' { replace 'case 1, 2: $$$B' }
+}

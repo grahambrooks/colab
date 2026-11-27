@@ -1,6 +1,12 @@
 # The repo's swift files whose colab tree differs from tree-sitter's: the first
 # differing node of each. Reviewed, not a target; rewrite with
 # COLAB_BLESS=1 cargo test -p colab-backends --test <lang>_parser
+tests/corpus/swift/operator_precedence/expected/Rules.swift: node 45
+    ours   additive_expression Some("value") 71..80 l2 "a + b.g()"
+    theirs call_expression Some("value") 71..80 l2 "a + b.g()"
+tests/corpus/swift/operator_precedence/input/Rules.swift: node 45
+    ours   additive_expression Some("value") 71..80 l2 "a + b.f()"
+    theirs call_expression Some("value") 71..80 l2 "a + b.f()"
 tests/samples/swift/Weather.swift: node 338
     ours   multiplicative_expression Some("result") 993..1054 l45 "readings.map(\\.celsius).reduce(0, +) / D"
     theirs call_expression Some("result") 993..1054 l45 "readings.map(\\.celsius).reduce(0, +) / D"

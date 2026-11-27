@@ -1,3 +1,6 @@
 # The repo's java files whose colab tree differs from tree-sitter's: the first
 # differing node of each. Reviewed, not a target; rewrite with
 # COLAB_BLESS=1 cargo test -p colab-backends --test <lang>_parser
+tests/corpus/java/case_group/input/Rules.java: node 27
+    ours   switch_block_statement_group None 68..122 l4 "case 1:\n            case 2:\n            "
+    theirs switch_block_statement_group None 68..75 l4 "case 1:"

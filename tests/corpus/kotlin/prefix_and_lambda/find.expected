@@ -1,0 +1,5 @@
+Rules.kt:2:18: [0] x.isEmpty()
+    $X = x
+Rules.kt:3:1: [1]     val total = tracks.fold(0) { acc, t -> acc + t }
+Rules.kt:4:16: [2] listOf<String>()
+    $T = String
