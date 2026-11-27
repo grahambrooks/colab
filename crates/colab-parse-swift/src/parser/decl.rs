@@ -61,15 +61,6 @@ const DECLARATIONS: &[&str] = &[
     "operator",
 ];
 
-/// `item` without its field.
-fn strip_field(mut item: Item) -> Item {
-    match &mut item {
-        Item::Tok(t) => t.field = None,
-        Item::Node(n) => n.field = None,
-    }
-    item
-}
-
 impl Parser<'_> {
     fn modifier_kind(&self, n: usize) -> Option<&'static str> {
         let w = self.word_at(n);
@@ -509,41 +500,11 @@ impl Parser<'_> {
         node("property_declaration", items)
     }
 
-    /// A property's value. A trailing closure there calls the whole value
-    /// before it (`let a = x.f(1) { }` is `(x.f(1)) { }`), as tree-sitter's
-    /// parse reads it, where it could be the property's observers.
+    /// A property's value: an expression, a trailing closure after it
+    /// calling the call before it as anywhere else (`let a = x.f(1) { }`
+    /// is one call); `{ willSet … }` / `{ didSet … }` are its observers.
     fn property_value(&mut self) -> Item {
-        let saved = std::mem::replace(&mut self.no_closure, true);
-        let mut v = self.expression();
-        self.no_closure = saved;
-        if self.at("{") && !self.observers_follow() && !self.stops() {
-            while self.at("{") && !self.observers_follow() && !self.stops() {
-                let s = self.closure_suffix();
-                v = match v {
-                    // `try x.f { }` (the effect over all of `x.f`): the
-                    // closure calls its operand.
-                    Item::Node(mut n)
-                        if matches!(
-                            n.kind,
-                            "try_expression" | "await_expression" | "unsafe_expression"
-                        ) && n
-                            .items
-                            .last()
-                            .is_some_and(|e| e.kind() != "call_expression") =>
-                    {
-                        if let Some(o) = n.items.pop() {
-                            let call = node("call_expression", vec![strip_field(o), s]);
-                            n.items.push(call.with("expr"));
-                        }
-                        Item::Node(n)
-                    }
-                    v => node("call_expression", vec![v, s]),
-                };
-            }
-            v = self.postfix(v);
-            v = self.loose(Some(v));
-        }
-        v
+        self.expression()
     }
 
     /// At `{`: whether `willSet` / `didSet` start it.

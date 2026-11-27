@@ -1,20 +1,43 @@
-//! Expressions at tree-sitter-swift's precedences; calls, navigation and
-//! subscripts, closures, strings and the other primaries.
+//! Expressions at Swift's precedences (the language reference's standard
+//! precedence groups); calls, navigation and subscripts, closures, strings
+//! and the other primaries.
 //!
-//! Multiplication and addition climb as usual. Every other binary
-//! operator's right operand is the rest of the expression: the grammar's
-//! right side is a rule of lower precedence than any operator, so
-//! `a == b && c` is `a == (b && c)`. A prefix operator binds before a call
-//! or subscript (`!a.b()` is `(!a.b)()`), not before a member.
+//! Postfix expressions (calls, members, subscripts, `!`, `?`) bind
+//! tightest, then prefix operators (`-a.b()` is `-(a.b())`), then the
+//! infix groups from shift to `||` and custom operators, then the ternary
+//! and assignment, both right-associative. `try`, `await`, `unsafe` and
+//! `consume` before an expression cover all of it (`try f().g + 1` is
+//! `try (f().g + 1)`). tree-sitter-swift reads several of these
+//! otherwise (a call binding loosest, `a == b && c` as `a == (b && c)`);
+//! its differences are in `tests/parsers/swift.diffs`.
 
 use super::{Item, Parser, hidden, node};
 use crate::lexer::{L, Lx};
 
 const ASSIGNMENTS: &[&str] = &["=", "+=", "-=", "*=", "/=", "%="];
 
+/// An infix operator's node, its operands' fields, its precedence (higher
+/// binds tighter) and whether it is right-associative.
+struct Infix {
+    kind: &'static str,
+    left: &'static str,
+    right: &'static str,
+    /// Whether the operator token is the node's `op` field.
+    op_field: bool,
+    custom: bool,
+    prec: u8,
+    right_assoc: bool,
+}
+
+/// Casting (`is`, `as`) binds between range formation and nil-coalescing.
+const CASTING: u8 = 6;
+
 impl Parser<'_> {
     /// An expression, an assignment among them.
     pub(crate) fn expression(&mut self) -> Item {
+        if let Some(effect) = self.effect_here() {
+            return effect;
+        }
         let e = self.ternary();
         if !self.stops()
             && matches!(self.peek(), L::Op(o) if ASSIGNMENTS.contains(&o))
@@ -58,15 +81,38 @@ impl Parser<'_> {
         }
     }
 
-    /// A ternary chain (`?` with a space before it), left to right.
+    /// `try` / `await` / `unsafe` / `consume` here, covering the whole
+    /// expression after it.
+    fn effect_here(&mut self) -> Option<Item> {
+        let next_starts = !self.nl_at(self.i + 1)
+            && self.expression_starts(self.i + 1)
+            && !matches!(self.kind_at(self.i + 1), L::Op("(" | "[" | "{"))
+            && !(self.is(self.i + 1, ".") && self.touches(self.i + 1));
+        let kind = match self.word() {
+            "try" => "try_expression",
+            "await" => "await_expression",
+            "consume" | "copy" if next_starts => "consume_expression",
+            "unsafe" if next_starts => "unsafe_expression",
+            _ => return None,
+        };
+        let op = if kind == "try_expression" {
+            self.try_operator()
+        } else {
+            self.punct()
+        };
+        let e = self.expression().with("expr");
+        Some(node(kind, vec![op, e]))
+    }
+
+    /// A ternary (`?` with a space before it), right-associative.
     fn ternary(&mut self) -> Item {
-        let mut c = self.binary();
-        while self.at("?") && !self.touches(self.i) && !self.stops() {
+        let c = self.binary(0);
+        if self.at("?") && !self.touches(self.i) && !self.stops() {
             let q = self.punct();
             let t = self.blind(Self::expression);
             let colon = self.expect(":");
-            let f = self.binary();
-            c = node(
+            let f = self.ternary();
+            return node(
                 "ternary_expression",
                 vec![
                     c.with("condition"),
@@ -80,98 +126,100 @@ impl Parser<'_> {
         c
     }
 
-    /// The operator here, if one binds loosely (its right side the rest of
-    /// the expression): its node, its operands' fields.
-    fn loose_op(&self) -> Option<(&'static str, &'static str, &'static str, bool)> {
+    /// The infix operator here, by Swift's standard precedence groups.
+    fn infix_here(&self) -> Option<Infix> {
         if self.stops() {
             return None;
         }
+        let op = |kind, prec| Infix {
+            kind,
+            left: "lhs",
+            right: "rhs",
+            op_field: true,
+            custom: false,
+            prec,
+            right_assoc: false,
+        };
         Some(match self.peek() {
-            // `!=` and `!==` lex as custom operators to tree-sitter-swift.
-            L::Custom | L::Op("!=" | "!==" | "<=" | ">=") => {
-                ("infix_expression", "lhs", "rhs", true)
-            }
+            // DefaultPrecedence: above the ternary only.
+            L::Custom => Infix {
+                custom: true,
+                ..op("infix_expression", 1)
+            },
             L::Op(o) => match o {
-                "??" => ("nil_coalescing_expression", "value", "if_nil", false),
-                "<" | ">" => ("comparison_expression", "lhs", "rhs", true),
-                "==" | "!=" | "===" | "!==" => ("equality_expression", "lhs", "rhs", true),
-                "&&" => ("conjunction_expression", "lhs", "rhs", true),
-                "||" => ("disjunction_expression", "lhs", "rhs", true),
-                "&" | "|" | "^" | "<<" | ">>" => ("bitwise_operation", "lhs", "rhs", true),
+                "<<" | ">>" => op("bitwise_operation", 10),
+                "*" | "/" | "%" => op("multiplicative_expression", 9),
+                "&" => op("bitwise_operation", 9),
+                "+" | "-" => op("additive_expression", 8),
+                "|" | "^" => op("bitwise_operation", 8),
                 "..." | "..<"
                     if self.expression_starts(self.i + 1) && !self.stops_at(self.i + 1) =>
                 {
-                    ("range_expression", "start", "end", true)
+                    Infix {
+                        left: "start",
+                        right: "end",
+                        ..op("range_expression", 7)
+                    }
                 }
+                "??" => Infix {
+                    left: "value",
+                    right: "if_nil",
+                    op_field: false,
+                    right_assoc: true,
+                    ..op("nil_coalescing_expression", 5)
+                },
+                "<" | ">" | "<=" | ">=" => op("comparison_expression", 4),
+                "==" | "!=" | "===" | "!==" => op("equality_expression", 4),
+                "&&" => op("conjunction_expression", 3),
+                "||" => op("disjunction_expression", 2),
                 _ => return None,
             },
-            _ => return None,
+            _ => None?,
         })
     }
 
-    fn binary(&mut self) -> Item {
-        self.loose(None)
-    }
-
-    /// Arithmetic, casts and checks, a call suffix calling all of them
-    /// before it: a call binds loosest in tree-sitter-swift's grammar, so
-    /// `a + b.f()` is `(a + b.f)()` and `a.f() + b` is `a.f() + b`. (A
-    /// looser operator's right side is a rule of its own, so `a == b.f()`
-    /// calls `b.f` alone.)
-    fn called(&mut self, first: Option<Item>) -> Item {
-        let mut e = self.tight(first);
-        while self.call_here() {
-            let called = self.postfix(e);
-            e = self.tight(Some(called));
-        }
-        e
-    }
-
-    /// Whether a call suffix (arguments, a trailing closure) is here.
-    fn call_here(&self) -> bool {
-        match self.peek() {
-            L::Op("(" | "[") => !self.stops() && !self.nl_at(self.i),
-            L::Op("{") => !self.no_closure && !self.observers_follow() && !self.stops(),
-            _ => false,
-        }
-    }
-
-    /// `first`: the left operand, already read.
-    pub(crate) fn loose(&mut self, first: Option<Item>) -> Item {
-        let left = self.called(first);
-        let Some((kind, l, r, op_field)) = self.loose_op() else {
-            return left;
-        };
-        let op = if kind == "infix_expression" {
-            self.leaf("custom_operator").with("op")
-        } else if op_field {
-            self.punct().with("op")
-        } else {
-            self.punct()
-        };
-        let rhs = self.loose(None);
-        node(kind, vec![left.with(l), op, rhs.with(r)])
-    }
-
-    /// Multiplication and addition, then `is` and `as`.
-    fn tight(&mut self, first: Option<Item>) -> Item {
-        let mut e = self.arith(0, first);
+    /// Infix operations binding at least as tightly as `min`, by
+    /// precedence climbing; `is` and `as` at the casting group.
+    fn binary(&mut self, min: u8) -> Item {
+        let mut left = self.unary();
         loop {
             if self.stops() {
-                return e;
+                return left;
             }
-            if self.at("is") {
-                let items = vec![e.with("target"), self.punct().with("op"), self.type_()];
-                e = node("check_expression", items);
+            if CASTING >= min && self.at("is") {
+                let items = vec![left.with("target"), self.punct().with("op"), self.type_()];
+                left = node("check_expression", items);
                 continue;
             }
-            if self.at("as") {
+            if CASTING >= min && self.at("as") {
                 let op = self.as_operator();
                 let t = self.type_();
-                e = node("as_expression", vec![e.with("expr"), op, t]);
+                left = node("as_expression", vec![left.with("expr"), op, t]);
                 continue;
             }
-            return e;
+            let Some(infix) = self.infix_here() else {
+                return left;
+            };
+            if infix.prec < min {
+                return left;
+            }
+            let op = if infix.custom {
+                self.leaf("custom_operator").with("op")
+            } else if infix.op_field {
+                self.punct().with("op")
+            } else {
+                self.punct()
+            };
+            let next = if infix.right_assoc {
+                infix.prec
+            } else {
+                infix.prec + 1
+            };
+            let right = self.binary(next);
+            left = node(
+                infix.kind,
+                vec![left.with(infix.left), op, right.with(infix.right)],
+            );
         }
     }
 
@@ -194,46 +242,15 @@ impl Parser<'_> {
         node("as_operator", vec![Self::tok(a, kind, false)])
     }
 
-    fn arith(&mut self, min: u8, first: Option<Item>) -> Item {
-        let mut left = match first {
-            Some(e) => e,
-            None => self.unary(),
-        };
-        loop {
-            if self.stops() {
-                return left;
-            }
-            let (prec, kind) = match self.peek() {
-                L::Op("*" | "/" | "%") => (11, "multiplicative_expression"),
-                L::Op("+" | "-") => (10, "additive_expression"),
-                _ => return left,
-            };
-            if prec < min {
-                return left;
-            }
-            let op = self.punct().with("op");
-            let rhs = self.arith(prec + 1, None);
-            left = node(kind, vec![left.with("lhs"), op, rhs.with("rhs")]);
-        }
-    }
-
+    /// A prefix operation or a postfix expression: a prefix operator takes
+    /// the whole postfix expression after it (`!a.b()` is `!(a.b())`).
     fn unary(&mut self) -> Item {
-        // `-(a)`, `!(a)`: the operator is the callee, as tree-sitter reads
-        // it.
-        if self.prefix_op_here().is_some() && self.is(self.i + 1, "(") {
-            return if self.at("!") {
-                self.leaf("bang")
-            } else {
-                self.punct()
-            };
-        }
         if let Some(op) = self.prefix_op() {
-            let target = self.unary_operand().with("target");
-            let e = node("prefix_expression", vec![op.with("operation"), target]);
-            return self.postfix_chain(e, false, false).0;
+            let target = self.unary().with("target");
+            return node("prefix_expression", vec![op.with("operation"), target]);
         }
         let p = self.primary();
-        self.postfix_chain(p, false, false).0
+        self.postfix(p)
     }
 
     /// A prefix operator here (touching its operand).
@@ -243,27 +260,6 @@ impl Parser<'_> {
             L::Op("!") => Some(self.leaf("bang")),
             L::Custom => Some(self.leaf("custom_operator")),
             _ => Some(self.punct()),
-        }
-    }
-
-    /// A prefix operator's operand: another prefix, or a primary and its
-    /// members.
-    fn unary_operand(&mut self) -> Item {
-        if let Some(op) = self.prefix_op() {
-            let target = self.unary_operand().with("target");
-            return node("prefix_expression", vec![op.with("operation"), target]);
-        }
-        let mut e = self.primary();
-        loop {
-            if self.at(".") && matches!(self.kind_at(self.i + 1), L::Word | L::Int) && !self.stops()
-            {
-                e = self.navigation(e);
-            } else if self.at("?") && self.touches(self.i) && self.is(self.i + 1, ".") {
-                let q = self.anon_node("?");
-                e = hidden(vec![e, q]);
-            } else {
-                return e;
-            }
         }
     }
 
@@ -278,18 +274,10 @@ impl Parser<'_> {
         node("navigation_expression", vec![e.with("target"), suffix])
     }
 
-    pub(crate) fn postfix(&mut self, e: Item) -> Item {
-        self.postfix_chain(e, false, true).0
-    }
-
-    /// The postfixes after `e`; with `once`, only up to its first call (and
-    /// whether there was one); without `calls`, stopping at a call suffix
-    /// (an operand's, which [`Self::binary`] reads).
-    fn postfix_chain(&mut self, mut e: Item, once: bool, calls: bool) -> (Item, bool) {
+    /// `e` and the postfixes after it: members, calls, subscripts,
+    /// trailing closures, `!`, `?`, `++`, generic arguments, `...`.
+    pub(crate) fn postfix(&mut self, mut e: Item) -> Item {
         loop {
-            if once && e.kind() == "call_expression" {
-                return (e, true);
-            }
             match self.peek() {
                 L::Op(".")
                     if matches!(self.kind_at(self.i + 1), L::Word | L::Int) && !self.stops() =>
@@ -311,7 +299,7 @@ impl Parser<'_> {
                     let op = self.punct().with("operation");
                     e = node("postfix_expression", vec![e.with("target"), op]);
                 }
-                L::Op("(" | "[") if calls && !self.stops() && !self.nl_at(self.i) => {
+                L::Op("(" | "[") if !self.stops() && !self.nl_at(self.i) => {
                     let mut s = vec![self.value_arguments()];
                     // `f(x) { … }`: one suffix.
                     if self.at("{") && !self.no_closure && !self.stops() && !self.observers_follow()
@@ -320,9 +308,7 @@ impl Parser<'_> {
                     }
                     e = node("call_expression", vec![e, node("call_suffix", s)]);
                 }
-                L::Op("{")
-                    if calls && !self.no_closure && !self.observers_follow() && !self.stops() =>
-                {
+                L::Op("{") if !self.no_closure && !self.observers_follow() && !self.stops() => {
                     let s = self.closure_suffix();
                     e = node("call_expression", vec![e, s]);
                 }
@@ -340,7 +326,7 @@ impl Parser<'_> {
                     let op = self.punct();
                     e = node("open_end_range_expression", vec![e.with("start"), op]);
                 }
-                _ => return (e, false),
+                _ => return e,
             }
         }
     }
@@ -563,24 +549,26 @@ impl Parser<'_> {
             "true" | "false" => self.wrapped("boolean_literal"),
             "if" => self.if_statement(),
             "switch" => self.switch_statement(),
+            // An effect inside an expression (`a + try b`): its operand.
+            // (Before an expression, `expression` reads it over the whole.)
             "try" => {
                 let op = self.try_operator();
-                let e = self.effect_operand(false).with("expr");
+                let e = self.unary().with("expr");
                 node("try_expression", vec![op, e])
             }
             "await" => {
                 let op = self.punct();
-                let e = self.effect_operand(false).with("expr");
+                let e = self.unary().with("expr");
                 node("await_expression", vec![op, e])
             }
             "consume" | "copy" if next_starts => {
                 let op = self.punct();
-                let e = self.effect_operand(false).with("expr");
+                let e = self.unary().with("expr");
                 node("consume_expression", vec![op, e])
             }
             "unsafe" if next_starts => {
                 let op = self.punct();
-                let e = self.effect_operand(true).with("expr");
+                let e = self.unary().with("expr");
                 node("unsafe_expression", vec![op, e])
             }
             "discard" if self.is(self.i + 1, "self") => {
@@ -597,38 +585,6 @@ impl Parser<'_> {
                 node(kind, items)
             }
             _ => self.name_leaf("simple_identifier"),
-        }
-    }
-
-    /// `try` / `await` / `unsafe`'s operand: a postfix chain up to its first
-    /// call, the effect then taking the rest's postfixes and operators
-    /// (`try f().g` is `(try f()).g`, `try f() + 1` is `(try f()) + 1`), as
-    /// tree-sitter's preference for direct calls reads it; else the whole
-    /// expression (`try a + b`).
-    /// (`assign`: `unsafe`'s, which may be an assignment.)
-    fn effect_operand(&mut self, assign: bool) -> Item {
-        if matches!(self.word(), "try" | "await" | "unsafe") {
-            return self.primary();
-        }
-        let (start, errors, toks) = (self.i, self.errors, self.toks.len());
-        if self.prefix_op_here().is_none() {
-            let p = self.primary();
-            let (e, called) = self.postfix_chain(p, true, true);
-            if called {
-                return e;
-            }
-            if self.toks.len() == toks {
-                self.i = start;
-                self.errors = errors;
-            } else {
-                // A `>` was split off a token: keep what was read.
-                return e;
-            }
-        }
-        if assign {
-            self.expression()
-        } else {
-            self.ternary()
         }
     }
 
