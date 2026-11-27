@@ -1,4 +1,4 @@
-//! A file's declarations from its tree-sitter tree, for
+//! A file's declarations from its colab tree, for
 //! `colab edit --symbol` when no language server answers.
 //!
 //! One rule for every grammar: a node whose kind reads as a declaration
@@ -51,11 +51,6 @@ fn is_declaration_kind(kind: &str) -> bool {
         && !kind.contains("type_identifier")
         && !kind.ends_with("_type")
         && DECLARATION_WORDS.iter().any(|w| kind.contains(w))
-}
-
-/// The declarations in `source`, parsed with `grammar`.
-pub fn declarations(grammar: &tree_sitter::Language, source: &str) -> Vec<Declaration> {
-    crate::syntax::tree(grammar, source).map_or_default(|tree| declarations_in(&tree))
 }
 
 /// The declarations in a colab tree (whichever parser made it), by its

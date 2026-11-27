@@ -6,7 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Go language backend for colab: tree-sitter-driven Go source rewrites."
+description = "Go language backend for colab: Go source rewrites on colab's own Go parser."
 
 [dependencies]
 colab-core = { workspace = true }

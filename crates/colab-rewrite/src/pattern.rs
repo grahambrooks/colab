@@ -56,23 +56,19 @@ mod tests;
 /// `"package p\nfunc _() {\n\t@@PATTERN@@\n}"` for Go statements.
 pub const PATTERN_SLOT: &str = "@@PATTERN@@";
 
-/// What parses a language: a tree-sitter grammar, or a parser of colab's
-/// own (step 3 of the move off tree-sitter, one language at a time).
-/// Kinds, fields and the rest of a [`PatternLanguage`] are its trees'.
+/// What parses a language: a parser of colab's own (rust-analyzer's for
+/// Rust). Kinds, fields and the rest of a [`PatternLanguage`] are its
+/// trees'.
 #[derive(Clone)]
 pub enum Syntax {
-    TreeSitter(tree_sitter::Language),
     Own(&'static dyn colab_syntax::SourceParser),
 }
 
 impl Syntax {
-    /// The tree-sitter grammar, for what still reads tree-sitter's tree
-    /// (a backend's own modules, the qualifier check); `None` for an own
-    /// parser.
-    pub fn tree_sitter(&self) -> Option<&tree_sitter::Language> {
+    /// The parser.
+    pub fn parser(&self) -> &'static dyn colab_syntax::SourceParser {
         match self {
-            Self::TreeSitter(grammar) => Some(grammar),
-            Self::Own(_) => None,
+            Self::Own(parser) => *parser,
         }
     }
 }

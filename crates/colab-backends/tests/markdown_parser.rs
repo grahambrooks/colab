@@ -211,7 +211,7 @@ fn colab_markdown_reads_what_tree_sitter_md_gave_the_backend() {
     files.sort();
     let block: tree_sitter::Language = tree_sitter_md::LANGUAGE.into();
     let inline_lang: tree_sitter::Language = tree_sitter_md::INLINE_LANGUAGE.into();
-    let theirs_inline = |text: &str| colab_rewrite::syntax::tree(&inline_lang, text);
+    let theirs_inline = |text: &str| colab_syntax::Tree::parse_tree_sitter(&inline_lang, text);
     let ours_inline = |text: &str| colab_parse_markdown::parse_inline(text).ok();
     let show: usize = std::env::var("COLAB_MD_SHOW")
         .ok()
@@ -242,7 +242,7 @@ fn colab_markdown_reads_what_tree_sitter_md_gave_the_backend() {
             lossy.push(shown);
             continue;
         }
-        let Some(theirs) = colab_rewrite::syntax::tree(&block, &text) else {
+        let Some(theirs) = colab_syntax::Tree::parse_tree_sitter(&block, &text) else {
             continue;
         };
         let (a, b) = (

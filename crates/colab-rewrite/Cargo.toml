@@ -6,19 +6,15 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Tree-sitter rewriting primitives shared by every colab language backend: byte-range edits applied safely, whole-line deletion, tree traversal, and identifier rename."
+description = "Rewriting primitives shared by every colab language backend, on colab's own syntax trees: the common floor (symbol, call, pattern), the pattern engine, byte-range edits applied safely, whole-line deletion."
 
 [dependencies]
-tree-sitter = { workspace = true }
 colab-core = { workspace = true }
-colab-syntax = { workspace = true, features = ["tree-sitter"] }
+colab-syntax = { workspace = true }
 regex = { workspace = true }
 similar = { workspace = true }
 
 [dev-dependencies]
-# The parse cache's tests: it caches tree-sitter parses.
-tree-sitter-go = { workspace = true }
-tree-sitter-javascript = { workspace = true }
 # The engine's own tests, on the parsers the backends use: Rust on
 # rust-analyzer's, Go and Python on colab's.
 colab-parse-rust = { workspace = true }

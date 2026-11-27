@@ -4,7 +4,7 @@
 //! Syntactic, not semantic — local shadows of a top-level name are
 //! also renamed. Verify with `--format diff` before applying.
 //!
-//! The rewrite itself lives in [`colab_rewrite::rename_nodes_by_text`] —
+//! The rewrite itself lives in [`colab_rewrite::SourceLanguage::rename`] —
 //! all twelve backends share one implementation and differ only in which
 //! node kinds count as an identifier.
 

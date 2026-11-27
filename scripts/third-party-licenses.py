@@ -11,7 +11,9 @@ A release archive holds only the binary, so the binary carries this file
 
 Dependencies are read from `cargo metadata --locked` (every platform, so
 the Windows-only crates are included), following normal and build edges
-from colab-cli; dev-dependencies are not shipped and are left out.
+from colab-cli; dev-dependencies are not shipped and are left out, and so
+is a package only a dev-dependency's feature pulls in (`cargo tree`
+decides, with features resolved for the binary).
 Identical texts are printed once, with every crate that ships them. A
 crate whose package ships no license file takes its text from
 scripts/licenses/<crate>.txt, copied from the crate's repository; a new
@@ -54,8 +56,30 @@ def shipped(meta: dict) -> list[dict]:
                 continue
             seen.add(dep["pkg"])
             todo.append(dep["pkg"])
-    third = [packages[i] for i in seen if packages[i]["source"] is not None]
+    # `cargo metadata` unifies features across the workspace, so a feature
+    # only a test enables (colab-syntax's `tree-sitter`) would count as
+    # shipped; `cargo tree` resolves them as the binary is built.
+    built = built_packages()
+    third = [packages[i] for i in seen
+             if packages[i]["source"] is not None
+             and (packages[i]["name"], packages[i]["version"]) in built]
     return sorted(third, key=lambda p: (p["name"], p["version"]))
+
+
+def built_packages() -> set[tuple[str, str]]:
+    """(name, version) of every package the binary is built from, on any
+    target, features resolved for it alone."""
+    out = subprocess.run(
+        ["cargo", "tree", "--locked", "-p", ROOT_PACKAGE, "-e", "normal,build",
+         "--target", "all", "--prefix", "none", "--format", "{p}"],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    ).stdout
+    built = set()
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1].startswith("v"):
+            built.add((parts[0], parts[1][1:]))
+    return built
 
 
 def license_files(package: dict) -> list[pathlib.Path]:

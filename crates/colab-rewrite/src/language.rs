@@ -27,65 +27,46 @@
 //! copies each, differing in a namespace string and a kinds list: the
 //! connascence of algorithm `colab-rewrite` exists to remove.
 
-use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 use std::path::Path;
 
+use crate::pattern::{PatternAction, PatternLanguage, PatternRule, Qualifiers};
 use colab_core::find::Located;
 use colab_core::symbols::Declaration;
 use colab_core::{
     ActionCapability, AstInput, Capability, Constraint, Error, LanguageBackend, Operation, Result,
     RuleSpec, SyntaxTree,
 };
-use tree_sitter::{Node, Tree};
 
-use crate::pattern::{PatternAction, PatternLanguage, PatternRule, Qualifiers};
-
-/// Finds a call the language's own way: given a node, the call's
-/// argument list and its callee as a target spells it, or `None` when
-/// the node is not a call this backend rewrites.
-pub type CallLocator = for<'a> fn(Node<'a>, &'a str) -> Option<(Node<'a>, Cow<'a, str>)>;
-
-/// How `<lang>::call` finds a call and what it replaces.
+/// How `<lang>::call` finds a call and what it replaces, in the
+/// language's tree.
 #[derive(Clone, Copy)]
 pub enum CallShape {
     /// One node kind with `function` and `arguments` fields (C, C++, C#,
-    /// Go, JS, Python, Rust). The target is the `function` field's text.
+    /// Go, JS, Python). The target is the `function` field's text.
     Fields(&'static str),
-    /// A callee read by the backend's [`CallLocator`] (Java, Kotlin, PHP,
-    /// Swift), which keeps a receiver in the target (`Old.run`).
-    Located {
-        locate: CallLocator,
-        /// Replace up to the end of the argument list rather than the
-        /// whole call node, so a trailing lambda or closure after the
-        /// parentheses survives (Kotlin, Swift).
-        through_arguments: bool,
-    },
     /// Node kinds whose callee is their text before their `arguments`
     /// field, receiver included (`Old.run`, `$o->run`, `Old::run`): Java's
-    /// `method_invocation`, PHP's four call kinds, on parsers of colab's
-    /// own.
+    /// `method_invocation`, PHP's four call kinds.
     Prefixed(&'static [&'static str]),
     /// Node kinds whose callee is their text before an argument list,
     /// found by following `arguments` from the call, a named child of
     /// each kind in turn (Kotlin's `["value_arguments"]`, Swift's
-    /// `["call_suffix", "value_arguments"]`), on parsers of colab's own.
-    /// The call is replaced up to the end of that list, so a trailing
-    /// lambda after it survives; a call without one (a lambda only) is no
-    /// call to rewrite.
+    /// `["call_suffix", "value_arguments"]`). The call is replaced up to
+    /// the end of that list, so a trailing lambda after it survives; a
+    /// call without one (a lambda only) is no call to rewrite.
     Through {
         kinds: &'static [&'static str],
         arguments: &'static [&'static str],
     },
 }
 
-/// What a language with a parser of its own ([`crate::pattern::Syntax::Own`])
-/// answers for the floor that tree-sitter's fields answered: its
-/// declarations and its calls. Kinds (`rename_kinds`, `prose_kinds`) are
-/// then its own tree's.
+/// What a language answers for the floor from its parser's typed view
+/// rather than its tree's kinds and fields (Rust's, from rust-analyzer's
+/// typed AST): its declarations and its calls.
 pub trait OwnSyntax: Send + Sync {
-    /// The file's declarations, as [`crate::declarations()`] gives them.
+    /// The file's declarations, as [`crate::declarations_in`] gives them.
     fn declarations(&self, source: &str) -> Vec<Declaration>;
     /// Every call in the file, outermost first.
     fn calls(&self, source: &str) -> Vec<Call>;
@@ -122,8 +103,8 @@ pub struct SourceLanguage {
     /// The qualifier check for pattern templates (Go, Python, JS), whose
     /// imports bind the qualifier; `None` stays silent.
     pub qualifiers: Option<Qualifiers>,
-    /// Declarations and calls from the language's own parser; `None` reads
-    /// them from tree-sitter's tree.
+    /// Declarations and calls from the parser's typed view; `None` reads
+    /// them from the tree's kinds and fields.
     pub own: Option<&'static dyn OwnSyntax>,
 }
 
@@ -176,71 +157,56 @@ impl SourceLanguage {
                 .is_some_and(|name| self.file_names.contains(&name))
     }
 
-    /// `source`'s tree-sitter tree, through the shared parse cache: a text
-    /// the rules before have already parsed is not parsed again. `None` if
-    /// tree-sitter cannot parse, or the language has a parser of its own
-    /// (whose modules read [`crate::syntax::source_tree`]).
-    pub fn parse(&self, source: &str) -> Option<Tree> {
-        crate::parse_cache::parse((self.pattern)().syntax.tree_sitter()?, source)
+    /// `source` as colab's tree, by the language's parser.
+    pub fn tree(&self, source: &str) -> colab_syntax::Tree {
+        (self.pattern)().syntax.parser().parse(source)
     }
 
-    /// `source` as colab's tree, for a language with a parser of its own.
-    fn own_tree(&self, source: &str) -> Option<colab_syntax::Tree> {
-        let language = (self.pattern)();
-        language.syntax.tree_sitter().is_none().then_some(())?;
-        crate::syntax::source_tree(&language, source)
-    }
-
-    /// Every call in `source` of a language read by a parser of colab's
-    /// own whose calls are `Fields`-shaped (a `function` and an
-    /// `arguments` field) or `Prefixed` (the text before `arguments`),
-    /// outermost first.
-    fn own_calls(&self, source: &str) -> Option<Vec<Call>> {
+    /// Every call in `source` by the language's [`CallShape`], outermost
+    /// first.
+    fn shaped_calls(&self, source: &str) -> Vec<Call> {
         let (kinds, prefixed, through): (&[&str], bool, Option<&[&str]>) = match &self.calls {
             CallShape::Fields(kind) => (std::slice::from_ref(kind), false, None),
             CallShape::Prefixed(kinds) => (kinds, true, None),
             CallShape::Through { kinds, arguments } => (kinds, true, Some(arguments)),
-            CallShape::Located { .. } => return None,
         };
-        let tree = self.own_tree(source)?;
-        Some(
-            tree.nodes()
-                .filter(|n| !n.is_trivia() && kinds.contains(&n.kind_name()))
-                .filter_map(|n| {
-                    let args = match through {
-                        Some(path) => path.iter().try_fold(n, |at, kind| {
-                            at.named_children().find(|c| c.kind_name() == *kind)
-                        })?,
-                        None => n.child_by_field("arguments")?,
-                    };
-                    let range = match through {
-                        Some(_) => n.start()..args.end(),
-                        None => n.range(),
-                    };
-                    let callee = if prefixed {
-                        source.get(n.start()..args.start())?.trim_end().to_string()
-                    } else {
-                        n.child_by_field("function")?.text().to_string()
-                    };
-                    Some(Call {
-                        range,
-                        callee,
-                        arguments: args
-                            .named_children()
-                            .map(|a| a.text().to_string())
-                            .collect(),
-                    })
+        let tree = self.tree(source);
+        tree.nodes()
+            .filter(|n| !n.is_trivia() && kinds.contains(&n.kind_name()))
+            .filter_map(|n| {
+                let args = match through {
+                    Some(path) => path.iter().try_fold(n, |at, kind| {
+                        at.named_children().find(|c| c.kind_name() == *kind)
+                    })?,
+                    None => n.child_by_field("arguments")?,
+                };
+                let range = match through {
+                    Some(_) => n.start()..args.end(),
+                    None => n.range(),
+                };
+                let callee = if prefixed {
+                    source.get(n.start()..args.start())?.trim_end().to_string()
+                } else {
+                    n.child_by_field("function")?.text().to_string()
+                };
+                Some(Call {
+                    range,
+                    callee,
+                    arguments: args
+                        .named_children()
+                        .map(|a| a.text().to_string())
+                        .collect(),
                 })
-                .collect(),
-        )
+            })
+            .collect()
     }
 
-    /// The calls of a language read by a parser of colab's own: its
-    /// [`OwnSyntax`], or its tree's fields.
-    fn calls_of(&self, source: &str) -> Option<Vec<Call>> {
+    /// The calls in `source`: its [`OwnSyntax`]'s, or by its tree's
+    /// [`CallShape`].
+    fn calls_of(&self, source: &str) -> Vec<Call> {
         match self.own {
-            Some(own) => Some(own.calls(source)),
-            None => self.own_calls(source),
+            Some(own) => own.calls(source),
+            None => self.shaped_calls(source),
         }
     }
 
@@ -255,39 +221,34 @@ impl SourceLanguage {
 
     /// `source` with every identifier `from` renamed to `to`
     /// (`<lang>::symbol`).
+    ///
+    /// Matching is on exact node text, never a substring, so `tokio` never
+    /// matches `my_tokio`. There is no scope analysis: a local sharing a
+    /// name with a type is renamed too, which is why the DSL offers
+    /// `in "<glob>"` and `where inside`.
     pub fn rename(&self, from: &str, to: &str, source: &str) -> String {
-        if let Some(tree) = self.own_tree(source) {
-            let edits = Self::of_kinds(&tree, self.rename_kinds)
-                .filter(|n| n.text() == from)
-                .map(|n| crate::Edit::new(n.start(), n.end(), to))
-                .collect();
-            return crate::apply_edits(source, edits);
-        }
-        match self.parse(source) {
-            Some(tree) => crate::rename_nodes_by_text(&tree, source, self.rename_kinds, from, to),
-            None => source.to_string(),
-        }
+        let tree = self.tree(source);
+        let edits = Self::of_kinds(&tree, self.rename_kinds)
+            .filter(|n| n.text() == from)
+            .map(|n| crate::Edit::new(n.start(), n.end(), to))
+            .collect();
+        crate::apply_edits(source, edits)
     }
 
     /// The identifiers `<lang>::symbol` would rename, as written.
     fn identifiers(&self, source: &str) -> Vec<String> {
-        if let Some(tree) = self.own_tree(source) {
-            return Self::of_kinds(&tree, self.rename_kinds)
-                .map(|n| n.text().to_string())
-                .collect();
-        }
-        self.parse(source)
-            .map_or_default(|tree| crate::field_texts(&tree, source, self.rename_kinds, None, &[]))
+        let tree = self.tree(source);
+        Self::of_kinds(&tree, self.rename_kinds)
+            .map(|n| n.text().to_string())
+            .collect()
     }
 
-    /// The conflict renaming `from` to `to` in `source` would cause
-    /// ([`crate::rename_conflict`]).
+    /// The conflict renaming `from` to `to` in `source` would cause: `to`
+    /// already occurs there as an identifier, so the rename would merge
+    /// two names into one. `None` when it does not, or when `from` does
+    /// not occur (the rename would not fire).
     fn rename_conflict(&self, from: &str, to: &str, source: &str) -> Option<String> {
-        let Some(tree) = self.own_tree(source) else {
-            return self.parse(source).and_then(|tree| {
-                crate::rename_conflict(&tree, source, self.rename_kinds, from, to)
-            });
-        };
+        let tree = self.tree(source);
         let (mut has_from, mut lines) = (false, Vec::new());
         for node in Self::of_kinds(&tree, self.rename_kinds) {
             if node.text() == from {
@@ -311,66 +272,32 @@ impl SourceLanguage {
     /// `source` with every call to `function` replaced by `template`
     /// (`<lang>::call`).
     pub fn rewrite_calls(&self, function: &str, template: &str, source: &str) -> String {
-        if let Some(calls) = self.calls_of(source) {
-            let mut edits: Vec<crate::Edit> = Vec::new();
-            for call in calls {
-                // An outer call already rewritten takes the ones inside it.
-                if call.callee != function
-                    || edits
-                        .iter()
-                        .any(|e| e.start <= call.range.start && call.range.end <= e.end)
-                {
-                    continue;
-                }
-                let args: Vec<&str> = call.arguments.iter().map(String::as_str).collect();
-                edits.push(crate::Edit::new(
-                    call.range.start,
-                    call.range.end,
-                    colab_core::render_call_template(template, function, &args),
-                ));
+        let mut edits: Vec<crate::Edit> = Vec::new();
+        for call in self.calls_of(source) {
+            // An outer call already rewritten takes the ones inside it.
+            if call.callee != function
+                || edits
+                    .iter()
+                    .any(|e| e.start <= call.range.start && call.range.end <= e.end)
+            {
+                continue;
             }
-            return crate::apply_edits(source, edits);
+            let args: Vec<&str> = call.arguments.iter().map(String::as_str).collect();
+            edits.push(crate::Edit::new(
+                call.range.start,
+                call.range.end,
+                colab_core::render_call_template(template, function, &args),
+            ));
         }
-        let Some(tree) = self.parse(source) else {
-            return source.to_string();
-        };
-        match self.calls {
-            CallShape::Fields(kind) => {
-                crate::calls::rewrite(&tree, source, kind, function, template)
-            }
-            CallShape::Located {
-                locate,
-                through_arguments,
-            } => crate::calls::rewrite_located(
-                &tree,
-                source,
-                locate,
-                through_arguments,
-                function,
-                template,
-            ),
-            // Read only from a parser of colab's own (`calls_of` above).
-            CallShape::Prefixed(_) | CallShape::Through { .. } => source.to_string(),
-        }
+        crate::apply_edits(source, edits)
     }
 
     /// Every callee in `source`, as a `<lang>::call` target would spell it.
     pub fn callees(&self, source: &str) -> Vec<String> {
-        if let Some(calls) = self.calls_of(source) {
-            return calls.into_iter().map(|c| c.callee).collect();
-        }
-        let Some(tree) = self.parse(source) else {
-            return Vec::new();
-        };
-        match self.calls {
-            CallShape::Fields(kind) => {
-                crate::field_texts(&tree, source, &[kind], Some("function"), &[])
-            }
-            CallShape::Located { locate, .. } => {
-                crate::calls::callees_located(&tree, source, locate)
-            }
-            CallShape::Prefixed(_) | CallShape::Through { .. } => Vec::new(),
-        }
+        self.calls_of(source)
+            .into_iter()
+            .map(|c| c.callee)
+            .collect()
     }
 
     /// A conflict for each function the change from `before` to `after`
@@ -428,27 +355,19 @@ impl SourceLanguage {
 
     /// For `LanguageBackend::prose_ranges`.
     pub fn prose_ranges(&self, source: &str) -> Option<Vec<Range<usize>>> {
-        if let Some(tree) = self.own_tree(source) {
-            return Some(
-                Self::of_kinds(&tree, self.prose_kinds)
-                    .map(|n| n.range())
-                    .collect(),
-            );
-        }
-        self.parse(source)
-            .map(|tree| crate::ranges_of_kinds(&tree, self.prose_kinds))
+        let tree = self.tree(source);
+        Some(
+            Self::of_kinds(&tree, self.prose_kinds)
+                .map(|n| n.range())
+                .collect(),
+        )
     }
 
     /// For `LanguageBackend::declarations`.
     pub fn declarations(&self, source: &str) -> Vec<Declaration> {
-        if let Some(own) = self.own {
-            return own.declarations(source);
-        }
-        match (self.pattern)().syntax.tree_sitter() {
-            Some(grammar) => crate::declarations(grammar, source),
-            None => self
-                .own_tree(source)
-                .map_or_default(|tree| crate::declarations_in(&tree)),
+        match self.own {
+            Some(own) => own.declarations(source),
+            None => crate::declarations_in(&self.tree(source)),
         }
     }
 

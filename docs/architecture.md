@@ -1,7 +1,7 @@
 # Architecture
 
 Colab is a Cargo workspace that compiles a small DSL (the `.colab`
-language) into a list of language-specific tree-sitter rewrites and
+language) into a list of language-specific syntax-tree rewrites and
 applies them deterministically to a filesystem tree. This document
 describes the workspace layout, the runtime data flow, and the steps
 to add a new backend, namespace, or action.
@@ -35,10 +35,9 @@ crates/
                       # <lang>::pattern, the PatternRule it wraps,
                       # build_rule_where) and `syntax`, which runs every
                       # pattern on colab's own matcher (colab-syntax).
-                      # Depends on tree-sitter, colab-syntax, regex and
-                      # colab-core; colab-core never depends on it, so
-                      # colab-dsl and colab-mcp never inherit a grammar
-                      # engine.
+                      # Depends on colab-syntax, regex and colab-core (no
+                      # tree-sitter); colab-core never depends on it, so
+                      # colab-dsl and colab-mcp never inherit the matcher.
   colab-backends/     # The single composition root: registry() wires
                       # every backend. Runtime dep of colab-cli, dev-only
                       # for colab-dsl / colab-mcp. Home of the
@@ -333,8 +332,13 @@ To add `colab-lang-<x>` (replace `<x>` with `kotlin`, `swift`, etc.):
 1. **New crate.** `crates/colab-lang-<x>/` with `Cargo.toml`,
    `src/lib.rs`. Add to the workspace `members` list and the
    workspace `[workspace.dependencies]` table.
-2. **Tree-sitter grammar.** Add the grammar dep
-   (e.g. `tree-sitter-kotlin = "0.X"`) to the workspace deps.
+2. **A parser.** `crates/colab-parse-<x>/`, built as the others are: a
+   lexer, recursive descent into items, `names.rs` naming the kinds and
+   fields, emitted through `colab_syntax::Builder`, exposed as a
+   `SourceParser` (`PARSER`). The binary carries no tree-sitter: a
+   tree-sitter grammar may be added to `colab-backends`' dev-dependencies
+   as the oracle a `tests/<x>_parser.rs` holds the parser to
+   (`colab_syntax::Tree::parse_tree_sitter`).
 3. **The common floor: a `SourceLanguage`.** `symbol`, `call` and
    `pattern`, prose ranges, declarations and `colab ast` are written once,
    in `colab_rewrite::language`. Declare what they need about your
@@ -465,33 +469,26 @@ CI (`.github/workflows/ci.yml`) runs `cargo build/test/clippy
 - **`colab:ignore` is generic.** It is applied in `Refactoring::apply_at`;
   backends need nothing for it.
 
-## Parsing once per text
+## Parsing per rule
 
-Most of a rule's cost is the parse: on 55 MB of Rust (5,000 files from
-the cargo registry) tree-sitter took 5.0 s of the 6.4-8.1 s one
-`pattern` rule needed. Rules run one after another over a file, each
-given the previous one's output, so a rule that changes nothing hands
-the next the very text it just parsed.
+Rules run one after another over a file, each given the previous one's
+output, and each parses the text it is given with the language's parser
+(`SourceLanguage::tree`, `syntax::source_tree`). Trees are never edited
+in place.
 
-- **`colab_rewrite::parse_cache::parse(grammar, text)`** keeps the last
-  few trees per thread, keyed by grammar and exact text. Every source
-  backend's `parse` and the pattern engine (its matching and the
-  "does the result still parse" check) go through it. The walker gives a
-  file to one thread, so a thread's cache is a file's chain of rules.
-- **Semantics are untouched.** A rule still sees exactly the previous
-  rule's output: a rule that changed the text makes the next parse a
-  miss. Trees are never edited in place, so sharing one is safe.
+- **The tree-sitter parse cache went with tree-sitter (2026-11-27).**
+  M10.6's `parse_cache` kept the last few tree-sitter trees per thread,
+  keyed by grammar and exact text, so a rule that changed nothing handed
+  the next its tree (measured then: four rules that do not fire 13.3 s →
+  5.7 s on 5,000 Rust files). colab's parsers are several times faster
+  than tree-sitter (Swift 0.7 s against 3.2 s over 3,713 files), but
+  whether a cache of colab trees pays again is to be measured (see the
+  architecture review in docs/development-plan.md).
 - **Rejected: one parse for a batch of rules.** M10.6 first planned an
   `Operation::lang()` and a backend `apply_batch` that applied several
   rules' edits to one tree. Each rule would then stop seeing the rules
   before it, which changes what a script means and needs merge rules for
-  overlapping edits. The cache gets most of the gain without that.
-- **Measured** (one thread, the same 5,000 files): one rule 3.5 s before
-  and after; four rules that do not fire 13.3 s → 5.7 s; the built-in
-  `rust/edition-2021-to-2024` pack (nine rules) 11.9 s → 8.0 s, its
-  output byte for byte the same.
-- **Not yet:** reparsing incrementally after a rule changes a file (an
-  `InputEdit` from the rule's edits, and the old tree).
+  overlapping edits.
 
 ## Phased runs: scan and then
 

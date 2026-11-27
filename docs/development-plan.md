@@ -828,9 +828,18 @@ ambiguous grammar), C++ not realistic (the preprocessor, ambiguity).
    calls, attribute arguments after a space). `swift` runs on it
    (`imports.rs` ported; `CallShape::Through` follows a path,
    `call_suffix` › `value_arguments`, so a trailing closure is kept);
-   tree-sitter-swift is a test dependency. No backend reads with
-   tree-sitter now; the runtime is still linked through `colab-rewrite`
-   (`Syntax::TreeSitter`, the parse cache), which goes next.
+   tree-sitter-swift is a test dependency.
+   **tree-sitter left the binary, 2026-11-27.** `colab-rewrite` lost
+   `Syntax::TreeSitter`, the parse cache, `CallShape::Located`, the
+   tree-sitter call and walk helpers (`calls.rs`, `visit_all`,
+   `rename_nodes_by_text`, `field_texts`, …) and its `tree-sitter`
+   dependency; every floor operation reads the language parser's tree.
+   tree-sitter is now the oracle only: `colab_syntax::Tree::parse_tree_sitter`
+   (feature `tree-sitter`), used by `colab-backends`' parser comparisons.
+   `cargo tree -p colab-cli -e normal` holds no tree-sitter; the release
+   binary went from 15.6 MB to 15.3 MB (the grammars had already gone with
+   their languages). Corpus, conformance and property outputs are
+   unchanged.
 
 **LALRPOP** builds the 299-line DSL grammar with 61 build-time crates and
 a `build.rs`. A hand-written recursive-descent parser (~700 lines) would

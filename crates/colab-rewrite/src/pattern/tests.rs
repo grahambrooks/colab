@@ -79,16 +79,6 @@ fn go() -> PatternLanguage {
     }
 }
 
-/// Go on tree-sitter-go, which reads a fragment without its final newline
-/// as an error: the setup for the tests of how contexts are chosen, which
-/// need a fragment that parses only in one.
-fn go_tree_sitter() -> PatternLanguage {
-    PatternLanguage {
-        syntax: Syntax::TreeSitter(tree_sitter_go::LANGUAGE.into()),
-        ..go()
-    }
-}
-
 fn python() -> PatternLanguage {
     PatternLanguage {
         syntax: Syntax::Own(&colab_parse_python::PARSER),
@@ -980,10 +970,15 @@ fn all_metavariable_pattern_has_no_prefilter() {
 
 #[test]
 fn pattern_tree_shows_metavariables_and_the_context_used() {
-    let p = StructuralPattern::compile(&go_tree_sitter(), "errors.Wrap($ERR, $MSG)").unwrap();
+    // A `case` parses only in a `switch`: the context is used.
+    let in_switch = PatternLanguage {
+        contexts: &["package p\nfunc _() {\n\tswitch x {\n@@PATTERN@@\n\t}\n}\n"],
+        ..go()
+    };
+    let p = StructuralPattern::compile(&in_switch, "case errors.Wrap($ERR, $MSG):").unwrap();
     assert!(p.context().unwrap().contains("func _()"));
     let tree = p.tree();
-    assert!(tree.starts_with("call_expression"), "{tree}");
+    assert!(tree.starts_with("expression_case"), "{tree}");
     assert!(tree.contains("\"$ERR\""), "{tree}");
     assert!(tree.contains("field: field_identifier"), "{tree}");
 }
@@ -1006,11 +1001,15 @@ fn bare_pattern_tree_starts_at_the_matched_node() {
 
 #[test]
 fn a_context_whose_wrapper_shadows_the_pattern_kind_is_refused() {
-    // `x` alone selects an `identifier`; in Go's function-body wrapper the
-    // function name `_` is an earlier `identifier`, so using that context
-    // would silently match `_` instead. It must be refused, not used.
-    let err = StructuralPattern::compile(&go_tree_sitter(), "x").unwrap_err();
-    assert!(err.contains("earlier `identifier`"), "{err}");
+    // `case x:` parses only in a `switch`, and this wrapper's `switch`
+    // already has a case: using it would silently match that `case 0:`
+    // instead. It must be refused, not used.
+    let shadowing = PatternLanguage {
+        contexts: &["package p\nfunc _() {\n\tswitch x {\n\tcase 0:\n@@PATTERN@@\n\t}\n}\n"],
+        ..go()
+    };
+    let err = StructuralPattern::compile(&shadowing, "case x:").unwrap_err();
+    assert!(err.contains("earlier `expression_case`"), "{err}");
 }
 
 #[test]

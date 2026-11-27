@@ -1,11 +1,44 @@
-//! A [`Tree`] from a tree-sitter parse, while colab's languages still
-//! parse with tree-sitter: same kinds (by tree-sitter's ids), fields and
-//! ranges, plus trivia tokens for the whitespace tree-sitter leaves out,
-//! so the tree is lossless.
+//! A [`Tree`] from a tree-sitter parse: same kinds (by tree-sitter's
+//! ids), fields and ranges, plus trivia tokens for the whitespace
+//! tree-sitter leaves out, so the tree is lossless. No backend parses with
+//! tree-sitter; these trees are what colab's own parsers are compared
+//! against (`colab-backends/tests/<lang>_parser.rs`).
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{BuildError, Builder, Field, Flags, Grammar, Kind, Tree};
+
+impl Tree {
+    /// `text` parsed by tree-sitter's `language`, as a colab tree; `None`
+    /// when tree-sitter gives no tree. The grammar's names are built once
+    /// per language.
+    pub fn parse_tree_sitter(language: &tree_sitter::Language, text: &str) -> Option<Tree> {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(language).ok()?;
+        let parsed = parser.parse(text, None)?;
+        Tree::from_tree_sitter(&parsed, text, Grammar::of_tree_sitter(language)).ok()
+    }
+}
+
+impl Grammar {
+    /// [`Grammar::from_tree_sitter`], built once per language.
+    pub fn of_tree_sitter(language: &tree_sitter::Language) -> Arc<Grammar> {
+        static GRAMMARS: OnceLock<Mutex<HashMap<tree_sitter::Language, Arc<Grammar>>>> =
+            OnceLock::new();
+        let mut grammars = GRAMMARS
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        grammars
+            .entry(language.clone())
+            .or_insert_with(|| {
+                let name = language.name().unwrap_or("?").to_string();
+                Arc::new(Grammar::from_tree_sitter(&name, language))
+            })
+            .clone()
+    }
+}
 
 impl Grammar {
     /// The kind and field names of a tree-sitter language, by its own ids.

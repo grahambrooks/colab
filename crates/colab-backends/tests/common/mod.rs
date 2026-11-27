@@ -50,5 +50,5 @@ pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
 /// own parsers are held to.
 #[allow(dead_code)]
 pub fn tree_sitter_tree(lang: &str, text: &str) -> colab_syntax::Tree {
-    colab_rewrite::syntax::tree(&grammar(lang), text).expect("tree-sitter parses")
+    colab_syntax::Tree::parse_tree_sitter(&grammar(lang), text).expect("tree-sitter parses")
 }

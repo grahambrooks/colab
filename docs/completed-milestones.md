@@ -985,7 +985,7 @@ each; a scan phase may read many**.
 
 ### ✅ M10.6 — Parse once per text (planned as batching)
 
-Shipped 2026-11-14 as a parse cache instead of batching (see [`architecture.md`](architecture.md#parsing-once-per-text)): four non-firing rules 13.3 s → 5.7 s on 55 MB of Rust, semantics unchanged. The batching design below was rejected, since one tree for several rules stops each rule seeing the ones before it.
+Shipped 2026-11-14 as a parse cache instead of batching (see [`architecture.md`](architecture.md#parsing-per-rule); the cache went with tree-sitter on 2026-11-27): four non-firing rules 13.3 s → 5.7 s on 55 MB of Rust, semantics unchanged. The batching design below was rejected, since one tree for several rules stops each rule seeing the ones before it.
 - Add `Operation::lang() -> &'static str` so the composer can
   group consecutive same-backend rules.
 - Backend-level `apply_batch(ops, source) -> String` that parses

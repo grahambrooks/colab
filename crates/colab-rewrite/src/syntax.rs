@@ -1,18 +1,16 @@
 //! Every `<lang>::pattern` rule on `colab_syntax`, colab's own tree and
-//! matcher, while the languages still parse with tree-sitter: a grammar's
-//! names (built once per grammar), a source text as a colab tree, a
-//! pattern compiled with a backend's [`PatternLanguage`] into its forms,
-//! its `where` checks and `let`s, and find, rewrite and delete over a
-//! file and the macro calls whose contents it reads. [`RulePattern`] is
-//! what `pattern::PatternRule` holds.
+//! matcher: a source text as a colab tree, a pattern compiled with a
+//! backend's [`PatternLanguage`] into its forms, its `where` checks and
+//! `let`s, and find, rewrite and delete over a file and the macro calls
+//! whose contents it reads. [`RulePattern`] is what `pattern::PatternRule`
+//! holds.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use colab_syntax::fragment::{self, Compiled, Fragments};
 use colab_syntax::{Grammar, Tree};
 
-use crate::pattern::{PatternLanguage, Syntax};
+use crate::pattern::PatternLanguage;
 
 mod check;
 mod delete;
@@ -23,59 +21,19 @@ pub use delete::delete;
 pub use rewrite::{Lets, rewrite};
 pub use rule::RulePattern;
 
-/// `language`'s kind and field names, built on first use.
-pub fn grammar_of(language: &tree_sitter::Language) -> Arc<Grammar> {
-    static GRAMMARS: OnceLock<Mutex<HashMap<tree_sitter::Language, Arc<Grammar>>>> =
-        OnceLock::new();
-    let mut grammars = GRAMMARS
-        .get_or_init(Mutex::default)
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    grammars
-        .entry(language.clone())
-        .or_insert_with(|| {
-            let name = language.name().unwrap_or("?").to_string();
-            Arc::new(Grammar::from_tree_sitter(&name, language))
-        })
-        .clone()
-}
-
-/// `source` as a colab tree for `language`: by its own parser when it has
-/// one ([`Syntax::Own`]), else by tree-sitter ([`tree`]).
+/// `source` as a colab tree for `language`, by its parser.
 pub fn source_tree(language: &PatternLanguage, source: &str) -> Option<Tree> {
-    match &language.syntax {
-        Syntax::Own(parser) => Some(parser.parse(source)),
-        Syntax::TreeSitter(grammar) => tree(grammar, source),
-    }
+    Some(language.syntax.parser().parse(source))
 }
 
-/// [`source_tree`] for a fragment, whose parse is never reused, so it
-/// skips the shared cache.
+/// [`source_tree`] for a fragment of a pattern.
 pub fn fragment_tree(language: &PatternLanguage, text: &str) -> Option<Tree> {
-    match &language.syntax {
-        Syntax::Own(parser) => Some(parser.parse(text)),
-        Syntax::TreeSitter(grammar) => {
-            let mut parser = tree_sitter::Parser::new();
-            parser.set_language(grammar).ok()?;
-            let parsed = parser.parse(text, None)?;
-            Tree::from_tree_sitter(&parsed, text, grammar_of(grammar)).ok()
-        }
-    }
+    Some(language.syntax.parser().parse(text))
 }
 
-/// The kind and field names of `language`'s trees: its own parser's, or
-/// tree-sitter's.
+/// The kind and field names of `language`'s trees.
 pub fn grammar_for(language: &PatternLanguage) -> Arc<Grammar> {
-    match &language.syntax {
-        Syntax::Own(parser) => parser.grammar(),
-        Syntax::TreeSitter(grammar) => grammar_of(grammar),
-    }
-}
-
-/// `source` as a colab tree, parsed through the shared parse cache.
-pub fn tree(language: &tree_sitter::Language, source: &str) -> Option<Tree> {
-    let parsed = crate::parse_cache::parse(language, source)?;
-    Tree::from_tree_sitter(&parsed, source, grammar_of(language)).ok()
+    language.syntax.parser().grammar()
 }
 
 /// What a form needs from a rewrite beyond its bindings.

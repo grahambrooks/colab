@@ -47,7 +47,7 @@ fn swift_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn tree_sitter_tree(text: &str) -> colab_syntax::Tree {
-    colab_rewrite::syntax::tree(&tree_sitter_swift::LANGUAGE.into(), text)
+    colab_syntax::Tree::parse_tree_sitter(&tree_sitter_swift::LANGUAGE.into(), text)
         .expect("tree-sitter parses")
 }
 

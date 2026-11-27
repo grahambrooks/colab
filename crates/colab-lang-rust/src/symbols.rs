@@ -9,7 +9,7 @@
 //! Syntactic, not semantic — shadowing and scope are not analysed.
 //! Verify with `--format diff` before applying.
 //!
-//! The rewrite itself lives in [`colab_rewrite::rename_nodes_by_text`] —
+//! The rewrite itself lives in [`colab_rewrite::SourceLanguage::rename`] —
 //! all twelve backends share one implementation and differ only in which
 //! node kinds count as an identifier.
 

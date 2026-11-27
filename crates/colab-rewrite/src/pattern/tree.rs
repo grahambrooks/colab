@@ -15,15 +15,6 @@ pub fn syntax_tree(language: &PatternLanguage, source: &str) -> Result<(String, 
     printed(crate::syntax::fragment_tree(language, source), source)
 }
 
-/// [`syntax_tree`] for a tree-sitter grammar no [`PatternLanguage`] wraps
-/// (Markdown's).
-pub fn grammar_tree(
-    grammar: &tree_sitter::Language,
-    source: &str,
-) -> Result<(String, bool), String> {
-    printed(crate::syntax::tree(grammar, source), source)
-}
-
 /// [`syntax_tree`] of a tree a backend parsed itself (Markdown's).
 pub fn print_tree_of(tree: &colab_syntax::Tree) -> (String, bool) {
     (
