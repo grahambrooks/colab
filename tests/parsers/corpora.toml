@@ -1,0 +1,124 @@
+# The wide corpora colab's parsers are measured on: each language's
+# agreement with tree-sitter (a report, not a gate) and the clean files it
+# reads with an error. `scripts/parser-corpora.py fetch` clones every repo
+# at its commit into ~/.cache/colab-corpora/<lang>/<name>;
+# `scripts/parser-corpora.py run <lang>` runs that language's comparison
+# test over its corpus and prints the summary line.
+#
+# Recorded 2026-11-27 from the clones each language's parser was written
+# against. Go, Python, JavaScript, TypeScript and Markdown were measured
+# over a local workspace of private repositories (`local`), Rust over the
+# Cargo registry; their numbers in docs/development-plan.md cannot be
+# rerun by others.
+
+[languages.c]
+test = "cpp_parser"
+env = "COLAB_C_FILES"
+repos = [
+    { name = "curl", url = "https://github.com/curl/curl.git", commit = "d5ec024cf205997c6a3416b2998953ce7cf23fcb" },
+    { name = "git", url = "https://github.com/git/git.git", commit = "acba8bf9753134d9bde89f94369f775838a8c5fe" },
+    { name = "lua", url = "https://github.com/lua/lua.git", commit = "c42d820bc0c3bc4f2ad536e19d2f05405af10387" },
+    { name = "redis", url = "https://github.com/redis/redis.git", commit = "c92dcedc443f80d6e67173acdb06019aa8fee142" },
+]
+
+[languages.cpp]
+test = "cpp_parser"
+env = "COLAB_CPP_FILES"
+repos = [
+    { name = "abseil-cpp", url = "https://github.com/abseil/abseil-cpp.git", commit = "d1cbe4fe0ecf25b6bd8e26c7cb2a98e32d5fc896" },
+    { name = "Catch2", url = "https://github.com/catchorg/Catch2.git", commit = "35d98071b9871d8be82c136e7e4f223be5261ffc" },
+    { name = "fmt", url = "https://github.com/fmtlib/fmt.git", commit = "22b7d55ac8d105edc8461e8b84ac66eefe4c802e" },
+    { name = "googletest", url = "https://github.com/google/googletest.git", commit = "a46a6012a133c7c0929fdae55b321c2fe65f3c5f" },
+    { name = "json", url = "https://github.com/nlohmann/json.git", commit = "322063822f66533bb81ef8e938fd07e5f6394917" },
+    { name = "leveldb", url = "https://github.com/google/leveldb.git", commit = "29465588d3dfdc80fba5e198037582b8fdb5dd60" },
+]
+
+[languages.csharp]
+test = "csharp_parser"
+env = "COLAB_CS_FILES"
+repos = [
+    { name = "efcore", url = "https://github.com/dotnet/efcore.git", commit = "2135c5211f2a1d328a0c796b6cff247fac0d80b2" },
+    { name = "eShop", url = "https://github.com/dotnet/eShop.git", commit = "3c6e531a6063676ece317644f72172fb42a935b3" },
+    { name = "jellyfin", url = "https://github.com/jellyfin/jellyfin.git", commit = "6b786b36eed49bf83860d9b652b96f475aeb2668" },
+    { name = "Newtonsoft.Json", url = "https://github.com/JamesNK/Newtonsoft.Json.git", commit = "52fa3aef1f2cadcd3a3f874251eddc98d3efbbaa" },
+]
+
+[languages.java]
+test = "java_parser"
+env = "COLAB_JAVA_FILES"
+repos = [
+    { name = "guava", url = "https://github.com/google/guava.git", commit = "cdb3863e02e9e728848727b3c132f94f8c22cd26" },
+    { name = "junit5", url = "https://github.com/junit-team/junit5.git", commit = "06d45ac333d451c5e1f7a98dd5005b7224513684" },
+    { name = "spring-framework", url = "https://github.com/spring-projects/spring-framework.git", commit = "9a9585e39882b9411be27d6c039787d9d48fe7e7" },
+]
+
+[languages.kotlin]
+test = "kotlin_parser"
+env = "COLAB_KOTLIN_FILES"
+repos = [
+    { name = "detekt", url = "https://github.com/detekt/detekt.git", commit = "72e93bc5967fdfb10ba8fd6f4c472c674993a7d1" },
+    { name = "Exposed", url = "https://github.com/JetBrains/Exposed.git", commit = "2162b44828a862c78a6c9db722fb174b5f0c232d" },
+    { name = "koin", url = "https://github.com/InsertKoinIO/koin.git", commit = "d486a5e8748f90db43f939e227083f2bd2c47c12" },
+    { name = "kotlinx.coroutines", url = "https://github.com/Kotlin/kotlinx.coroutines.git", commit = "7f4d6cf2414937b50291df6169a69afbaf9c5a20" },
+    { name = "kotlinx.serialization", url = "https://github.com/Kotlin/kotlinx.serialization.git", commit = "99172ab9ff063e16466226bbeb9a5d00703bbf41" },
+    { name = "ktor", url = "https://github.com/ktorio/ktor.git", commit = "3bcd1654d99bbd43a3678b6668f049390a8c3903" },
+    { name = "nowinandroid", url = "https://github.com/android/nowinandroid.git", commit = "2982e63cb691ad49cd009aab43dc206fee6699c2" },
+    { name = "okhttp", url = "https://github.com/square/okhttp.git", commit = "223a0cc71eebd4d58cd54fd8a53dfb19a48b6b7c" },
+]
+
+[languages.php]
+test = "php_parser"
+env = "COLAB_PHP_FILES"
+repos = [
+    { name = "composer", url = "https://github.com/composer/composer.git", commit = "a52d230b3a1224b5f2f2f587022cbe4bdb72d1aa" },
+    { name = "console", url = "https://github.com/symfony/console.git", commit = "ea1860277087a43c75a02591d71a5a217682f494" },
+    { name = "framework", url = "https://github.com/laravel/framework.git", commit = "321caf77d6c037577434e177c3bf280abb2b3513" },
+    { name = "guzzle", url = "https://github.com/guzzle/guzzle.git", commit = "ba6574fd975ab16f87dc356729a36777c03851e8" },
+    { name = "monolog", url = "https://github.com/Seldaek/monolog.git", commit = "6d4cf3a1199b8fa9e38fdb540569579354242fc7" },
+    { name = "orm", url = "https://github.com/doctrine/orm.git", commit = "f7e7c1ac93984404b5875472c1e21724c802be37" },
+    { name = "PHP-Parser", url = "https://github.com/nikic/PHP-Parser.git", commit = "24c72b4d84130ea4ae01b926631faf53f6aea7e0" },
+    { name = "phpunit", url = "https://github.com/sebastianbergmann/phpunit.git", commit = "be98021237c49c48ff532d061ccfc6888456f6d6" },
+    { name = "phpstan-src", url = "https://github.com/phpstan/phpstan-src.git", commit = "b3ba28f13dcefa58d7b39c4a19890f6e37e0e38c" },
+    { name = "psalm", url = "https://github.com/vimeo/psalm.git", commit = "d0c96caaae3a9623dabbc7937457a1b612cc807f" },
+    { name = "symfony", url = "https://github.com/symfony/symfony.git", commit = "9222647836686bff1283e060108107318f9db3e7" },
+    { name = "wordpress-develop", url = "https://github.com/WordPress/wordpress-develop.git", commit = "a4ad96ebe0a240e3a65e4a61a90666ff766be06d" },
+]
+
+[languages.swift]
+test = "swift_parser"
+env = "COLAB_SWIFT_FILES"
+repos = [
+    { name = "Alamofire", url = "https://github.com/Alamofire/Alamofire.git", commit = "dea4bab91767a971d6e112bc955c6a82295589b7" },
+    { name = "swift-argument-parser", url = "https://github.com/apple/swift-argument-parser.git", commit = "d225b6fe8aed45478d1e36e770bf269c5d48d3a9" },
+    { name = "swift-collections", url = "https://github.com/apple/swift-collections.git", commit = "3b10d15a65b1f390cb1a191b1c30ca3fad28d8d8" },
+    { name = "swift-composable-architecture", url = "https://github.com/pointfreeco/swift-composable-architecture.git", commit = "bf66bd83f3165fe4f5fdb9a6c99249276505723e" },
+    { name = "swift-format", url = "https://github.com/swiftlang/swift-format.git", commit = "1f28cf77703da61d9d6b75318212f80c44e746a5" },
+    { name = "swift-nio", url = "https://github.com/apple/swift-nio.git", commit = "039d70fe60720e8db699b3c7367977ca3167bec2" },
+    { name = "SwiftLint", url = "https://github.com/realm/SwiftLint.git", commit = "5d4f0cf35a350a32f48314ba249f84a6467e54a0" },
+    { name = "vapor", url = "https://github.com/vapor/vapor.git", commit = "170e682c79e88d4e8a2c8eaab2dbfb5b70968706" },
+]
+
+[languages.go]
+test = "go_parser"
+env = "COLAB_GO_FILES"
+local = "a workspace of private repositories"
+
+[languages.python]
+test = "python_parser"
+env = "COLAB_PY_FILES"
+local = "a workspace of private repositories"
+
+[languages.js]
+test = "js_parser"
+env = "COLAB_JS_FILES"
+local = "a workspace of private repositories"
+
+[languages.ts]
+test = "js_parser"
+env = "COLAB_TS_FILES"
+local = "a workspace of private repositories"
+
+[languages.rust]
+test = "rust_parser"
+env = "COLAB_RUST_FILES"
+local = "the Cargo registry (~/.cargo/registry/src)"

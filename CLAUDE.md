@@ -62,6 +62,8 @@ cargo run -p colab-cli -- explain --script <s>                   # parsed IR as 
 cargo run -p colab-cli -- links docs/                            # broken Markdown links (exit 10 if any)
 cargo run -p colab-cli -- licenses                               # colab's and every shipped crate's license (THIRD-PARTY-LICENSES.txt)
 scripts/third-party-licenses.py [--check]                        # regenerate that file (CI: --check) after changing dependencies
+scripts/parser-corpora.py fetch [<lang>]                         # clone the wide parser corpora (tests/parsers/corpora.toml) into ~/.cache/colab-corpora
+scripts/parser-corpora.py run <lang> [--show N]                  # a parser's agreement with tree-sitter over its corpus (a report, not a gate)
 cargo run -p colab-cli -- undo --from <dir>                      # restore a run made with --backup <dir>
 cargo run -p colab-cli -- lsp-daemon --stop                      # stop every kept language server
 cargo run -p colab-cli -- lsp-daemon --status                    # list them; whether keeping is on, and why
