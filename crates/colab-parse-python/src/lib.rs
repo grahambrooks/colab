@@ -34,6 +34,12 @@ fn names() -> &'static Names {
     })
 }
 
+/// The named kind `name`; in a `const { … }`, an unknown name fails to
+/// compile (`node.kind() == const { kind("import_spec") }`).
+pub const fn kind(name: &str) -> colab_syntax::Kind {
+    colab_syntax::emit::kind_in(names::NAMED, name)
+}
+
 colab_syntax::element!(Item, Tok, |n| named: n.named, extra: false);
 
 /// `text` as a colab tree.

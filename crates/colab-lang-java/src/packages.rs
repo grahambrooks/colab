@@ -49,7 +49,7 @@ fn package_names(source: &str) -> Vec<String> {
     };
     let mut out = Vec::new();
     tree.nodes().for_each(|node| {
-        if node.kind_name() != "package_declaration" {
+        if node.kind() != const { colab_parse_java::kind("package_declaration") } {
             return;
         }
         for child in node.named_children() {
@@ -67,7 +67,7 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
     };
     let root = tree.root();
     for child in root.named_children() {
-        if child.kind_name() != "package_declaration" {
+        if child.kind() != const { colab_parse_java::kind("package_declaration") } {
             continue;
         }
         // Find the dotted name child.

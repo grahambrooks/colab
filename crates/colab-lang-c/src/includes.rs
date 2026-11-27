@@ -41,7 +41,7 @@ fn wants_system_form(target: &str) -> bool {
 
 /// The path node of a `preproc_include`, plus its unquoted text.
 fn include_path<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str)> {
-    if !node.is_named() || node.kind_name() != "preproc_include" {
+    if !node.is_named() || node.kind() != const { colab_parse_c::kind("preproc_include") } {
         return None;
     }
     let path = node.child_by_field("path")?;
@@ -245,7 +245,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     // Prefer to sit with the other includes.
     let mut insert_at = 0usize;
     for child in tree.root().named_children() {
-        if child.kind_name() == "preproc_include" {
+        if child.kind() == const { colab_parse_c::kind("preproc_include") } {
             let end = child.end();
             // A `preproc_include` node already spans its terminating
             // newline, so only skip forward when it somehow does not —

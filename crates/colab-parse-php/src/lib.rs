@@ -32,6 +32,12 @@ fn names() -> &'static Names {
     NAMES.get_or_init(|| Names::new("php", names::NAMED, names::ANONYMOUS, names::FIELDS))
 }
 
+/// The named kind `name`; in a `const { … }`, an unknown name fails to
+/// compile (`node.kind() == const { kind("import_spec") }`).
+pub const fn kind(name: &str) -> colab_syntax::Kind {
+    colab_syntax::emit::kind_in(names::NAMED, name)
+}
+
 colab_syntax::element!(Item, Tok, |n| named: true, extra: false);
 
 /// `text`, PHP, as a colab tree.

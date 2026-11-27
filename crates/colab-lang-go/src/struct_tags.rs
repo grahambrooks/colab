@@ -88,7 +88,7 @@ fn collect(
     edits: &mut Vec<(usize, usize, String)>,
 ) {
     if node.is_named()
-        && node.kind_name() == "field_declaration"
+        && node.kind() == const { colab_parse_go::kind("field_declaration") }
         && let Some(tag) = node.child_by_field("tag")
     {
         let tag_text = tag.text();

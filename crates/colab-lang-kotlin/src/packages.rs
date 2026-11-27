@@ -53,10 +53,12 @@ fn package_ranges(source: &str) -> Vec<std::ops::Range<usize>> {
         return Vec::new();
     };
     tree.nodes()
-        .filter(|n| n.is_named() && n.kind_name() == "package_header")
+        .filter(|n| {
+            n.is_named() && n.kind() == const { colab_parse_kotlin::kind("package_header") }
+        })
         .flat_map(|n| {
             n.named_children()
-                .filter(|c| c.kind_name() == "qualified_identifier")
+                .filter(|c| c.kind() == const { colab_parse_kotlin::kind("qualified_identifier") })
                 .map(|c| c.range())
                 .collect::<Vec<_>>()
         })

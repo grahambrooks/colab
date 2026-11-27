@@ -19,7 +19,7 @@ use colab_syntax::{Node, Tree};
 
 /// The name node of a `namespace_use_clause`, plus its text.
 fn clause_name<'a>(node: Node<'a>) -> Option<(Node<'a>, &'a str)> {
-    if !node.is_named() || node.kind_name() != "namespace_use_clause" {
+    if !node.is_named() || node.kind() != const { colab_parse_php::kind("namespace_use_clause") } {
         return None;
     }
     node.named_children()
@@ -36,11 +36,13 @@ where
     F: FnMut(Node<'_>, Node<'_>, &str),
 {
     for node in tree.nodes() {
-        if node.is_named() && node.kind_name() == "namespace_use_declaration" {
+        if node.is_named()
+            && node.kind() == const { colab_parse_php::kind("namespace_use_declaration") }
+        {
             // A declaration containing a group is left alone entirely.
             let has_group = node
                 .named_children()
-                .any(|c| c.kind_name() == "namespace_use_group");
+                .any(|c| c.kind() == const { colab_parse_php::kind("namespace_use_group") });
             if !has_group {
                 for clause in node.named_children() {
                     if let Some((name_node, text)) = clause_name(clause) {

@@ -94,7 +94,7 @@ pub(crate) fn imported_names(source: &str) -> Vec<String> {
         if from
             && node
                 .named_children()
-                .any(|c| c.kind_name() == "wildcard_import")
+                .any(|c| c.kind() == const { colab_parse_python::kind("wildcard_import") })
         {
             out.push("*".into());
         }
@@ -111,7 +111,7 @@ where
         let dotted = match child.kind_name() {
             "dotted_name" => child,
             "aliased_import" => match child.child_by_field("name") {
-                Some(n) if n.kind_name() == "dotted_name" => n,
+                Some(n) if n.kind() == const { colab_parse_python::kind("dotted_name") } => n,
                 _ => continue,
             },
             _ => continue,
@@ -127,7 +127,7 @@ where
     let Some(module) = node.child_by_field("module_name") else {
         return;
     };
-    if module.kind_name() != "dotted_name" {
+    if module.kind() != const { colab_parse_python::kind("dotted_name") } {
         return;
     }
     visit(node, module, &source[module.range()]);
@@ -304,7 +304,7 @@ fn leading_header_end(tree: &Tree, source: &str) -> usize {
                 child
                     .named_children()
                     .next()
-                    .is_some_and(|c| c.kind_name() == "string")
+                    .is_some_and(|c| c.kind() == const { colab_parse_python::kind("string") })
             }
             "future_import_statement" => true,
             "import_from_statement" => child

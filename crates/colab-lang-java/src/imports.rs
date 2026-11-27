@@ -12,7 +12,7 @@ use colab_core::Operation;
 use colab_syntax::{Node, Tree};
 
 fn import_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, String)> {
-    if !node.is_named() || node.kind_name() != "import_declaration" {
+    if !node.is_named() || node.kind() != const { colab_parse_java::kind("import_declaration") } {
         return None;
     }
     // The identifier node is one of the import_declaration's named
@@ -206,7 +206,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     let root = tree.root();
     let mut insert_at: Option<usize> = None;
     for child in root.named_children() {
-        if child.kind_name() == "package_declaration" {
+        if child.kind() == const { colab_parse_java::kind("package_declaration") } {
             let end = child.end();
             insert_at = Some(source_code[end..].find('\n').map_or(end, |p| end + p + 1));
             break;

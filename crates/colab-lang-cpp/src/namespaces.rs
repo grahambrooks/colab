@@ -61,7 +61,9 @@ fn names(source: &str) -> Vec<(std::ops::Range<usize>, &str)> {
         return Vec::new();
     };
     tree.nodes()
-        .filter(|n| n.is_named() && n.kind_name() == "namespace_definition")
+        .filter(|n| {
+            n.is_named() && n.kind() == const { colab_parse_c::kind("namespace_definition") }
+        })
         .filter_map(|n| n.child_by_field("name"))
         .map(|name| (name.range(), &source[name.range()]))
         .collect()

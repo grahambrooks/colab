@@ -72,7 +72,7 @@ where
     tree.nodes().for_each(|node| {
         if matches!(node.kind_name(), "import_statement" | "export_statement")
             && let Some(specifier) = node.child_by_field("source")
-            && specifier.kind_name() == "string"
+            && specifier.kind() == const { colab_parse_js::kind("string") }
             && let Some((inner_start, inner_end, value)) = string_inner_bytes(specifier, source)
         {
             visit(node, inner_start, inner_end, value);
@@ -108,7 +108,9 @@ pub fn imported_names_in(lang: &SourceLanguage, source: &str) -> Vec<String> {
                         names.extend(
                             child
                                 .named_children()
-                                .filter(|n| n.kind_name() == "identifier")
+                                .filter(|n| {
+                                    n.kind() == const { colab_parse_js::kind("identifier") }
+                                })
                                 .map(text),
                         );
                     }
@@ -127,7 +129,7 @@ pub fn imported_names_in(lang: &SourceLanguage, source: &str) -> Vec<String> {
         "variable_declarator" => {
             let requires = node
                 .child_by_field("value")
-                .filter(|v| v.kind_name() == "call_expression")
+                .filter(|v| v.kind() == const { colab_parse_js::kind("call_expression") })
                 .and_then(|v| v.child_by_field("function"))
                 .is_some_and(|f| &source[f.range()] == "require");
             let Some(name) = node.child_by_field("name").filter(|_| requires) else {
@@ -140,10 +142,9 @@ pub fn imported_names_in(lang: &SourceLanguage, source: &str) -> Vec<String> {
                         match part.kind_name() {
                             "shorthand_property_identifier_pattern" => names.push(text(part)),
                             "pair_pattern" => {
-                                if let Some(v) = part
-                                    .child_by_field("value")
-                                    .filter(|v| v.kind_name() == "identifier")
-                                {
+                                if let Some(v) = part.child_by_field("value").filter(|v| {
+                                    v.kind() == const { colab_parse_js::kind("identifier") }
+                                }) {
                                     names.push(text(v));
                                 }
                             }
@@ -177,7 +178,7 @@ fn string_inner_bytes<'a>(
     // The inner text is a `string_fragment` child (or, empty, none): look
     // for it.
     for child in string_node.named_children() {
-        if child.kind_name() == "string_fragment" {
+        if child.kind() == const { colab_parse_js::kind("string_fragment") } {
             return Some((child.start(), child.end(), &source[child.range()]));
         }
     }
@@ -466,7 +467,7 @@ pub fn ensure(lang: &SourceLanguage, target: &str, source_code: &str) -> String 
     let root = tree.root();
     let mut insert_at = 0usize;
     for child in root.named_children() {
-        if child.kind_name() == "import_statement" {
+        if child.kind() == const { colab_parse_js::kind("import_statement") } {
             let end = child.end();
             insert_at = source_code[end..]
                 .find('\n')

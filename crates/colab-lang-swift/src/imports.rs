@@ -13,11 +13,11 @@ use colab_syntax::{Node, Tree};
 
 /// The module-path node of an `import_declaration`, plus its text.
 fn import_name(node: Node<'_>) -> Option<(Node<'_>, &str)> {
-    if !node.is_named() || node.kind_name() != "import_declaration" {
+    if !node.is_named() || node.kind() != const { colab_parse_swift::kind("import_declaration") } {
         return None;
     }
     node.named_children()
-        .find(|c| c.kind_name() == "identifier")
+        .find(|c| c.kind() == const { colab_parse_swift::kind("identifier") })
         .map(|c| (c, c.text()))
 }
 
@@ -198,7 +198,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
         let line_end = source_code[end..]
             .find('\n')
             .map_or(source_code.len(), |p| end + p + 1);
-        if child.kind_name() == "import_declaration" {
+        if child.kind() == const { colab_parse_swift::kind("import_declaration") } {
             after_import = Some(line_end);
         }
     }

@@ -72,6 +72,42 @@ pub trait Element: Sized {
     }
 }
 
+/// The named kind `name` of a language whose named kinds are `named` (its
+/// `names.rs` list, ids in that order, as [`Names::new`] gives them). A
+/// `const fn`: used in a `const { … }`, an unknown name fails to compile,
+/// so a backend comparing `node.kind() == const { kind("import_spec") }`
+/// cannot misspell a kind:
+///
+/// ```compile_fail
+/// const K: colab_syntax::Kind = colab_syntax::emit::kind_in(&["import_spec"], "import_sepc");
+/// ```
+pub const fn kind_in(named: &[&str], name: &str) -> Kind {
+    let mut i = 0;
+    while i < named.len() {
+        if same(named[i].as_bytes(), name.as_bytes()) {
+            // A grammar has far fewer than 65,536 kinds.
+            #[allow(clippy::cast_possible_truncation)]
+            return Kind(i as u16);
+        }
+        i += 1;
+    }
+    panic!("no such named kind in this language")
+}
+
+const fn same(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
 /// A language's kind and field names, from its `names.rs` lists, and the
 /// [`Grammar`] they make.
 #[derive(Debug)]

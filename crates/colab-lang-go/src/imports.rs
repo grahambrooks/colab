@@ -19,7 +19,7 @@ where
 {
     tree.nodes().for_each(|node| {
         if node.is_named()
-            && node.kind_name() == "import_spec"
+            && node.kind() == const { colab_parse_go::kind("import_spec") }
             && let Some(path_node) = node.child_by_field("path")
             && path_node.text().trim_matches('"') == target
         {
@@ -32,7 +32,7 @@ where
 pub(crate) fn import_paths(source: &str) -> Vec<String> {
     crate::tree(source).map_or_default(|tree| {
         tree.nodes()
-            .filter(|n| n.kind_name() == "import_spec")
+            .filter(|n| n.kind() == const { colab_parse_go::kind("import_spec") })
             .filter_map(|n| n.child_by_field("path"))
             .map(|p| p.text().trim_matches('"').to_string())
             .collect()
@@ -214,7 +214,7 @@ pub fn is_used(target: &str, source_code: &str) -> bool {
             return;
         }
         let in_import = std::iter::successors(node.parent(), colab_syntax::Node::parent)
-            .any(|n| n.kind_name() == "import_declaration");
+            .any(|n| n.kind() == const { colab_parse_go::kind("import_declaration") });
         if !in_import && names.iter().any(|n| *n == source_code[node.range()]) {
             used = true;
         }
@@ -336,7 +336,7 @@ pub fn delete(target: &str, source_code: &str) -> String {
 fn import_declarations(tree: &Tree) -> Vec<Node<'_>> {
     let root = tree.root();
     root.named_children()
-        .filter(|n| n.kind_name() == "import_declaration")
+        .filter(|n| n.kind() == const { colab_parse_go::kind("import_declaration") })
         .collect()
 }
 
@@ -350,7 +350,7 @@ fn specs_of(decl: Node<'_>) -> Vec<Node<'_>> {
                 out.extend(
                     child
                         .named_children()
-                        .filter(|n| n.kind_name() == "import_spec"),
+                        .filter(|n| n.kind() == const { colab_parse_go::kind("import_spec") }),
                 );
             }
             _ => {}
@@ -423,7 +423,7 @@ impl Group {
     fn of(decl: Node<'_>, source: &str) -> Option<Self> {
         let list = decl
             .named_children()
-            .find(|n| n.kind_name() == "import_spec_list")?;
+            .find(|n| n.kind() == const { colab_parse_go::kind("import_spec_list") })?;
         let open = list.first_child().filter(|n| n.kind_name() == "(")?;
         let close = list.last_child().filter(|n| n.kind_name() == ")")?;
         let open_end = line_end(source, open.end());
@@ -573,7 +573,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     }
     let lone = decls.iter().find(|d| {
         d.named_children()
-            .all(|c| c.kind_name() != "import_spec_list")
+            .all(|c| c.kind() != const { colab_parse_go::kind("import_spec_list") })
     });
     if let Some(decl) = lone
         && let [spec] = specs_of(*decl)[..]
@@ -590,7 +590,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
     let root = tree.root();
     let mut insert_at: Option<usize> = None;
     for child in root.named_children() {
-        if child.kind_name() == "package_clause" {
+        if child.kind() == const { colab_parse_go::kind("package_clause") } {
             let end = child.end();
             insert_at = Some(source_code[end..].find('\n').map_or(end, |p| end + p + 1));
             break;

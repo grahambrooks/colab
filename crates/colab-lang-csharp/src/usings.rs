@@ -24,7 +24,7 @@ use colab_syntax::{Node, Tree};
 /// Takes the *last* qualified name/identifier child so the alias form
 /// (`using Alias = Foo.Bar;`) yields `Foo.Bar` rather than `Alias`.
 fn using_name<'a>(node: Node<'a>, source: &'a str) -> Option<(Node<'a>, &'a str)> {
-    if !node.is_named() || node.kind_name() != "using_directive" {
+    if !node.is_named() || node.kind() != const { colab_parse_csharp::kind("using_directive") } {
         return None;
     }
     let mut found = None;
@@ -211,7 +211,7 @@ pub fn ensure(target: &str, source_code: &str) -> String {
 
     let mut insert_at = 0usize;
     for child in tree.root().named_children() {
-        if child.kind_name() == "using_directive" {
+        if child.kind() == const { colab_parse_csharp::kind("using_directive") } {
             let end = child.end();
             insert_at = source_code[end..]
                 .find('\n')

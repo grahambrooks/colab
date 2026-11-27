@@ -556,3 +556,60 @@ fn every_source_backend_has_the_common_floor() {
     }
     assert_eq!(checked, 13);
 }
+
+/// Every kind a source backend names in its `SourceLanguage` (what
+/// `symbol` renames, what is prose, how `call` finds a call, its pattern
+/// modifiers and leading kinds) is one its parser's grammar has: a
+/// misspelt kind would make its operation silently match nothing. (The
+/// backends' own modules compare kinds through `const { kind("…") }`,
+/// which fails to compile on an unknown name.)
+#[test]
+fn every_kind_a_source_language_names_is_its_grammars() {
+    let langs: &[&colab_rewrite::SourceLanguage] = &[
+        &colab_lang_c::LANG,
+        &colab_lang_cpp::LANG,
+        &colab_lang_csharp::LANG,
+        &colab_lang_go::LANG,
+        &colab_lang_java::LANG,
+        &colab_lang_js::LANG,
+        &colab_lang_kotlin::LANG,
+        &colab_lang_php::LANG,
+        &colab_lang_python::LANG,
+        &colab_lang_rust::LANG,
+        &colab_lang_swift::LANG,
+        &colab_lang_ts::LANG,
+        &colab_lang_tsx::LANG,
+    ];
+    let mut unknown = Vec::new();
+    for lang in langs {
+        let pattern = (lang.pattern)();
+        let grammar = pattern.syntax.parser().grammar();
+        let mut named: Vec<(&str, &str)> = Vec::new();
+        named.extend(lang.rename_kinds.iter().map(|k| ("rename_kinds", *k)));
+        named.extend(lang.prose_kinds.iter().map(|k| ("prose_kinds", *k)));
+        match lang.calls {
+            colab_rewrite::CallShape::Fields(kind) => named.push(("calls", kind)),
+            colab_rewrite::CallShape::Prefixed(kinds) => {
+                named.extend(kinds.iter().map(|k| ("calls", *k)));
+            }
+            colab_rewrite::CallShape::Through { kinds, arguments } => {
+                named.extend(kinds.iter().map(|k| ("calls", *k)));
+                named.extend(arguments.iter().map(|k| ("calls.arguments", *k)));
+            }
+        }
+        if let Some(m) = pattern.modifiers {
+            named.extend(m.kinds.iter().map(|k| ("modifiers", *k)));
+        }
+        named.extend(pattern.leading.kinds.iter().map(|k| ("leading", *k)));
+        for (what, kind) in named {
+            if grammar.kinds_named(kind).is_empty() {
+                unknown.push(format!("{}: {what} names `{kind}`", lang.namespace));
+            }
+        }
+    }
+    assert!(
+        unknown.is_empty(),
+        "kinds no grammar has:\n{}",
+        unknown.join("\n")
+    );
+}

@@ -52,11 +52,11 @@ fn package_names(source: &str) -> Vec<String> {
     };
     let mut out = Vec::new();
     tree.nodes().for_each(|node| {
-        if node.kind_name() != "package_clause" {
+        if node.kind() != const { colab_parse_go::kind("package_clause") } {
             return;
         }
         for child in node.named_children() {
-            if child.kind_name() == "package_identifier" {
+            if child.kind() == const { colab_parse_go::kind("package_identifier") } {
                 out.push(child.text().to_string());
             }
         }
@@ -81,9 +81,11 @@ pub fn rename(from: &str, to: &str, source_code: &str) -> String {
 }
 
 fn collect(node: Node<'_>, from: &str, out: &mut Vec<(usize, usize)>) {
-    if node.kind_name() == "package_clause" {
+    if node.kind() == const { colab_parse_go::kind("package_clause") } {
         for child in node.named_children() {
-            if child.kind_name() == "package_identifier" && child.text() == from {
+            if child.kind() == const { colab_parse_go::kind("package_identifier") }
+                && child.text() == from
+            {
                 out.push((child.start(), child.end()));
             }
         }

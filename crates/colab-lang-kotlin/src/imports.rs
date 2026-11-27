@@ -19,13 +19,13 @@ use colab_syntax::{Node, Tree};
 
 /// The qualified-name node of an `import`, plus its text.
 fn import_name(node: Node<'_>) -> Option<(Node<'_>, &str)> {
-    if !node.is_named() || node.kind_name() != "import" {
+    if !node.is_named() || node.kind() != const { colab_parse_kotlin::kind("import") } {
         return None;
     }
     // The first qualified_identifier is the imported path; a trailing
     // bare identifier, if present, is the alias.
     node.named_children()
-        .find(|c| c.kind_name() == "qualified_identifier")
+        .find(|c| c.kind() == const { colab_parse_kotlin::kind("qualified_identifier") })
         .map(|c| (c, c.text()))
 }
 
