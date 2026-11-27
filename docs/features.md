@@ -665,8 +665,13 @@ and `"$obj->run"` are three distinct targets.
 ## Kotlin (`colab-lang-kotlin`)
 
 Powered by colab's own parser (`colab-parse-kotlin`), with
-tree-sitter-kotlin-ng's node kinds. One difference from tree-sitter-kotlin:
-annotations before a declaration are always its `modifiers`, where
+tree-sitter-kotlin-ng's node kinds. Expressions follow Kotlin's grammar
+where tree-sitter-kotlin reads otherwise: a prefix operator takes the
+whole postfix expression (`!x.isEmpty()` negates the call, so
+`kotlin::pattern '$X.isEmpty()'` binds `$X` to `x`), a trailing lambda
+is its call's (`f(x) { }` is one `call_expression`), and `f<T>(x)` is a
+generic call wherever type arguments read (`a ?: b<T>()` calls `b`).
+Annotations before a declaration are always its `modifiers`, where
 tree-sitter's parse sometimes read them (and the declaration) as an
 `annotated_expression`.
 

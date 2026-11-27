@@ -195,9 +195,6 @@ pub(crate) struct Parser<'s> {
     no_nullable: bool,
     /// The file's own statements are being read (no braces around).
     top: bool,
-    /// An operator's right operand is being read: a generic call there is
-    /// left to the operator (tree-sitter's parse calls the operation).
-    rhs: bool,
     /// Comments' (start, end), in order, for where a semicolon lands.
     comments: Vec<(usize, usize)>,
 }
@@ -216,7 +213,6 @@ impl<'s> Parser<'s> {
             no_lambda: false,
             no_nullable: false,
             top: true,
-            rhs: false,
             comments,
         }
     }

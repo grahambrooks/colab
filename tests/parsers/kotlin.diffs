@@ -1,3 +1,6 @@
 # The repo's kotlin files whose colab tree differs from tree-sitter's: the first
 # differing node of each. Reviewed, not a target; rewrite with
 # COLAB_BLESS=1 cargo test -p colab-backends --test <lang>_parser
+tests/samples/kotlin/Playlist.kt: node 322
+    ours   navigation_expression None 926..937 l38 "tracks.fold"
+    theirs call_expression None 926..952 l38 "tracks.fold(Duration.ZERO)"

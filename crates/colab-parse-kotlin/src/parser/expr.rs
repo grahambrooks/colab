@@ -1,10 +1,14 @@
-//! Expressions by precedence climbing, at tree-sitter-kotlin's
-//! precedences; calls, navigation and indexing; lambdas, `if`, `when`,
-//! `try`, strings and the other primaries.
+//! Expressions by precedence climbing, at Kotlin's precedences; calls,
+//! navigation and indexing; lambdas, `if`, `when`, `try`, strings and the
+//! other primaries.
 //!
-//! tree-sitter-kotlin's prefix operators bind tighter than its postfix
-//! ones (`!a.b` is `(!a).b`), and an infix call is any name between two
-//! expressions; both are copied.
+//! As Kotlin's grammar has it, postfix operations (calls, navigation,
+//! indexing, `!!`) bind tighter than prefix ones (`!a.isEmpty()` negates
+//! the call), a call's trailing lambda is the call's (`f(x) { }` is one
+//! call), `f<T>(x)` is a generic call where type arguments read, and an
+//! infix call is a name between two expressions (`a to b`).
+//! tree-sitter-kotlin reads the first three otherwise; its differences are
+//! in `tests/parsers/kotlin.diffs`.
 
 use super::{Item, Parser, node};
 use crate::lexer::{L, Lx};
@@ -23,10 +27,7 @@ const OR: u8 = 2;
 
 impl Parser<'_> {
     pub(crate) fn expression(&mut self) -> Item {
-        let saved = std::mem::replace(&mut self.rhs, false);
-        let e = self.expr_bp(0);
-        self.rhs = saved;
-        e
+        self.expr_bp(0)
     }
 
     /// The operator here and its precedence, if one continues the
@@ -99,30 +100,14 @@ impl Parser<'_> {
         }
     }
 
-    /// The right operand of an operator binding at `prec - 1`. An operator
-    /// binding tighter than a comparison leaves a generic call after its
-    /// operand to the operation (`a ?: b<T>()` calls `a ?: b`); a looser one
-    /// keeps it (`a && b<T>()`).
+    /// The right operand of an operator binding at `prec - 1`.
     fn operand(&mut self, prec: u8) -> Item {
-        let saved = std::mem::replace(&mut self.rhs, prec > RELATIONAL + 1);
-        let r = self.expr_bp(prec);
-        self.rhs = saved;
-        r
+        self.expr_bp(prec)
     }
 
     pub(crate) fn expr_bp(&mut self, min: u8) -> Item {
         let mut left = self.prefix();
-        loop {
-            // A generic call left by the operand calls the operation.
-            if self.at("<") && !self.stops() && self.type_arguments_call() {
-                if self.rhs {
-                    break;
-                }
-                left = self.postfix(left);
-            }
-            let Some(prec) = self.binary_op() else {
-                break;
-            };
+        while let Some(prec) = self.binary_op() {
             if prec < min {
                 break;
             }
@@ -197,19 +182,24 @@ impl Parser<'_> {
         left
     }
 
-    /// Prefix operators bind before postfix ones: `!a.b` is `(!a).b`.
+    /// A prefix operation, or a postfix expression: a prefix operator takes
+    /// the whole postfix expression after it (`!a.b()` is `!(a.b())`).
     fn prefix(&mut self) -> Item {
-        let e = self.prefix_operand();
-        self.postfix(e)
+        match self.peek() {
+            L::Op("++" | "--" | "+" | "-" | "!") => {
+                let op = self.punct().with("operator");
+                let arg = self.prefix().with("argument");
+                node("unary_expression", vec![op, arg])
+            }
+            _ => {
+                let e = self.prefix_operand();
+                self.postfix(e)
+            }
+        }
     }
 
     fn prefix_operand(&mut self) -> Item {
         match self.peek() {
-            L::Op("++" | "--" | "+" | "-" | "!") => {
-                let op = self.punct().with("operator");
-                let arg = self.prefix_operand().with("argument");
-                node("unary_expression", vec![op, arg])
-            }
             L::Op("*") => {
                 let star = self.punct();
                 let e = self.expr_bp(OR);
@@ -264,10 +254,6 @@ impl Parser<'_> {
                     e = node("call_expression", vec![e, args]);
                     e = self.trailing_lambda(e);
                 }
-                // A generic call after an operator calls the whole operation
-                // (`a + b<T>()` is `(a + b)<T>()`): the operator's loop takes
-                // it.
-                L::Op("<") if self.rhs => return e,
                 L::Op("<") if !self.stops() && self.type_arguments_call() => {
                     let targs = self.type_arguments();
                     let mut items = vec![e, targs];
@@ -302,85 +288,32 @@ impl Parser<'_> {
         !self.no_lambda
     }
 
-    /// A call's lambda after its arguments, as a second call.
-    fn trailing_lambda(&mut self, e: Item) -> Item {
+    /// A call's trailing lambda after its arguments: the call's own
+    /// (`f(x) { }` is one call).
+    fn trailing_lambda(&mut self, mut e: Item) -> Item {
         if (self.at("{") && self.lambda_follows())
             || (self.peek() == L::Label && self.is(self.i + 1, "{") && !self.stops())
         {
             let l = self.annotated_lambda();
+            if let Item::Node(n) = &mut e {
+                n.items.push(l);
+                return e;
+            }
             return node("call_expression", vec![e, l]);
         }
         e
     }
 
-    /// At `<` after an expression: whether type arguments and a call
-    /// follow, as tree-sitter's parse reads them. A lone name in the
-    /// brackets before one plain argument is a comparison to it.
+    /// At `<` after an expression: whether it opens type arguments of a
+    /// call, as Kotlin's parser decides: the brackets read as type
+    /// arguments and a call, a member or a callable reference follows
+    /// (`listOf<String>()`, `f<T> { }`, `T<A>::class`).
     fn type_arguments_call(&self) -> bool {
         let Some(end) = self.scan_type_arguments(self.i) else {
             return false;
         };
-        // One name (or `A.B`) in the brackets could be compared to.
-        let simple = (self.i + 1..end - 1).all(|k| {
-            if (k - self.i) % 2 == 1 {
-                self.kind_at(k) == L::Word
-            } else {
-                self.is(k, ".")
-            }
-        });
-        let close = match self.kind_at(end) {
-            L::Op("(") => {
-                if !simple || self.is(end + 1, ")") {
-                    return true;
-                }
-                let close = self.scan_balanced(end).unwrap_or(end);
-                if !self.one_expression(end, close) {
-                    return true;
-                }
-                close
-            }
-            L::Op("{") => {
-                if !simple {
-                    return true;
-                }
-                self.scan_balanced(end).unwrap_or(end)
-            }
-            L::Op("::") => return true,
-            _ => return false,
-        };
-        // Then the comparison reading wins unless what follows the call binds
-        // tighter than a comparison (`f<T>(x).g`, `f<T>(x) + y`; not
-        // `f<T>(x) != null`).
-        if self.stops_at(close) {
-            return false;
-        }
-        match self.kind_at(close) {
-            L::Op(o) => matches!(
-                o,
-                "." | "?"
-                    | "::"
-                    | "("
-                    | "["
-                    | "{"
-                    | "!!"
-                    | "++"
-                    | "--"
-                    | "*"
-                    | "/"
-                    | "%"
-                    | "+"
-                    | "-"
-                    | ".."
-                    | "..<"
-                    | "?:"
-                    | "!in"
-                    | "!is"
-                    | "as?"
-            ),
-            L::Word => matches!(self.word_at(close), "as" | "in" | "is") || self.is_ident(close),
-            L::Label => true,
-            _ => false,
-        }
+        matches!(self.kind_at(end), L::Op("(" | "::" | "." | "?"))
+            || (self.is(end, "{") && self.lambda_follows())
     }
 
     pub(crate) fn value_arguments(&mut self) -> Item {

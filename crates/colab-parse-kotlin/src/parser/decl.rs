@@ -95,24 +95,6 @@ impl Parser<'_> {
         Some(self.declaration(kw))
     }
 
-    /// Whether the brackets `open..end` hold one plain expression (a
-    /// parenthesized expression's).
-    pub(crate) fn one_expression(&self, open: usize, end: usize) -> bool {
-        if end <= open + 2 {
-            return false;
-        }
-        let mut depth = 0usize;
-        !(open + 1..end - 1).any(|k| {
-            match self.kind_at(k) {
-                L::Op("(" | "[" | "{") | L::InterpOpen => depth += 1,
-                L::Op(")" | "]" | "}") => depth = depth.saturating_sub(1),
-                L::Op("," | "=") if depth == 0 => return true,
-                _ => {}
-            }
-            false
-        })
-    }
-
     /// A class member: a declaration, else what is there as an error.
     pub(crate) fn member(&mut self) -> Item {
         let (k, _) = self.scan_modifiers(self.i);
