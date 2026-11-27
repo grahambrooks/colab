@@ -899,6 +899,24 @@ is implemented yet; most items change what `<lang>::pattern` matches.
    **Mechanism done 2026-11-27:** `tests/parsers/<lang>.diffs`
    (`common::baseline`), blessed empty, and `tests/parsers/corpora.toml`
    with `scripts/parser-corpora.py` (item 8).
+   **Readings fixed 2026-11-27**, one breaking commit per language, each
+   from the language's own specification:
+   - Swift: precedence groups; `try` / `await` cover the expression.
+     Agreement 2,995 → 1,441 of 3,298.
+   - Kotlin: prefix operators over postfix ones, a trailing lambda
+     joining its call, generic calls by type-argument lookahead.
+     Agreement 7,367 → 3,935 of 7,944.
+   - C#: casts by §12.9.7, `?.` as a postfix, `is` constants bound
+     above relational. Agreement 9,082 → 8,593 of 9,179.
+   - PHP: the dangling `else` (1 file in 39,155).
+   - C: `!b++` (6 files).
+   - Java: a switch group's labels (38 files).
+
+   Clean files read with an error are unchanged in every language.
+   Corpus, conformance and properties outputs did not change. What
+   stays copied is ambiguous without types: C++'s `(f)(x)`,
+   `sizeof(x)` and `struct MACRO Name { … }`, Go's `X[T](x)`, and
+   Swift's attribute arguments after a space.
 2. **Parse a pattern by entry point, not in textual wrappers.** A
    pattern that is not a file is tried bare, then in each of the
    backend's context wrappers: 57 `@@PATTERN@@` wrappers across 13
