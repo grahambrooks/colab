@@ -930,6 +930,24 @@ is implemented yet; most items change what `<lang>::pattern` matches.
    try them in order. The heuristics and wrappers go, compiling a
    pattern parses less text, and a failure can say "not an expression or
    a statement" instead of naming every wrapper tried.
+   **Checked 2026-11-27, deferred:**
+   - *The eleven parsers of colab's own:* feasible, partly. Go's
+     parameter wrapper must stay as text: its `typedef` is what makes
+     the shadowing refusal reject a bare name read as a type, and an
+     entry has no earlier node to refuse on.
+   - *Rust:* partly. `ra_ap_parser` has `TopEntryPoint` (`Expr`, `Type`,
+     `Pattern`, `MacroStmts`, `MacroItems`), but `ra_ap_syntax` exports
+     only `Expr::parse` (`parse_text_at` is `pub(crate)`). The rest would
+     need a direct `ra_ap_parser` dependency and colab's own
+     event-to-tree builder. Nothing covers three of Rust's eight
+     wrappers: a struct field, a match arm, an item's leading attribute.
+   - *So:* the heuristics this item would delete stay in any case. What
+     remains is compile-time speed and error wording, for one pattern
+     compile per rule.
+
+   Cheaper for the visible part: name the kinds of code a failed
+   pattern was tried as (expression, statement, member, …) rather than
+   every wrapper.
 3. **One parser runtime, not nine copies.** Each `colab-parse-*` crate
    carries the same `Item`/`Tok`/`Node` tree, `with`/`field_over`, the
    token helpers (`punct`, `expect`, `missing`, `error_token`,
@@ -980,6 +998,10 @@ is implemented yet; most items change what `<lang>::pattern` matches.
    `Prefixed` / `Through`, so `CallShape` goes. That breaks only
    `where $X is <kind>` constraints and `colab ast` output, and each
    language's rename is one breaking release.
+   **Size of the break (2026-11-27):** 20 `$X is <kind>` constraints in
+   the repo (4 in packs, 5 in docs, 10 in corpus cases, 1 in evals),
+   plus `colab ast` output and whatever users' own rules spell. Waiting
+   on Graham's go-ahead, one language first.
 7. **Typed accessors for calls, declarations and imports.** Rust answers
    them from rust-analyzer's typed AST (`OwnSyntax`). The others go
    through `declarations_in`'s name heuristics ("a kind that reads as a
