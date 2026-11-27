@@ -193,24 +193,9 @@ impl Parser<'_> {
             }
             L::Op("!" | "~" | "-" | "+") => {
                 let op = self.punct().with("operator");
+                // A postfix operator binds tighter: `!b++` is `!(b++)`, as
+                // C reads it (tree-sitter-c reads `(!b)++`).
                 let arg = self.expr_bp(UNARY).with("argument");
-                // tree-sitter-c reads `!b++` as `(!b)++`.
-                if !self.cpp()
-                    && let Item::Node(n) = &arg
-                    && n.kind == "update_expression"
-                    && n.items.last().is_some_and(
-                        |i| matches!(i, Item::Tok(t) if t.kind == "++" || t.kind == "--"),
-                    )
-                    && let Item::Node(mut n) = arg
-                {
-                    let post = n
-                        .items
-                        .pop()
-                        .unwrap_or_else(|| unreachable!("checked above"));
-                    let inner = n.items.pop().unwrap_or_else(|| unreachable!("an argument"));
-                    let u = node("unary_expression", vec![op, inner]).with("argument");
-                    return node("update_expression", vec![u, post]);
-                }
                 return node("unary_expression", vec![op, arg]);
             }
             L::Name if matches!(self.word(), "not" | "compl") && self.cpp() => {
