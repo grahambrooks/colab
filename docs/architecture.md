@@ -476,14 +476,16 @@ output, and each parses the text it is given with the language's parser
 (`SourceLanguage::tree`, `syntax::source_tree`). Trees are never edited
 in place.
 
-- **The tree-sitter parse cache went with tree-sitter (2026-11-27).**
-  M10.6's `parse_cache` kept the last few tree-sitter trees per thread,
-  keyed by grammar and exact text, so a rule that changed nothing handed
-  the next its tree (measured then: four rules that do not fire 13.3 s →
-  5.7 s on 5,000 Rust files). colab's parsers are several times faster
-  than tree-sitter (Swift 0.7 s against 3.2 s over 3,713 files), but
-  whether a cache of colab trees pays again is to be measured (see the
-  architecture review in docs/development-plan.md).
+- **`colab_rewrite::syntax::parse_cached(parser, text)`** keeps the last
+  three trees per thread, keyed by the parser (address and vtable) and
+  the exact text, returned as `Rc<Tree>`. `syntax::source_tree` and
+  `SourceLanguage::tree` go through it; fragments of patterns do not.
+  The walker gives a file to one thread, so a thread's cache is a file's
+  chain of rules. It replaced M10.6's tree-sitter parse cache, which went
+  with tree-sitter. Measured on the Swift corpus (3,706 files, one
+  thread): four non-firing `swift::pattern` rules whose literal is in 344
+  files, 1.01 s → 0.28 s; one such rule 0.36 s → 0.26 s; none firing
+  0.12 s either way.
 - **Rejected: one parse for a batch of rules.** M10.6 first planned an
   `Operation::lang()` and a backend `apply_batch` that applied several
   rules' edits to one tree. Each rule would then stop seeing the rules

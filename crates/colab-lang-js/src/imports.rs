@@ -15,9 +15,8 @@ use colab_core::Operation;
 use colab_rewrite::SourceLanguage;
 use colab_syntax::{Node, Tree};
 
-/// `source` as colab's tree, by `lang`'s parser (colab's own, or
-/// tree-sitter's read into colab's tree).
-fn tree(lang: &SourceLanguage, source: &str) -> Option<Tree> {
+/// `source` as colab's tree, by `lang`'s parser.
+fn tree(lang: &SourceLanguage, source: &str) -> Option<std::rc::Rc<Tree>> {
     colab_rewrite::syntax::source_tree(&(lang.pattern)(), source)
 }
 

@@ -5,10 +5,12 @@
 //! whose contents it reads. [`RulePattern`] is what `pattern::PatternRule`
 //! holds.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use colab_syntax::fragment::{self, Compiled, Fragments};
-use colab_syntax::{Grammar, Tree};
+use colab_syntax::{Grammar, SourceParser, Tree};
 
 use crate::pattern::PatternLanguage;
 
@@ -21,9 +23,49 @@ pub use delete::delete;
 pub use rewrite::{Lets, rewrite};
 pub use rule::RulePattern;
 
-/// `source` as a colab tree for `language`, by its parser.
-pub fn source_tree(language: &PatternLanguage, source: &str) -> Option<Tree> {
-    Some(language.syntax.parser().parse(source))
+/// `source` as a colab tree for `language`, by its parser, through the
+/// thread's parse cache ([`parse_cached`]).
+pub fn source_tree(language: &PatternLanguage, source: &str) -> Option<Rc<Tree>> {
+    Some(parse_cached(language.syntax.parser(), source))
+}
+
+/// How many trees each thread keeps: a file's text before and after a
+/// rule changes it, and one more.
+const CACHED_TREES: usize = 3;
+
+thread_local! {
+    static TREES: RefCell<Vec<(*const dyn SourceParser, Rc<Tree>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// `text` parsed by `parser`, reusing the tree of an earlier parse of the
+/// same text by the same parser on this thread. Rules run one after
+/// another over a file, each given the previous one's output, so a rule
+/// that changes nothing (or matches nothing) hands the next the text it
+/// just parsed; the walker gives a file to one thread. Trees are never
+/// edited, so sharing one changes no rule's meaning. Keyed by the parser
+/// (address and vtable: the parsers are zero-sized statics) and the exact
+/// text.
+pub fn parse_cached(parser: &'static dyn SourceParser, text: &str) -> Rc<Tree> {
+    let key: *const dyn SourceParser = parser;
+    TREES.with(|cell| {
+        let mut trees = cell.borrow_mut();
+        if let Some(i) = trees
+            .iter()
+            .position(|(p, t)| std::ptr::eq(*p, key) && t.text() == text)
+        {
+            let entry = trees.remove(i);
+            let tree = entry.1.clone();
+            trees.push(entry);
+            return tree;
+        }
+        let tree = Rc::new(parser.parse(text));
+        if trees.len() == CACHED_TREES {
+            trees.remove(0);
+        }
+        trees.push((key, tree.clone()));
+        tree
+    })
 }
 
 /// [`source_tree`] for a fragment of a pattern.

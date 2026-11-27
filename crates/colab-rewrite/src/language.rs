@@ -158,8 +158,8 @@ impl SourceLanguage {
     }
 
     /// `source` as colab's tree, by the language's parser.
-    pub fn tree(&self, source: &str) -> colab_syntax::Tree {
-        (self.pattern)().syntax.parser().parse(source)
+    pub fn tree(&self, source: &str) -> std::rc::Rc<colab_syntax::Tree> {
+        crate::syntax::parse_cached((self.pattern)().syntax.parser(), source)
     }
 
     /// Every call in `source` by the language's [`CallShape`], outermost
