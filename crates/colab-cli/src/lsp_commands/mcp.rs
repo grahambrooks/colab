@@ -83,7 +83,7 @@ impl colab_mcp::ToolProvider for LspTools {
             "in": {"type": "string", "description": "The file it is declared in, relative to `cwd`."},
             "edit": {"type": "string", "enum": ["replace_body", "insert_before", "insert_after"], "description": "Replace the whole declaration (doc comments and attributes too), or insert beside it."},
             "text": {"type": "string", "description": "The new text; it is re-indented to the declaration's indentation."},
-            "lsp": {"type": "string", "description": "Find the declaration with this language server's documentSymbol instead of tree-sitter."},
+            "lsp": {"type": "string", "description": "Find the declaration with this language server's documentSymbol instead of colab's parser."},
             "list": {"type": "boolean", "default": false, "description": "List the file's declarations (name paths and lines) instead of editing."},
             "cwd": {"type": "string", "description": "Directory paths are relative to; defaults to the server's."},
             "timeout": {"type": "integer", "description": "Seconds for a language server's start-up (default 120)."}
@@ -93,7 +93,7 @@ impl colab_mcp::ToolProvider for LspTools {
         vec![
             json!({
                 "name": "colab.edit_symbol",
-                "description": "Edit one declaration by name path instead of by exact text: replace a function, method or class whole, or insert code before or after it. Cheaper and safer than a string match: the declaration is found by tree-sitter (or the language server with `lsp`), an ambiguous name lists the candidates, and the result is a colab report (diff, conflicts). Call with `list: true` to see a file's name paths. Previews unless `write` is true.",
+                "description": "Edit one declaration by name path instead of by exact text: replace a function, method or class whole, or insert code before or after it. Cheaper and safer than a string match: the declaration is found by colab's parser (or the language server with `lsp`), an ambiguous name lists the candidates, and the result is a colab report (diff, conflicts). Call with `list: true` to see a file's name paths. Previews unless `write` is true.",
                 "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false},
                 "inputSchema": {"type": "object", "properties": edit, "required": ["in"], "additionalProperties": false}
             }),

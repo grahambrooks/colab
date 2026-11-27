@@ -1080,7 +1080,7 @@ table below summarises:
 | `ts::symbol` | As `js::symbol`, plus `type_identifier` (a type's name). | `"Config"` |
 | `tsx::import` / `tsx::symbol` | As `ts::`, in `.tsx` files on the TSX grammar (a component's name in its JSX tags too). | `"./ui"`, `"Button"` |
 
-For the source modules, matching is on tree-sitter node text, not raw substrings
+For the source modules, matching is on syntax-tree node text, not raw substrings
 — `tokio` does **not** match `my_tokio` and `another.module` does
 **not** match `yet.another.module`.
 
@@ -1378,7 +1378,7 @@ The DSL is intentionally small. Capabilities being considered:
 - A `wrap` action shorthand for the common
   `replace_call "f(ctx, $args)"` pattern.
 - A query namespace (e.g. `go::regex`) for opt-in regex-based
-  rewrites where a tree-sitter rule does not suffice.
+  rewrites where a syntax-tree rule does not suffice.
 - Type constraints (`$X is type T`) via the language server's hover.
 - A `<lang>::symbol` mode that respects shadowing. (`in "<glob>"` narrows a rename by path and `where inside` by syntactic region; neither resolves names — `colab rename` does, through the language server.)
 

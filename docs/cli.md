@@ -986,7 +986,7 @@ colab edit --symbol A/m --in a.py --insert-after --text-file - --write < method.
   every `load`, `Config/load` only the one in `Config`. One that names
   several is an error listing each, with its line; one that names none
   lists the file's paths, with a "did you mean".
-- **Declarations** come from tree-sitter for every source language: a
+- **Declarations** come from colab's parser for every source language: a
   Rust `impl` is named by its type (`impl Display for Config` is
   `Config`), a Go method sits under its receiver type, a C or C++
   function is named by its declarator. A declaration includes the doc
@@ -1571,7 +1571,7 @@ colab refactor --script s.colab --write --verify "cargo check --quiet" --commit-
 
 - `NO_COLOR` — when set, ANSI colour is disabled in `human` output.
 - `RUST_LOG` — standard `env_logger` filter; set to `debug` to see
-  per-file "no changes" lines and tree-sitter parse hints.
+  per-file "no changes" lines and parse hints.
 - `COLAB_JOBS` — worker threads when `--jobs` is not given.
 - `COLAB_KEEP_SERVER` — `0` gives each command its own language server instead of the kept one (the default); see [Kept language servers](#kept-language-servers).
 - `COLAB_CACHE_DIR` — where packs from git and fleet clones are kept;

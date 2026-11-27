@@ -60,7 +60,7 @@ pub const DOCS: &[Doc] = &[
 /// Every document as one text, `llms-full.txt`.
 pub fn llms_full() -> String {
     let mut out = String::from(
-        "# colab\n\n> colab, the tree-sitter codemod tool: repo-wide structural edits across 12 source languages, TOML / JSON / Markdown and any text file, from a small DSL, a CLI, an MCP server and an LSP. This file is generated from the documents below (`cargo test -p colab-mcp`, `COLAB_BLESS=1` to refresh).\n",
+        "# colab\n\n> colab, the structural codemod tool: repo-wide structural edits across 13 source languages, TOML / JSON / Markdown and any text file, from a small DSL, a CLI, an MCP server and an LSP. This file is generated from the documents below (`cargo test -p colab-mcp`, `COLAB_BLESS=1` to refresh).\n",
     );
     for doc in DOCS {
         let _ = write!(out, "\n\n---\n\n<!-- file: {} -->\n\n", doc.path);

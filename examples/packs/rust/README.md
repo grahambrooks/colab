@@ -25,7 +25,7 @@ them:
 
 - **`Cargo.toml`'s `edition`.** It may be a plain string, inherited
   (`edition.workspace = true`) or an older edition; bump it yourself.
-- **Macro bodies.** A `macro_rules!` body is a token tree to tree-sitter,
+- **Macro bodies.** A `macro_rules!` body is a token tree to the parser,
   so `$e:expr` → `$e:expr_2021`, and anything above inside a macro, is
   not rewritten.
 - **`set_var` / `remove_var` imported by name** (`use std::env::set_var;`

@@ -9,7 +9,7 @@
 //!
 //! The declaration is found by the language server's `documentSymbol`
 //! when one runs (`--lsp`, or a kept server already up for the file), else
-//! by tree-sitter (`colab_rewrite::declarations`). A name path is the end
+//! by colab's parser (`colab_rewrite::declarations_in`). A name path is the end
 //! of a declaration's full path (`load`, `Config/load`); one that names
 //! several is an error that lists them. The edit is a [`ChangeSet`] run
 //! through `run_change_set`, so it is previewed, conflict-checked,
@@ -66,7 +66,7 @@ pub struct EditArgs {
     text_file: Option<PathBuf>,
 
     /// Find the declaration with this language server's `documentSymbol`
-    /// instead of tree-sitter.
+    /// instead of colab's parser.
     #[arg(long, value_name = "CMD")]
     lsp: Option<String>,
 
@@ -133,7 +133,7 @@ pub fn declarations_of(
         ))
     })?;
     let decls = backend.declarations(text).unwrap_or_default();
-    Ok((decls, format!("tree-sitter ({})", backend.lang())))
+    Ok((decls, format!("colab's parser ({})", backend.lang())))
 }
 
 /// The usual server for `file`, if a kept one is already running for it:

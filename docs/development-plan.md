@@ -871,8 +871,11 @@ is implemented yet; most items change what `<lang>::pattern` matches.
    arithmetic and `a == b && c` is `a == (b && c)`; Kotlin's `!a.b` is
    `(!a).b`; C#'s `(a) - b` is a cast and `x + b?.c` is `(x + b)?.c`; PHP's
    dangling `else` goes to the outermost `if`; C++'s `struct MACRO Name
-   { … };` is a function definition. Go, Python, Java and JavaScript
-   already decline to copy misreadings, so the policy is inconsistent.
+   { … };` is a function definition. Go, Python and JavaScript decline
+   the misreadings they found (Go's parameter group cut after nine names,
+   JavaScript's `await (f)(x)`), while Java, C#, C++, PHP, Kotlin and
+   Swift copy some (Go also copies tree-sitter's choice for `X[T](x)`), so
+   the policy is inconsistent.
    Measured with the release binary (2026-11-27): over `let y = a + b.f()`
    and `let z = b.f()`, `swift::pattern '$X.f()'` finds only the second;
    over `if p == q && r {}`, `'$A && $B'` binds `q && r`; and
@@ -909,10 +912,14 @@ is implemented yet; most items change what `<lang>::pattern` matches.
    `field_of`, `place_extras` and `emit`: nine `lib.rs` files of 254–288
    lines, which differ from Swift's by 32–181 lines each. They have
    already drifted. Swift's `emit` skips a token whose text was already
-   passed as trivia (a fix for a comment after a statement end in a file
-   read with errors, 2026-11-26), and no other parser has the fix. Move
-   them into `colab-syntax` (or a `colab-parse-kit`), each parser keeping
-   its lexer, grammar and `names.rs`.
+   passed as trivia, and no other parser has that guard. The guard hides
+   an ordering bug rather than fixing it: a missing token placed at the
+   previous token's end, after a hidden zero-width semicolon, leaves a
+   node's items unsorted in a file read with errors. Move the runtime
+   into `colab-syntax` (or a `colab-parse-kit`), keeping each parser's
+   lexer, grammar and `names.rs`. The shared runtime should keep items in
+   order (sort, or place a missing token at the position it is emitted),
+   rather than copy the guard to nine parsers.
 4. **Kinds as ids, not strings.** The floor and the backends' own modules
    compare `kind_name()` with string literals at 68 sites (imports,
    packages, Markdown, declarations, calls), and `CallShape` names kinds

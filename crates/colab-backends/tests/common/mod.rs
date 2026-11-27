@@ -42,7 +42,7 @@ pub fn tree(lang: &str, text: &str) -> colab_syntax::Tree {
         "c" => {
             colab_parse_c::parse_as(text, colab_parse_c::Dialect::C).expect("colab's C tree builds")
         }
-        _ => tree_sitter_tree(lang, text),
+        other => panic!("no colab parser for {other}"),
     }
 }
 

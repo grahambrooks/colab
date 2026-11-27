@@ -24,7 +24,7 @@ colab refactor --script rename-tokio.colab --check .
 ```
 
 <p align="center">
-  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .colab script is compiled against 16 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
+  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .colab script is compiled against 16 backends, matched on syntax trees from colab's own parsers, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
 </p>
 
 ## Why
@@ -37,14 +37,14 @@ Codebase-wide refactoring lives in an awkward middle ground:
   language at a time.
 - Hand-rolled scripts work but are write-once.
 
-Colab sits in the middle: a small DSL, syntax-aware matching via
-tree-sitter, idempotent operations, and a deterministic CLI that
+Colab sits in the middle: a small DSL, syntax-aware matching on
+parsers of its own (pure Rust, lossless), idempotent operations, and a deterministic CLI that
 runs the same way on a developer machine, in CI, and from an AI
 agent.
 
 ## Capabilities
 
-Twelve languages, each with the same capability floor — an
+Thirteen source-language namespaces, each with the same capability floor — an
 import-equivalent, a symbol rename, call rewriting, and `pattern`
 (match a code shape with `$METAVARS`):
 
@@ -331,7 +331,7 @@ The repo is a Cargo workspace under `crates/`:
 ```
 crates/
   colab-core/         # Error, walker, CodeTransformer, LanguageBackend, registry, RunReport, render
-  colab-rewrite/      # shared tree-sitter rewriting and the <lang>::pattern engine
+  colab-rewrite/      # the shared floor (symbol, call, pattern) and the <lang>::pattern engine
   colab-syntax/       # colab's own lossless syntax tree and structural matcher
   colab-backends/     # registry(): the one place every backend is registered
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR

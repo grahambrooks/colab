@@ -103,7 +103,7 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 /// tool names, so it is the one description an agent reads before it
 /// decides between colab, its own edit tool and `sed`. Keep it short.
 pub const INSTRUCTIONS: &str = "\
-colab makes structural, syntax-aware edits (tree-sitter; 12 languages plus TOML, JSON and \
+colab makes structural, syntax-aware edits (its own parsers; 13 languages plus TOML, JSON and \
 Markdown). Use it instead of sed, perl -pi, a script that rewrites files, or a series of \
 single edits whenever the same change repeats: a rename or replacement that `grep -l` finds \
 in more than one file, an import path, a call-site shape, a config key. Its matches ignore \

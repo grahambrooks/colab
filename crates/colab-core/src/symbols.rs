@@ -6,7 +6,7 @@
 //! `load` finds every `load`, and `Config/load` only the one in `Config`.
 //! More than one is an error that lists them. The declarations come from
 //! the language server's `documentSymbol` when it answers, else from
-//! tree-sitter (`colab_rewrite::declarations`); either way an edit is plain
+//! colab's parser (`colab_rewrite::declarations_in`); either way an edit is plain
 //! text at a byte range, reported like any other run.
 
 use std::ops::Range;

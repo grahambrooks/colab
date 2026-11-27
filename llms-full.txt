@@ -1,6 +1,6 @@
 # colab
 
-> colab, the tree-sitter codemod tool: repo-wide structural edits across 12 source languages, TOML / JSON / Markdown and any text file, from a small DSL, a CLI, an MCP server and an LSP. This file is generated from the documents below (`cargo test -p colab-mcp`, `COLAB_BLESS=1` to refresh).
+> colab, the structural codemod tool: repo-wide structural edits across 13 source languages, TOML / JSON / Markdown and any text file, from a small DSL, a CLI, an MCP server and an LSP. This file is generated from the documents below (`cargo test -p colab-mcp`, `COLAB_BLESS=1` to refresh).
 
 
 ---
@@ -1089,7 +1089,7 @@ table below summarises:
 | `ts::symbol` | As `js::symbol`, plus `type_identifier` (a type's name). | `"Config"` |
 | `tsx::import` / `tsx::symbol` | As `ts::`, in `.tsx` files on the TSX grammar (a component's name in its JSX tags too). | `"./ui"`, `"Button"` |
 
-For the source modules, matching is on tree-sitter node text, not raw substrings
+For the source modules, matching is on syntax-tree node text, not raw substrings
 — `tokio` does **not** match `my_tokio` and `another.module` does
 **not** match `yet.another.module`.
 
@@ -1387,7 +1387,7 @@ The DSL is intentionally small. Capabilities being considered:
 - A `wrap` action shorthand for the common
   `replace_call "f(ctx, $args)"` pattern.
 - A query namespace (e.g. `go::regex`) for opt-in regex-based
-  rewrites where a tree-sitter rule does not suffice.
+  rewrites where a syntax-tree rule does not suffice.
 - Type constraints (`$X is type T`) via the language server's hover.
 - A `<lang>::symbol` mode that respects shadowing. (`in "<glob>"` narrows a rename by path and `where inside` by syntactic region; neither resolves names — `colab rename` does, through the language server.)
 
@@ -2386,7 +2386,7 @@ colab edit --symbol A/m --in a.py --insert-after --text-file - --write < method.
   every `load`, `Config/load` only the one in `Config`. One that names
   several is an error listing each, with its line; one that names none
   lists the file's paths, with a "did you mean".
-- **Declarations** come from tree-sitter for every source language: a
+- **Declarations** come from colab's parser for every source language: a
   Rust `impl` is named by its type (`impl Display for Config` is
   `Config`), a Go method sits under its receiver type, a C or C++
   function is named by its declarator. A declaration includes the doc
@@ -2971,7 +2971,7 @@ colab refactor --script s.colab --write --verify "cargo check --quiet" --commit-
 
 - `NO_COLOR` — when set, ANSI colour is disabled in `human` output.
 - `RUST_LOG` — standard `env_logger` filter; set to `debug` to see
-  per-file "no changes" lines and tree-sitter parse hints.
+  per-file "no changes" lines and parse hints.
 - `COLAB_JOBS` — worker threads when `--jobs` is not given.
 - `COLAB_KEEP_SERVER` — `0` gives each command its own language server instead of the kept one (the default); see [Kept language servers](#kept-language-servers).
 - `COLAB_CACHE_DIR` — where packs from git and fleet clones are kept;
@@ -4482,7 +4482,7 @@ colab refactor --script rename-tokio.colab --check .
 ```
 
 <p align="center">
-  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .colab script is compiled against 16 backends, matched on tree-sitter syntax trees, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
+  <img src="docs/assets/colab-infographic.svg" alt="How colab works: a .colab script is compiled against 16 backends, matched on syntax trees from colab's own parsers, rewritten byte-exactly, and reported as a diff, JSON, a CI check or a write" width="100%">
 </p>
 
 ## Why
@@ -4495,14 +4495,14 @@ Codebase-wide refactoring lives in an awkward middle ground:
   language at a time.
 - Hand-rolled scripts work but are write-once.
 
-Colab sits in the middle: a small DSL, syntax-aware matching via
-tree-sitter, idempotent operations, and a deterministic CLI that
+Colab sits in the middle: a small DSL, syntax-aware matching on
+parsers of its own (pure Rust, lossless), idempotent operations, and a deterministic CLI that
 runs the same way on a developer machine, in CI, and from an AI
 agent.
 
 ## Capabilities
 
-Twelve languages, each with the same capability floor — an
+Thirteen source-language namespaces, each with the same capability floor — an
 import-equivalent, a symbol rename, call rewriting, and `pattern`
 (match a code shape with `$METAVARS`):
 
@@ -4789,7 +4789,7 @@ The repo is a Cargo workspace under `crates/`:
 ```
 crates/
   colab-core/         # Error, walker, CodeTransformer, LanguageBackend, registry, RunReport, render
-  colab-rewrite/      # shared tree-sitter rewriting and the <lang>::pattern engine
+  colab-rewrite/      # the shared floor (symbol, call, pattern) and the <lang>::pattern engine
   colab-syntax/       # colab's own lossless syntax tree and structural matcher
   colab-backends/     # registry(): the one place every backend is registered
   colab-dsl/          # LALRPOP grammar, AST, compiler, Refactoring IR

@@ -73,7 +73,7 @@ fn default_backends() -> BackendRegistry {
 Code Lab (colab) is a command-line code refactoring (or 'codemod') tool.
 
 It reads a small DSL describing one or more refactoring rules, parses
-target source files with tree-sitter, and rewrites them. Use `colab
+target source files with colab's own parsers, and rewrites them. Use `colab
 refactor` to run a script (or `-e` rules), `colab fix` to run the packs
 a repository's colab.toml declares, and `colab find` / `colab ast` to
 search and debug patterns. `colab rename` / `mv` / `action` /
