@@ -927,6 +927,15 @@ is implemented yet; most items change what `<lang>::pattern` matches.
    lexer, grammar and `names.rs`. The shared runtime should keep items in
    order (sort, or place a missing token at the position it is emitted),
    rather than copy the guard to nine parsers.
+   **Done 2026-11-27:** `colab_syntax::emit` (`Names`, `place_extras`,
+   `build`, `fallback`, `element!`); the nine `lib.rs` went from 2,810 to
+   1,342 lines (Markdown's, unlike the others, stays). Each parser keeps
+   its own `Item` and its field rules, shown to the module through
+   `Element`. `place_extras` stable-sorts every node's children by start
+   first (only zero-width items move), which replaces Swift's guard.
+   Python's text-only leaves are an opt-in (`with_text_leaves`). Every
+   parser's wide-corpus numbers, its baseline and corpus, conformance and
+   properties are unchanged.
 4. **Kinds as ids, not strings.** The floor and the backends' own modules
    compare `kind_name()` with string literals at 68 sites (imports,
    packages, Markdown, declarations, calls), and `CallShape` names kinds

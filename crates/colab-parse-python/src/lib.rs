@@ -14,12 +14,12 @@ mod lexer;
 mod names;
 mod parser;
 
-use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-use colab_syntax::{BuildError, Builder, Field, Flags, Grammar, Kind, SourceParser, Tree};
+use colab_syntax::emit::{self, Names};
+use colab_syntax::{BuildError, Grammar, SourceParser, Tree};
 
-use parser::{Item, Node, Tok};
+use parser::{Item, Tok};
 
 /// colab's Python parser.
 pub struct PythonParser;
@@ -27,47 +27,14 @@ pub struct PythonParser;
 /// The one parser; it holds nothing but its grammar.
 pub static PARSER: PythonParser = PythonParser;
 
-struct Names {
-    grammar: Arc<Grammar>,
-    kinds: HashMap<(&'static str, bool), Kind>,
-}
-
 fn names() -> &'static Names {
     static NAMES: OnceLock<Names> = OnceLock::new();
     NAMES.get_or_init(|| {
-        let mut kinds = Vec::new();
-        let mut ids = HashMap::new();
-        for (list, named) in [(names::NAMED, true), (names::ANONYMOUS, false)] {
-            for name in list {
-                let id = u16::try_from(kinds.len()).unwrap_or(u16::MAX);
-                ids.insert((*name, named), Kind(id));
-                kinds.push(((*name).into(), named));
-            }
-        }
-        let fields = names::FIELDS.iter().map(|f| (*f).into()).collect();
-        Names {
-            grammar: Arc::new(Grammar::new("python", kinds, fields)),
-            kinds: ids,
-        }
+        Names::new("python", names::NAMED, names::ANONYMOUS, names::FIELDS).with_text_leaves()
     })
 }
 
-fn kind_of(name: &'static str, named: bool) -> Kind {
-    if name == "ERROR" {
-        return Kind::ERROR;
-    }
-    names()
-        .kinds
-        .get(&(name, named))
-        .copied()
-        .unwrap_or(Kind::ERROR)
-}
-
-fn field_of(name: Option<&'static str>) -> Option<Field> {
-    let name = name?;
-    let i = names::FIELDS.iter().position(|f| *f == name)?;
-    u16::try_from(i).ok().map(Field)
-}
+colab_syntax::element!(Item, Tok, |n| named: n.named, extra: false);
 
 /// `text` as a colab tree.
 pub fn parse(text: &str) -> Result<Tree, BuildError> {
@@ -83,161 +50,23 @@ pub fn parse(text: &str) -> Result<Tree, BuildError> {
         .map(|e| (e.start, e.end, e.kind))
         .collect();
     extras.sort_unstable();
-    place_extras(&mut root, extras);
-    let mut b = Builder::new(text, names().grammar.clone());
-    if p.errors || lexed.errors {
-        b.error_seen();
-    }
-    b.start_node(
-        kind_of("module", true),
-        None,
-        Flags {
-            named: true,
-            ..Flags::default()
-        },
-    )?;
-    for item in &root.items {
-        emit(&mut b, item)?;
-    }
-    b.finish()
-}
-
-/// Each comment and line continuation (in order) into the deepest node
-/// holding code on both sides of it: one pass down the tree, a binary
-/// search per extra and level, so thousands of comments in one long
-/// literal stay linear.
-fn place_extras(node: &mut Node, extras: Vec<(usize, usize, &'static str)>) {
-    if extras.is_empty() {
-        return;
-    }
-    type Extras = Vec<(usize, usize, &'static str)>;
-    let mut into: Vec<(usize, Extras)> = Vec::new();
-    let mut here = Vec::new();
-    for e in extras {
-        let (start, end, _) = e;
-        // Children are in order, so the one that could hold the extra is
-        // the first ending at or after it.
-        let k = node.items.partition_point(|i| i.end() < end);
-        match node.items.get(k) {
-            Some(i @ Item::Node(n))
-                if !n.items.is_empty() && i.start() < start && end <= i.end() =>
-            {
-                match into.last_mut() {
-                    Some((last, list)) if *last == k => list.push(e),
-                    _ => into.push((k, vec![e])),
-                }
-            }
-            _ => here.push(e),
-        }
-    }
-    for (k, list) in into {
-        if let Item::Node(n) = &mut node.items[k] {
-            place_extras(n, list);
-        }
-    }
-    if here.is_empty() {
-        return;
-    }
-    let old = std::mem::take(&mut node.items);
-    let mut items = Vec::with_capacity(old.len() + here.len());
-    let mut pending = here.into_iter().peekable();
-    for item in old {
-        let at = item.start();
-        while let Some(&e) = pending.peek() {
-            if e.1 > at {
-                break;
-            }
-            items.push(extra(e));
-            pending.next();
-        }
-        items.push(item);
-    }
-    items.extend(pending.map(extra));
-    node.items = items;
-}
-
-fn extra((start, end, kind): (usize, usize, &'static str)) -> Item {
-    Item::Tok(Tok {
-        kind,
-        named: true,
-        start,
-        end,
-        field: None,
-        hidden: false,
-        missing: false,
-        extra: true,
-    })
-}
-
-fn emit(b: &mut Builder, item: &Item) -> Result<(), BuildError> {
-    let start = item.start();
-    if start > b.pos() {
-        b.trivia_to(start)?;
-    }
-    match item {
-        Item::Tok(t) if t.hidden => b.trivia_to(t.end),
-        Item::Tok(t) => {
-            let flags = Flags {
-                named: t.named,
-                missing: t.missing,
-                extra: t.extra,
-                ..Flags::default()
-            };
-            b.token(
-                kind_of(t.kind, t.named),
-                field_of(t.field),
-                flags,
-                t.end - t.start,
-            )
-        }
-        Item::Node(n) => {
-            if n.items.is_empty() {
-                return Ok(());
-            }
-            // A node of nothing but text (a string's content without
-            // escapes) is a leaf, as tree-sitter's hidden tokens left it:
-            // its text is what a pattern compares.
-            let len = item.end() - start;
-            if len > 0
-                && n.items
-                    .iter()
-                    .all(|i| matches!(i, Item::Tok(t) if t.hidden))
-            {
-                let flags = Flags {
-                    named: n.named,
-                    ..Flags::default()
-                };
-                return b.token(kind_of(n.kind, n.named), field_of(n.field), flags, len);
-            }
-            b.start_node(
-                kind_of(n.kind, n.named),
-                field_of(n.field),
-                Flags {
-                    named: n.named,
-                    ..Flags::default()
-                },
-            )?;
-            for child in &n.items {
-                emit(b, child)?;
-            }
-            b.finish_node()
-        }
-    }
+    emit::place_extras(&mut root.items, emit::comments(extras));
+    emit::build(
+        text,
+        names(),
+        "module",
+        &root.items,
+        p.errors || lexed.errors,
+    )
 }
 
 impl SourceParser for PythonParser {
     fn grammar(&self) -> Arc<Grammar> {
-        names().grammar.clone()
+        names().grammar()
     }
 
     fn parse(&self, text: &str) -> Tree {
-        parse(text).unwrap_or_else(|_| {
-            let mut b = Builder::new(text, names().grammar.clone());
-            let _ = b.start_node(kind_of("module", true), None, Flags::default());
-            b.error_seen();
-            b.finish()
-                .unwrap_or_else(|_| unreachable!("a root over the text always builds"))
-        })
+        parse(text).unwrap_or_else(|_| emit::fallback(text, names(), "module"))
     }
 }
 

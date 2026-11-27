@@ -41,20 +41,6 @@ pub(crate) struct Node {
 }
 
 impl Item {
-    pub fn start(&self) -> usize {
-        match self {
-            Item::Tok(t) => t.start,
-            Item::Node(n) => n.items.first().map_or(0, Item::start),
-        }
-    }
-
-    pub fn end(&self) -> usize {
-        match self {
-            Item::Tok(t) => t.end,
-            Item::Node(n) => n.items.last().map_or(0, Item::end),
-        }
-    }
-
     fn kind(&self) -> &'static str {
         match self {
             Item::Tok(t) => t.kind,
