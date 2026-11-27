@@ -853,6 +853,111 @@ a format colab overrides anyway; a ~40-line `log::Log` would do, and
 Kept as they are: `clap`, `ignore`, `globset`, `regex`, `rayon`,
 `similar`, `toml_edit`, `serde_json`.
 
+## Review 2026-11-27: architecture after tree-sitter
+
+Every language now parses with a parser of colab's own, and tree-sitter
+is only the oracle the parsers are compared against (`6963151`). The
+architecture still has the shape tree-sitter gave it: parsers emit
+tree-sitter's kinds, fields and some of its misreadings; patterns parse
+inside textual wrappers because a tree-sitter grammar has one entry
+point; and every backend reads the tree by kind-name strings. What colab
+can do better now it owns the parsers, most valuable first. Nothing here
+is implemented yet; most items change what `<lang>::pattern` matches.
+
+1. **Readings copied from tree-sitter make patterns bind wrongly. Fix
+   them, and keep the oracle as a reviewed baseline, not a target.** The
+   parsers copy tree-sitter's parse where its GLR reading is consistent,
+   even where it is not the language's: Swift's call binds loosest over
+   arithmetic and `a == b && c` is `a == (b && c)`; Kotlin's `!a.b` is
+   `(!a).b`; C#'s `(a) - b` is a cast and `x + b?.c` is `(x + b)?.c`; PHP's
+   dangling `else` goes to the outermost `if`; C++'s `struct MACRO Name
+   { … };` is a function definition. Go, Python, Java and JavaScript
+   already decline to copy misreadings, so the policy is inconsistent.
+   Measured with the release binary (2026-11-27): over `let y = a + b.f()`
+   and `let z = b.f()`, `swift::pattern '$X.f()'` finds only the second;
+   over `if p == q && r {}`, `'$A && $B'` binds `q && r`; and
+   `kotlin::pattern '$X.isEmpty()'` binds `$X` to `!a` in `!a.isEmpty()`,
+   so a template `isEmpty($X)` would write `isEmpty(!a)`. The node-for-node
+   test is what holds these in place: the repo-files run asserts no
+   difference. **Mechanism:** replace that assertion with a blessed
+   baseline per language (`tests/parsers/<lang>.diffs`: file, first
+   differing node, ours and tree-sitter's, written with `COLAB_BLESS=1`,
+   as `tests/samples/summary.txt` is). A fix to a reading then shows as
+   a reviewed baseline diff, not a broken test. The wide-corpus run stays
+   as a report (agreement %, clean files read with an error), and corpus,
+   conformance and properties remain the behavioural gate. Fix the
+   readings in order of how often patterns meet them: Swift's call and
+   loose-operator precedence and `try` scope, Kotlin's prefix operators,
+   C#'s casts and `is` chains, then the rest.
+2. **Parse a pattern by entry point, not in textual wrappers.** A
+   pattern that is not a file is tried bare, then in each of the
+   backend's context wrappers: 57 `@@PATTERN@@` wrappers across 13
+   `patterns.rs` (Rust 8, TypeScript 6, five each for C, C++, Go, Java
+   and PHP). That forces `fragment::compile`'s heuristics: a context is
+   refused when it holds an earlier node of the pattern's kind, a reading
+   that only the root spans is refused, and C and C++ put a `typedef`
+   before a parameter slot so a bare name is not read as a type. Each
+   parser can expose its productions (`parse_fragment(Entry::Expression
+   | Statement | Member | Type | Parameter, text)`) and the engine can
+   try them in order. The heuristics and wrappers go, compiling a
+   pattern parses less text, and a failure can say "not an expression or
+   a statement" instead of naming every wrapper tried.
+3. **One parser runtime, not nine copies.** Each `colab-parse-*` crate
+   carries the same `Item`/`Tok`/`Node` tree, `with`/`field_over`, the
+   token helpers (`punct`, `expect`, `missing`, `error_token`,
+   `scan_balanced`, `blind`), and in `lib.rs` `names()`, `kind_of`,
+   `field_of`, `place_extras` and `emit`: nine `lib.rs` files of 254–288
+   lines, which differ from Swift's by 32–181 lines each. They have
+   already drifted. Swift's `emit` skips a token whose text was already
+   passed as trivia (a fix for a comment after a statement end in a file
+   read with errors, 2026-11-26), and no other parser has the fix. Move
+   them into `colab-syntax` (or a `colab-parse-kit`), each parser keeping
+   its lexer, grammar and `names.rs`.
+4. **Kinds as ids, not strings.** The floor and the backends' own modules
+   compare `kind_name()` with string literals at 68 sites (imports,
+   packages, Markdown, declarations, calls), and `CallShape` names kinds
+   and paths of kinds as strings (`Through { arguments: &["call_suffix",
+   "value_arguments"] }`). A typo is a silent no-op. Each parser's
+   `names.rs` can generate `Kind` constants, so the backends compare ids
+   and a misspelt kind fails to compile. Do this with item 6, the shape
+   redesign, which renames kinds anyway.
+5. **Reuse a parse across rules.** The tree-sitter parse cache went with
+   tree-sitter, and each rule parses its text again. Measured on the
+   Swift corpus (3,706 files, 25.3 MB, one thread): a script whose
+   prefilter literal is absent takes 0.12 s; one `swift::pattern` rule
+   whose literal is in 344 files (4.5 MB) takes 0.36 s, four such rules
+   1.01 s, so about 0.22 s per rule. At the parser's 38 MB/s, parsing
+   those files is about 0.12 s, half of each rule's cost. A one-entry
+   per-thread cache in `SourceLanguage::tree` / `syntax::source_tree`,
+   keyed by parser and text, would cut a multi-rule script by about 40%,
+   with no change in meaning.
+6. **Redesign the tree shape, per language, once item 1's baseline
+   exists.** The plan always said the shape was transitional. With item
+   1's baseline, a language's kinds and fields can be renamed for what
+   the matcher and rewrites need: one call kind with fields for callee,
+   receiver, arguments and trailing closures, instead of `Fields` /
+   `Prefixed` / `Through`, so `CallShape` goes. That breaks only
+   `where $X is <kind>` constraints and `colab ast` output, and each
+   language's rename is one breaking release.
+7. **Typed accessors for calls, declarations and imports.** Rust answers
+   them from rust-analyzer's typed AST (`OwnSyntax`). The others go
+   through `declarations_in`'s name heuristics ("a kind that reads as a
+   declaration and has a `name` field") and each backend's import walker.
+   A parser crate can implement `OwnSyntax` (and an imports accessor)
+   from its own `Item` tree while it builds it. Lower value than items
+   1–5; worth it once item 6 settles the shapes.
+8. **Make the wide-corpus numbers reproducible.** The agreement figures
+   in this plan (Swift 90.8%, Kotlin 92.7%, C++ 94.8%, …) come from
+   clones in a session scratchpad. Record each language's repositories
+   and commits (`tests/parsers/corpora.toml`) with a fetch script, so the
+   numbers can be rerun and a regression seen. Cheap, and needed by item
+   1, where the agreement % becomes the report.
+
+**Not recommended:** incremental reparsing, now that parses are this
+cheap. Also not recommended: dropping the tree-sitter dev-dependencies
+before item 1's baselines exist, since the oracle is what makes a reading
+change reviewable.
+
 ## Stable gate before M20
 
 A version is pinned into Claude (plugin, MCP config, hook) when all of
