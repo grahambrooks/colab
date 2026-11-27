@@ -68,41 +68,6 @@ impl Item {
     }
 }
 
-fn field_of(item: &Item) -> Option<&'static str> {
-    match item {
-        Item::Tok(t) => t.field,
-        Item::Node(n) => n.field,
-    }
-}
-
-/// The trailing `alternative`s of the `if` statement `item` ends in
-/// (through loop bodies and `if`s without them), taken out of it.
-fn take_tail_alternatives(item: &mut Item) -> Vec<Item> {
-    let Item::Node(n) = item else {
-        return Vec::new();
-    };
-    match n.kind {
-        "if_statement" => {
-            let alts = n
-                .items
-                .iter()
-                .rev()
-                .take_while(|i| field_of(i) == Some("alternative"))
-                .count();
-            if alts > 0 {
-                let at = n.items.len() - alts;
-                return n.items.split_off(at);
-            }
-        }
-        "while_statement" | "for_statement" | "foreach_statement" => {}
-        _ => return Vec::new(),
-    }
-    match n.items.last_mut() {
-        Some(last) if field_of(last) == Some("body") => take_tail_alternatives(last),
-        _ => Vec::new(),
-    }
-}
-
 fn placeholder() -> Tok {
     Tok {
         kind: "",
@@ -745,20 +710,8 @@ impl<'s> Parser<'s> {
             let v = vec![self.punct(), self.statement().with("body")];
             items.push(node("else_clause", v).with("alternative"));
         }
-        // tree-sitter gives a dangling `else` (and `elseif`s) to the
-        // outermost `if` without one: take those of the `if` this one's
-        // last statement ends in.
-        if !items.iter().any(|i| i.kind() == "else_clause")
-            && let Some(last) = items.last_mut()
-        {
-            let stolen = match last {
-                Item::Node(n) if n.kind == "else_if_clause" => {
-                    n.items.last_mut().map_or_default(take_tail_alternatives)
-                }
-                _ => take_tail_alternatives(last),
-            };
-            items.extend(stolen);
-        }
+        // A dangling `else` is the nearest `if`'s, as PHP reads it (the
+        // inner `if` read it first); tree-sitter gives it to the outermost.
         node("if_statement", items)
     }
 
